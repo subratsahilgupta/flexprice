@@ -6,11 +6,9 @@ SET statement_timeout = '30s';
 
 ALTER TABLE "customers"           ADD COLUMN IF NOT EXISTS "billing_currency"  varchar(10)    NULL;
 ALTER TABLE "invoices"            ADD COLUMN IF NOT EXISTS "fx_conversion"     jsonb          NULL;
-ALTER TABLE "invoice_line_items"  ADD COLUMN IF NOT EXISTS "original_currency" varchar(10)    NULL;
-ALTER TABLE "invoice_line_items"  ADD COLUMN IF NOT EXISTS "original_amount"   numeric(20,8)  NULL;
+ALTER TABLE "invoice_line_items"  ADD COLUMN IF NOT EXISTS "fx_conversion"     jsonb          NULL;
 
 -- migrate:down
-ALTER TABLE "invoice_line_items"  DROP COLUMN IF EXISTS "original_amount";
-ALTER TABLE "invoice_line_items"  DROP COLUMN IF EXISTS "original_currency";
+ALTER TABLE "invoice_line_items"  DROP COLUMN IF EXISTS "fx_conversion";
 ALTER TABLE "invoices"            DROP COLUMN IF EXISTS "fx_conversion";
 ALTER TABLE "customers"           DROP COLUMN IF EXISTS "billing_currency";

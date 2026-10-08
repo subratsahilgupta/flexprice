@@ -54,8 +54,16 @@ func convertInvoiceAmounts(inv *invoice.Invoice, resolution *FXRateResolution, c
 
 	if len(inv.LineItems) > 0 {
 		for _, li := range inv.LineItems {
-			li.OriginalCurrency = lo.ToPtr(li.Currency)
-			li.OriginalAmount = lo.ToPtr(li.Amount)
+			discount := li.LineItemDiscount.Add(li.InvoiceLevelDiscount)
+			li.FxConversion = &types.FxConversion{
+				ChargeCurrency: li.Currency,
+				Source: types.FxConversionSource{
+					Subtotal:                   li.Amount,
+					TotalDiscount:              discount,
+					TotalPrepaidCreditsApplied: li.PrepaidCreditsApplied,
+					Net:                        li.Amount.Sub(discount).Sub(li.PrepaidCreditsApplied),
+				},
+			}
 			li.Amount = convert(li.Amount)
 			li.LineItemDiscount = convert(li.LineItemDiscount)
 			li.InvoiceLevelDiscount = convert(li.InvoiceLevelDiscount)

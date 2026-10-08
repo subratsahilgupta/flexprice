@@ -91,10 +91,8 @@ type InvoiceLineItem struct {
 	ParentLineItemID *string `json:"parent_line_item_id,omitempty"`
 	// CustomCurrency holds the value of the "custom_currency" field.
 	CustomCurrency *types.CustomCurrencyLineItem `json:"custom_currency,omitempty"`
-	// OriginalCurrency holds the value of the "original_currency" field.
-	OriginalCurrency *string `json:"original_currency,omitempty"`
-	// OriginalAmount holds the value of the "original_amount" field.
-	OriginalAmount *decimal.Decimal `json:"original_amount,omitempty"`
+	// FxConversion holds the value of the "fx_conversion" field.
+	FxConversion *types.FxConversion `json:"fx_conversion,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the InvoiceLineItemQuery when eager-loading is set.
 	Edges        InvoiceLineItemEdges `json:"edges"`
@@ -137,13 +135,13 @@ func (*InvoiceLineItem) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case invoicelineitem.FieldPriceUnitAmount, invoicelineitem.FieldPrepaidCreditsApplied, invoicelineitem.FieldLineItemDiscount, invoicelineitem.FieldInvoiceLevelDiscount, invoicelineitem.FieldAdjustedEntitlementQuantity, invoicelineitem.FieldOriginalAmount:
+		case invoicelineitem.FieldPriceUnitAmount, invoicelineitem.FieldPrepaidCreditsApplied, invoicelineitem.FieldLineItemDiscount, invoicelineitem.FieldInvoiceLevelDiscount, invoicelineitem.FieldAdjustedEntitlementQuantity:
 			values[i] = &sql.NullScanner{S: new(decimal.Decimal)}
-		case invoicelineitem.FieldMetadata, invoicelineitem.FieldCommitmentInfo, invoicelineitem.FieldCustomCurrency:
+		case invoicelineitem.FieldMetadata, invoicelineitem.FieldCommitmentInfo, invoicelineitem.FieldCustomCurrency, invoicelineitem.FieldFxConversion:
 			values[i] = new([]byte)
 		case invoicelineitem.FieldAmount, invoicelineitem.FieldQuantity:
 			values[i] = new(decimal.Decimal)
-		case invoicelineitem.FieldID, invoicelineitem.FieldTenantID, invoicelineitem.FieldStatus, invoicelineitem.FieldCreatedBy, invoicelineitem.FieldUpdatedBy, invoicelineitem.FieldEnvironmentID, invoicelineitem.FieldInvoiceID, invoicelineitem.FieldCustomerID, invoicelineitem.FieldSubscriptionID, invoicelineitem.FieldEntityID, invoicelineitem.FieldEntityType, invoicelineitem.FieldPlanDisplayName, invoicelineitem.FieldPriceID, invoicelineitem.FieldPriceType, invoicelineitem.FieldMeterID, invoicelineitem.FieldMeterDisplayName, invoicelineitem.FieldPriceUnitID, invoicelineitem.FieldPriceUnit, invoicelineitem.FieldDisplayName, invoicelineitem.FieldCurrency, invoicelineitem.FieldSubscriptionLineItemID, invoicelineitem.FieldParentLineItemID, invoicelineitem.FieldOriginalCurrency:
+		case invoicelineitem.FieldID, invoicelineitem.FieldTenantID, invoicelineitem.FieldStatus, invoicelineitem.FieldCreatedBy, invoicelineitem.FieldUpdatedBy, invoicelineitem.FieldEnvironmentID, invoicelineitem.FieldInvoiceID, invoicelineitem.FieldCustomerID, invoicelineitem.FieldSubscriptionID, invoicelineitem.FieldEntityID, invoicelineitem.FieldEntityType, invoicelineitem.FieldPlanDisplayName, invoicelineitem.FieldPriceID, invoicelineitem.FieldPriceType, invoicelineitem.FieldMeterID, invoicelineitem.FieldMeterDisplayName, invoicelineitem.FieldPriceUnitID, invoicelineitem.FieldPriceUnit, invoicelineitem.FieldDisplayName, invoicelineitem.FieldCurrency, invoicelineitem.FieldSubscriptionLineItemID, invoicelineitem.FieldParentLineItemID:
 			values[i] = new(sql.NullString)
 		case invoicelineitem.FieldCreatedAt, invoicelineitem.FieldUpdatedAt, invoicelineitem.FieldPeriodStart, invoicelineitem.FieldPeriodEnd:
 			values[i] = new(sql.NullTime)
@@ -404,19 +402,13 @@ func (_m *InvoiceLineItem) assignValues(columns []string, values []any) error {
 					return fmt.Errorf("unmarshal field custom_currency: %w", err)
 				}
 			}
-		case invoicelineitem.FieldOriginalCurrency:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field original_currency", values[i])
-			} else if value.Valid {
-				_m.OriginalCurrency = new(string)
-				*_m.OriginalCurrency = value.String
-			}
-		case invoicelineitem.FieldOriginalAmount:
-			if value, ok := values[i].(*sql.NullScanner); !ok {
-				return fmt.Errorf("unexpected type %T for field original_amount", values[i])
-			} else if value.Valid {
-				_m.OriginalAmount = new(decimal.Decimal)
-				*_m.OriginalAmount = *value.S.(*decimal.Decimal)
+		case invoicelineitem.FieldFxConversion:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field fx_conversion", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.FxConversion); err != nil {
+					return fmt.Errorf("unmarshal field fx_conversion: %w", err)
+				}
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -609,15 +601,8 @@ func (_m *InvoiceLineItem) String() string {
 	builder.WriteString("custom_currency=")
 	builder.WriteString(fmt.Sprintf("%v", _m.CustomCurrency))
 	builder.WriteString(", ")
-	if v := _m.OriginalCurrency; v != nil {
-		builder.WriteString("original_currency=")
-		builder.WriteString(*v)
-	}
-	builder.WriteString(", ")
-	if v := _m.OriginalAmount; v != nil {
-		builder.WriteString("original_amount=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
+	builder.WriteString("fx_conversion=")
+	builder.WriteString(fmt.Sprintf("%v", _m.FxConversion))
 	builder.WriteByte(')')
 	return builder.String()
 }

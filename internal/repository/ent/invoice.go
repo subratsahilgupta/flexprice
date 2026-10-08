@@ -288,8 +288,6 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 					SetEnvironmentID(item.EnvironmentID).
 					SetCommitmentInfo(item.CommitmentInfo).
 					SetCustomCurrency(item.CustomCurrency).
-					SetNillableOriginalCurrency(item.OriginalCurrency).
-					SetNillableOriginalAmount(item.OriginalAmount).
 					SetPrepaidCreditsApplied(item.PrepaidCreditsApplied).
 					SetLineItemDiscount(item.LineItemDiscount).
 					SetInvoiceLevelDiscount(item.InvoiceLevelDiscount).
@@ -298,6 +296,9 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 					SetUpdatedBy(item.UpdatedBy).
 					SetCreatedAt(item.CreatedAt).
 					SetUpdatedAt(item.UpdatedAt)
+				if item.FxConversion != nil {
+					builders[i].SetFxConversion(item.FxConversion)
+				}
 			}
 
 			// Insert in batches to stay within PostgreSQL's 65535 parameter limit.
@@ -381,8 +382,6 @@ func (r *invoiceRepository) AddLineItems(ctx context.Context, invoiceID string, 
 				SetMetadata(item.Metadata).
 				SetCommitmentInfo(item.CommitmentInfo).
 				SetCustomCurrency(item.CustomCurrency).
-				SetNillableOriginalCurrency(item.OriginalCurrency).
-				SetNillableOriginalAmount(item.OriginalAmount).
 				SetPrepaidCreditsApplied(item.PrepaidCreditsApplied).
 				SetLineItemDiscount(item.LineItemDiscount).
 				SetInvoiceLevelDiscount(item.InvoiceLevelDiscount).
@@ -391,6 +390,9 @@ func (r *invoiceRepository) AddLineItems(ctx context.Context, invoiceID string, 
 				SetUpdatedBy(item.UpdatedBy).
 				SetCreatedAt(item.CreatedAt).
 				SetUpdatedAt(item.UpdatedAt)
+			if item.FxConversion != nil {
+				builders[i].SetFxConversion(item.FxConversion)
+			}
 		}
 
 		// Insert in batches to stay within PostgreSQL's 65535 parameter limit.

@@ -269,43 +269,15 @@ func (_u *InvoiceLineItemUpdate) ClearCustomCurrency() *InvoiceLineItemUpdate {
 	return _u
 }
 
-// SetOriginalCurrency sets the "original_currency" field.
-func (_u *InvoiceLineItemUpdate) SetOriginalCurrency(v string) *InvoiceLineItemUpdate {
-	_u.mutation.SetOriginalCurrency(v)
+// SetFxConversion sets the "fx_conversion" field.
+func (_u *InvoiceLineItemUpdate) SetFxConversion(v *types.FxConversion) *InvoiceLineItemUpdate {
+	_u.mutation.SetFxConversion(v)
 	return _u
 }
 
-// SetNillableOriginalCurrency sets the "original_currency" field if the given value is not nil.
-func (_u *InvoiceLineItemUpdate) SetNillableOriginalCurrency(v *string) *InvoiceLineItemUpdate {
-	if v != nil {
-		_u.SetOriginalCurrency(*v)
-	}
-	return _u
-}
-
-// ClearOriginalCurrency clears the value of the "original_currency" field.
-func (_u *InvoiceLineItemUpdate) ClearOriginalCurrency() *InvoiceLineItemUpdate {
-	_u.mutation.ClearOriginalCurrency()
-	return _u
-}
-
-// SetOriginalAmount sets the "original_amount" field.
-func (_u *InvoiceLineItemUpdate) SetOriginalAmount(v decimal.Decimal) *InvoiceLineItemUpdate {
-	_u.mutation.SetOriginalAmount(v)
-	return _u
-}
-
-// SetNillableOriginalAmount sets the "original_amount" field if the given value is not nil.
-func (_u *InvoiceLineItemUpdate) SetNillableOriginalAmount(v *decimal.Decimal) *InvoiceLineItemUpdate {
-	if v != nil {
-		_u.SetOriginalAmount(*v)
-	}
-	return _u
-}
-
-// ClearOriginalAmount clears the value of the "original_amount" field.
-func (_u *InvoiceLineItemUpdate) ClearOriginalAmount() *InvoiceLineItemUpdate {
-	_u.mutation.ClearOriginalAmount()
+// ClearFxConversion clears the value of the "fx_conversion" field.
+func (_u *InvoiceLineItemUpdate) ClearFxConversion() *InvoiceLineItemUpdate {
+	_u.mutation.ClearFxConversion()
 	return _u
 }
 
@@ -534,17 +506,11 @@ func (_u *InvoiceLineItemUpdate) sqlSave(ctx context.Context) (_node int, err er
 	if _u.mutation.CustomCurrencyCleared() {
 		_spec.ClearField(invoicelineitem.FieldCustomCurrency, field.TypeJSON)
 	}
-	if value, ok := _u.mutation.OriginalCurrency(); ok {
-		_spec.SetField(invoicelineitem.FieldOriginalCurrency, field.TypeString, value)
+	if value, ok := _u.mutation.FxConversion(); ok {
+		_spec.SetField(invoicelineitem.FieldFxConversion, field.TypeJSON, value)
 	}
-	if _u.mutation.OriginalCurrencyCleared() {
-		_spec.ClearField(invoicelineitem.FieldOriginalCurrency, field.TypeString)
-	}
-	if value, ok := _u.mutation.OriginalAmount(); ok {
-		_spec.SetField(invoicelineitem.FieldOriginalAmount, field.TypeOther, value)
-	}
-	if _u.mutation.OriginalAmountCleared() {
-		_spec.ClearField(invoicelineitem.FieldOriginalAmount, field.TypeOther)
+	if _u.mutation.FxConversionCleared() {
+		_spec.ClearField(invoicelineitem.FieldFxConversion, field.TypeJSON)
 	}
 	if _u.mutation.CouponApplicationsCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -849,43 +815,15 @@ func (_u *InvoiceLineItemUpdateOne) ClearCustomCurrency() *InvoiceLineItemUpdate
 	return _u
 }
 
-// SetOriginalCurrency sets the "original_currency" field.
-func (_u *InvoiceLineItemUpdateOne) SetOriginalCurrency(v string) *InvoiceLineItemUpdateOne {
-	_u.mutation.SetOriginalCurrency(v)
+// SetFxConversion sets the "fx_conversion" field.
+func (_u *InvoiceLineItemUpdateOne) SetFxConversion(v *types.FxConversion) *InvoiceLineItemUpdateOne {
+	_u.mutation.SetFxConversion(v)
 	return _u
 }
 
-// SetNillableOriginalCurrency sets the "original_currency" field if the given value is not nil.
-func (_u *InvoiceLineItemUpdateOne) SetNillableOriginalCurrency(v *string) *InvoiceLineItemUpdateOne {
-	if v != nil {
-		_u.SetOriginalCurrency(*v)
-	}
-	return _u
-}
-
-// ClearOriginalCurrency clears the value of the "original_currency" field.
-func (_u *InvoiceLineItemUpdateOne) ClearOriginalCurrency() *InvoiceLineItemUpdateOne {
-	_u.mutation.ClearOriginalCurrency()
-	return _u
-}
-
-// SetOriginalAmount sets the "original_amount" field.
-func (_u *InvoiceLineItemUpdateOne) SetOriginalAmount(v decimal.Decimal) *InvoiceLineItemUpdateOne {
-	_u.mutation.SetOriginalAmount(v)
-	return _u
-}
-
-// SetNillableOriginalAmount sets the "original_amount" field if the given value is not nil.
-func (_u *InvoiceLineItemUpdateOne) SetNillableOriginalAmount(v *decimal.Decimal) *InvoiceLineItemUpdateOne {
-	if v != nil {
-		_u.SetOriginalAmount(*v)
-	}
-	return _u
-}
-
-// ClearOriginalAmount clears the value of the "original_amount" field.
-func (_u *InvoiceLineItemUpdateOne) ClearOriginalAmount() *InvoiceLineItemUpdateOne {
-	_u.mutation.ClearOriginalAmount()
+// ClearFxConversion clears the value of the "fx_conversion" field.
+func (_u *InvoiceLineItemUpdateOne) ClearFxConversion() *InvoiceLineItemUpdateOne {
+	_u.mutation.ClearFxConversion()
 	return _u
 }
 
@@ -1144,17 +1082,11 @@ func (_u *InvoiceLineItemUpdateOne) sqlSave(ctx context.Context) (_node *Invoice
 	if _u.mutation.CustomCurrencyCleared() {
 		_spec.ClearField(invoicelineitem.FieldCustomCurrency, field.TypeJSON)
 	}
-	if value, ok := _u.mutation.OriginalCurrency(); ok {
-		_spec.SetField(invoicelineitem.FieldOriginalCurrency, field.TypeString, value)
+	if value, ok := _u.mutation.FxConversion(); ok {
+		_spec.SetField(invoicelineitem.FieldFxConversion, field.TypeJSON, value)
 	}
-	if _u.mutation.OriginalCurrencyCleared() {
-		_spec.ClearField(invoicelineitem.FieldOriginalCurrency, field.TypeString)
-	}
-	if value, ok := _u.mutation.OriginalAmount(); ok {
-		_spec.SetField(invoicelineitem.FieldOriginalAmount, field.TypeOther, value)
-	}
-	if _u.mutation.OriginalAmountCleared() {
-		_spec.ClearField(invoicelineitem.FieldOriginalAmount, field.TypeOther)
+	if _u.mutation.FxConversionCleared() {
+		_spec.ClearField(invoicelineitem.FieldFxConversion, field.TypeJSON)
 	}
 	if _u.mutation.CouponApplicationsCleared() {
 		edge := &sqlgraph.EdgeSpec{

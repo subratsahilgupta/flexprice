@@ -217,10 +217,10 @@ func TestConvertInvoiceAmounts(t *testing.T) {
 				require.NotNil(t, got, "line %s", wl.id)
 				require.True(t, dec(wl.amount).Equal(got.Amount), "line %s amount: want %s got %s", wl.id, wl.amount, got.Amount)
 				require.Equal(t, c.billing, got.Currency, "line %s currency", wl.id)
-				require.NotNil(t, got.OriginalCurrency)
-				require.Equal(t, wl.origCy, *got.OriginalCurrency)
-				require.NotNil(t, got.OriginalAmount)
-				require.True(t, dec(wl.origAmt).Equal(*got.OriginalAmount), "line %s original: want %s got %s", wl.id, wl.origAmt, got.OriginalAmount)
+				require.NotNil(t, got.FxConversion, "line %s fx_conversion", wl.id)
+				require.Equal(t, wl.origCy, got.FxConversion.ChargeCurrency)
+				require.True(t, dec(wl.origAmt).Equal(got.FxConversion.Source.Subtotal), "line %s original: want %s got %s", wl.id, wl.origAmt, got.FxConversion.Source.Subtotal)
+				require.True(t, got.FxConversion.Rate.IsZero(), "line %s must not carry the rate", wl.id)
 			}
 		})
 	}
@@ -312,7 +312,7 @@ func TestConvertInvoiceAmounts_IdentityNoOp(t *testing.T) {
 	require.NoError(t, convertInvoiceAmounts(inv, res, time.Now()))
 	require.Nil(t, inv.FxConversion, "identity must not write fx_conversion")
 	require.True(t, dec("100").Equal(inv.Subtotal))
-	require.Nil(t, inv.LineItems[0].OriginalCurrency)
+	require.Nil(t, inv.LineItems[0].FxConversion)
 }
 
 type InvoiceConversionSuite struct {
@@ -435,9 +435,8 @@ func (s *InvoiceConversionSuite) TestOneOffConverts() {
 	s.Len(stored, 2)
 	for _, li := range stored {
 		s.Equal("inr", li.Currency)
-		s.Require().NotNil(li.OriginalCurrency)
-		s.Equal("usd", *li.OriginalCurrency)
-		s.Require().NotNil(li.OriginalAmount)
+		s.Require().NotNil(li.FxConversion)
+		s.Equal("usd", li.FxConversion.ChargeCurrency)
 	}
 }
 
@@ -850,8 +849,7 @@ func (s *InvoiceConversionSuite) TestExistingCustomersUnaffected() {
 			s.True(decimal.RequireFromString("100").Equal(inv.Subtotal))
 			for _, li := range inv.LineItems {
 				s.Equal("usd", li.Currency)
-				s.Nil(li.OriginalCurrency, "case %d: no line original should be stamped", i)
-				s.Nil(li.OriginalAmount)
+				s.Nil(li.FxConversion, "case %d: no line fx_conversion should be stamped", i)
 			}
 		})
 	}

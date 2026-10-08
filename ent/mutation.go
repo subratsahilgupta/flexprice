@@ -38817,8 +38817,7 @@ type InvoiceLineItemMutation struct {
 	adjusted_entitlement_quantity *decimal.Decimal
 	parent_line_item_id           *string
 	custom_currency               **types.CustomCurrencyLineItem
-	original_currency             *string
-	original_amount               *decimal.Decimal
+	fx_conversion                 **types.FxConversion
 	clearedFields                 map[string]struct{}
 	invoice                       *string
 	clearedinvoice                bool
@@ -40532,102 +40531,53 @@ func (m *InvoiceLineItemMutation) ResetCustomCurrency() {
 	delete(m.clearedFields, invoicelineitem.FieldCustomCurrency)
 }
 
-// SetOriginalCurrency sets the "original_currency" field.
-func (m *InvoiceLineItemMutation) SetOriginalCurrency(s string) {
-	m.original_currency = &s
+// SetFxConversion sets the "fx_conversion" field.
+func (m *InvoiceLineItemMutation) SetFxConversion(tc *types.FxConversion) {
+	m.fx_conversion = &tc
 }
 
-// OriginalCurrency returns the value of the "original_currency" field in the mutation.
-func (m *InvoiceLineItemMutation) OriginalCurrency() (r string, exists bool) {
-	v := m.original_currency
+// FxConversion returns the value of the "fx_conversion" field in the mutation.
+func (m *InvoiceLineItemMutation) FxConversion() (r *types.FxConversion, exists bool) {
+	v := m.fx_conversion
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldOriginalCurrency returns the old "original_currency" field's value of the InvoiceLineItem entity.
+// OldFxConversion returns the old "fx_conversion" field's value of the InvoiceLineItem entity.
 // If the InvoiceLineItem object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InvoiceLineItemMutation) OldOriginalCurrency(ctx context.Context) (v *string, err error) {
+func (m *InvoiceLineItemMutation) OldFxConversion(ctx context.Context) (v *types.FxConversion, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldOriginalCurrency is only allowed on UpdateOne operations")
+		return v, errors.New("OldFxConversion is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldOriginalCurrency requires an ID field in the mutation")
+		return v, errors.New("OldFxConversion requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldOriginalCurrency: %w", err)
+		return v, fmt.Errorf("querying old value for OldFxConversion: %w", err)
 	}
-	return oldValue.OriginalCurrency, nil
+	return oldValue.FxConversion, nil
 }
 
-// ClearOriginalCurrency clears the value of the "original_currency" field.
-func (m *InvoiceLineItemMutation) ClearOriginalCurrency() {
-	m.original_currency = nil
-	m.clearedFields[invoicelineitem.FieldOriginalCurrency] = struct{}{}
+// ClearFxConversion clears the value of the "fx_conversion" field.
+func (m *InvoiceLineItemMutation) ClearFxConversion() {
+	m.fx_conversion = nil
+	m.clearedFields[invoicelineitem.FieldFxConversion] = struct{}{}
 }
 
-// OriginalCurrencyCleared returns if the "original_currency" field was cleared in this mutation.
-func (m *InvoiceLineItemMutation) OriginalCurrencyCleared() bool {
-	_, ok := m.clearedFields[invoicelineitem.FieldOriginalCurrency]
+// FxConversionCleared returns if the "fx_conversion" field was cleared in this mutation.
+func (m *InvoiceLineItemMutation) FxConversionCleared() bool {
+	_, ok := m.clearedFields[invoicelineitem.FieldFxConversion]
 	return ok
 }
 
-// ResetOriginalCurrency resets all changes to the "original_currency" field.
-func (m *InvoiceLineItemMutation) ResetOriginalCurrency() {
-	m.original_currency = nil
-	delete(m.clearedFields, invoicelineitem.FieldOriginalCurrency)
-}
-
-// SetOriginalAmount sets the "original_amount" field.
-func (m *InvoiceLineItemMutation) SetOriginalAmount(d decimal.Decimal) {
-	m.original_amount = &d
-}
-
-// OriginalAmount returns the value of the "original_amount" field in the mutation.
-func (m *InvoiceLineItemMutation) OriginalAmount() (r decimal.Decimal, exists bool) {
-	v := m.original_amount
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldOriginalAmount returns the old "original_amount" field's value of the InvoiceLineItem entity.
-// If the InvoiceLineItem object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InvoiceLineItemMutation) OldOriginalAmount(ctx context.Context) (v *decimal.Decimal, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldOriginalAmount is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldOriginalAmount requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldOriginalAmount: %w", err)
-	}
-	return oldValue.OriginalAmount, nil
-}
-
-// ClearOriginalAmount clears the value of the "original_amount" field.
-func (m *InvoiceLineItemMutation) ClearOriginalAmount() {
-	m.original_amount = nil
-	m.clearedFields[invoicelineitem.FieldOriginalAmount] = struct{}{}
-}
-
-// OriginalAmountCleared returns if the "original_amount" field was cleared in this mutation.
-func (m *InvoiceLineItemMutation) OriginalAmountCleared() bool {
-	_, ok := m.clearedFields[invoicelineitem.FieldOriginalAmount]
-	return ok
-}
-
-// ResetOriginalAmount resets all changes to the "original_amount" field.
-func (m *InvoiceLineItemMutation) ResetOriginalAmount() {
-	m.original_amount = nil
-	delete(m.clearedFields, invoicelineitem.FieldOriginalAmount)
+// ResetFxConversion resets all changes to the "fx_conversion" field.
+func (m *InvoiceLineItemMutation) ResetFxConversion() {
+	m.fx_conversion = nil
+	delete(m.clearedFields, invoicelineitem.FieldFxConversion)
 }
 
 // ClearInvoice clears the "invoice" edge to the Invoice entity.
@@ -40745,7 +40695,7 @@ func (m *InvoiceLineItemMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InvoiceLineItemMutation) Fields() []string {
-	fields := make([]string, 0, 37)
+	fields := make([]string, 0, 36)
 	if m.tenant_id != nil {
 		fields = append(fields, invoicelineitem.FieldTenantID)
 	}
@@ -40851,11 +40801,8 @@ func (m *InvoiceLineItemMutation) Fields() []string {
 	if m.custom_currency != nil {
 		fields = append(fields, invoicelineitem.FieldCustomCurrency)
 	}
-	if m.original_currency != nil {
-		fields = append(fields, invoicelineitem.FieldOriginalCurrency)
-	}
-	if m.original_amount != nil {
-		fields = append(fields, invoicelineitem.FieldOriginalAmount)
+	if m.fx_conversion != nil {
+		fields = append(fields, invoicelineitem.FieldFxConversion)
 	}
 	return fields
 }
@@ -40935,10 +40882,8 @@ func (m *InvoiceLineItemMutation) Field(name string) (ent.Value, bool) {
 		return m.ParentLineItemID()
 	case invoicelineitem.FieldCustomCurrency:
 		return m.CustomCurrency()
-	case invoicelineitem.FieldOriginalCurrency:
-		return m.OriginalCurrency()
-	case invoicelineitem.FieldOriginalAmount:
-		return m.OriginalAmount()
+	case invoicelineitem.FieldFxConversion:
+		return m.FxConversion()
 	}
 	return nil, false
 }
@@ -41018,10 +40963,8 @@ func (m *InvoiceLineItemMutation) OldField(ctx context.Context, name string) (en
 		return m.OldParentLineItemID(ctx)
 	case invoicelineitem.FieldCustomCurrency:
 		return m.OldCustomCurrency(ctx)
-	case invoicelineitem.FieldOriginalCurrency:
-		return m.OldOriginalCurrency(ctx)
-	case invoicelineitem.FieldOriginalAmount:
-		return m.OldOriginalAmount(ctx)
+	case invoicelineitem.FieldFxConversion:
+		return m.OldFxConversion(ctx)
 	}
 	return nil, fmt.Errorf("unknown InvoiceLineItem field %s", name)
 }
@@ -41276,19 +41219,12 @@ func (m *InvoiceLineItemMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetCustomCurrency(v)
 		return nil
-	case invoicelineitem.FieldOriginalCurrency:
-		v, ok := value.(string)
+	case invoicelineitem.FieldFxConversion:
+		v, ok := value.(*types.FxConversion)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetOriginalCurrency(v)
-		return nil
-	case invoicelineitem.FieldOriginalAmount:
-		v, ok := value.(decimal.Decimal)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetOriginalAmount(v)
+		m.SetFxConversion(v)
 		return nil
 	}
 	return fmt.Errorf("unknown InvoiceLineItem field %s", name)
@@ -41398,11 +41334,8 @@ func (m *InvoiceLineItemMutation) ClearedFields() []string {
 	if m.FieldCleared(invoicelineitem.FieldCustomCurrency) {
 		fields = append(fields, invoicelineitem.FieldCustomCurrency)
 	}
-	if m.FieldCleared(invoicelineitem.FieldOriginalCurrency) {
-		fields = append(fields, invoicelineitem.FieldOriginalCurrency)
-	}
-	if m.FieldCleared(invoicelineitem.FieldOriginalAmount) {
-		fields = append(fields, invoicelineitem.FieldOriginalAmount)
+	if m.FieldCleared(invoicelineitem.FieldFxConversion) {
+		fields = append(fields, invoicelineitem.FieldFxConversion)
 	}
 	return fields
 }
@@ -41496,11 +41429,8 @@ func (m *InvoiceLineItemMutation) ClearField(name string) error {
 	case invoicelineitem.FieldCustomCurrency:
 		m.ClearCustomCurrency()
 		return nil
-	case invoicelineitem.FieldOriginalCurrency:
-		m.ClearOriginalCurrency()
-		return nil
-	case invoicelineitem.FieldOriginalAmount:
-		m.ClearOriginalAmount()
+	case invoicelineitem.FieldFxConversion:
+		m.ClearFxConversion()
 		return nil
 	}
 	return fmt.Errorf("unknown InvoiceLineItem nullable field %s", name)
@@ -41615,11 +41545,8 @@ func (m *InvoiceLineItemMutation) ResetField(name string) error {
 	case invoicelineitem.FieldCustomCurrency:
 		m.ResetCustomCurrency()
 		return nil
-	case invoicelineitem.FieldOriginalCurrency:
-		m.ResetOriginalCurrency()
-		return nil
-	case invoicelineitem.FieldOriginalAmount:
-		m.ResetOriginalAmount()
+	case invoicelineitem.FieldFxConversion:
+		m.ResetFxConversion()
 		return nil
 	}
 	return fmt.Errorf("unknown InvoiceLineItem field %s", name)

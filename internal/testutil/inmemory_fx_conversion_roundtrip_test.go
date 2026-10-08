@@ -42,15 +42,14 @@ func TestInMemoryInvoiceStore_FxConversionRoundTrip(t *testing.T) {
 		},
 	}
 
-	origAmount := decimal.RequireFromString("100")
+	lineFx := &types.FxConversion{ChargeCurrency: "usd", Source: types.FxConversionSource{Subtotal: decimal.RequireFromString("100"), Net: decimal.RequireFromString("100")}}
 
 	cases := []struct {
-		name       string
-		lineOrigCy *string
-		lineOrigAm *decimal.Decimal
+		name   string
+		lineFx *types.FxConversion
 	}{
-		{name: "converted line carries originals", lineOrigCy: lo.ToPtr("usd"), lineOrigAm: &origAmount},
-		{name: "unconverted line leaves originals nil", lineOrigCy: nil, lineOrigAm: nil},
+		{name: "converted line carries fx_conversion", lineFx: lineFx},
+		{name: "unconverted line leaves fx_conversion nil", lineFx: nil},
 	}
 
 	for i, c := range cases {
@@ -76,16 +75,15 @@ func TestInMemoryInvoiceStore_FxConversionRoundTrip(t *testing.T) {
 				BaseModel:       base,
 				LineItems: []*invoice.InvoiceLineItem{
 					{
-						ID:               ilID,
-						InvoiceID:        invID,
-						CustomerID:       "cust_1",
-						Amount:           decimal.NewFromInt(8350),
-						Quantity:         decimal.NewFromInt(1),
-						Currency:         "inr",
-						OriginalCurrency: c.lineOrigCy,
-						OriginalAmount:   c.lineOrigAm,
-						EnvironmentID:    "env_test",
-						BaseModel:        base,
+						ID:            ilID,
+						InvoiceID:     invID,
+						CustomerID:    "cust_1",
+						Amount:        decimal.NewFromInt(8350),
+						Quantity:      decimal.NewFromInt(1),
+						Currency:      "inr",
+						FxConversion:  c.lineFx,
+						EnvironmentID: "env_test",
+						BaseModel:     base,
 					},
 				},
 			}
@@ -106,14 +104,12 @@ func TestInMemoryInvoiceStore_FxConversionRoundTrip(t *testing.T) {
 			// Line-item originals survived the copy (via copyInvoice and the line-item store).
 			require.Len(t, got.LineItems, 1)
 			gotLine := got.LineItems[0]
-			if c.lineOrigCy == nil {
-				require.Nil(t, gotLine.OriginalCurrency, "case %d: originals must stay nil", i)
-				require.Nil(t, gotLine.OriginalAmount)
+			if c.lineFx == nil {
+				require.Nil(t, gotLine.FxConversion, "case %d: fx_conversion must stay nil", i)
 			} else {
-				require.NotNil(t, gotLine.OriginalCurrency)
-				require.Equal(t, "usd", *gotLine.OriginalCurrency)
-				require.NotNil(t, gotLine.OriginalAmount)
-				require.True(t, origAmount.Equal(*gotLine.OriginalAmount))
+				require.NotNil(t, gotLine.FxConversion)
+				require.Equal(t, "usd", gotLine.FxConversion.ChargeCurrency)
+				require.True(t, lineFx.Source.Subtotal.Equal(gotLine.FxConversion.Source.Subtotal))
 			}
 
 			// An update from a struct that never loaded fx_conversion must not wipe it.
@@ -199,7 +195,7 @@ func TestInMemoryStores_FxFieldsNotAliased(t *testing.T) {
 		LineItems: []*invoice.InvoiceLineItem{{
 			ID: "il_alias", InvoiceID: "inv_alias", CustomerID: "cust_1", Currency: "inr",
 			Amount: decimal.NewFromInt(8300), Quantity: decimal.NewFromInt(1),
-			OriginalCurrency: lo.ToPtr("usd"), OriginalAmount: &origAmount,
+			FxConversion:  &types.FxConversion{ChargeCurrency: "usd", Source: types.FxConversionSource{Subtotal: origAmount}},
 			EnvironmentID: "env_test", BaseModel: base,
 		}},
 	}))
@@ -207,14 +203,14 @@ func TestInMemoryStores_FxFieldsNotAliased(t *testing.T) {
 	got, err := store.Get(ctx, "inv_alias")
 	require.NoError(t, err)
 	got.FxConversion.Scope = "mutated"
-	*got.LineItems[0].OriginalCurrency = "eur"
-	*got.LineItems[0].OriginalAmount = decimal.NewFromInt(1)
+	got.LineItems[0].FxConversion.ChargeCurrency = "eur"
+	got.LineItems[0].FxConversion.Source.Subtotal = decimal.NewFromInt(1)
 
 	again, err := store.Get(ctx, "inv_alias")
 	require.NoError(t, err)
 	require.Equal(t, types.FXRateScopeTenant, again.FxConversion.Scope, "fx_conversion must not alias the stored record")
-	require.Equal(t, "usd", *again.LineItems[0].OriginalCurrency, "original_currency must not alias")
-	require.True(t, decimal.NewFromInt(100).Equal(*again.LineItems[0].OriginalAmount), "original_amount must not alias")
+	require.Equal(t, "usd", again.LineItems[0].FxConversion.ChargeCurrency, "line fx_conversion must not alias")
+	require.True(t, decimal.NewFromInt(100).Equal(again.LineItems[0].FxConversion.Source.Subtotal), "line fx_conversion source must not alias")
 
 	custStore := NewInMemoryCustomerStore()
 	require.NoError(t, custStore.Create(ctx, &customer.Customer{

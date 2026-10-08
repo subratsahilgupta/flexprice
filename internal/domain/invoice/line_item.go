@@ -61,10 +61,9 @@ type InvoiceLineItem struct {
 	// The fields above are fiat projections of it; nil for fiat invoices.
 	CustomCurrency *types.CustomCurrencyLineItem `json:"custom_currency,omitempty"`
 
-	// original_currency / original_amount preserve the pre-conversion charge-currency amount
-	// when this line was converted at finalize; nil for lines that were never converted.
-	OriginalCurrency *string          `json:"original_currency,omitempty"`
-	OriginalAmount   *decimal.Decimal `json:"original_amount,omitempty" swaggertype:"string"`
+	// fx_conversion holds this line's charge-currency amounts from before conversion (charge_currency
+	// and source only; the rate lives on the invoice). Nil for lines that were never converted.
+	FxConversion *types.FxConversion `json:"fx_conversion,omitempty"`
 
 	types.BaseModel
 }
@@ -106,8 +105,7 @@ func (i *InvoiceLineItem) FromEnt(e *ent.InvoiceLineItem) *InvoiceLineItem {
 		SubscriptionLineItemID:      e.SubscriptionLineItemID,
 		ParentLineItemID:            e.ParentLineItemID,
 		CustomCurrency:              e.CustomCurrency,
-		OriginalCurrency:            e.OriginalCurrency,
-		OriginalAmount:              e.OriginalAmount,
+		FxConversion:                e.FxConversion,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

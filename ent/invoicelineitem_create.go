@@ -458,31 +458,9 @@ func (_c *InvoiceLineItemCreate) SetCustomCurrency(v *types.CustomCurrencyLineIt
 	return _c
 }
 
-// SetOriginalCurrency sets the "original_currency" field.
-func (_c *InvoiceLineItemCreate) SetOriginalCurrency(v string) *InvoiceLineItemCreate {
-	_c.mutation.SetOriginalCurrency(v)
-	return _c
-}
-
-// SetNillableOriginalCurrency sets the "original_currency" field if the given value is not nil.
-func (_c *InvoiceLineItemCreate) SetNillableOriginalCurrency(v *string) *InvoiceLineItemCreate {
-	if v != nil {
-		_c.SetOriginalCurrency(*v)
-	}
-	return _c
-}
-
-// SetOriginalAmount sets the "original_amount" field.
-func (_c *InvoiceLineItemCreate) SetOriginalAmount(v decimal.Decimal) *InvoiceLineItemCreate {
-	_c.mutation.SetOriginalAmount(v)
-	return _c
-}
-
-// SetNillableOriginalAmount sets the "original_amount" field if the given value is not nil.
-func (_c *InvoiceLineItemCreate) SetNillableOriginalAmount(v *decimal.Decimal) *InvoiceLineItemCreate {
-	if v != nil {
-		_c.SetOriginalAmount(*v)
-	}
+// SetFxConversion sets the "fx_conversion" field.
+func (_c *InvoiceLineItemCreate) SetFxConversion(v *types.FxConversion) *InvoiceLineItemCreate {
+	_c.mutation.SetFxConversion(v)
 	return _c
 }
 
@@ -813,13 +791,9 @@ func (_c *InvoiceLineItemCreate) createSpec() (*InvoiceLineItem, *sqlgraph.Creat
 		_spec.SetField(invoicelineitem.FieldCustomCurrency, field.TypeJSON, value)
 		_node.CustomCurrency = value
 	}
-	if value, ok := _c.mutation.OriginalCurrency(); ok {
-		_spec.SetField(invoicelineitem.FieldOriginalCurrency, field.TypeString, value)
-		_node.OriginalCurrency = &value
-	}
-	if value, ok := _c.mutation.OriginalAmount(); ok {
-		_spec.SetField(invoicelineitem.FieldOriginalAmount, field.TypeOther, value)
-		_node.OriginalAmount = &value
+	if value, ok := _c.mutation.FxConversion(); ok {
+		_spec.SetField(invoicelineitem.FieldFxConversion, field.TypeJSON, value)
+		_node.FxConversion = value
 	}
 	if nodes := _c.mutation.InvoiceIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
