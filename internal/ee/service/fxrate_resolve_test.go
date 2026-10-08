@@ -72,7 +72,6 @@ func (s *FXRateResolveSuite) TestResolveRate() {
 		{"subscription wins", ResolveFXRateRequest{From: "usd", To: "inr", CustomerID: "cust_a", SubscriptionID: "subs_p"}, "82", "subscription", false},
 		{"customer fallback", ResolveFXRateRequest{From: "usd", To: "inr", CustomerID: "cust_a"}, "84.5", "customer", false},
 		{"tenant fallback", ResolveFXRateRequest{From: "usd", To: "inr"}, "83", "tenant", false},
-		{"identity no query", ResolveFXRateRequest{From: "usd", To: "usd"}, "1", "identity", false},
 		{"reverse pair not found", ResolveFXRateRequest{From: "inr", To: "usd"}, "", "", true},
 		{"missing pair not found", ResolveFXRateRequest{From: "eur", To: "inr"}, "", "", true},
 	}
@@ -99,15 +98,6 @@ func (s *FXRateResolveSuite) TestResolveRate_EndDateIsExclusive() {
 	s.NoError(err)
 	s.Equal(types.FXRateScopeCustomer, res.Scope, "end_date is exclusive; subscription window ends at Nov 1")
 	s.True(decimal.RequireFromString("84.5").Equal(res.Rate))
-}
-
-func (s *FXRateResolveSuite) TestResolveRate_IdentityNeedsNoRates() {
-	s.GetStores().FXRateRepo.(*testutil.InMemoryFXRateStore).Clear()
-	res, err := s.svc.ResolveRate(s.GetContext(), ResolveFXRateRequest{From: "usd", To: "usd"})
-	s.NoError(err)
-	s.True(decimal.NewFromInt(1).Equal(res.Rate))
-	s.Equal(identityScope, res.Scope)
-	s.Equal(types.FXRateSourceFixed, res.Source)
 }
 
 func (s *FXRateResolveSuite) TestResolveRate_ReturnsSource() {
