@@ -79,7 +79,24 @@ func (p *PaymentAutoChargeProbe) Run(ctx context.Context) error {
 	legs.runKnown(p.opts.knownIssue("decline"), card != nil, "decline", "a vaulted card", func() error {
 		return p.declinedAutoCharge(ctx, f, card.portalToken, card.gatewayCustomerID, card.methodID)
 	})
+	// The fixed mandate customer is never deleted by the janitor, so its
+	// subscriptions would otherwise pile up and renew against the mandate.
+	legs.runIf(subID != "", "cancel_subscription", "create_subscription", func() error {
+		return p.cancelSubscription(ctx, f, subID)
+	})
 	return legs.err(f)
+}
+
+func (p *PaymentAutoChargeProbe) cancelSubscription(ctx context.Context, f *paymentFlow, subID string) error {
+	_, err := p.client.Subscriptions().Cancel(ctx, subID, types.CancelSubscriptionRequest{
+		CancellationType:               types.CancellationTypeImmediate,
+		CancelImmediatelyInovicePolicy: types.CancelImmediatelyInvoicePolicySkip.ToPointer(),
+		Reason:                         strPtr("e2eprobe payment autocharge cleanup"),
+	})
+	if err != nil {
+		return f.fail("cancel_subscription", map[string]string{"subscription_id": subID}, "cancel subscription: %w", err)
+	}
+	return nil
 }
 
 // vaultedCard is the card a Run vaulted itself; nil when it charges a fixed

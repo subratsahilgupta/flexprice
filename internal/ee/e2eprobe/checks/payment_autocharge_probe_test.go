@@ -399,6 +399,9 @@ func TestPaymentAutoChargeProbe_FixedMandateCustomer(t *testing.T) {
 		if len(fx.reg.Ephemerals("customer")) != 0 {
 			t.Errorf("fixed customer must not be registered for janitor cleanup")
 		}
+		if len(fx.fc.subs.cancelled) != 1 {
+			t.Errorf("subscriptions cancelled = %v, want the run's subscription cancelled", fx.fc.subs.cancelled)
+		}
 	})
 
 	t.Run("stale pending top-up fails fast", func(t *testing.T) {
