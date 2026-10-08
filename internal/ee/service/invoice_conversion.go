@@ -292,15 +292,6 @@ func (s *invoiceService) retaxConvertedInvoice(ctx context.Context, inv *invoice
 		return err
 	}
 
-	// No tax rows: zero the tax and recompute totals in the billing currency.
-	if len(taxRates.GetRates()) == 0 {
-		applyTaxResultToInvoice(inv, &TaxCalculationResult{
-			TotalTaxAmount:    decimal.Zero,
-			TaxAppliedRecords: []*dto.TaxAppliedResponse{},
-		})
-		return s.InvoiceRepo.Update(ctx, inv)
-	}
-
 	result, err := taxService.ApplyTaxesOnInvoice(ctx, inv, taxRates)
 	if err != nil {
 		return err
