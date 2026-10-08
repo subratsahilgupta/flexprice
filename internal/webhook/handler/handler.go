@@ -156,14 +156,15 @@ func webhookMissingDataError(err error) bool {
 
 // recordDelivery counts one delivery of an event the tenant is subscribed to.
 func recordDelivery(ctx context.Context, transport string, eventName types.WebhookEventName, err error) {
-	outcome := "success"
+	// Svix only acknowledges receipt; a native 2xx means the customer endpoint accepted it.
+	outcome := lo.Ternary(transport == "svix", "enqueued", "delivered")
 	switch {
 	case webhookMissingDataError(err):
 		outcome = "skipped"
 	case err != nil:
 		outcome = "error"
 	}
-	
+
 	metrics.RecordCounter(ctx, metrics.WebhookDeliveries, 1,
 		metrics.L(metrics.KeyTransport, transport),
 		metrics.L(metrics.KeyEventType, string(eventName)),

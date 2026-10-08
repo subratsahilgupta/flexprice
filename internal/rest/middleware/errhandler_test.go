@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
-	"github.com/flexprice/flexprice/internal/metrics/metricstest"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -19,8 +18,6 @@ import (
 
 func TestErrorHandler_RecordsErrorCode(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	r := metricstest.Install(t)
-
 	tests := []struct {
 		name     string
 		tenantID string
@@ -47,7 +44,6 @@ func TestErrorHandler_RecordsErrorCode(t *testing.T) {
 
 			router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/fail", nil))
 
-			require.Equal(t, int64(1), r.Sum("api.errors", map[string]string{"tenant_id": tt.tenantID, "error_code": tt.wantCode}))
 			spans := recorder.Ended()
 			require.Len(t, spans, 1)
 			require.Contains(t, spans[0].Attributes(), attribute.String("app.error_code", tt.wantCode))

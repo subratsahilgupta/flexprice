@@ -54,7 +54,7 @@ func TestTenantAllowlist(t *testing.T) {
 		{"other env blocked", ctxFor("a1", "e2"), 0},
 		{"whole tenant allowed", ctxFor("a2", "e9"), 1},
 		{"unlisted tenant blocked", ctxFor("a3", "e1"), 0},
-		{"no tenant allowed", ctxFor("", ""), 1},
+		{"no tenant blocked", ctxFor("", ""), 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

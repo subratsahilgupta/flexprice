@@ -25,27 +25,29 @@ const (
 	PaymentTransitions Name = "payment.transitions"
 	PaymentAttempts    Name = "payment.attempts"
 	WebhookDeliveries  Name = "webhook.outbound.deliveries"
-	APIErrors          Name = "api.errors"
 	InvoiceTransitions Name = "invoice.transitions"
 	RefundTransitions  Name = "refund.transitions"
 	GatewayWebhooks    Name = "gateway.webhooks"
 )
 
-// catalog maps every metric to its description.
-var catalog = map[Name]string{
-	CheckoutSessions:   "Checkout sessions by status reached",
-	PaymentTransitions: "Payment status changes by new status, including creation",
-	PaymentAttempts:    "Gateway charge attempts by status",
-	WebhookDeliveries:  "Outbound deliveries of subscribed webhook events by outcome",
-	APIErrors:          "API error responses by error code",
-	InvoiceTransitions: "Invoice status changes by new status, including draft creation",
-	RefundTransitions:  "Refund status changes by new status, including creation",
-	GatewayWebhooks:    "Inbound gateway webhooks by processing outcome; unhandled types are labelled other",
+type definition struct {
+	description string
+	unit        string // UCUM annotation naming what is counted
+}
+
+var catalog = map[Name]definition{
+	CheckoutSessions:   {"Checkout sessions by status reached", "{session}"},
+	PaymentTransitions: {"Payment status changes by new status, including creation", "{transition}"},
+	PaymentAttempts:    {"Gateway charge attempts by status", "{attempt}"},
+	WebhookDeliveries:  {"Outbound deliveries of subscribed webhook events by outcome", "{delivery}"},
+	InvoiceTransitions: {"Invoice status changes by new status, including draft creation", "{transition}"},
+	RefundTransitions:  {"Refund status changes by new status, including creation", "{transition}"},
+	GatewayWebhooks:    {"Inbound gateway webhooks by processing outcome; unhandled types are labelled other", "{webhook}"},
 }
 
 // counters is built once at init and only read afterwards, so concurrent lookups are safe.
-var counters = lo.MapValues(catalog, func(description string, name Name) metric.Int64Counter {
-	c, _ := meter.Int64Counter(string(name), metric.WithDescription(description))
+var counters = lo.MapValues(catalog, func(def definition, name Name) metric.Int64Counter {
+	c, _ := meter.Int64Counter(string(name), metric.WithDescription(def.description), metric.WithUnit(def.unit))
 	return c
 })
 
@@ -60,7 +62,6 @@ const (
 	KeyMethodType    LabelKey = "method_type"
 	KeyEventType     LabelKey = "event_type"
 	KeyTransport     LabelKey = "transport"
-	KeyErrorCode     LabelKey = "error_code"
 	KeyAction        LabelKey = "action"
 	KeyChargeMode    LabelKey = "charge_mode"
 	KeyCheckout      LabelKey = "checkout"
@@ -84,18 +85,18 @@ func RecordCounter(ctx context.Context, name Name, n int64, labels ...Label) {
 		return
 	}
 
+	tenantID, environmentID := types.GetTenantID(ctx), types.GetEnvironmentID(ctx)
+	if !tenantAllowed(tenantID, environmentID) {
+		return
+	}
+
 	attrs := make([]attribute.KeyValue, 0, len(labels)+2)
 	for _, l := range labels {
 		attrs = append(attrs, attribute.String(string(l.key), l.value))
 	}
 
 	// Identity labels go last: OTel keeps the last value for a repeated key, so callers cannot override them.
-	if tenantID := types.GetTenantID(ctx); tenantID != "" {
-		environmentID := types.GetEnvironmentID(ctx)
-		if !tenantAllowed(tenantID, environmentID) {
-			return
-		}
-
+	if tenantID != "" {
 		attrs = append(attrs, attribute.String(string(KeyTenantID), tenantID), attribute.String(string(KeyEnvironmentID), environmentID))
 	}
 
