@@ -485,7 +485,8 @@ func grantChangeTypeFor(sub *subscription.Subscription, effectiveDate time.Time)
 
 // creditGrantProration resolves the billing period containing effectiveDate: the grant's first
 // application ends at that period's end, and is scaled to [effectiveDate, end) over the full
-// period when behavior is create_prorations. Returns nil when the period cannot be resolved,
+// period when behavior is create_prorations.
+// e.g. addon attached Jan 20 on a calendar monthly sub: first application ends Feb 1, scaled 12/31. Returns nil when the period cannot be resolved,
 // in which case the grant keeps its full credits and its natural anchoring.
 //
 // Never returns an error: proration is an enhancement, so an unresolvable period downgrades

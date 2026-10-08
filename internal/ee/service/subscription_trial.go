@@ -169,6 +169,7 @@ func (s *subscriptionService) processSubscriptionTrialEnd(ctx context.Context, s
 
 	// Billing starts at trial end. Calendar subs keep calendar boundaries (short first paid period);
 	// anniversary subs re-anchor at trial end so the first paid period is full.
+	// e.g. trial Jan 15 → Jan 29: calendar bills [Jan 29, Feb 1) for 3/31; anniversary bills [Jan 29, Feb 28) in full.
 	firstPeriodStart := lo.FromPtr(sub.TrialEnd)
 	if sub.BillingCycle == types.BillingCycleCalendar {
 		sub.BillingAnchor = types.CalculateCalendarBillingAnchor(firstPeriodStart, sub.BillingPeriod, sub.Timezone)

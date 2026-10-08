@@ -74,6 +74,7 @@ type subscriptionCoreResult struct {
 }
 
 // validateBillingAnchor rejects an anchor outside [start, start + 1 period], compared on local dates.
+// e.g. monthly from Jan 10: Jan 20 and Feb 10 are allowed; Mar 5 and Dec 20 are rejected.
 func validateBillingAnchor(sub *subscription.Subscription) error {
 	// The first full period on a schedule anchored at the start is [start, start + 1 period).
 	grid, err := types.NewBillingPeriodGrid(sub.StartDate, sub.BillingPeriod, sub.BillingPeriodCount, sub.Timezone)
@@ -425,9 +426,10 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	if sub.TrialEnd != nil {
 		creditGrantStart = lo.FromPtr(sub.TrialEnd)
 	}
-	
+
 	// Anniversary billing re-anchors at trial end, so its first paid period is whole and the
 	// grant's own anchor (trial end) already matches billing.
+	// e.g. calendar sub from Jan 15 with a 14-day trial: the plan CG is prorated over [Jan 29, Feb 1) = 3/31.
 	var firstPeriod *dto.FirstPeriodProration
 	if sub.TrialEnd == nil || sub.BillingCycle == types.BillingCycleCalendar {
 		firstPeriod = newSubscriptionGrantService(s.ServiceParams).creditGrantProration(
@@ -720,6 +722,7 @@ func (s *subscriptionService) ActivateDraftSubscription(ctx context.Context, sub
 	sub.StartDate = newStartDate
 
 	// A custom anniversary anchor is kept if still valid, else moved with the start, else reset to the start.
+	// e.g. draft from Jan 10 with anchor Jan 20, activated Jan 25: Jan 20 is out of range, so it moves 15 days to Feb 4.
 	if sub.BillingCycle == types.BillingCycleCalendar {
 		sub.BillingAnchor = types.CalculateCalendarBillingAnchor(sub.StartDate, sub.BillingPeriod, sub.Timezone)
 	} else if hasCustomAnchor {
@@ -5140,6 +5143,7 @@ func (s *subscriptionService) createAddonAttachParams(
 
 	// createLineItemFromPrice clamps every line item's start to max(requestedStart, price.StartDate),
 	// so anchoring the proration at requestedStart alone would price a window the addon is not live for.
+	// e.g. attach Jan 10 with a price starting Jan 15 → prorate from Jan 15.
 	prorationEffectiveDate := lo.Reduce(lineItems, func(acc time.Time, li *subscription.SubscriptionLineItem, _ int) time.Time {
 		return lo.Ternary(li.StartDate.After(acc), li.StartDate, acc)
 	}, addonRequestedStart)

@@ -72,9 +72,12 @@ Scope: the item cadence divides the sub cadence or is a whole multiple of it (D1
 | #   | Issue                                                      | Today                                                                                                                                                                | Correct                                                                                        | Status |
 | --- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------ |
 | 3.1 | Quarterly item on an annual calendar stub (Mar 15 → Jan 1) | one $90 line **(live)**                                                                                                                                              | 4 windows: $17 + 3 × $90                                                                       | ✅      |
-| 3.2 | Removing a monthly addon mid-quarter on a quarterly sub    | credit $100                                                                                                                                                          | $150                                                                                           | ⏳      |
-| 3.3 | Cancel prorates every item against the sub's period        | monthly item on a quarterly sub: $50                                                                                                                                 | $150                                                                                           | ⏳      |
-| 3.4 | Cadence checks are inconsistent                            | Mixed cadences are rejected at creation with `create_prorations` but accepted when added later. Longer cadences are accepted by the line item API but dropped by the addon price filter | Allowed if the item cadence divides the sub cadence or is a whole multiple of it; otherwise rejected | ⏳      |
+| 3.2 | Removing a monthly addon mid-quarter on a quarterly sub    | credit $100                                                                                                                                                          | $150                                                                                           | ✅      |
+| 3.3 | Cancel prorates every item against the sub's period        | monthly item on a quarterly sub: $50                                                                                                                                 | $150                                                                                           | ✅      |
+| 3.4 | Cadence checks are inconsistent                            | Mixed cadences are rejected at creation with `create_prorations` but accepted when added later. Longer cadences are accepted by the line item API but dropped by the addon price filter | Allowed if the item cadence divides the sub cadence or is a whole multiple of it; otherwise rejected | ✅      |
+| 3.5 | Longer items renew on their start date and are never prorated | annual item added Mar 20 on a monthly sub: $365, renews Mar 20 | renews on the item's grid (D12); first period $301 (Mar 20 → Jan 15 on a Jan 15 anchor) | ✅ |
+| 3.6 | Line items never store `billing_period_count` (since the field was added) | a `MONTHLY×6` $365 price billed $365 every month **(live)** | stored from the price | ✅ code · ⏸ backfill of existing rows |
+| 3.7 | `none` with a shorter-cadence item attached mid-period | free until the next sub period (monthly item on day 15 of a quarter: ~2.5 months free) | open | ⏸ decision |
 
 
 ---
@@ -197,13 +200,16 @@ Not checked:
 **D12. Item cadence must divide the sub cadence or be a whole multiple of it** (Stripe's rule). Anything else is rejected everywhere, e.g. 2 months with 3 months, or weeks with months.
 
 - Shorter items: each item is prorated on its own windows (mixed cadences allowed with `create_prorations`).
-- Longer items (e.g. annual on a monthly sub): billed in full once per item period, on the sub invoice where that period starts (advance) or ends (arrear), as today. Stripe, Orb, Zuora and Chargebee (multi-frequency) work the same way.
-- Follow-up (Phase 3): anchor longer item periods to the sub's billing dates and prorate a mid-period attach against the item's full period.
+- Longer items (e.g. annual on a monthly sub): billed once per item period, on the sub invoice where that period starts (advance) or ends (arrear). Stripe, Orb, Zuora and Chargebee (multi-frequency) work the same way.
+  - The item's periods run on its own grid: the calendar boundary of its cadence on calendar subs when that boundary is a sub billing date, otherwise the sub's anchor. Item periods therefore always start on an invoice date.
+  - A first or last period shorter than the item's full period is prorated against it; attach, removal and cancel charge and credit against the item's own period.
 
 *Examples:*
 
 - A monthly $31 item on a calendar quarterly sub from Feb 15 bills $15.50 (14/28), then $31 per month.
 - A $365 annual item on a monthly sub bills $365 on the invoice where its year starts, and nothing on the other monthly invoices.
+- Calendar monthly sub from Jan 15 with a $365 annual item: $351 for `[Jan 15, Jan 1)`, then $365 every Jan 1.
+- A 6-month item on a calendar quarterly sub from Apr 30 anchors on the quarter grid (Jul 1), not May 1: `[Apr 30, Jul 1)` prorated, then `[Jul 1, Jan 1)`.
 
 **D13. Existing subscriptions keep their stored periods.** Fixes apply to new subscriptions and to future period computation.
 
@@ -231,4 +237,6 @@ Not checked:
   - Backdating with `create_prorations` (1.7, D9).
   - Change-date check on the line item API (1.6, D8), which needs a separate path for system callers.
   - One-time advance item attached with `none` is never billed (1.8).
+8. Backfill `subscription_line_items.billing_period_count` from the price for existing rows (3.6).
+9. `none` with a mid-period attach (3.7): charge the item periods that start at or after the attach, as invoices do, or keep "free until the next invoice".
 

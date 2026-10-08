@@ -246,6 +246,7 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 		// the same lines the opening invoice would have raised. Same-cadence items yield a
 		// single window equal to the subscription period, which is the previous behaviour.
 		// A longer-cadence item has one window: its own period containing the change, on its own grid.
+		// e.g. annual item on a monthly sub, removed Jun 10 → credit [Jun 10, Jan 1) of [Jan 1, Jan 1).
 		gridSub := sub
 		var windows []periodWindow
 		if types.IsLongerCadence(item.BillingPeriod, item.BillingPeriodCount, sub.BillingPeriod, sub.BillingPeriodCount) {
@@ -273,6 +274,7 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 
 			originalPaid, creditsIssued := s.creditBasisForWindow(ctx, req, entry, w)
 			// A merged invoice row spans every window, so earlier windows' credits draw on it too.
+			// e.g. one $30 row for a monthly item's quarter: windows credit 13.33 + 16.67 + 0, not 3 × up to $30.
 			if sub.LineItemGrouping.MergesIntoBillingPeriod() {
 				creditsIssued = creditsIssued.Add(creditedEarlier)
 			}
@@ -460,6 +462,7 @@ func buildNettedProrationInvoiceRequest(req *SettleProrationRequest) dto.CreateI
 }
 
 // creditBasisForWindow caps a window's credit at what was billed for that window.
+// e.g. monthly item on a quarterly sub removed Apr 11: Apr reads April's $20 row, May its own, June its own.
 func (s *lineItemProrationService) creditBasisForWindow(
 	ctx context.Context,
 	req LineItemProrationRequest,

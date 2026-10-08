@@ -67,6 +67,7 @@ func (s *prorationService) CalculateProration(ctx context.Context, params prorat
 }
 
 // CalculateSubscriptionCancellationProration credits each item's unused time on its own windows.
+// e.g. $20 monthly item on a quarterly sub cancelled Apr 11: 13.33 + 20 + 20 = $53.33.
 func (s *prorationService) CalculateSubscriptionCancellationProration(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -128,7 +129,7 @@ func (s *prorationService) CalculateSubscriptionCancellationProration(
 		return nil, err
 	}
 
-	// Window credits are merged into one credit item per line item.
+	// Window credits are merged into one credit item per line item, so the response keeps one row per item.
 	creditItems := make(map[string]proration.ProrationLineItem)
 	for _, credit := range summary.CreditLineItems {
 		lineItemID := lo.FromPtr(credit.SubscriptionLineItemID)

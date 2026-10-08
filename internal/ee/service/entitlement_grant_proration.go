@@ -93,6 +93,7 @@ func (s *subscriptionGrantService) resolveGrantProration(
 			prorationDate = effectiveDate
 		}
 
+		// Same coefficient as the charge; e.g. 100 units attached Jan 20 in [Jan 1, Feb 1) → 38.71 (12/31).
 		coefficient, full := decimal.NewFromInt(1), p
 		if behavior == types.ProrationBehaviorCreateProrations {
 			serviceablePeriod := types.Period{Start: prorationDate, End: p.End}

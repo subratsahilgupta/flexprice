@@ -178,6 +178,18 @@ func TestSetCreateSubscriptionTrialWindow_ZeroClears(t *testing.T) {
 	assert.Nil(t, sub.TrialEnd)
 }
 
+func TestSetCreateSubscriptionTrialWindow_LocalDaysAcrossDST(t *testing.T) {
+	loc, err := time.LoadLocation("America/New_York")
+	require.NoError(t, err)
+	sub := &subscription.Subscription{StartDate: time.Date(2027, 3, 1, 0, 0, 0, 0, loc).UTC(), Timezone: "America/New_York"}
+	fourteen := 14
+	req := &dto.CreateSubscriptionRequest{SubscriptionCreationConfig: dto.SubscriptionCreationConfig{TrialPeriodDays: &fourteen}, Timezone: "America/New_York"}
+
+	require.NoError(t, setCreateSubscriptionTrialWindow(req, sub, nil))
+	require.NotNil(t, sub.TrialEnd)
+	assert.True(t, sub.TrialEnd.Equal(time.Date(2027, 3, 15, 0, 0, 0, 0, loc)), "trial end %s", sub.TrialEnd.In(loc))
+}
+
 type SubscriptionTrialInvoicePaidSuite struct {
 	testutil.BaseServiceTestSuite
 	svc SubscriptionService

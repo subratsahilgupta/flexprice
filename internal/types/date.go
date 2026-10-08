@@ -162,6 +162,7 @@ func nextBillingDateCore(currentPeriodStart, billingAnchor time.Time, unit int, 
 
 	// Billing dates are anchor + k periods. The start is moved onto the anchor's clock so
 	// the comparison is by local date.
+	// e.g. anchor Jan 15 17:00, start Mar 15 09:00 → compared as Mar 15 17:00 → next date Apr 15 17:00.
 	y, m, d := currentPeriodStart.Date()
 	h, min, sec := billingAnchor.Clock()
 	start := time.Date(y, m, d, h, min, sec, 0, currentPeriodStart.Location())
@@ -294,6 +295,7 @@ func PreviousBillingDate(p *PreviousBillingDateParams) (time.Time, error) {
 
 // FullBillingPeriod returns the regular billing period on the grid's schedule that contains t.
 // Pk-1 ... t ... Pk, where k = periodIndexAfter(t)
+// e.g. monthly grid anchored Feb 1: t = Jan 15 → [Jan 1, Feb 1); t = Feb 1 → [Feb 1, Mar 1).
 func FullBillingPeriod(t time.Time, grid *billingPeriodGrid) Period {
 	if grid == nil {
 		return Period{}

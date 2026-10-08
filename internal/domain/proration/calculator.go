@@ -45,6 +45,7 @@ func (c *calculatorImpl) Calculate(ctx context.Context, params ProrationParams) 
 			Mark(ierr.ErrValidation)
 	}
 
+	// e.g. removal on Jan 20 of a $31 monthly item, window [Jan 1, Feb 1): credit 12/31 = $12.
 	serviceablePeriod := types.Period{Start: params.ProrationDate, End: params.CurrentPeriodEnd}
 	coefficient, _, err := CalculateProrationCoefficient(params.Subscription, params.BillingPeriod, params.BillingPeriodCount,
 		serviceablePeriod, types.StrategySecondBased)

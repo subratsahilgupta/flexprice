@@ -928,15 +928,20 @@ func (s *BillingServiceSuite) TestCalculateFixedCharges_MixedCadence() {
 // A longer-cadence item renews on its own grid (calendar boundary, or the sub's anchor) and its first period is prorated.
 func (s *BillingServiceSuite) TestCalculateFixedCharges_LongerCadenceAnchoredToSubGrid() {
 	date := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
+	at := func(y int, m time.Month, d, h int) time.Time { return time.Date(y, m, d, h, 0, 0, 0, time.UTC) }
 
 	tests := []struct {
 		name                     string
 		cycle                    types.BillingCycle
+		subPeriod                types.BillingPeriod // default MONTHLY
+		itemPeriod               types.BillingPeriod // default ANNUAL
+		itemCount                int                 // default 1
 		anchor, itemStart        time.Time
 		behavior                 types.ProrationBehavior
 		invoiceStart, invoiceEnd time.Time
 		wantStart, wantEnd       time.Time
-		wantAmount               int64 // 0 means no annual line
+		wantAmount               int64 // 0 means no line
+		wantAmountText           string
 	}{
 		{
 			name: "calendar first period ends on Jan 1", cycle: types.BillingCycleCalendar,
@@ -967,20 +972,43 @@ func (s *BillingServiceSuite) TestCalculateFixedCharges_LongerCadenceAnchoredToS
 			anchor: date(2026, 1, 15), itemStart: date(2026, 3, 20), behavior: types.ProrationBehaviorNone,
 			invoiceStart: date(2026, 3, 15), invoiceEnd: date(2026, 4, 15),
 		},
+		{
+			name: "6-month item on a calendar quarterly sub stubs to the sub grid", cycle: types.BillingCycleCalendar,
+			subPeriod: types.BILLING_PERIOD_QUARTER, itemPeriod: types.BILLING_PERIOD_MONTHLY, itemCount: 6,
+			anchor: date(2026, 7, 1), itemStart: date(2026, 4, 30), behavior: types.ProrationBehaviorCreateProrations,
+			invoiceStart: date(2026, 4, 30), invoiceEnd: date(2026, 7, 1),
+			wantStart: date(2026, 4, 30), wantEnd: date(2026, 7, 1), wantAmountText: "125.03",
+		},
+		{
+			name: "6-month item on a calendar quarterly sub renews on the sub grid", cycle: types.BillingCycleCalendar,
+			subPeriod: types.BILLING_PERIOD_QUARTER, itemPeriod: types.BILLING_PERIOD_MONTHLY, itemCount: 6,
+			anchor: date(2026, 7, 1), itemStart: date(2026, 4, 30), behavior: types.ProrationBehaviorCreateProrations,
+			invoiceStart: date(2026, 7, 1), invoiceEnd: date(2026, 10, 1),
+			wantStart: date(2026, 7, 1), wantEnd: date(2027, 1, 1), wantAmount: 365,
+		},
+		{
+			name: "attach earlier in the day than the anchor renews on that day's grid time", cycle: types.BillingCycleAnniversary,
+			anchor: at(2026, 1, 15, 17), itemStart: at(2027, 1, 15, 9), behavior: types.ProrationBehaviorCreateProrations,
+			invoiceStart: at(2027, 1, 15, 17), invoiceEnd: at(2027, 2, 15, 17),
+			wantStart: at(2027, 1, 15, 17), wantEnd: at(2028, 1, 15, 17), wantAmount: 365,
+		},
 	}
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
 			s.BaseServiceTestSuite.ClearStores()
 			ctx := s.GetContext()
+			subPeriod := lo.CoalesceOrEmpty(tt.subPeriod, types.BILLING_PERIOD_MONTHLY)
+			itemPeriod := lo.CoalesceOrEmpty(tt.itemPeriod, types.BILLING_PERIOD_ANNUAL)
+			itemCount := max(tt.itemCount, 1)
 
 			annual := &price.Price{
 				ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
 				Amount:             decimal.NewFromInt(365),
 				Currency:           "usd",
 				Type:               types.PRICE_TYPE_FIXED,
-				BillingPeriod:      types.BILLING_PERIOD_ANNUAL,
-				BillingPeriodCount: 1,
+				BillingPeriod:      itemPeriod,
+				BillingPeriodCount: itemCount,
 				BillingModel:       types.BILLING_MODEL_FLAT_FEE,
 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
 				InvoiceCadence:     types.InvoiceCadenceAdvance,
@@ -997,7 +1025,7 @@ func (s *BillingServiceSuite) TestCalculateFixedCharges_LongerCadenceAnchoredToS
 				CurrentPeriodStart: tt.invoiceStart,
 				CurrentPeriodEnd:   tt.invoiceEnd,
 				Currency:           "usd",
-				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriod:      subPeriod,
 				BillingPeriodCount: 1,
 				ProrationBehavior:  tt.behavior,
 				SubscriptionStatus: types.SubscriptionStatusActive,
@@ -1013,8 +1041,8 @@ func (s *BillingServiceSuite) TestCalculateFixedCharges_LongerCadenceAnchoredToS
 				DisplayName:        "Annual Fee",
 				Quantity:           decimal.NewFromInt(1),
 				Currency:           "usd",
-				BillingPeriod:      types.BILLING_PERIOD_ANNUAL,
-				BillingPeriodCount: 1,
+				BillingPeriod:      itemPeriod,
+				BillingPeriodCount: itemCount,
 				InvoiceCadence:     types.InvoiceCadenceAdvance,
 				StartDate:          tt.itemStart,
 				BaseModel:          types.GetDefaultBaseModel(ctx),
@@ -1027,13 +1055,17 @@ func (s *BillingServiceSuite) TestCalculateFixedCharges_LongerCadenceAnchoredToS
 			})
 			s.NoError(err)
 
-			if tt.wantAmount == 0 {
+			want := decimal.NewFromInt(tt.wantAmount)
+			if tt.wantAmountText != "" {
+				want = decimal.RequireFromString(tt.wantAmountText)
+			}
+			if want.IsZero() {
 				s.Empty(result.LineItems)
 				return
 			}
 			s.Require().Len(result.LineItems, 1)
 			line := result.LineItems[0]
-			s.True(line.Amount.Equal(decimal.NewFromInt(tt.wantAmount)), "amount: got %s", line.Amount)
+			s.True(line.Amount.Equal(want), "amount: got %s", line.Amount)
 			s.True(line.PeriodStart.Equal(tt.wantStart), "start: got %s", line.PeriodStart)
 			s.True(line.PeriodEnd.Equal(tt.wantEnd), "end: got %s", line.PeriodEnd)
 		})

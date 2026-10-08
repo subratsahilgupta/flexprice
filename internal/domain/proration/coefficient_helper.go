@@ -12,6 +12,7 @@ import (
 // that full period. Seconds by default; StrategyDayBased counts local calendar days instead.
 // Every charge, credit and grant proration goes through it.
 // Period and count here can differ for smaller cadence items running inside the sub's cadence.
+// e.g. calendar monthly sub, used [Jan 15, Feb 1): full [Jan 1, Feb 1), coefficient 17/31.
 func CalculateProrationCoefficient(
 	sub *subscription.Subscription,
 	period types.BillingPeriod,

@@ -96,6 +96,7 @@ func NewCreditGrantService(
 // creditGrantFollowsBilling reports whether a grant recurs on the subscription's billing period,
 // the only case its first period is prorated: a onetime grant is a fixed lump, and a monthly grant
 // on an annual subscription keeps recurring monthly.
+// e.g. monthly 1000-credit grant on a calendar monthly sub from Jan 15: 548.39 now, 1000 every Feb 1 onward.
 func creditGrantFollowsBilling(req dto.CreateCreditGrantRequest, sub *subscription.Subscription) bool {
 	if req.Cadence != types.CreditGrantCadenceRecurring || req.Period == nil {
 		return false

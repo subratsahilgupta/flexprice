@@ -293,6 +293,7 @@ func BillingPeriodOrder(b BillingPeriod) int {
 
 // IsLongerCadence reports whether the item cadence is longer than the subscription's. Month-based
 // cadences compare effective months; daily and weekly fall back to the period order.
+// e.g. MONTHLY×3 on MONTHLY → true (3 > 1); QUARTERLY on MONTHLY×3 → false (3 = 3).
 func IsLongerCadence(itemPeriod BillingPeriod, itemCount int, subPeriod BillingPeriod, subCount int) bool {
 	if itemPeriod == BILLING_PERIOD_ONETIME || subPeriod == BILLING_PERIOD_ONETIME {
 		return false
@@ -406,6 +407,7 @@ func IsCadenceCompatible(subPeriod BillingPeriod, subCount int, itemPeriod Billi
 
 // IsCadenceAllowed reports whether an item cadence can run on a subscription: equal to it, dividing
 // it, or a whole multiple of it.
+// e.g. on QUARTERLY: MONTHLY and ANNUAL are allowed; MONTHLY×2 and WEEKLY are not.
 func IsCadenceAllowed(subPeriod BillingPeriod, subCount int, itemPeriod BillingPeriod, itemCount int) bool {
 	return IsCadenceCompatible(subPeriod, subCount, itemPeriod, itemCount) ||
 		IsCadenceCompatible(itemPeriod, itemCount, subPeriod, subCount)

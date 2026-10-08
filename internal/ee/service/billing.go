@@ -232,6 +232,8 @@ func (s *billingService) CalculateFixedCharges(
 				continue
 			}
 
+			// A first or last item period shorter than a full one is prorated against the item's own period.
+			// e.g. annual item from Mar 20 on a Jan 1 grid: [Mar 20, Jan 1) bills 287/365, then $365 per year.
 			linePeriodStart, linePeriodEnd = res.LineItemPeriodStart, res.LineItemPeriodEnd
 			serviceablePeriod := types.Period{Start: linePeriodStart, End: linePeriodEnd}
 			subPeriodStart, err := subPeriodStartAt(sub, linePeriodStart)
@@ -543,18 +545,28 @@ func endDateBoundaryForMatching(periodEnd time.Time, billingPeriod types.Billing
 	}
 }
 
-// longerItemAnchor is the anchor of a longer-cadence item's billing grid: the calendar boundary
-// of its cadence on calendar subs, the sub's anchor otherwise.
+// longerItemAnchor is the anchor of a longer-cadence item's billing grid: the calendar boundary of its
+// cadence on calendar subs when that boundary is a sub billing date, the sub's anchor otherwise.
+// e.g. annual item on a calendar monthly sub → Jan 1; 6-month item on a calendar quarterly sub from
+// Apr 30 → May 1 is not a quarter start, so the sub anchor (Jul 1) is used.
 func longerItemAnchor(sub *subscription.Subscription, item *subscription.SubscriptionLineItem) time.Time {
-	if sub.BillingCycle == types.BillingCycleCalendar {
-		return types.CalculateCalendarBillingAnchor(item.StartDate, item.BillingPeriod, sub.Timezone)
+	if sub.BillingCycle != types.BillingCycleCalendar {
+		return sub.BillingAnchor
 	}
 
-	return sub.BillingAnchor
+	anchor := types.CalculateCalendarBillingAnchor(item.StartDate, item.BillingPeriod, sub.Timezone)
+	// Off the sub's grid, item periods would start between invoices and never be billed.
+	grid, err := types.NewBillingPeriodGrid(sub.BillingAnchor, sub.BillingPeriod, max(sub.BillingPeriodCount, 1), sub.Timezone)
+	if err != nil || !types.FullBillingPeriod(anchor, grid).Start.Equal(anchor) {
+		return sub.BillingAnchor
+	}
+
+	return anchor
 }
 
 // longerItemPeriod is the period of a longer-cadence item's own grid that contains t, starting no
 // earlier than the item itself.
+// e.g. annual item from Mar 20 on a Jan 1 grid, t = Jun 10 → [Mar 20, Jan 1).
 func longerItemPeriod(sub *subscription.Subscription, item *subscription.SubscriptionLineItem, t time.Time) (types.Period, error) {
 	grid, err := types.NewBillingPeriodGrid(longerItemAnchor(sub, item), item.BillingPeriod, max(item.BillingPeriodCount, 1), sub.Timezone)
 	if err != nil {
@@ -567,6 +579,8 @@ func longerItemPeriod(sub *subscription.Subscription, item *subscription.Subscri
 
 // prorateFixedCharge prices a fixed charge for its serviceable period, measured on the item's grid
 // from anchor. Under none, an item starting after periodStart is free until its next period (skip).
+// e.g. $31 monthly, serviceable [Jan 20, Feb 1) on a Feb 1 grid: $12 (12/31); under none skipped if
+// periodStart is Jan 1, $31 if periodStart is Jan 20.
 func prorateFixedCharge(
 	sub *subscription.Subscription,
 	item *subscription.SubscriptionLineItem,
@@ -595,6 +609,7 @@ func prorateFixedCharge(
 }
 
 // subPeriodStartAt is the start of the sub's billing period containing t, never before the sub start.
+// e.g. calendar monthly sub from Jan 15: t = Jan 20 → Jan 15; t = Mar 20 → Mar 1.
 func subPeriodStartAt(sub *subscription.Subscription, t time.Time) (time.Time, error) {
 	grid, err := types.NewBillingPeriodGrid(sub.BillingAnchor, sub.BillingPeriod, max(sub.BillingPeriodCount, 1), sub.Timezone)
 	if err != nil {
@@ -747,16 +762,21 @@ func FindMatchingLineItemPeriodForInvoice(in FindMatchingLineItemPeriodInput) (F
 	if !item.EndDate.IsZero() && item.EndDate.Before(endDate) {
 		endDate = item.EndDate
 	}
-	periods, err := types.CalculateBillingPeriods(&types.CalculateBillingPeriodsParams{
-		InitialPeriodStart: item.StartDate,
-		EndDate:            &endDate,
-		Anchor:             in.Anchor,
-		PeriodCount:        periodCount,
-		BillingPeriod:      item.BillingPeriod,
-		Timezone:           in.Timezone,
-	})
+	grid, err := types.NewBillingPeriodGrid(in.Anchor, item.BillingPeriod, periodCount, in.Timezone)
 	if err != nil {
 		return FindMatchingLineItemPeriodResult{}, err
+	}
+
+	// Exact grid periods, the same ones attach-time proration (longerItemPeriod) measures.
+	// e.g. annual item from Jan 15 09:00 on a Jan 15 17:00 grid → [Jan 15 09:00, Jan 15 17:00), then yearly.
+	var periods []types.Period
+	for start := item.StartDate; start.Before(endDate); {
+		end := types.FullBillingPeriod(start, grid).End
+		if !item.EndDate.IsZero() && item.EndDate.Before(end) {
+			end = item.EndDate
+		}
+		periods = append(periods, types.Period{Start: start, End: end})
+		start = end
 	}
 	for _, p := range periods {
 		if invoiceCadence == types.InvoiceCadenceAdvance {

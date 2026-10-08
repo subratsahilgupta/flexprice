@@ -34,6 +34,7 @@ type PriceService interface {
 
 	// CalculateUnitCost spreads CalculateCost evenly over quantity, so tiered and package prices
 	// prorate on what they actually bill.
+	// e.g. volume tiers, 12 units billed $96 → $8/unit, not the first tier's $10.
 	CalculateUnitCost(ctx context.Context, price *price.Price, quantity decimal.Decimal) decimal.Decimal
 
 	// CalculateBucketedCost calculates cost for bucketed values where each value is priced independently
