@@ -94,9 +94,8 @@ type InvoiceLineItem struct {
 	CommitmentInfo              *types.CommitmentInfo `json:"commitment_info,omitempty"`
 	Metadata                    types.Metadata        `json:"metadata,omitempty"`
 
-	// original_currency/original_amount are the pre-conversion charge amounts; nil on non-converted invoices.
-	OriginalCurrency *string          `json:"original_currency,omitempty"`
-	OriginalAmount   *decimal.Decimal `json:"original_amount,omitempty" swaggertype:"string"`
+	// fx_conversion holds the line's pre-conversion charge amounts; nil on non-converted invoices.
+	FxConversion *types.FxConversion `json:"fx_conversion,omitempty"`
 }
 
 type Plan struct {
@@ -229,8 +228,7 @@ func newInvoiceLineItem(item *dto.InvoiceLineItemResponse) *InvoiceLineItem {
 		AdjustedEntitlementQuantity: item.AdjustedEntitlementQuantity,
 		CommitmentInfo:              item.CommitmentInfo,
 		Metadata:                    item.Metadata,
-		OriginalCurrency:            item.OriginalCurrency,
-		OriginalAmount:              item.OriginalAmount,
+		FxConversion:                item.FxConversion,
 	}
 }
 

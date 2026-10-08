@@ -467,13 +467,15 @@ func TestNewInvoice_LineItemEncodingCostStaysWithinBudget(t *testing.T) {
 		"1000 non-zero line items marshalled to %d bytes, over the Svix limit", len(raw))
 }
 
-// A converted invoice's webhook payload exposes the frozen fx_conversion and each line's original
-// charge amounts, so integrations see the same conversion detail as the API (§9.3, L3-D).
+// A converted invoice's webhook payload exposes fx_conversion on the invoice and on each line, the
+// same detail as the API.
 func TestNewInvoice_IncludesFxConversionAndLineOriginals(t *testing.T) {
 	li := testLineItem("inv_li_fx", "price_api", decimal.NewFromInt(8300), decimal.NewFromInt(1))
 	li.Currency = "inr"
-	li.OriginalCurrency = lo.ToPtr("usd")
-	li.OriginalAmount = lo.ToPtr(decimal.NewFromInt(100))
+	li.FxConversion = &types.FxConversion{
+		ChargeCurrency: "usd",
+		Source:         types.FxConversionSource{Subtotal: decimal.NewFromInt(100), Net: decimal.NewFromInt(100)},
+	}
 
 	resp := testInvoiceResponse([]*dto.InvoiceLineItemResponse{li}, nil)
 	resp.Currency = "inr"
@@ -491,6 +493,5 @@ func TestNewInvoice_IncludesFxConversionAndLineOriginals(t *testing.T) {
 	s := string(raw)
 	assert.Contains(t, s, `"fx_conversion"`, "webhook must include fx_conversion")
 	assert.Contains(t, s, `"charge_currency":"usd"`)
-	assert.Contains(t, s, `"original_currency":"usd"`, "line item must include original_currency")
-	assert.Contains(t, s, `"original_amount":"100"`, "line item must include original_amount")
+	assert.Contains(t, s, `"subtotal":"100"`, "line item must include its fx_conversion source")
 }
