@@ -3853,10 +3853,8 @@ func createChargeResponse(priceObj *price.Price, quantity decimal.Decimal, cost 
 	return charge
 }
 
-// filterAddonPricesForSubscription filters addon prices for a subscription
-// using count-aware cadence compatibility (equal, strict divisor, or strict
-// multiple). This is the pre-include_price_ids default behavior, preserved on
-// the addon path since AddAddonRequest does not carry an include list.
+// filterAddonPricesForSubscription keeps addon prices whose cadence is allowed on the subscription
+// (equal, dividing, or a whole multiple). AddAddonRequest carries no include list.
 func filterAddonPricesForSubscription(prices []*dto.PriceResponse, subscription *subscription.Subscription) []*dto.PriceResponse {
 	var validPrices []*dto.PriceResponse
 	for _, p := range prices {
@@ -3867,7 +3865,7 @@ func filterAddonPricesForSubscription(prices []*dto.PriceResponse, subscription 
 			validPrices = append(validPrices, p)
 			continue
 		}
-		if types.IsCadenceCompatible(subscription.BillingPeriod, subscription.BillingPeriodCount, p.Price.BillingPeriod, p.Price.BillingPeriodCount) {
+		if types.IsCadenceAllowed(subscription.BillingPeriod, subscription.BillingPeriodCount, p.Price.BillingPeriod, p.Price.BillingPeriodCount) {
 			validPrices = append(validPrices, p)
 		}
 	}
@@ -3885,7 +3883,7 @@ func filterAddonPricesForSubscription(prices []*dto.PriceResponse, subscription 
 //     attachment (monthly-on-quarterly etc.) requires opt-in via include_price_ids.
 //   - includeIDs == []: attach nothing.
 //   - includeIDs == [X, Y, …]: attach the intersection of {X, Y, …} with the
-//     count-aware compatibility set (IsCadenceCompatible: equal or divides).
+//     allowed cadences (IsCadenceAllowed: equal, divides, or a whole multiple).
 //     Callers upstream (ValidateAndFilterPricesForSubscription) must have
 //     already validated that each id resolves to a plan price and is
 //     cadence-compatible, so this loop trusts the include set.
@@ -3931,7 +3929,7 @@ func filterValidPricesForSubscription(
 		// Explicit include list: compat gate then intersect. Upstream already
 		// validated per-id, but re-check defensively so a stray incompatible
 		// entry can't slip through if a caller bypasses the validator.
-		if !types.IsCadenceCompatible(subscription.BillingPeriod, subscription.BillingPeriodCount, p.Price.BillingPeriod, p.Price.BillingPeriodCount) {
+		if !types.IsCadenceAllowed(subscription.BillingPeriod, subscription.BillingPeriodCount, p.Price.BillingPeriod, p.Price.BillingPeriodCount) {
 			continue
 		}
 		if _, ok := include[p.Price.ID]; !ok {
@@ -4085,7 +4083,7 @@ func (s *subscriptionService) validateIncludePriceIDs(
 		if p.Price.BillingPeriod == types.BILLING_PERIOD_ONETIME {
 			continue // always compatible
 		}
-		if !types.IsCadenceCompatible(sub.BillingPeriod, sub.BillingPeriodCount, p.Price.BillingPeriod, p.Price.BillingPeriodCount) {
+		if !types.IsCadenceAllowed(sub.BillingPeriod, sub.BillingPeriodCount, p.Price.BillingPeriod, p.Price.BillingPeriodCount) {
 			incompatible = append(incompatible, id)
 		}
 	}
@@ -4111,7 +4109,7 @@ func (s *subscriptionService) validateIncludePriceIDs(
 	}
 	return ierr.NewErrorf("include_price_ids is invalid for plan %s (billing period %s, currency %s): unknown=%v wrong_currency=%v incompatible=%v",
 		planID, subCadence, sub.Currency, unknown, wrongCurrency, incompatible).
-		WithHint("Every id in include_price_ids must belong to the plan, match the subscription currency, AND have a cadence that equals or strictly divides the subscription cadence.").
+		WithHint("Every id in include_price_ids must belong to the plan, match the subscription currency, AND have a cadence that equals, divides, or is a whole multiple of the subscription cadence.").
 		WithReportableDetails(details).
 		Mark(ierr.ErrValidation)
 }

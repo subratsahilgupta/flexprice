@@ -205,7 +205,7 @@ func (s *billingService) CalculateFixedCharges(
 			}
 			fixedCostLineItems = append(fixedCostLineItems, line)
 			fixedCost = fixedCost.Add(roundedAmount)
-		} else if types.BillingPeriodGreaterThan(item.BillingPeriod, sub.BillingPeriod) {
+		} else if types.IsLongerCadence(item.BillingPeriod, item.BillingPeriodCount, sub.BillingPeriod, sub.BillingPeriodCount) {
 			// Line item has longer cadence than subscription (e.g. quarterly line on monthly sub):
 			// Advance: include when line-item period start falls in [periodStart, periodEnd).
 			// Arrear: include when line-item period end falls in [periodStart, periodEnd).
@@ -549,7 +549,7 @@ func longerItemAnchor(sub *subscription.Subscription, item *subscription.Subscri
 	if sub.BillingCycle == types.BillingCycleCalendar {
 		return types.CalculateCalendarBillingAnchor(item.StartDate, item.BillingPeriod, sub.Timezone)
 	}
-	
+
 	return sub.BillingAnchor
 }
 
@@ -2067,7 +2067,7 @@ func (s *billingService) ClassifyLineItems(
 			Match current → add to CurrentPeriodAdvance or CurrentPeriodArrear by cadence; if advance and matches next → also add to NextPeriodAdvance.
 			No match for current → skip for current; no match for next → add only to NextPeriodAdvance.
 		*/
-		if types.BillingPeriodGreaterThan(item.BillingPeriod, sub.BillingPeriod) {
+		if types.IsLongerCadence(item.BillingPeriod, item.BillingPeriodCount, sub.BillingPeriod, sub.BillingPeriodCount) {
 			anchor := longerItemAnchor(sub, item)
 			resCurrent, errCurrent := FindMatchingLineItemPeriodForInvoice(FindMatchingLineItemPeriodInput{
 				Item:           item,

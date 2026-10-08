@@ -307,7 +307,7 @@ func TestValidateCommitmentFieldsCommon_OverageFactor(t *testing.T) {
 	})
 }
 
-func TestCreateSubscriptionLineItemRequest_Validate_CadenceMustDivideSub(t *testing.T) {
+func TestCreateSubscriptionLineItemRequest_Validate_CadenceDividesOrMultiplies(t *testing.T) {
 	sub := &subscription.Subscription{
 		StartDate:          time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		BillingPeriod:      types.BILLING_PERIOD_QUARTER,
@@ -325,8 +325,9 @@ func TestCreateSubscriptionLineItemRequest_Validate_CadenceMustDivideSub(t *test
 		{"monthly-on-quarterly-ok", types.BILLING_PERIOD_QUARTER, 1, types.BILLING_PERIOD_MONTHLY, 1, false},
 		{"quarterly-on-quarterly-ok", types.BILLING_PERIOD_QUARTER, 1, types.BILLING_PERIOD_QUARTER, 1, false},
 		{"onetime-always-ok", types.BILLING_PERIOD_QUARTER, 1, types.BILLING_PERIOD_ONETIME, 1, false},
-		{"annual-on-quarterly-rejected", types.BILLING_PERIOD_QUARTER, 1, types.BILLING_PERIOD_ANNUAL, 1, true},
-		{"halfyear-on-quarterly-rejected", types.BILLING_PERIOD_QUARTER, 1, types.BILLING_PERIOD_HALF_YEAR, 1, true},
+		{"annual-on-quarterly-ok", types.BILLING_PERIOD_QUARTER, 1, types.BILLING_PERIOD_ANNUAL, 1, false},
+		{"halfyear-on-quarterly-ok", types.BILLING_PERIOD_QUARTER, 1, types.BILLING_PERIOD_HALF_YEAR, 1, false},
+		{"weekly-on-monthly-rejected", types.BILLING_PERIOD_MONTHLY, 1, types.BILLING_PERIOD_WEEKLY, 1, true},
 		// Count-aware cases: 2-monthly (2mo) on quarterly (3mo) — periods look
 		// compatible (both MONTHLY-family), but effective months 3 % 2 = 1, so
 		// splitInvoicePeriodByLineItemCadence would fail at invoice time.

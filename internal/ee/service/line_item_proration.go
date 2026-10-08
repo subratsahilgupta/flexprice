@@ -248,7 +248,7 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 		// A longer-cadence item has one window: its own period containing the change, on its own grid.
 		gridSub := sub
 		var windows []periodWindow
-		if types.BillingPeriodGreaterThan(item.BillingPeriod, sub.BillingPeriod) {
+		if types.IsLongerCadence(item.BillingPeriod, item.BillingPeriodCount, sub.BillingPeriod, sub.BillingPeriodCount) {
 			itemPeriod, err := longerItemPeriod(sub, item, req.EffectiveDate)
 			if err != nil {
 				return nil, err
