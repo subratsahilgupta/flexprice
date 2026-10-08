@@ -28,6 +28,7 @@ const (
 	APIErrors          Name = "api.errors"
 	InvoiceTransitions Name = "invoice.transitions"
 	RefundTransitions  Name = "refund.transitions"
+	GatewayWebhooks    Name = "gateway.webhooks"
 )
 
 // catalog maps every metric to its description.
@@ -39,6 +40,7 @@ var catalog = map[Name]string{
 	APIErrors:          "API error responses by error code",
 	InvoiceTransitions: "Invoice status changes by new status, including draft creation",
 	RefundTransitions:  "Refund status changes by new status, including creation",
+	GatewayWebhooks:    "Inbound gateway webhooks by processing outcome; unhandled types are labelled other",
 }
 
 // counters is built once at init and only read afterwards, so concurrent lookups are safe.
