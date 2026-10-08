@@ -43,7 +43,7 @@ func TestConvertInvoiceAmounts_NonZeroNetToZeroRejected(t *testing.T) {
 		AmountDue: dec("1"),
 		LineItems: []*invoice.InvoiceLineItem{convLine("il_1", "usd", "1")},
 	}
-	res := &FXRateResolution{Rate: dec("0.001"), To: "jpy", RateID: "fxr_x", Scope: string(types.FXRateScopeTenant)}
+	res := &FXRateResolution{Rate: dec("0.001"), To: "jpy", RateID: "fxr_x", Scope: types.FXRateScopeTenant}
 
 	err := convertInvoiceAmounts(inv, res, time.Now().UTC())
 
@@ -175,7 +175,7 @@ func TestConvertInvoiceAmounts(t *testing.T) {
 			res := &FXRateResolution{
 				Rate:   dec(c.rate),
 				RateID: "fxr_x",
-				Scope:  string(types.FXRateScopeTenant),
+				Scope:  types.FXRateScopeTenant,
 				From:   c.charge,
 				To:     c.billing,
 			}
@@ -427,7 +427,7 @@ func (s *InvoiceConversionSuite) TestOneOffConverts() {
 	s.Equal("usd", inv.FxConversion.ChargeCurrency)
 	s.Equal("inr", inv.FxConversion.BillingCurrency)
 	s.True(decimal.RequireFromString("83").Equal(inv.FxConversion.Rate))
-	s.Equal(string(types.FXRateScopeTenant), inv.FxConversion.Scope)
+	s.Equal(types.FXRateScopeTenant, inv.FxConversion.Scope)
 
 	// Line originals persisted.
 	stored, err := s.GetStores().InvoiceLineItemRepo.ListByInvoiceID(s.ctx(), "inv_oneoff")

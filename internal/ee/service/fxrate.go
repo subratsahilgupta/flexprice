@@ -37,11 +37,14 @@ type ResolveFXRateRequest struct {
 	SubscriptionID string
 }
 
-// FXRateResolution is the rate a resolution produced. Scope is "identity" when from == to.
+// identityScope marks a same-currency resolution, which needs no stored rate.
+const identityScope types.FXRateScope = "identity"
+
+// FXRateResolution is the rate a resolution produced. Scope is identityScope when from == to.
 type FXRateResolution struct {
 	Rate   decimal.Decimal
 	RateID string
-	Scope  string
+	Scope  types.FXRateScope
 	Source types.FXRateSource
 	From   string
 	To     string
@@ -63,7 +66,7 @@ func (s *fxRateService) ResolveRate(ctx context.Context, req ResolveFXRateReques
 func (s *fxRateService) resolveRateAt(ctx context.Context, req ResolveFXRateRequest, now time.Time) (*FXRateResolution, error) {
 	// Same currency needs no rate and no query.
 	if types.IsMatchingCurrency(req.From, req.To) {
-		return &FXRateResolution{Rate: decimal.NewFromInt(1), Scope: "identity", Source: types.FXRateSourceFixed, From: req.From, To: req.To}, nil
+		return &FXRateResolution{Rate: decimal.NewFromInt(1), Scope: identityScope, Source: types.FXRateSourceFixed, From: req.From, To: req.To}, nil
 	}
 
 	scopesChecked := make([]string, 0, 3)
@@ -149,7 +152,7 @@ func toResolution(r *fxrate.FXRate) *FXRateResolution {
 	return &FXRateResolution{
 		Rate:   r.Rate,
 		RateID: r.ID,
-		Scope:  string(r.Scope),
+		Scope:  r.Scope,
 		Source: r.Source,
 		From:   r.FromCurrency,
 		To:     r.ToCurrency,

@@ -32,7 +32,7 @@ func TestInMemoryInvoiceStore_FxConversionRoundTrip(t *testing.T) {
 		BillingCurrency: "inr",
 		Rate:            rate,
 		RateID:          "fxr_1",
-		Scope:           string(types.FXRateScopeTenant),
+		Scope:           types.FXRateScopeTenant,
 		ConvertedAt:     convertedAt,
 		Source: types.FxConversionSource{
 			Subtotal:                   decimal.RequireFromString("100"),
@@ -212,7 +212,7 @@ func TestInMemoryStores_FxFieldsNotAliased(t *testing.T) {
 
 	again, err := store.Get(ctx, "inv_alias")
 	require.NoError(t, err)
-	require.Equal(t, "tenant", again.FxConversion.Scope, "fx_conversion must not alias the stored record")
+	require.Equal(t, types.FXRateScopeTenant, again.FxConversion.Scope, "fx_conversion must not alias the stored record")
 	require.Equal(t, "usd", *again.LineItems[0].OriginalCurrency, "original_currency must not alias")
 	require.True(t, decimal.NewFromInt(100).Equal(*again.LineItems[0].OriginalAmount), "original_amount must not alias")
 

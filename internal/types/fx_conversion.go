@@ -17,7 +17,7 @@ type FxConversion struct {
 	// RateID is the fx_rates row used, for reference only; never read again.
 	RateID string `json:"rate_id,omitempty"`
 	// Scope is where the rate was resolved: subscription, customer or tenant.
-	Scope string `json:"scope"`
+	Scope FXRateScope `json:"scope"`
 	// ConvertedAt is when the conversion ran.
 	ConvertedAt time.Time `json:"converted_at"`
 	// Source holds the original charge-currency amounts, before tax.
