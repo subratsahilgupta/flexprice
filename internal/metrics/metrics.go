@@ -27,6 +27,7 @@ const (
 	WebhookDeliveries  Name = "webhook.outbound.deliveries"
 	APIErrors          Name = "api.errors"
 	InvoiceTransitions Name = "invoice.transitions"
+	RefundTransitions  Name = "refund.transitions"
 )
 
 // catalog maps every metric to its description.
@@ -37,6 +38,7 @@ var catalog = map[Name]string{
 	WebhookDeliveries:  "Outbound deliveries of subscribed webhook events by outcome",
 	APIErrors:          "API error responses by error code",
 	InvoiceTransitions: "Invoice status changes by new status, including draft creation",
+	RefundTransitions:  "Refund status changes by new status, including creation",
 }
 
 // counters is built once at init and only read afterwards, so concurrent lookups are safe.
@@ -62,6 +64,8 @@ const (
 	KeyCheckout      LabelKey = "checkout"
 	KeyInvoiceType   LabelKey = "invoice_type"
 	KeyBillingReason LabelKey = "billing_reason"
+	KeyDestination   LabelKey = "destination"
+	KeyReason        LabelKey = "reason"
 )
 
 type Label struct {
