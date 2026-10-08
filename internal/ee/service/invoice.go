@@ -397,6 +397,15 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 }
 
 func (s *invoiceService) CreateComputedDraftInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, bool, error) {
+	// Compute only falls back to resolving tax for subscription invoices, so resolve it here.
+	if req.PreparedTaxRates == nil {
+		preparedTaxRates, err := NewTaxService(s.ServiceParams).PrepareTaxRatesForInvoice(ctx, req)
+		if err != nil {
+			return nil, false, err
+		}
+		req.PreparedTaxRates = preparedTaxRates
+	}
+
 	draftResp, err := s.CreateEmptyDraftInvoice(ctx, req.ToDraftRequest())
 	if err != nil {
 		return nil, false, err
