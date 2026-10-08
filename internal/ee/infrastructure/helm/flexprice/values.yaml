@@ -219,6 +219,8 @@ admin:
   secretRef:
     name: ""
     key: admin-secret
+  # Dev-only; used with chart-managed secret.
+  secret: ""
   resources:
     requests:
       cpu: "100m"
