@@ -1251,7 +1251,7 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 			if err != nil {
 				return ierr.WithError(err).
 					WithHint("Failed to create invoice for purchased credits").
-					Mark(ierr.ErrInternal)
+					Error()
 			}
 		}
 
