@@ -119,8 +119,11 @@ var paymentDefaultCurrency = map[string]string{
 	"razorpay":  "INR",
 }
 
-// BillingMatrixConfig tunes the billing-matrix checks.
+// BillingMatrixConfig gates and tunes the billing-matrix checks.
 type BillingMatrixConfig struct {
+	// Enabled turns on every billing-matrix check (E2EPROBE_BILLING_MATRIX_ENABLED, default false).
+	// Off by default: the checks create plans, subscriptions and invoices every tick.
+	Enabled           bool
 	ScenariosPerRun   int  // E2EPROBE_BILLING_MATRIX_SCENARIOS_PER_RUN, default 3
 	AssertKnownIssues bool // E2EPROBE_BILLING_MATRIX_ASSERT_KNOWN_ISSUES: run scenarios that hit known product bugs
 }
@@ -157,11 +160,6 @@ var CheckNames = []string{
 	"PAYMENT_LINK_PROBE",
 	"PAYMENT_METHOD_PROBE",
 	"PAYMENT_AUTOCHARGE_PROBE",
-	"BILLING_MATRIX_OPENING",
-	"BILLING_MATRIX_CHANGE",
-	"BILLING_MATRIX_GRANTS",
-	"BILLING_MATRIX_RENEWAL",
-	"BILLING_MATRIX_VALIDATION",
 	"JANITOR",
 }
 
@@ -190,22 +188,7 @@ var checkDefaultIntervals = map[string]time.Duration{
 	"PAYMENT_LINK_PROBE":                  20 * time.Minute,
 	"PAYMENT_METHOD_PROBE":                30 * time.Minute,
 	"PAYMENT_AUTOCHARGE_PROBE":            30 * time.Minute,
-	"BILLING_MATRIX_OPENING":              10 * time.Minute,
-	"BILLING_MATRIX_CHANGE":               10 * time.Minute,
-	"BILLING_MATRIX_GRANTS":               15 * time.Minute,
-	"BILLING_MATRIX_RENEWAL":              15 * time.Minute,
-	"BILLING_MATRIX_VALIDATION":           30 * time.Minute,
 	"JANITOR":                             1 * time.Hour,
-}
-
-// checksOffByDefault are opt-in: they create plans, subscriptions and invoices every tick, so a
-// deployment enables them explicitly with E2EPROBE_CHECK_<NAME>_ENABLED=true.
-var checksOffByDefault = map[string]bool{
-	"BILLING_MATRIX_OPENING":    true,
-	"BILLING_MATRIX_CHANGE":     true,
-	"BILLING_MATRIX_GRANTS":     true,
-	"BILLING_MATRIX_RENEWAL":    true,
-	"BILLING_MATRIX_VALIDATION": true,
 }
 
 func LoadConfig() (*Config, error) {
@@ -237,6 +220,7 @@ func LoadConfig() (*Config, error) {
 			Enabled: getBool("E2EPROBE_OTEL_ENABLED", false),
 		},
 		BillingMatrix: BillingMatrixConfig{
+			Enabled:           getBool("E2EPROBE_BILLING_MATRIX_ENABLED", false),
 			ScenariosPerRun:   getInt(&warnings, "E2EPROBE_BILLING_MATRIX_SCENARIOS_PER_RUN", 3),
 			AssertKnownIssues: getBool("E2EPROBE_BILLING_MATRIX_ASSERT_KNOWN_ISSUES", false),
 		},
@@ -244,7 +228,7 @@ func LoadConfig() (*Config, error) {
 	}
 	for _, name := range CheckNames {
 		c.Checks[name] = CheckConfig{
-			Enabled:  getBool("E2EPROBE_CHECK_"+name+"_ENABLED", !checksOffByDefault[name]),
+			Enabled:  getBool("E2EPROBE_CHECK_"+name+"_ENABLED", true),
 			Interval: getDuration(&warnings, "E2EPROBE_CHECK_"+name+"_INTERVAL", checkDefaultIntervals[name]),
 		}
 	}

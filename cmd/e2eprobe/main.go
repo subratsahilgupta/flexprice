@@ -248,12 +248,12 @@ func main() {
 		runner.Add(ci, e2eprobe.NewTickerScheduler(ci, cfg.Checks["CYCLE_INVOICE_PROBE"].Interval))
 	}
 
-	billingMatrix := billingmatrix.NewEngine(client.Raw(), runID, cfg.BillingMatrix.AssertKnownIssues)
-	for _, family := range billingmatrix.Families {
-		key := "BILLING_MATRIX_" + strings.ToUpper(string(family))
-		if cfg.Checks[key].Enabled {
+	var billingMatrix *billingmatrix.Engine
+	if cfg.BillingMatrix.Enabled {
+		billingMatrix = billingmatrix.NewEngine(client.Raw(), runID, cfg.BillingMatrix.AssertKnownIssues)
+		for _, family := range billingmatrix.Families {
 			bm := checks_pkg.NewBillingMatrixProbe(billingMatrix, family, cfg.BillingMatrix.ScenariosPerRun, lg)
-			runner.Add(bm, e2eprobe.NewTickerScheduler(bm, cfg.Checks[key].Interval))
+			runner.Add(bm, e2eprobe.NewTickerScheduler(bm, family.Interval()))
 		}
 	}
 
@@ -359,7 +359,10 @@ func main() {
 	}
 
 	if cfg.Checks["JANITOR"].Enabled {
-		jn := checks_pkg.NewJanitor(client, reg, cfg.JanitorMaxAge, runID).WithSweeper(billingMatrix)
+		jn := checks_pkg.NewJanitor(client, reg, cfg.JanitorMaxAge, runID)
+		if billingMatrix != nil {
+			jn.WithSweeper(billingMatrix)
+		}
 		runner.Add(jn, e2eprobe.NewTickerScheduler(jn, cfg.Checks["JANITOR"].Interval))
 	}
 

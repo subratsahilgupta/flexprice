@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Family groups scenarios that share a flow; each family runs as its own probe check.
@@ -21,6 +22,17 @@ const (
 
 // Families lists every family in the order checks are registered.
 var Families = []Family{FamilyOpening, FamilyChange, FamilyGrants, FamilyRenewal, FamilyValidation}
+
+// Interval is how often a family's check runs.
+func (f Family) Interval() time.Duration {
+	switch f {
+	case FamilyOpening, FamilyChange:
+		return 10 * time.Minute
+	case FamilyValidation:
+		return 30 * time.Minute
+	}
+	return 15 * time.Minute
+}
 
 // scenario is one live billing case: provision, act, compare against the oracle.
 type scenario struct {

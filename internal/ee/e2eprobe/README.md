@@ -125,7 +125,7 @@ Adding a new probe: write `internal/ee/e2eprobe/checks/<name>.go` implementing `
 | `E2EPROBE_OTEL_ENABLED` | Emit OTEL spans | `true` |
 | `E2EPROBE_HEARTBEAT_INTERVAL` | How often a structured heartbeat summary is logged (`0` disables) | `1h` |
 | `E2EPROBE_JANITOR_MAX_AGE` | Minimum age of an ephemeral entity before the janitor deletes it (applies to both in-memory sweep and Flexprice orphan scan) | `1h` |
-| `E2EPROBE_CHECK_<NAME>_ENABLED` | Per-check kill switch | `true`; `false` for the `BILLING_MATRIX_*` checks, which are opt-in |
+| `E2EPROBE_CHECK_<NAME>_ENABLED` | Per-check kill switch | `true` |
 | `E2EPROBE_CHECK_<NAME>_INTERVAL` | Per-check interval override (Go duration) | per-check default |
 | `E2EPROBE_PAYMENTS_PROVIDERS` | Gateways connected to the probe environment that the payment probes exercise: `stripe`, `chargebee`, `razorpay` (comma-separated). Empty disables payment probes | empty |
 | `E2EPROBE_PAYMENTS_<PROVIDER>_CURRENCY` | Currency the gateway's probes bill in | `USD` (stripe, chargebee), `INR` (razorpay) |
@@ -135,6 +135,7 @@ Adding a new probe: write `internal/ee/e2eprobe/checks/<name>.go` implementing `
 | `E2EPROBE_CHARGEBEE_TEST_SITE` / `E2EPROBE_CHARGEBEE_TEST_API_KEY` | Chargebee **test** site (must end in `-test`) and its `test_` API key. Enables card vaulting and payment-autocharge-probe | empty |
 | `E2EPROBE_RAZORPAY_MANDATE_CUSTOMER` | External id of a persistent customer whose Razorpay mandate was authorized by hand; enables payment-autocharge-probe-razorpay on that customer (no decline leg) | empty |
 | `E2EPROBE_PAYMENTS_ASSERT_KNOWN_ISSUES` | Run legs that fail on known, unfixed product bugs (listed in `knownIssueLegs`, e.g. Chargebee refund and decline). Off reports them under `skipped_legs` instead of failing | `false` |
+| `E2EPROBE_BILLING_MATRIX_ENABLED` | Turns on all five billing-matrix checks and their janitor sweep | `false` |
 | `E2EPROBE_BILLING_MATRIX_SCENARIOS_PER_RUN` | Scenarios each billing-matrix check runs per tick; the family is covered in rotation | `3` |
 | `E2EPROBE_BILLING_MATRIX_ASSERT_KNOWN_ISSUES` | Run billing-matrix scenarios that hit known, unfixed product bugs. Off logs them as skipped instead of failing | `false` |
 | `E2EPROBE_CHARGEBEE_DECLINE_CARD` | Card number the Chargebee test gateway vaults but declines; the decline leg is skipped when empty | empty |
@@ -184,8 +185,8 @@ re-derives this without importing `internal/types`, and its unit tests pin the d
 examples. Renewals are observed through `POST /invoices/preview` with explicit periods, so no clock
 needs to pass.
 
-The five `BILLING_MATRIX_*` checks are off by default because they write billing data every tick;
-enable them per deployment with `E2EPROBE_CHECK_BILLING_MATRIX_<FAMILY>_ENABLED=true`.
+The five billing-matrix checks are off by default because they write billing data every tick;
+enable them per deployment with `E2EPROBE_BILLING_MATRIX_ENABLED=true`.
 
 Each scenario creates its own plan, prices, `e2eprobe-cust-eph-bm-*` customer and subscription,
 and removes them when it finishes: addons detached, subscription cancelled, wallets terminated
