@@ -53,6 +53,8 @@ type Config struct {
 	OTEL     OTELConfig
 	Payments PaymentsConfig
 
+	BillingMatrix BillingMatrixConfig
+
 	Checks map[string]CheckConfig
 
 	// Warnings collected during LoadConfig (e.g. malformed env vars that fell
@@ -117,6 +119,12 @@ var paymentDefaultCurrency = map[string]string{
 	"razorpay":  "INR",
 }
 
+// BillingMatrixConfig tunes the billing-matrix checks.
+type BillingMatrixConfig struct {
+	ScenariosPerRun   int  // E2EPROBE_BILLING_MATRIX_SCENARIOS_PER_RUN, default 3
+	AssertKnownIssues bool // E2EPROBE_BILLING_MATRIX_ASSERT_KNOWN_ISSUES: run scenarios that hit known product bugs
+}
+
 type CheckConfig struct {
 	Enabled  bool
 	Interval time.Duration
@@ -149,6 +157,11 @@ var CheckNames = []string{
 	"PAYMENT_LINK_PROBE",
 	"PAYMENT_METHOD_PROBE",
 	"PAYMENT_AUTOCHARGE_PROBE",
+	"BILLING_MATRIX_OPENING",
+	"BILLING_MATRIX_CHANGE",
+	"BILLING_MATRIX_GRANTS",
+	"BILLING_MATRIX_RENEWAL",
+	"BILLING_MATRIX_VALIDATION",
 	"JANITOR",
 }
 
@@ -177,6 +190,11 @@ var checkDefaultIntervals = map[string]time.Duration{
 	"PAYMENT_LINK_PROBE":                  20 * time.Minute,
 	"PAYMENT_METHOD_PROBE":                30 * time.Minute,
 	"PAYMENT_AUTOCHARGE_PROBE":            30 * time.Minute,
+	"BILLING_MATRIX_OPENING":              10 * time.Minute,
+	"BILLING_MATRIX_CHANGE":               10 * time.Minute,
+	"BILLING_MATRIX_GRANTS":               15 * time.Minute,
+	"BILLING_MATRIX_RENEWAL":              15 * time.Minute,
+	"BILLING_MATRIX_VALIDATION":           30 * time.Minute,
 	"JANITOR":                             1 * time.Hour,
 }
 
@@ -207,6 +225,10 @@ func LoadConfig() (*Config, error) {
 		},
 		OTEL: OTELConfig{
 			Enabled: getBool("E2EPROBE_OTEL_ENABLED", false),
+		},
+		BillingMatrix: BillingMatrixConfig{
+			ScenariosPerRun:   getInt(&warnings, "E2EPROBE_BILLING_MATRIX_SCENARIOS_PER_RUN", 3),
+			AssertKnownIssues: getBool("E2EPROBE_BILLING_MATRIX_ASSERT_KNOWN_ISSUES", false),
 		},
 		Checks: make(map[string]CheckConfig, len(CheckNames)),
 	}
