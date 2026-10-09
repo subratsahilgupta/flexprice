@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/config"
-	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
@@ -15,7 +14,6 @@ import (
 )
 
 func TestCalculator_Calculate(t *testing.T) {
-	marchSub := &subscription.Subscription{BillingAnchor: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Timezone: "UTC"}
 	tests := []struct {
 		name          string
 		params        ProrationParams
@@ -34,11 +32,10 @@ func TestCalculator_Calculate(t *testing.T) {
 				NewPricePerUnit:    decimal.NewFromInt(20),
 				ProrationDate:      time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC),
 				CurrentPeriodStart: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-				CurrentPeriodEnd:   time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+				CurrentPeriodEnd:   time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
+				Timezone:           types.DefaultTimezone,
 				ProrationBehavior:  types.ProrationBehaviorCreateProrations,
-				Subscription:       marchSub,
-				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-				BillingPeriodCount: 1,
+				ProrationStrategy:  types.StrategyDayBased,
 				PlanPayInAdvance:   true,
 				OriginalAmountPaid: decimal.NewFromInt(10),
 				Currency:           "USD",
@@ -53,7 +50,7 @@ func TestCalculator_Calculate(t *testing.T) {
 					{
 						Amount:    decimal.NewFromFloat(-5.48), // -(10 * 17/31)
 						StartDate: time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC),
-						EndDate:   time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+						EndDate:   time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
 						Quantity:  decimal.NewFromInt(1),
 						PriceID:   "price_old",
 						IsCredit:  true,
@@ -63,14 +60,14 @@ func TestCalculator_Calculate(t *testing.T) {
 					{
 						Amount:    decimal.NewFromFloat(10.97), // (20 * 17/31)
 						StartDate: time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC),
-						EndDate:   time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+						EndDate:   time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
 						Quantity:  decimal.NewFromInt(1),
 						PriceID:   "price_new",
 						IsCredit:  false,
 					},
 				},
 				CurrentPeriodStart: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-				CurrentPeriodEnd:   time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+				CurrentPeriodEnd:   time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
 			},
 		},
 		{
@@ -85,11 +82,10 @@ func TestCalculator_Calculate(t *testing.T) {
 				NewPricePerUnit:    decimal.NewFromInt(30),
 				ProrationDate:      time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC),
 				CurrentPeriodStart: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-				CurrentPeriodEnd:   time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+				CurrentPeriodEnd:   time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
+				Timezone:           types.DefaultTimezone,
 				ProrationBehavior:  types.ProrationBehaviorCreateProrations,
-				Subscription:       marchSub,
-				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-				BillingPeriodCount: 1,
+				ProrationStrategy:  types.StrategyDayBased,
 				PlanPayInAdvance:   true,
 				OriginalAmountPaid: decimal.NewFromInt(100),
 				TerminationReason:  types.TerminationReasonDowngrade,
@@ -106,7 +102,7 @@ func TestCalculator_Calculate(t *testing.T) {
 						Description: "Credit for unused time on previous plan before downgrade",
 						Amount:      decimal.NewFromFloat(-54.84), // -(100 * 17/31)
 						StartDate:   time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC),
-						EndDate:     time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+						EndDate:     time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
 						Quantity:    decimal.NewFromInt(2),
 						PriceID:     "price_old",
 						IsCredit:    true,
@@ -117,14 +113,14 @@ func TestCalculator_Calculate(t *testing.T) {
 						Description: "Prorated charge for downgrade",
 						Amount:      decimal.NewFromFloat(16.45), // (30 * 17/31)
 						StartDate:   time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC),
-						EndDate:     time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+						EndDate:     time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
 						Quantity:    decimal.NewFromInt(1),
 						PriceID:     "price_new",
 						IsCredit:    false,
 					},
 				},
 				CurrentPeriodStart: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-				CurrentPeriodEnd:   time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+				CurrentPeriodEnd:   time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
 			},
 		},
 		{
@@ -139,11 +135,10 @@ func TestCalculator_Calculate(t *testing.T) {
 				NewPricePerUnit:    decimal.NewFromInt(10),
 				ProrationDate:      time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC),
 				CurrentPeriodStart: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-				CurrentPeriodEnd:   time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+				CurrentPeriodEnd:   time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
+				Timezone:           types.DefaultTimezone,
 				ProrationBehavior:  types.ProrationBehaviorCreateProrations,
-				Subscription:       marchSub,
-				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-				BillingPeriodCount: 1,
+				ProrationStrategy:  types.StrategyDayBased,
 				PlanPayInAdvance:   true,
 				Currency:           "USD",
 			},
@@ -158,7 +153,7 @@ func TestCalculator_Calculate(t *testing.T) {
 						Description: "Credit for unused time on previous quantity",
 						Amount:      decimal.NewFromFloat(-27.42), // -(5 * 10 * 17/31)
 						StartDate:   time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC),
-						EndDate:     time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+						EndDate:     time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
 						Quantity:    decimal.NewFromInt(5),
 						PriceID:     "price_same",
 						IsCredit:    true,
@@ -169,14 +164,14 @@ func TestCalculator_Calculate(t *testing.T) {
 						Description: "Prorated charge for quantity change",
 						Amount:      decimal.NewFromFloat(54.84), // (10 * 10 * 17/31)
 						StartDate:   time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC),
-						EndDate:     time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+						EndDate:     time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
 						Quantity:    decimal.NewFromInt(10),
 						PriceID:     "price_same",
 						IsCredit:    false,
 					},
 				},
 				CurrentPeriodStart: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-				CurrentPeriodEnd:   time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+				CurrentPeriodEnd:   time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
 			},
 		},
 		{
@@ -188,11 +183,10 @@ func TestCalculator_Calculate(t *testing.T) {
 				NewPricePerUnit:    decimal.NewFromInt(25),
 				ProrationDate:      time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC),
 				CurrentPeriodStart: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-				CurrentPeriodEnd:   time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+				CurrentPeriodEnd:   time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
+				Timezone:           types.DefaultTimezone,
 				ProrationBehavior:  types.ProrationBehaviorCreateProrations,
-				Subscription:       marchSub,
-				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-				BillingPeriodCount: 1,
+				ProrationStrategy:  types.StrategyDayBased,
 				PlanPayInAdvance:   true,
 				Currency:           "USD",
 			},
@@ -208,14 +202,14 @@ func TestCalculator_Calculate(t *testing.T) {
 						Description: "Prorated charge for new item",
 						Amount:      decimal.NewFromFloat(13.71),
 						StartDate:   time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC),
-						EndDate:     time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+						EndDate:     time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
 						Quantity:    decimal.NewFromInt(1),
 						PriceID:     "price_new",
 						IsCredit:    false,
 					},
 				},
 				CurrentPeriodStart: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-				CurrentPeriodEnd:   time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+				CurrentPeriodEnd:   time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
 			},
 		},
 		{
@@ -227,11 +221,10 @@ func TestCalculator_Calculate(t *testing.T) {
 				OldPricePerUnit:    decimal.NewFromInt(40),
 				ProrationDate:      time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC),
 				CurrentPeriodStart: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-				CurrentPeriodEnd:   time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+				CurrentPeriodEnd:   time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
+				Timezone:           types.DefaultTimezone,
 				ProrationBehavior:  types.ProrationBehaviorCreateProrations,
-				Subscription:       marchSub,
-				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-				BillingPeriodCount: 1,
+				ProrationStrategy:  types.StrategyDayBased,
 				PlanPayInAdvance:   true,
 				OriginalAmountPaid: decimal.NewFromInt(40),
 				TerminationReason:  types.TerminationReasonCancellation,
@@ -248,7 +241,7 @@ func TestCalculator_Calculate(t *testing.T) {
 						Description: "Credit for unused time on removed item",
 						Amount:      decimal.NewFromFloat(-21.94),
 						StartDate:   time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC),
-						EndDate:     time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+						EndDate:     time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
 						Quantity:    decimal.NewFromInt(1),
 						PriceID:     "price_old",
 						IsCredit:    true,
@@ -256,11 +249,11 @@ func TestCalculator_Calculate(t *testing.T) {
 				},
 				ChargeItems:        []ProrationLineItem{}, // No charges for remove_item
 				CurrentPeriodStart: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-				CurrentPeriodEnd:   time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+				CurrentPeriodEnd:   time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
 			},
 		},
 		{
-			name: "validation_error_missing_subscription",
+			name: "validation_error_missing_timezone",
 			params: ProrationParams{
 				Action:             types.ProrationActionUpgrade,
 				OldPriceID:         "price_old",
@@ -271,13 +264,13 @@ func TestCalculator_Calculate(t *testing.T) {
 				NewPricePerUnit:    decimal.NewFromInt(20),
 				ProrationDate:      time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC),
 				CurrentPeriodStart: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-				CurrentPeriodEnd:   time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+				CurrentPeriodEnd:   time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC),
 				ProrationBehavior:  types.ProrationBehaviorCreateProrations,
-
-				PlanPayInAdvance: true,
-				Currency:         "USD",
+				ProrationStrategy:  types.StrategyDayBased,
+				PlanPayInAdvance:   true,
+				Currency:           "USD",
 			},
-			expectedError: "subscription is required",
+			expectedError: "customer timezone is required",
 		},
 	}
 

@@ -295,10 +295,10 @@ func changeAtDate(changeAt types.ScheduleType, now, periodEnd time.Time) time.Ti
 
 func (s *addonChangeService) grantChangeRequest(config *addonChangeConfig) GrantChangeRequest {
 	sub := config.getSubscription()
-	grantReq := GrantChangeRequest{Sub: sub}
+	req := GrantChangeRequest{Sub: sub}
 
 	for _, detach := range config.getDetaches() {
-		grantReq.Removed = append(grantReq.Removed, GrantSource{
+		req.Removed = append(req.Removed, GrantSource{
 			ChangeType:    grantChangeTypeFor(sub, detach.getEffectiveDate()),
 			EffectiveDate: detach.getEffectiveDate(),
 			Origin:        grantProrationSourceAddonDetach,
@@ -307,19 +307,18 @@ func (s *addonChangeService) grantChangeRequest(config *addonChangeConfig) Grant
 	}
 
 	for _, attach := range config.getAttaches() {
-		req := attach.getRequest()
-		grantReq.Incoming = append(grantReq.Incoming, GrantSource{
-			ChangeType:        grantChangeTypeFor(sub, attach.getEffectiveDate()),
-			EffectiveDate:     attach.getEffectiveDate(),
-			RequestedDate:     attach.getRequestedStart(),
-			EndDate:           attach.getAssociation().EndDate,
-			ProrationSettings: req.ProrationSettings.WithDefault(req.ProrationBehavior),
-			Origin:            grantProrationSourceAddonAttach,
-			AddonID:           req.AddonID,
+		req.Incoming = append(req.Incoming, GrantSource{
+			ChangeType:    grantChangeTypeFor(sub, attach.getEffectiveDate()),
+			EffectiveDate: attach.getEffectiveDate(),
+			RequestedDate: attach.getRequestedStart(),
+			EndDate:       attach.getAssociation().EndDate,
+			Behavior:      attach.getRequest().ProrationBehavior,
+			Origin:        grantProrationSourceAddonAttach,
+			AddonID:       attach.getRequest().AddonID,
 		})
 	}
 
-	return grantReq
+	return req
 }
 
 // prorationGroup is the batch's entries sharing one effective date: proration is priced against

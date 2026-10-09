@@ -45,29 +45,24 @@ func TestBillingPeriodOrder(t *testing.T) {
 	}
 }
 
-func TestIsLongerCadence(t *testing.T) {
+func TestBillingPeriodGreaterThan(t *testing.T) {
 	tests := []struct {
-		name      string
-		item      BillingPeriod
-		itemCount int
-		sub       BillingPeriod
-		subCount  int
-		want      bool
+		a    BillingPeriod
+		b    BillingPeriod
+		want bool
 	}{
-		{"quarterly on monthly", BILLING_PERIOD_QUARTER, 1, BILLING_PERIOD_MONTHLY, 1, true},
-		{"monthly on quarterly", BILLING_PERIOD_MONTHLY, 1, BILLING_PERIOD_QUARTER, 1, false},
-		{"monthly on monthly", BILLING_PERIOD_MONTHLY, 1, BILLING_PERIOD_MONTHLY, 1, false},
-		{"monthly x3 on monthly", BILLING_PERIOD_MONTHLY, 3, BILLING_PERIOD_MONTHLY, 1, true},
-		{"monthly x6 on quarterly", BILLING_PERIOD_MONTHLY, 6, BILLING_PERIOD_QUARTER, 1, true},
-		{"quarterly on monthly x3", BILLING_PERIOD_QUARTER, 1, BILLING_PERIOD_MONTHLY, 3, false},
-		{"annual on daily", BILLING_PERIOD_ANNUAL, 1, BILLING_PERIOD_DAILY, 1, true},
-		{"daily on annual", BILLING_PERIOD_DAILY, 1, BILLING_PERIOD_ANNUAL, 1, false},
-		{"onetime", BILLING_PERIOD_ONETIME, 1, BILLING_PERIOD_MONTHLY, 1, false},
+		{BILLING_PERIOD_QUARTER, BILLING_PERIOD_MONTHLY, true},
+		{BILLING_PERIOD_MONTHLY, BILLING_PERIOD_QUARTER, false},
+		{BILLING_PERIOD_MONTHLY, BILLING_PERIOD_MONTHLY, false},
+		{BILLING_PERIOD_ANNUAL, BILLING_PERIOD_DAILY, true},
+		{BILLING_PERIOD_DAILY, BILLING_PERIOD_ANNUAL, false},
+		{BILLING_PERIOD_HALF_YEAR, BILLING_PERIOD_QUARTER, true},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := IsLongerCadence(tt.item, tt.itemCount, tt.sub, tt.subCount); got != tt.want {
-				t.Errorf("IsLongerCadence = %v, want %v", got, tt.want)
+		t.Run(tt.a.String()+"_vs_"+tt.b.String(), func(t *testing.T) {
+			got := BillingPeriodGreaterThan(tt.a, tt.b)
+			if got != tt.want {
+				t.Errorf("BillingPeriodGreaterThan(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
 			}
 		})
 	}
