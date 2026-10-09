@@ -198,6 +198,16 @@ var checkDefaultIntervals = map[string]time.Duration{
 	"JANITOR":                             1 * time.Hour,
 }
 
+// checksOffByDefault are opt-in: they create plans, subscriptions and invoices every tick, so a
+// deployment enables them explicitly with E2EPROBE_CHECK_<NAME>_ENABLED=true.
+var checksOffByDefault = map[string]bool{
+	"BILLING_MATRIX_OPENING":    true,
+	"BILLING_MATRIX_CHANGE":     true,
+	"BILLING_MATRIX_GRANTS":     true,
+	"BILLING_MATRIX_RENEWAL":    true,
+	"BILLING_MATRIX_VALIDATION": true,
+}
+
 func LoadConfig() (*Config, error) {
 	var warnings []string
 	c := &Config{
@@ -234,7 +244,7 @@ func LoadConfig() (*Config, error) {
 	}
 	for _, name := range CheckNames {
 		c.Checks[name] = CheckConfig{
-			Enabled:  getBool("E2EPROBE_CHECK_"+name+"_ENABLED", true),
+			Enabled:  getBool("E2EPROBE_CHECK_"+name+"_ENABLED", !checksOffByDefault[name]),
 			Interval: getDuration(&warnings, "E2EPROBE_CHECK_"+name+"_INTERVAL", checkDefaultIntervals[name]),
 		}
 	}

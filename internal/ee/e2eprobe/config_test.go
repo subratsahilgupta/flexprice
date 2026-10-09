@@ -68,6 +68,23 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if c.JanitorMaxAge != 1*time.Hour {
 		t.Errorf("JanitorMaxAge=%v, want 1h", c.JanitorMaxAge)
 	}
+	if c.Checks["BILLING_MATRIX_OPENING"].Enabled {
+		t.Error("BILLING_MATRIX_OPENING should be off unless enabled explicitly")
+	}
+}
+
+func TestLoadConfig_BillingMatrixOptIn(t *testing.T) {
+	t.Setenv("E2EPROBE_API_HOST", "https://api.example/v1")
+	t.Setenv("E2EPROBE_API_KEY", "k")
+	t.Setenv("E2EPROBE_CHECK_BILLING_MATRIX_CHANGE_ENABLED", "true")
+	c, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !c.Checks["BILLING_MATRIX_CHANGE"].Enabled || c.Checks["BILLING_MATRIX_GRANTS"].Enabled {
+		t.Errorf("want only BILLING_MATRIX_CHANGE enabled, got change=%v grants=%v",
+			c.Checks["BILLING_MATRIX_CHANGE"].Enabled, c.Checks["BILLING_MATRIX_GRANTS"].Enabled)
+	}
 }
 
 func TestLoadConfig_Overrides(t *testing.T) {

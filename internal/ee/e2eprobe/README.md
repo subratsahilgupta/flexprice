@@ -125,7 +125,7 @@ Adding a new probe: write `internal/ee/e2eprobe/checks/<name>.go` implementing `
 | `E2EPROBE_OTEL_ENABLED` | Emit OTEL spans | `true` |
 | `E2EPROBE_HEARTBEAT_INTERVAL` | How often a structured heartbeat summary is logged (`0` disables) | `1h` |
 | `E2EPROBE_JANITOR_MAX_AGE` | Minimum age of an ephemeral entity before the janitor deletes it (applies to both in-memory sweep and Flexprice orphan scan) | `1h` |
-| `E2EPROBE_CHECK_<NAME>_ENABLED` | Per-check kill switch | `true` |
+| `E2EPROBE_CHECK_<NAME>_ENABLED` | Per-check kill switch | `true`; `false` for the `BILLING_MATRIX_*` checks, which are opt-in |
 | `E2EPROBE_CHECK_<NAME>_INTERVAL` | Per-check interval override (Go duration) | per-check default |
 | `E2EPROBE_PAYMENTS_PROVIDERS` | Gateways connected to the probe environment that the payment probes exercise: `stripe`, `chargebee`, `razorpay` (comma-separated). Empty disables payment probes | empty |
 | `E2EPROBE_PAYMENTS_<PROVIDER>_CURRENCY` | Currency the gateway's probes bill in | `USD` (stripe, chargebee), `INR` (razorpay) |
@@ -183,6 +183,9 @@ clamped to month end, and every charge, credit and grant is `time used ÷ full p
 re-derives this without importing `internal/types`, and its unit tests pin the design doc's worked
 examples. Renewals are observed through `POST /invoices/preview` with explicit periods, so no clock
 needs to pass.
+
+The five `BILLING_MATRIX_*` checks are off by default because they write billing data every tick;
+enable them per deployment with `E2EPROBE_CHECK_BILLING_MATRIX_<FAMILY>_ENABLED=true`.
 
 Each scenario creates its own plan, prices, `e2eprobe-cust-eph-bm-*` customer and subscription,
 and removes them when it finishes: addons detached, subscription cancelled, wallets terminated
