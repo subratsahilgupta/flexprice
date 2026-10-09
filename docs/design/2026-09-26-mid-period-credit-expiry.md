@@ -1,6 +1,6 @@
 # Mid-period credit expiry
 
-Status: v1 built (PR #2949), periods that end early handled (PR #2995, FLE-1498). Off by default.
+Status: v1 built (PR #2949), periods that end early handled (PR #2995, FLE-1498). On for all tenants.
 Linear: FLE-897.
 
 Terms used below:
@@ -30,9 +30,7 @@ the wallet.
 
 ```mermaid
 flowchart TD
-    A[Expiry job, every 15 min] --> B{Setting on?}
-    B -- No --> Z[Credits expired 6h+ ago:<br/>expire the whole credit, as today]
-    B -- Yes --> Y[Credits expired 2h+ ago,<br/>earliest expiry first]
+    A[Expiry job, every 15 min] --> Y[Credits expired 2h+ ago,<br/>earliest expiry first]
     Y --> C[For each subscription the credit can pay]
     C --> D[Find its unfinalized drafts that have usage before the expiry:<br/>earlier periods, then the current period<br/>current draft created only if it has such usage]
     D --> E[Amount per draft =<br/>usage before expiry, priced like an invoice for that window,<br/>minus credits already applied]
@@ -101,8 +99,9 @@ Main new code: `internal/ee/service/credit_expiry.go`. Ledger: the applied part 
 
 ## Rollout
 
-Per-environment setting `credit_expiry_settlement_config` (`{"enabled": true}`), off by default.
-With it off nothing changes (6h grace, today's skip rules).
+On for every tenant. It started behind a per-environment setting (`credit_expiry_settlement_config`),
+enabled for one tenant first; the setting and the old path (expire the whole credit 6h after expiry,
+holding it while its period's invoice was open) were removed in PR #2995.
 
 Cost: each expiring credit with usage computes a draft and runs a usage query on ClickHouse. Fine at
 today's volume; worth watching if a tenant expires many credits at once.

@@ -56,7 +56,8 @@ type InvoiceService interface {
 	ListOpenCycleDrafts(ctx context.Context, subscriptionID string, startedBefore time.Time) ([]*invoice.Invoice, error)
 	// MoveCycleDraft moves the subscription's open draft for its current period to end at periodEnd
 	// under reason, so a flow that ends the period early bills that draft instead of a new invoice.
-	MoveCycleDraft(ctx context.Context, sub *subscription.Subscription, periodEnd time.Time, reason types.InvoiceBillingReason) error
+	// Returns the moved draft, or nil when there was none.
+	MoveCycleDraft(ctx context.Context, sub *subscription.Subscription, periodEnd time.Time, reason types.InvoiceBillingReason) (*invoice.Invoice, error)
 	// VoidCycleDraft voids the subscription's open draft for its current period, refunding credits
 	// already applied to it. A no-op when there is no open draft.
 	VoidCycleDraft(ctx context.Context, sub *subscription.Subscription) error
@@ -466,14 +467,14 @@ func (s *invoiceService) GetOrComputeCurrentPeriodDraft(ctx context.Context, sub
 	return s.ComputeInvoice(ctx, draft.ID, nil)
 }
 
-func (s *invoiceService) MoveCycleDraft(ctx context.Context, sub *subscription.Subscription, periodEnd time.Time, reason types.InvoiceBillingReason) error {
+func (s *invoiceService) MoveCycleDraft(ctx context.Context, sub *subscription.Subscription, periodEnd time.Time, reason types.InvoiceBillingReason) (*invoice.Invoice, error) {
 	draft, err := s.currentCycleDraft(ctx, sub)
 	if err != nil || draft == nil {
-		return err
+		return nil, err
 	}
 	key := s.subscriptionInvoiceKey(ctx, draft.CustomerID, sub.ID, reason, draft.PeriodStart, &periodEnd)
 
-	return s.DB.WithTx(ctx, func(txCtx context.Context) error {
+	err = s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		// Same row lock as ComputeInvoice, so the expiry job can't apply credits mid-move.
 		if _, err := s.InvoiceRepo.GetForUpdate(txCtx, draft.ID); err != nil {
 			return err
@@ -489,6 +490,10 @@ func (s *invoiceService) MoveCycleDraft(ctx context.Context, sub *subscription.S
 		)
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return draft, nil
 }
 
 func (s *invoiceService) VoidCycleDraft(ctx context.Context, sub *subscription.Subscription) error {

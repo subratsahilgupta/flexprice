@@ -498,7 +498,7 @@ func (s *subscriptionScheduleService) restoreCancellationState(
 		originalEnd := lo.FromPtr(config.OriginalCurrentPeriodEnd)
 		if !originalEnd.Equal(sub.CurrentPeriodEnd) {
 			// The open draft was moved to the scheduled date; move it back with the period.
-			if err := NewInvoiceService(s.ServiceParams).MoveCycleDraft(ctx, sub, originalEnd,
+			if _, err := NewInvoiceService(s.ServiceParams).MoveCycleDraft(ctx, sub, originalEnd,
 				types.InvoiceBillingReasonSubscriptionCycle); err != nil {
 				return fmt.Errorf("failed to restore the open draft's period end: %w", err)
 			}

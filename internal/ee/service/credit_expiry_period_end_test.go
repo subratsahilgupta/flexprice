@@ -18,7 +18,6 @@ import (
 // usage before the expiry (20 applied to the draft, 10 expired), 10 more usage after it, and 100
 // purchased credits.
 func (s *CreditExpiryInvoiceRaceSuite) settledSubscription(id string) (*subscription.Subscription, *invoice.Invoice) {
-	s.enableExpirySettlement()
 	tx, periodStart, periodEnd := s.midPeriodGrant(30)
 	s.purchasedCredits(100)
 	sub := s.usageSubscription(id, periodStart, periodStart, periodEnd)
@@ -146,7 +145,6 @@ func (s *CreditExpiryInvoiceRaceSuite) TestPeriodEnd_ThresholdBillsTheDraft() {
 // A credit that expired since the period started and hasn't been processed yet defers the threshold
 // invoice, which would otherwise finalize without it.
 func (s *CreditExpiryInvoiceRaceSuite) TestPeriodEnd_ThresholdWaitsForPendingExpiry() {
-	s.enableExpirySettlement()
 	now := time.Now().UTC()
 	periodStart, periodEnd := now.Add(-20*24*time.Hour), now.Add(10*24*time.Hour)
 	s.seedGrant("wtxn_pending", decimal.NewFromInt(30), periodStart, now.Add(-time.Hour))

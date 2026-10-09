@@ -2050,15 +2050,15 @@ func (s *subscriptionService) CancelSubscription(
 		shouldCreateInvoice := !isScheduled &&
 			invoicePolicy == types.CancelImmediatelyInvoicePolicyGenerateInvoice
 		invoiceService := NewInvoiceService(s.ServiceParams)
-		// The period ends early, so its open draft would be left behind: it becomes the cancel
-		// invoice, is voided (refunding credits applied to it), or ends at the scheduled date.
+		// A cancel that ends the period early would leave its open draft behind, so the draft becomes
+		// the cancel invoice, is voided (refunding its applied credits), or moves to the cancel date.
 		switch {
 		case req.CancellationType == types.CancellationTypeImmediate && shouldCreateInvoice:
-			err = invoiceService.MoveCycleDraft(ctx, subscription, effectiveDate, types.InvoiceBillingReasonProration)
+			_, err = invoiceService.MoveCycleDraft(ctx, subscription, effectiveDate, types.InvoiceBillingReasonProration)
 		case req.CancellationType == types.CancellationTypeImmediate:
 			err = invoiceService.VoidCycleDraft(ctx, subscription)
 		case req.CancellationType == types.CancellationTypeScheduledDate && effectiveDate.Before(subscription.CurrentPeriodEnd):
-			err = invoiceService.MoveCycleDraft(ctx, subscription, effectiveDate, types.InvoiceBillingReasonSubscriptionCycle)
+			_, err = invoiceService.MoveCycleDraft(ctx, subscription, effectiveDate, types.InvoiceBillingReasonSubscriptionCycle)
 		}
 		if err != nil {
 			return err
@@ -3264,7 +3264,7 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 
 			// Adjust the billing period by the pause duration; the open draft's end moves with it.
 			newPeriodEnd := sub.CurrentPeriodEnd.Add(pauseDuration)
-			if err := NewInvoiceService(s.ServiceParams).MoveCycleDraft(ctx, sub, newPeriodEnd,
+			if _, err := NewInvoiceService(s.ServiceParams).MoveCycleDraft(ctx, sub, newPeriodEnd,
 				types.InvoiceBillingReasonSubscriptionCycle); err != nil {
 				return err
 			}
@@ -4382,7 +4382,7 @@ func (s *subscriptionService) executeResume(
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		// Adjust the billing period by the pause duration; the open draft's end moves with it.
 		newPeriodEnd := sub.CurrentPeriodEnd.Add(pauseDuration)
-		if err := NewInvoiceService(s.ServiceParams).MoveCycleDraft(txCtx, sub, newPeriodEnd,
+		if _, err := NewInvoiceService(s.ServiceParams).MoveCycleDraft(txCtx, sub, newPeriodEnd,
 			types.InvoiceBillingReasonSubscriptionCycle); err != nil {
 			return err
 		}
@@ -8306,7 +8306,7 @@ func (s *subscriptionService) processAutoInvoiceThresholdSubscription(
 	var inv *dto.InvoiceResponse
 	if err := s.DB.WithTx(ctx, func(ctx context.Context) error {
 		// The period restarts at effectiveTime, so the open draft becomes the threshold invoice.
-		if err := invoiceService.MoveCycleDraft(ctx, sub, effectiveTime, types.InvoiceBillingReasonAutoInvoiceThreshold); err != nil {
+		if _, err := invoiceService.MoveCycleDraft(ctx, sub, effectiveTime, types.InvoiceBillingReasonAutoInvoiceThreshold); err != nil {
 			return err
 		}
 

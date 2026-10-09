@@ -1173,10 +1173,15 @@ func (s *subscriptionService) outgoingPeriodInvoiceRequest(
 // paid after commit with the change's other invoices.
 func (s *subscriptionService) billOutgoingPeriod(ctx context.Context, r *planChangeRequest) (*dto.InvoiceResponse, error) {
 	invoiceSvc := NewInvoiceService(s.ServiceParams)
-	if err := invoiceSvc.MoveCycleDraft(ctx, r.currentSub, r.effectiveAt, types.InvoiceBillingReasonProration); err != nil {
+	draft, err := invoiceSvc.MoveCycleDraft(ctx, r.currentSub, r.effectiveAt, types.InvoiceBillingReasonProration)
+	if err != nil {
 		return nil, err
 	}
-	draft, err := invoiceSvc.CreateDraftInvoiceForSubscription(ctx, dto.CreateSubscriptionDraftInvoiceRequest{
+	// Nothing to bill and no draft holding credits applied at expiry.
+	if draft == nil && r.outgoingPeriod == nil {
+		return nil, nil
+	}
+	created, err := invoiceSvc.CreateDraftInvoiceForSubscription(ctx, dto.CreateSubscriptionDraftInvoiceRequest{
 		SubscriptionID: r.currentSub.ID,
 		PeriodStart:    r.currentSub.CurrentPeriodStart,
 		PeriodEnd:      r.effectiveAt,
@@ -1185,13 +1190,13 @@ func (s *subscriptionService) billOutgoingPeriod(ctx context.Context, r *planCha
 	if err != nil {
 		return nil, err
 	}
-	if _, skipped, err := invoiceSvc.ComputeInvoice(ctx, draft.ID, nil); err != nil || skipped {
+	if _, skipped, err := invoiceSvc.ComputeInvoice(ctx, created.ID, nil); err != nil || skipped {
 		return nil, err
 	}
-	if err := invoiceSvc.FinalizeInvoice(ctx, draft.ID, dto.FinalizeInvoiceRequest{}); err != nil {
+	if err := invoiceSvc.FinalizeInvoice(ctx, created.ID, dto.FinalizeInvoiceRequest{}); err != nil {
 		return nil, err
 	}
-	finalized, err := s.InvoiceRepo.Get(ctx, draft.ID)
+	finalized, err := s.InvoiceRepo.Get(ctx, created.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -1210,9 +1215,14 @@ func (s *subscriptionService) settlePlanChange(
 	invoiceSvc := NewInvoiceService(s.ServiceParams)
 	changed := make([]dto.ChangedInvoice, 0, 2)
 
-	raiseInvoice := func(req dto.CreateInvoiceRequest) error {
+	// raiseInvoice bills the period a reset cuts short: quoted on preview, billed from its open draft
+	// on execute.
+	raiseInvoice := func() error {
 		if preview {
-			inv, err := invoiceSvc.CreatePreviewInvoice(ctx, req)
+			if r.outgoingPeriod == nil {
+				return nil
+			}
+			inv, err := invoiceSvc.CreatePreviewInvoice(ctx, *r.outgoingPeriod)
 			if err != nil {
 				return err
 			}
@@ -1225,8 +1235,8 @@ func (s *subscriptionService) settlePlanChange(
 			return nil
 		}
 
-		inv, err := invoiceSvc.CreateInvoice(ctx, req)
-		if err != nil {
+		inv, err := s.billOutgoingPeriod(ctx, r)
+		if err != nil || inv == nil {
 			return err
 		}
 
@@ -1239,24 +1249,9 @@ func (s *subscriptionService) settlePlanChange(
 		return nil
 	}
 
-	if r.outgoingPeriod != nil {
-		if preview {
-			if err := raiseInvoice(*r.outgoingPeriod); err != nil {
-				return nil, err
-			}
-		} else {
-			inv, err := s.billOutgoingPeriod(ctx, r)
-			if err != nil {
-				return nil, err
-			}
-			if inv != nil {
-				changed = append(changed, dto.ChangedInvoice{
-					ID:      inv.ID,
-					Action:  dto.ChangedInvoiceActionCreated,
-					Status:  dto.ChangedInvoiceStatusFromPaymentStatus(inv.PaymentStatus),
-					Invoice: inv,
-				})
-			}
+	if r.anchorAtEffect {
+		if err := raiseInvoice(); err != nil {
+			return nil, err
 		}
 	}
 
