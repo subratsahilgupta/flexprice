@@ -26,6 +26,7 @@ import (
 	"github.com/flexprice/flexprice/internal/integration/stripe"
 	"github.com/flexprice/flexprice/internal/integration/zoho"
 	"github.com/flexprice/flexprice/internal/interfaces"
+	"github.com/flexprice/flexprice/internal/metrics"
 	"github.com/flexprice/flexprice/internal/storage"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
@@ -122,6 +123,10 @@ func (s *invoiceService) CreateOneOffInvoice(ctx context.Context, req dto.Create
 		}
 	}
 
+	if err := s.validateInvoiceBillingCurrency(ctx, req); err != nil {
+		return nil, err
+	}
+
 	// Validate coupons
 	couponValidationService := NewCouponValidationService(s.ServiceParams)
 	validCoupons := make([]dto.InvoiceCoupon, 0)
@@ -196,6 +201,7 @@ func (s *invoiceService) CreateEmptyDraftInvoice(ctx context.Context, req dto.Cr
 	}
 
 	var resp *dto.InvoiceResponse
+	var created *invoice.Invoice
 
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		// 1. Generate idempotency key if not provided
@@ -330,6 +336,7 @@ func (s *invoiceService) CreateEmptyDraftInvoice(ctx context.Context, req dto.Cr
 		if err := s.InvoiceRepo.Create(txCtx, inv); err != nil {
 			return err
 		}
+		created = inv
 
 		resp = dto.NewInvoiceResponse(inv)
 		return nil
@@ -342,12 +349,23 @@ func (s *invoiceService) CreateEmptyDraftInvoice(ctx context.Context, req dto.Cr
 			"subscription_id", req.SubscriptionID)
 		return nil, err
 	}
+	if created != nil {
+		recordInvoiceTransition(ctx, created)
+	}
 
 	if resp.InvoiceStatus == types.InvoiceStatusFinalized {
 		notifyInvoiceFinalized(ctx, s.ServiceParams, resp.ID)
 	}
 
 	return resp, nil
+}
+
+func recordInvoiceTransition(ctx context.Context, inv *invoice.Invoice) {
+	metrics.RecordCounter(ctx, metrics.InvoiceTransitions, 1,
+		metrics.L(metrics.KeyInvoiceType, string(inv.InvoiceType)),
+		metrics.L(metrics.KeyBillingReason, inv.BillingReason),
+		metrics.L(metrics.KeyStatus, string(inv.InvoiceStatus)),
+	)
 }
 
 // This wrapper delegates to the draft-first flow. Invoice number is assigned during FinalizeInvoice.
@@ -397,6 +415,15 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 }
 
 func (s *invoiceService) CreateComputedDraftInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, bool, error) {
+	// Compute only falls back to resolving tax for subscription invoices, so resolve it here.
+	if req.PreparedTaxRates == nil {
+		preparedTaxRates, err := NewTaxService(s.ServiceParams).PrepareTaxRatesForInvoice(ctx, req)
+		if err != nil {
+			return nil, false, err
+		}
+		req.PreparedTaxRates = preparedTaxRates
+	}
+
 	draftResp, err := s.CreateEmptyDraftInvoice(ctx, req.ToDraftRequest())
 	if err != nil {
 		return nil, false, err
@@ -576,7 +603,7 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 
 	// 3. Take the lock — only for DB writes (line items, credits, coupons, taxes, status update).
 	var computed bool
-	var skipped bool
+	var skipped, wasSkipped bool
 	err = s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		var lockErr error
 		inv, lockErr = s.InvoiceRepo.GetForUpdate(txCtx, invoiceID)
@@ -601,6 +628,7 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 		// Re-check status under lock: allow SKIPPED invoices to be re-computed
 		// (usage may have accumulated since the invoice was first marked SKIPPED).
 		if inv.InvoiceStatus == types.InvoiceStatusSkipped {
+			wasSkipped = true
 			inv.InvoiceStatus = types.InvoiceStatusDraft
 		} else if inv.InvoiceStatus != types.InvoiceStatusDraft {
 			// Finalized/voided between our initial read and the lock — nothing to do.
@@ -700,6 +728,9 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 	// SKIPPED — zero-amount invoices are never synced downstream, so there's nothing to notify.
 	if computed && !skipped {
 		s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdate, invoiceID)
+	}
+	if computed && skipped != wasSkipped {
+		recordInvoiceTransition(ctx, inv)
 	}
 
 	// A skipped renewal owes nothing, so release the new period's held grants now.
@@ -1169,10 +1200,11 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 		// One-off and credit invoices already have credits applied during
 		// ComputeInvoice, so we skip them here.
 		// For subscription invoices, credits are deferred to this step so
-		// wallet debits only happen when the invoice is sealed.
+		// wallet debits only happen when the invoice is sealed. Drafts
+		// converted at checkout are skipped; their paid amount is final.
 		// ====================================================================
 
-		if lockedInv.InvoiceType == types.InvoiceTypeSubscription {
+		if lockedInv.InvoiceType == types.InvoiceTypeSubscription && lockedInv.FxConversion == nil {
 			// Load line items — ApplyCreditsToInvoice needs them
 			lineItems, err := s.InvoiceLineItemRepo.ListByInvoiceID(txCtx, lockedInv.ID)
 			if err != nil {
@@ -1218,25 +1250,36 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 		}
 
 		// ====================================================================
+		// Convert to the billing currency and re-tax. A missing rate leaves the
+		// invoice DRAFT.
+		// ====================================================================
+		if err := s.convertToBillingCurrency(txCtx, lockedInv); err != nil {
+			return err
+		}
+
+		// ====================================================================
 		// Recalculate tax, for every invoice type, so what is sealed is a current
 		// calculation rather than whatever the draft was computed with. An external
 		// engine's calculation also expires, and this is what keeps the one commit
-		// records inside its window.
+		// records inside its window. A converted invoice was already re-taxed in the
+		// billing currency above, and one converted at checkout is final.
 		// ====================================================================
 
-		// An external engine prices line by line, and a non-subscription invoice has not
-		// loaded them above.
-		if len(lockedInv.LineItems) == 0 {
-			lineItems, err := s.InvoiceLineItemRepo.ListByInvoiceID(txCtx, lockedInv.ID)
-			if err != nil {
-				return err
+		if lockedInv.FxConversion == nil {
+			// An external engine prices line by line, and a non-subscription invoice has not
+			// loaded them above.
+			if len(lockedInv.LineItems) == 0 {
+				lineItems, err := s.InvoiceLineItemRepo.ListByInvoiceID(txCtx, lockedInv.ID)
+				if err != nil {
+					return err
+				}
+				lockedInv.LineItems = lineItems
 			}
-			lockedInv.LineItems = lineItems
-		}
 
-		if len(lockedInv.LineItems) > 0 {
-			if _, err := s.RecalculateTaxesOnInvoice(txCtx, lockedInv); err != nil {
-				return err
+			if len(lockedInv.LineItems) > 0 {
+				if _, err := s.RecalculateTaxesOnInvoice(txCtx, lockedInv); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -1289,6 +1332,7 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 	if err != nil {
 		return err
 	}
+	recordInvoiceTransition(ctx, inv)
 
 	notifyInvoiceFinalized(ctx, s.ServiceParams, inv.ID)
 
@@ -1593,6 +1637,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 	if err != nil {
 		return nil, err
 	}
+	recordInvoiceTransition(ctx, inv)
 
 	// A voided invoice will never be paid, so a purchased-credit transaction still
 	// waiting on it must not stay pending: it blocks the wallet's auto-topup guard
@@ -4003,6 +4048,18 @@ func (s *invoiceService) RecalculateInvoiceV2(ctx context.Context, id string, fi
 				"current_status": inv.InvoiceStatus,
 			}).
 			Mark(ierr.ErrValidation)
+	}
+
+	// A converted checkout draft is frozen: recalculating would rate the subscription in the charge
+	// currency onto a billing-currency invoice, and finalize would then skip conversion.
+	if inv.FxConversion != nil {
+		return nil, ierr.NewError("invoice has already been converted to the billing currency").
+			WithHint("A converted draft cannot be recalculated; void it and issue a new one.").
+			WithReportableDetails(map[string]interface{}{
+				"invoice_id": inv.ID,
+				"currency":   inv.Currency,
+			}).
+			Mark(ierr.ErrInvalidOperation)
 	}
 
 	// Validate this is a subscription invoice

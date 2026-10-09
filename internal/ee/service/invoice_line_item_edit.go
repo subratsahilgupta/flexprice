@@ -403,6 +403,7 @@ func (s *invoiceService) voidAndRecreateDraftForEdit(ctx context.Context, inv *i
 			"error", err, "invoice_id", voided.ID)
 		return nil, err
 	}
+	recordInvoiceTransition(ctx, draft)
 
 	if draft.SubscriptionID != nil {
 		if err := s.recomputeDraftAmounts(ctx, voided, draft); err != nil {
