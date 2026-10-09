@@ -524,6 +524,9 @@ func (s *invoiceService) MoveCycleDraft(ctx context.Context, sub *subscription.S
 	if err != nil {
 		return nil, err
 	}
+	draft.PeriodEnd = &periodEnd
+	draft.BillingReason = string(reason)
+	draft.IdempotencyKey = &key
 	return draft, nil
 }
 
