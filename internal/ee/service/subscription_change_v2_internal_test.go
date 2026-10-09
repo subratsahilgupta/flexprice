@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -113,17 +112,15 @@ func TestPlanChangeIdempotencyKey(t *testing.T) {
 
 func TestCreditBasis(t *testing.T) {
 	item := &subscription.SubscriptionLineItem{ID: "subs_line_1", Quantity: decimal.NewFromInt(2)}
-	p := &price.Price{Amount: decimal.NewFromInt(20), BillingModel: types.BILLING_MODEL_FLAT_FEE}
-	priceSvc := NewPriceService(ServiceParams{})
-	listPrice := priceSvc.CalculateCost(context.Background(), p, item.Quantity)
-	assert.True(t, listPrice.Equal(decimal.NewFromInt(40)), "list total is the price's cost for the item's quantity")
+	p := &price.Price{Amount: decimal.NewFromInt(20)}
+	listPrice := decimal.NewFromInt(40)
 
 	t.Run("a billed row caps the credit at what was charged", func(t *testing.T) {
 		billed := map[string]*invoice.BilledAmounts{
 			item.ID: invoice.NewBilledAmounts(decimal.NewFromInt(5), decimal.NewFromInt(1)),
 		}
 
-		paid, credits := creditBasis(item, billed, listPrice)
+		paid, credits := creditBasis(item, p, billed)
 		assert.True(t, paid.Equal(decimal.NewFromInt(5)))
 		assert.True(t, credits.Equal(decimal.NewFromInt(1)))
 	})
@@ -133,7 +130,7 @@ func TestCreditBasis(t *testing.T) {
 			item.ID: invoice.NewBilledAmounts(decimal.Zero, decimal.Zero),
 		}
 
-		paid, credits := creditBasis(item, billed, listPrice)
+		paid, credits := creditBasis(item, p, billed)
 		assert.True(t, paid.IsZero(), "an invoice that charged nothing is evidence, not absence")
 		assert.True(t, credits.IsZero())
 	})
@@ -143,7 +140,7 @@ func TestCreditBasis(t *testing.T) {
 			"subs_line_other": invoice.NewBilledAmounts(decimal.NewFromInt(5), decimal.Zero),
 		}
 
-		paid, credits := creditBasis(item, billed, listPrice)
+		paid, credits := creditBasis(item, p, billed)
 		assert.True(t, paid.Equal(listPrice))
 		assert.True(t, credits.IsZero())
 	})
@@ -151,15 +148,15 @@ func TestCreditBasis(t *testing.T) {
 	// A transient repo failure must not change the money: it hands creditBasis a
 	// nil map, which has to land on the same basis as a lookup that found nothing.
 	t.Run("a failed lookup credits the same as an empty one", func(t *testing.T) {
-		failed, _ := creditBasis(item, nil, listPrice)
-		empty, _ := creditBasis(item, map[string]*invoice.BilledAmounts{}, listPrice)
+		failed, _ := creditBasis(item, p, nil)
+		empty, _ := creditBasis(item, p, map[string]*invoice.BilledAmounts{})
 
 		assert.True(t, failed.Equal(empty))
 		assert.True(t, failed.Equal(listPrice))
 	})
 
 	t.Run("a missing price cannot invent a basis", func(t *testing.T) {
-		paid, credits := creditBasis(item, nil, priceSvc.CalculateCost(context.Background(), nil, item.Quantity))
+		paid, credits := creditBasis(item, nil, nil)
 		assert.True(t, paid.IsZero())
 		assert.True(t, credits.IsZero())
 	})
