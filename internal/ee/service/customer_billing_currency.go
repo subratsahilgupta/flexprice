@@ -66,7 +66,7 @@ func (s *customerService) validateBillingCurrency(ctx context.Context, customerI
 		}
 	}
 	if len(missingSubs) > 0 {
-		return missingExchangeRatesError(ccCfg, "missing exchange rates for subscriptions", missingSubs)
+		return missingExchangeRatesError(ccCfg, "missing conversions for subscriptions", missingSubs)
 	}
 
 	wallets, err := s.WalletRepo.GetWalletsByCustomerID(ctx, customerID)
@@ -87,7 +87,7 @@ func (s *customerService) validateBillingCurrency(ctx context.Context, customerI
 		}
 	}
 	if len(missingWallets) > 0 {
-		return missingExchangeRatesError(ccCfg, "missing exchange rates for wallets", missingWallets)
+		return missingExchangeRatesError(ccCfg, "missing conversions for wallets", missingWallets)
 	}
 
 	return nil
