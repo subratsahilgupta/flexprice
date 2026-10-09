@@ -45,10 +45,27 @@ func (c *calculatorImpl) Calculate(ctx context.Context, params ProrationParams) 
 			Mark(ierr.ErrValidation)
 	}
 
-	// e.g. removal on Jan 20 of a $31 monthly item, window [Jan 1, Feb 1): credit 12/31 = $12.
-	serviceablePeriod := types.Period{Start: params.ProrationDate, End: params.CurrentPeriodEnd}
-	coefficient, _, err := CalculateProrationCoefficient(params.Subscription, params.BillingPeriod, params.BillingPeriodCount,
-		serviceablePeriod, types.StrategySecondBased)
+	// Load customer timezone
+	loc, err := time.LoadLocation(params.Timezone)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHintf("failed to load customer timezone '%s': %v", params.Timezone, err).
+			Mark(ierr.ErrSystem)
+	}
+
+	// Convert times to customer timezone
+	prorationDateInTZ := params.ProrationDate.In(loc)
+	periodStartInTZ := params.CurrentPeriodStart.In(loc)
+	periodEndInTZ := params.CurrentPeriodEnd.In(loc)
+
+	// Calculate proration coefficient using shared helper
+	prorationCoefficient, err := calculateProrationCoefficient(
+		periodStartInTZ,
+		periodEndInTZ,
+		prorationDateInTZ,
+		loc,
+		params.ProrationStrategy,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +94,7 @@ func (c *calculatorImpl) Calculate(ctx context.Context, params ProrationParams) 
 
 	if shouldIssueCredit {
 		oldItemTotal := params.OldPricePerUnit.Mul(params.OldQuantity)
-		potentialCredit := oldItemTotal.Mul(coefficient)
+		potentialCredit := oldItemTotal.Mul(prorationCoefficient)
 
 		// Only cap credit for non-quantity changes
 		var creditAmount decimal.Decimal
@@ -110,7 +127,7 @@ func (c *calculatorImpl) Calculate(ctx context.Context, params ProrationParams) 
 
 	if shouldIssueCharge {
 		newItemTotal := params.NewPricePerUnit.Mul(params.NewQuantity)
-		proratedCharge := newItemTotal.Mul(coefficient)
+		proratedCharge := newItemTotal.Mul(prorationCoefficient)
 
 		if proratedCharge.GreaterThan(decimal.Zero) {
 			chargeItem := ProrationLineItem{
@@ -281,8 +298,8 @@ func validateParams(params ProrationParams) error {
 	if params.CurrentPeriodEnd.Before(params.CurrentPeriodStart) {
 		return fmt.Errorf("billing period end date cannot be before start date")
 	}
-	if params.Subscription == nil {
-		return fmt.Errorf("subscription is required")
+	if params.Timezone == "" {
+		return fmt.Errorf("customer timezone is required")
 	}
 
 	switch params.Action {
