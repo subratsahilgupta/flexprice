@@ -137,6 +137,12 @@ type UpdateSubscriptionLineItemRequest struct {
 	// TransformQuantity determines how to transform the quantity for this line item
 	TransformQuantity *price.TransformQuantity `json:"transform_quantity,omitempty"`
 
+	// PriceUnitAmount is the amount for a CUSTOM price unit price (FLAT_FEE/PACKAGE billing models)
+	PriceUnitAmount *decimal.Decimal `json:"price_unit_amount,omitempty" swaggertype:"string"`
+
+	// PriceUnitTiers are the tiers for a CUSTOM price unit price (TIERED billing model)
+	PriceUnitTiers []CreatePriceTier `json:"price_unit_tiers,omitempty"`
+
 	// BucketSize overrides the windowing used to turn this meter's usage into
 	// billable units for this line item. See CreatePriceRequest.BucketSize.
 	BucketSize types.WindowSize `json:"bucket_size,omitempty"`
@@ -283,16 +289,12 @@ func (r *CreateSubscriptionLineItemRequest) Validate(linePrice *price.Price, sub
 		}
 	}
 
-	// Cadence relationship: price effective months (billing_period × billing_period_count)
-	// must equal or strictly divide subscription effective months. Uses the same
-	// types.IsCadenceCompatible check as splitInvoicePeriodByLineItemCadence at
-	// invoice time so anything accepted here cannot later error during fan-out.
-	// Mirrors the plan-attachment filter at internal/ee/service/subscription.go:3949-3950.
+	// The price cadence must equal, divide, or be a whole multiple of the subscription cadence.
 	if linePrice != nil && sub != nil &&
 		linePrice.BillingPeriod != types.BILLING_PERIOD_ONETIME &&
-		!types.IsCadenceCompatible(sub.BillingPeriod, sub.BillingPeriodCount, linePrice.BillingPeriod, linePrice.BillingPeriodCount) {
-		return ierr.NewError("price billing period must equal or divide subscription billing period").
-			WithHint("Price effective duration (billing_period × billing_period_count) must equal or divide the subscription's effective duration. For a quarterly sub, monthly or quarterly prices are allowed; 2-month, annual, or half-year prices are not.").
+		!types.IsCadenceAllowed(sub.BillingPeriod, sub.BillingPeriodCount, linePrice.BillingPeriod, linePrice.BillingPeriodCount) {
+		return ierr.NewError("price billing period must equal, divide, or be a multiple of the subscription billing period").
+			WithHint("Price effective duration (billing_period × billing_period_count) must equal, divide, or be a whole multiple of the subscription's. For a quarterly sub, monthly, quarterly, half-year and annual prices are allowed; 2-month prices are not.").
 			WithReportableDetails(map[string]interface{}{
 				"price_billing_period":              linePrice.BillingPeriod,
 				"price_billing_period_count":        linePrice.BillingPeriodCount,
@@ -489,6 +491,7 @@ func (r *CreateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 		PriceType:           params.Price.Type,
 		Currency:            params.Subscription.Currency,
 		BillingPeriod:       params.Price.BillingPeriod,
+		BillingPeriodCount:  params.Price.BillingPeriodCount,
 		InvoiceCadence:      invoiceCadence,
 		EntityType:          params.EntityType,
 		Metadata:            r.Metadata,
@@ -607,7 +610,7 @@ func (r *UpdateSubscriptionLineItemRequest) Validate() error {
 	// If EffectiveFrom is provided, at least one critical field must be present
 	if r.EffectiveFrom != nil && !r.ShouldCreateNewLineItem() {
 		return ierr.NewError("effective_from requires at least one critical field").
-			WithHint("When providing effective_from, you must also provide one of: amount, billing_model, tier_mode, tiers, transform_quantity, bucket_size, or commitment fields").
+			WithHint("When providing effective_from, you must also provide one of: amount, billing_model, tier_mode, tiers, transform_quantity, price_unit_amount, price_unit_tiers, bucket_size, or commitment fields").
 			Mark(ierr.ErrValidation)
 	}
 
@@ -820,6 +823,8 @@ func (r *UpdateSubscriptionLineItemRequest) ShouldCreateNewLineItem() bool {
 		r.TierMode != "" ||
 		len(r.Tiers) > 0 ||
 		r.TransformQuantity != nil ||
+		r.PriceUnitAmount != nil ||
+		len(r.PriceUnitTiers) > 0 ||
 		r.BucketSize != "" ||
 		r.HasCommitment() ||
 		r.CommitmentOverageFactor != nil ||
@@ -834,23 +839,29 @@ func (r *UpdateSubscriptionLineItemRequest) ShouldCreateNewLineItem() bool {
 func (r *UpdateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.Context, existingLineItem *subscription.SubscriptionLineItem, newPriceID string) *subscription.SubscriptionLineItem {
 	// Start with the existing line item as base
 	newLineItem := &subscription.SubscriptionLineItem{
-		ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
-		SubscriptionID:   existingLineItem.SubscriptionID,
-		CustomerID:       existingLineItem.CustomerID,
-		PriceID:          newPriceID,
-		PriceType:        existingLineItem.PriceType,
-		Currency:         existingLineItem.Currency,
-		BillingPeriod:    existingLineItem.BillingPeriod,
-		InvoiceCadence:   existingLineItem.InvoiceCadence,
-		EntityType:       existingLineItem.EntityType,
-		EntityID:         existingLineItem.EntityID,
-		PlanDisplayName:  existingLineItem.PlanDisplayName,
-		MeterID:          existingLineItem.MeterID,
-		MeterDisplayName: existingLineItem.MeterDisplayName,
-		DisplayName:      existingLineItem.DisplayName,
-		Quantity:         existingLineItem.Quantity,
-		EnvironmentID:    types.GetEnvironmentID(ctx),
-		BaseModel:        types.GetDefaultBaseModel(ctx),
+		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+		SubscriptionID:     existingLineItem.SubscriptionID,
+		CustomerID:         existingLineItem.CustomerID,
+		PriceID:            newPriceID,
+		PriceType:          existingLineItem.PriceType,
+		Currency:           existingLineItem.Currency,
+		BillingPeriod:      existingLineItem.BillingPeriod,
+		BillingPeriodCount: existingLineItem.BillingPeriodCount,
+		InvoiceCadence:     existingLineItem.InvoiceCadence,
+		EntityType:         existingLineItem.EntityType,
+		EntityID:           existingLineItem.EntityID,
+		PlanDisplayName:    existingLineItem.PlanDisplayName,
+		MeterID:            existingLineItem.MeterID,
+		MeterDisplayName:   existingLineItem.MeterDisplayName,
+		DisplayName:        existingLineItem.DisplayName,
+		Quantity:           existingLineItem.Quantity,
+		EnvironmentID:      types.GetEnvironmentID(ctx),
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+
+		PriceUnitID:         existingLineItem.PriceUnitID,
+		PriceUnit:           existingLineItem.PriceUnit,
+		SubscriptionPhaseID: existingLineItem.SubscriptionPhaseID,
+		AddonAssociationID:  existingLineItem.AddonAssociationID,
 	}
 
 	// Set metadata - use provided metadata or keep existing
@@ -860,16 +871,16 @@ func (r *UpdateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 		newLineItem.Metadata = existingLineItem.Metadata
 	}
 
-	// Set commitment fields - use provided values or keep existing
+	// Set commitment fields - use provided values or keep existing; a type switch drops the other type's value
 	if r.CommitmentAmount != nil {
 		newLineItem.CommitmentAmount = r.CommitmentAmount
-	} else {
+	} else if r.CommitmentType != types.COMMITMENT_TYPE_QUANTITY {
 		newLineItem.CommitmentAmount = existingLineItem.CommitmentAmount
 	}
 
 	if r.CommitmentQuantity != nil {
 		newLineItem.CommitmentQuantity = r.CommitmentQuantity
-	} else {
+	} else if r.CommitmentType != types.COMMITMENT_TYPE_AMOUNT {
 		newLineItem.CommitmentQuantity = existingLineItem.CommitmentQuantity
 	}
 

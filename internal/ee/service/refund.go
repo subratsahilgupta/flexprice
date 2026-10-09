@@ -17,6 +17,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/refund"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/interfaces"
+	"github.com/flexprice/flexprice/internal/metrics"
 	"github.com/flexprice/flexprice/internal/types"
 	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
 )
@@ -108,6 +109,7 @@ func (s *refundService) persist(ctx context.Context, rows []*refund.Refund) ([]*
 		return nil, err
 	}
 	for _, row := range rows {
+		recordRefundTransition(ctx, row)
 		s.publishSystemEvent(ctx, types.WebhookEventRefundCreated, row.ID)
 	}
 	return rows, nil
@@ -416,7 +418,7 @@ func (s *refundService) gatewayPaymentIDFor(ctx context.Context, row *refund.Ref
 }
 
 func (s *refundService) claimForGateway(ctx context.Context, refundID string) (bool, error) {
-	claimed := false
+	var claimed *refund.Refund
 	err := s.DB.WithTx(ctx, func(tx context.Context) error {
 		locked, err := s.RefundRepo.GetForUpdate(tx, refundID)
 		if err != nil {
@@ -434,10 +436,14 @@ func (s *refundService) claimForGateway(ctx context.Context, refundID string) (b
 		if err := s.RefundRepo.Update(tx, updated); err != nil {
 			return err
 		}
-		claimed = true
+		claimed = updated
 		return nil
 	})
-	return claimed, err
+	if err != nil || claimed == nil {
+		return false, err
+	}
+	recordRefundTransition(ctx, claimed)
+	return true, nil
 }
 
 func (s *refundService) recordGatewayAcceptance(ctx context.Context, refundID string, resp *interfaces.RefundProviderResponse) error {
@@ -464,7 +470,7 @@ func (s *refundService) Settle(ctx context.Context, req *dto.SettleRefundRequest
 		return err
 	}
 
-	settled := false
+	var settled *refund.Refund
 	err := s.DB.WithTx(ctx, func(tx context.Context) error {
 		row, err := s.RefundRepo.GetForUpdate(tx, req.RefundID)
 		if err != nil {
@@ -507,15 +513,13 @@ func (s *refundService) Settle(ctx context.Context, req *dto.SettleRefundRequest
 			builder = builder.WithGatewayMetadata(req.GatewayMetadata)
 		}
 
-		if err := s.RefundRepo.Update(tx, builder.Build()); err != nil {
-			return err
-		}
-		settled = true
-		return nil
+		settled = builder.Build()
+		return s.RefundRepo.Update(tx, settled)
 	})
-	if err != nil || !settled {
+	if err != nil || settled == nil {
 		return err
 	}
+	recordRefundTransition(ctx, settled)
 
 	s.publishSystemEvent(ctx, types.WebhookEventRefundSucceeded, req.RefundID)
 	return nil
@@ -547,6 +551,7 @@ func (s *refundService) Fail(ctx context.Context, refundID, reason string) error
 	if err != nil || failed == nil {
 		return err
 	}
+	recordRefundTransition(ctx, failed)
 
 	s.publishSystemEvent(ctx, types.WebhookEventRefundFailed, failed.ID)
 
@@ -565,6 +570,7 @@ func (s *refundService) Fail(ctx context.Context, refundID, reason string) error
 // gateway refund. It is keyed on the failed row's metadata so a retry never mints a second one.
 func (s *refundService) refundToWalletAsFallbackToFailure(ctx context.Context, failedID string) (*refund.Refund, error) {
 	var fallback *refund.Refund
+	var created bool
 
 	err := s.DB.WithTx(ctx, func(tx context.Context) error {
 		row, err := s.RefundRepo.GetForUpdate(tx, failedID)
@@ -602,6 +608,7 @@ func (s *refundService) refundToWalletAsFallbackToFailure(ctx context.Context, f
 		if err := s.RefundRepo.Create(tx, fallback); err != nil {
 			return err
 		}
+		created = true
 		s.publishSystemEvent(tx, types.WebhookEventRefundCreated, fallback.ID)
 
 		metadata := types.Metadata{}
@@ -615,7 +622,19 @@ func (s *refundService) refundToWalletAsFallbackToFailure(ctx context.Context, f
 	if err != nil {
 		return nil, err
 	}
+	if created {
+		recordRefundTransition(ctx, fallback)
+	}
 	return fallback, nil
+}
+
+func recordRefundTransition(ctx context.Context, r *refund.Refund) {
+	metrics.RecordCounter(ctx, metrics.RefundTransitions, 1,
+		metrics.L(metrics.KeyProvider, lo.FromPtrOr(r.PaymentGateway, "none")),
+		metrics.L(metrics.KeyDestination, string(r.RefundDestination)),
+		metrics.L(metrics.KeyReason, string(r.RefundReason)),
+		metrics.L(metrics.KeyStatus, string(r.RefundStatus)),
+	)
 }
 
 func (s *refundService) GetRefund(ctx context.Context, id string) (*dto.RefundResponse, error) {

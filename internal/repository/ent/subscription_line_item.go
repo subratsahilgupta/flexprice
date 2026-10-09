@@ -104,6 +104,7 @@ func (r *subscriptionLineItemRepository) Create(ctx context.Context, item *subsc
 		SetQuantity(item.Quantity).
 		SetCurrency(item.Currency).
 		SetBillingPeriod(item.BillingPeriod).
+		SetBillingPeriodCount(max(item.BillingPeriodCount, 1)).
 		SetNillableStartDate(types.ToNillableTime(item.StartDate)).
 		SetNillableEndDate(types.ToNillableTime(item.EndDate)).
 		SetNillableSubscriptionPhaseID(item.SubscriptionPhaseID).
@@ -117,6 +118,7 @@ func (r *subscriptionLineItemRepository) Create(ctx context.Context, item *subsc
 		SetNillableCommitmentOverageFactor(item.CommitmentOverageFactor).
 		SetCommitmentTrueUpEnabled(item.CommitmentTrueUpEnabled).
 		SetCommitmentWindowed(item.CommitmentWindowed).
+		SetNillableCommitmentDuration(item.CommitmentDuration).
 		SetCommitmentTimeBuckets(item.CommitmentTimeBuckets).
 		SetTenantID(item.TenantID).
 		SetEnvironmentID(item.EnvironmentID).
@@ -312,6 +314,7 @@ func (r *subscriptionLineItemRepository) Update(ctx context.Context, item *subsc
 		SetQuantity(item.Quantity).
 		SetCurrency(item.Currency).
 		SetBillingPeriod(item.BillingPeriod).
+		SetBillingPeriodCount(max(item.BillingPeriodCount, 1)).
 		SetNillableStartDate(types.ToNillableTime(item.StartDate)).
 		SetMetadata(item.Metadata).
 		// Commitment fields
@@ -321,6 +324,7 @@ func (r *subscriptionLineItemRepository) Update(ctx context.Context, item *subsc
 		SetNillableCommitmentOverageFactor(item.CommitmentOverageFactor).
 		SetCommitmentTrueUpEnabled(item.CommitmentTrueUpEnabled).
 		SetCommitmentWindowed(item.CommitmentWindowed).
+		SetNillableCommitmentDuration(item.CommitmentDuration).
 		SetCommitmentTimeBuckets(item.CommitmentTimeBuckets).
 		SetStatus(string(item.Status)).
 		SetUpdatedBy(item.UpdatedBy).
@@ -478,19 +482,20 @@ func (r *subscriptionLineItemRepository) CreateBulk(ctx context.Context, items [
 			SetQuantity(item.Quantity).
 			SetCurrency(item.Currency).
 			SetBillingPeriod(item.BillingPeriod).
+			SetBillingPeriodCount(max(item.BillingPeriodCount, 1)).
 			SetInvoiceCadence(item.InvoiceCadence).
 			SetNillableStartDate(types.ToNillableTime(item.StartDate)).
 			SetNillableEndDate(types.ToNillableTime(item.EndDate)).
 			SetNillableSubscriptionPhaseID(item.SubscriptionPhaseID).
 			SetNillableAddonAssociationID(item.AddonAssociationID).
-			SetQuantity(item.Quantity).
-			SetCurrency(item.Currency).
-			SetBillingPeriod(item.BillingPeriod).
-			SetInvoiceCadence(item.InvoiceCadence).
-			SetNillableStartDate(types.ToNillableTime(item.StartDate)).
-			SetNillableEndDate(types.ToNillableTime(item.EndDate)).
-			SetNillableSubscriptionPhaseID(item.SubscriptionPhaseID).
 			SetMetadata(item.Metadata).
+			SetNillableCommitmentAmount(item.CommitmentAmount).
+			SetNillableCommitmentQuantity(item.CommitmentQuantity).
+			SetNillableCommitmentType(types.ToNillableString(string(item.CommitmentType))).
+			SetNillableCommitmentOverageFactor(item.CommitmentOverageFactor).
+			SetCommitmentTrueUpEnabled(item.CommitmentTrueUpEnabled).
+			SetCommitmentWindowed(item.CommitmentWindowed).
+			SetNillableCommitmentDuration(item.CommitmentDuration).
 			SetCommitmentTimeBuckets(item.CommitmentTimeBuckets).
 			SetTenantID(item.TenantID).
 			SetEnvironmentID(item.EnvironmentID).
