@@ -2,7 +2,7 @@ package billingmatrix
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -89,7 +89,7 @@ func (d addonDef) key() string {
 	price := d.item.priceBody("ADDON", "", "")
 	delete(price, "start_date")
 	raw, _ := json.Marshal(map[string]any{"price": price, "cg": d.creditGrant, "eg": d.grantQuota})
-	sum := sha1.Sum(raw)
+	sum := sha256.Sum256(raw)
 	return fixtureKeyPrefix + "addon_" + hex.EncodeToString(sum[:])[:12]
 }
 
