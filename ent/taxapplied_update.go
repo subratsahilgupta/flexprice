@@ -309,6 +309,11 @@ func (_u *TaxAppliedUpdate) check() error {
 			return &ValidationError{Name: "tax_behavior", err: fmt.Errorf(`ent: validator failed for field "TaxApplied.tax_behavior": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Provider(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "provider", err: fmt.Errorf(`ent: validator failed for field "TaxApplied.provider": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -712,6 +717,11 @@ func (_u *TaxAppliedUpdateOne) check() error {
 	if v, ok := _u.mutation.TaxBehavior(); ok {
 		if err := v.Validate(); err != nil {
 			return &ValidationError{Name: "tax_behavior", err: fmt.Errorf(`ent: validator failed for field "TaxApplied.tax_behavior": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.Provider(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "provider", err: fmt.Errorf(`ent: validator failed for field "TaxApplied.provider": %w`, err)}
 		}
 	}
 	return nil
