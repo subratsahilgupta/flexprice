@@ -3,17 +3,27 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"time"
+
+	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	domainCheckout "github.com/flexprice/flexprice/internal/domain/checkout"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/interfaces"
+	"github.com/flexprice/flexprice/internal/metrics"
 	"github.com/flexprice/flexprice/internal/types"
 	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
 	"github.com/samber/lo"
+)
+
+// Checkout charge modes, a metrics label; "none" means the gateway was not contacted yet.
+const (
+	chargeModeNone        = "none"
+	chargeModeAutoCharge  = "auto_charge"
+	chargeModeAuthLink    = "auth_link"
+	chargeModePaymentLink = "payment_link"
 )
 
 type CheckoutSessionService = interfaces.CheckoutSessionService
@@ -83,6 +93,19 @@ func pendingCheckoutSessionFilter(
 	}
 }
 
+// openCheckoutSessionIDs returns the ids of the customer's checkout sessions that are still open.
+func openCheckoutSessionIDs(ctx context.Context, sp ServiceParams, customerID string) ([]string, error) {
+	sessions, err := sp.CheckoutSessionRepo.List(ctx, &types.CheckoutSessionFilter{
+		QueryFilter:      types.NewNoLimitQueryFilter(),
+		CustomerIDs:      []string{customerID},
+		CheckoutStatuses: types.ActiveCheckoutStatuses(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return lo.Map(sessions, func(sess *domainCheckout.CheckoutSession, _ int) string { return sess.ID }), nil
+}
+
 func (s *checkoutSessionService) Create(ctx context.Context, req dto.CreateCheckoutSessionRequest) (*dto.CheckoutSessionResponse, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
@@ -137,6 +160,7 @@ func (s *checkoutSessionService) Create(ctx context.Context, req dto.CreateCheck
 	}
 
 	resp := s.toPollableResponse(ctx, session, false)
+	metrics.RecordCounter(ctx, metrics.CheckoutSessions, 1, checkoutMetricLabels(session, types.CheckoutStatusInitiated)...)
 	s.publishCheckoutEvent(ctx, resp, types.WebhookEventCheckoutSessionInitiated)
 	return resp, nil
 }
@@ -432,6 +456,7 @@ func (s *checkoutSessionService) terminateCheckoutSession(ctx context.Context, s
 
 	session.CheckoutStatus = status
 	session.FailureReason = failureReason
+	metrics.RecordCounter(ctx, metrics.CheckoutSessions, 1, checkoutMetricLabels(session, status)...)
 	return true, nil
 }
 
@@ -609,8 +634,33 @@ func (s *checkoutSessionService) CompleteCheckoutSession(ctx context.Context, se
 	if mergedResult != nil {
 		session.ProviderResult = domainCheckout.ToJSONBCheckoutProviderResult(mergedResult)
 	}
+	metrics.RecordCounter(ctx, metrics.CheckoutSessions, 1, checkoutMetricLabels(session, types.CheckoutStatusCompleted)...)
 	s.publishCheckoutEvent(ctx, dto.ToCheckoutSessionResponse(session), types.WebhookEventCheckoutSessionCompleted)
 	return nil
+}
+
+func checkoutMetricLabels(session *domainCheckout.CheckoutSession, status types.CheckoutStatus) []metrics.Label {
+	return []metrics.Label{
+		metrics.L(metrics.KeyProvider, string(session.PaymentProvider)),
+		metrics.L(metrics.KeyAction, string(session.Action)),
+		metrics.L(metrics.KeyChargeMode, checkoutChargeMode(session)),
+		metrics.L(metrics.KeyStatus, string(status)),
+	}
+}
+
+// checkoutChargeMode relies on auto-charge responses carrying no URL while auth links always do.
+func checkoutChargeMode(session *domainCheckout.CheckoutSession) string {
+	result := session.ProviderResult.ToProviderResult()
+	switch {
+	case result == nil:
+		return chargeModeNone
+	case lo.FromPtr(session.PaymentProviderConfig.ToCheckoutPaymentProviderConfig()).CollectionMethod == types.CollectionMethodSendInvoice:
+		return chargeModePaymentLink
+	case lo.FromPtr(result.NextAction).URL != "":
+		return chargeModeAuthLink
+	default:
+		return chargeModeAutoCharge
+	}
 }
 
 func (s *checkoutSessionService) publishCheckoutEvent(ctx context.Context, session *dto.CheckoutSessionResponse, eventName types.WebhookEventName) {
@@ -729,6 +779,27 @@ func (s *checkoutSessionService) createCheckoutPayment(ctx context.Context, inv 
 			Mark(ierr.ErrValidation)
 	}
 
+	// Every checkout passes here: convert and re-tax before minting the payment, so the link is in
+	// the billing currency. A missing rate fails before anything is charged.
+	invSvc := NewInvoiceService(s.ServiceParams).(*invoiceService)
+	billing, err := invSvc.conversionTarget(ctx, inv)
+	if err != nil {
+		return nil, err
+	}
+	if billing != "" {
+		if !inv.AmountPaid.IsZero() {
+			return nil, ierr.NewError("partly paid invoice cannot be converted for checkout").
+				WithHintf("This invoice is already partly paid in %s and the customer is billed in %s.", inv.Currency, billing).
+				WithReportableDetails(map[string]any{"invoice_id": inv.ID, "amount_paid": inv.AmountPaid.String()}).
+				Mark(ierr.ErrValidation)
+		}
+		if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+			return invSvc.convertToBillingCurrency(txCtx, inv)
+		}); err != nil {
+			return nil, err
+		}
+	}
+
 	paySvc := NewPaymentService(s.ServiceParams)
 	return paySvc.CreatePaymentForCheckout(ctx, &dto.CreateCheckoutPaymentRequest{
 		Invoice: inv,
@@ -799,6 +870,7 @@ func (s *checkoutSessionService) StartPayFirstCheckoutSession(
 	}
 
 	sessionResp := s.toPollableResponse(ctx, session, false)
+	metrics.RecordCounter(ctx, metrics.CheckoutSessions, 1, checkoutMetricLabels(session, types.CheckoutStatusInitiated)...)
 	s.publishCheckoutEvent(ctx, sessionResp, types.WebhookEventCheckoutSessionInitiated)
 	return sessionResp, nil
 }

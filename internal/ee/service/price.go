@@ -32,6 +32,11 @@ type PriceService interface {
 	DeletePrice(ctx context.Context, id string, req dto.DeletePriceRequest) error
 	CalculateCost(ctx context.Context, price *price.Price, quantity decimal.Decimal) decimal.Decimal
 
+	// CalculateUnitCost spreads CalculateCost evenly over quantity, so tiered and package prices
+	// prorate on what they actually bill.
+	// e.g. volume tiers, 12 units billed $96 → $8/unit, not the first tier's $10.
+	CalculateUnitCost(ctx context.Context, price *price.Price, quantity decimal.Decimal) decimal.Decimal
+
 	// CalculateBucketedCost calculates cost for bucketed values where each value is priced independently
 	CalculateBucketedCost(ctx context.Context, price *price.Price, bucketedValues []decimal.Decimal) decimal.Decimal
 
@@ -875,6 +880,9 @@ func (s *priceService) UpdatePrice(ctx context.Context, id string, req dto.Updat
 
 	// Check if the request has critical fields
 	if req.ShouldCreateNewPrice() {
+		if err := req.ValidateAgainst(existingPrice); err != nil {
+			return nil, err
+		}
 		if existingPrice.EndDate != nil {
 			return nil, ierr.NewError("price is already terminated").
 				WithHint("Cannot update a terminated price").
@@ -1124,7 +1132,20 @@ func (s *priceService) calculateSingletonCost(ctx context.Context, price *price.
 // CalculateCost calculates the cost for a given price and quantity
 // returns the cost in main currency units (e.g., 1.00 = $1.00)
 func (s *priceService) CalculateCost(ctx context.Context, price *price.Price, quantity decimal.Decimal) decimal.Decimal {
+	if price == nil {
+		return decimal.Zero
+	}
 	return s.calculateSingletonCost(ctx, price, quantity)
+}
+
+func (s *priceService) CalculateUnitCost(ctx context.Context, price *price.Price, quantity decimal.Decimal) decimal.Decimal {
+	if price == nil {
+		return decimal.Zero
+	}
+	if quantity.IsZero() {
+		return price.Amount
+	}
+	return s.CalculateCost(ctx, price, quantity).Div(quantity)
 }
 
 // CalculateBucketedCost calculates cost for bucketed values (from []decimal.Decimal).

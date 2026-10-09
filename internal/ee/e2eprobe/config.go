@@ -49,8 +49,11 @@ type Config struct {
 	// received, aggregation observed, startup grace hits, etc.).
 	LogLevel string // E2EPROBE_LOG_LEVEL, default "info"
 
-	Slack SlackConfig
-	OTEL  OTELConfig
+	Slack    SlackConfig
+	OTEL     OTELConfig
+	Payments PaymentsConfig
+
+	BillingMatrix BillingMatrixConfig
 
 	Checks map[string]CheckConfig
 
@@ -71,6 +74,67 @@ type SlackConfig struct {
 
 type OTELConfig struct {
 	Enabled bool
+}
+
+// PaymentsConfig enables the payment probes for the gateways connected to the
+// probe environment. Gateway credentials are optional: without them the probes
+// still cover hosted links and method listing, and skip flows that need a card
+// vaulted on the gateway.
+type PaymentsConfig struct {
+	Providers     []PaymentProviderConfig // E2EPROBE_PAYMENTS_PROVIDERS, comma-separated
+	SettleTimeout time.Duration           // E2EPROBE_PAYMENTS_SETTLE_TIMEOUT, default 90s
+	// AssertKnownIssues runs legs that fail on known, unfixed product bugs; off by default.
+	AssertKnownIssues bool // E2EPROBE_PAYMENTS_ASSERT_KNOWN_ISSUES
+}
+
+// PaymentProviderConfig is one gateway the payment probes exercise.
+type PaymentProviderConfig struct {
+	Provider string // "stripe" | "chargebee" | "razorpay"
+	Currency string // E2EPROBE_PAYMENTS_<PROVIDER>_CURRENCY, defaults per gateway
+
+	// SettleTimeout overrides PaymentsConfig.SettleTimeout for this gateway.
+	SettleTimeout time.Duration // E2EPROBE_PAYMENTS_<PROVIDER>_SETTLE_TIMEOUT
+
+	// FixedCustomerExternalID names a persistent customer whose cards or mandates
+	// were saved by hand; auto-charge flows run on it.
+	FixedCustomerExternalID string
+	// DeclineCardLast4 picks out the fixed customer's declining card; every other
+	// auto-chargeable method is treated as a good card.
+	DeclineCardLast4 string
+}
+
+// paymentDefaultSettleTimeout covers gateways slower than the global default:
+// Razorpay test-mode mandate debits capture up to a few minutes after submission.
+var paymentDefaultSettleTimeout = map[string]time.Duration{
+	"razorpay": 10 * time.Minute,
+}
+
+// paymentFixedCustomer is the same in every region; its cards or mandates are saved by hand.
+var paymentFixedCustomer = map[string]string{
+	"stripe":    "e2eprobe-cust-pay-stripe-cards",
+	"chargebee": "e2eprobe-cust-pay-chargebee-cards",
+	"razorpay":  "e2eprobe-cust-pay-razorpay-mandate",
+}
+
+// paymentDeclineCardLast4 identifies the gateway test card that saves but declines when charged.
+var paymentDeclineCardLast4 = map[string]string{
+	"stripe":    "0341",
+	"chargebee": "0004",
+}
+
+var paymentDefaultCurrency = map[string]string{
+	"stripe":    "USD",
+	"chargebee": "USD",
+	"razorpay":  "INR",
+}
+
+// BillingMatrixConfig gates and tunes the billing-matrix checks.
+type BillingMatrixConfig struct {
+	// Enabled turns on every billing-matrix check (E2EPROBE_BILLING_MATRIX_ENABLED, default false).
+	// Off by default: the checks create plans, subscriptions and invoices every tick.
+	Enabled           bool
+	ScenariosPerRun   int  // E2EPROBE_BILLING_MATRIX_SCENARIOS_PER_RUN, default 3
+	AssertKnownIssues bool // E2EPROBE_BILLING_MATRIX_ASSERT_KNOWN_ISSUES: run scenarios that hit known product bugs
 }
 
 type CheckConfig struct {
@@ -102,6 +166,9 @@ var CheckNames = []string{
 	"ENTITLEMENT_GRANT_ADDITIVE_PROBE",
 	"LOW_WALLET_ALERT_LISTENER",
 	"LOW_BALANCE_ALERT_PROBE",
+	"PAYMENT_LINK_PROBE",
+	"PAYMENT_METHOD_PROBE",
+	"PAYMENT_AUTOCHARGE_PROBE",
 	"JANITOR",
 }
 
@@ -127,6 +194,9 @@ var checkDefaultIntervals = map[string]time.Duration{
 	"ENTITLEMENT_GRANT_ADDITIVE_PROBE":    15 * time.Minute,
 	"LOW_WALLET_ALERT_LISTENER":           0, // listener — not a ticker
 	"LOW_BALANCE_ALERT_PROBE":             5 * time.Minute,
+	"PAYMENT_LINK_PROBE":                  20 * time.Minute,
+	"PAYMENT_METHOD_PROBE":                30 * time.Minute,
+	"PAYMENT_AUTOCHARGE_PROBE":            30 * time.Minute,
 	"JANITOR":                             1 * time.Hour,
 }
 
@@ -158,6 +228,11 @@ func LoadConfig() (*Config, error) {
 		OTEL: OTELConfig{
 			Enabled: getBool("E2EPROBE_OTEL_ENABLED", false),
 		},
+		BillingMatrix: BillingMatrixConfig{
+			Enabled:           getBool("E2EPROBE_BILLING_MATRIX_ENABLED", false),
+			ScenariosPerRun:   getInt(&warnings, "E2EPROBE_BILLING_MATRIX_SCENARIOS_PER_RUN", 3),
+			AssertKnownIssues: getBool("E2EPROBE_BILLING_MATRIX_ASSERT_KNOWN_ISSUES", false),
+		},
 		Checks: make(map[string]CheckConfig, len(CheckNames)),
 	}
 	for _, name := range CheckNames {
@@ -167,6 +242,11 @@ func LoadConfig() (*Config, error) {
 		}
 	}
 	c.Warnings = warnings
+	payments, err := loadPaymentsConfig(&c.Warnings)
+	if err != nil {
+		return nil, err
+	}
+	c.Payments = payments
 	if c.APIHost == "" {
 		return nil, errors.New("E2EPROBE_API_HOST is required")
 	}
@@ -177,6 +257,37 @@ func LoadConfig() (*Config, error) {
 		return nil, errors.New("E2EPROBE_SLACK_CHANNEL is required when E2EPROBE_SLACK_BOT_TOKEN is set")
 	}
 	return c, nil
+}
+
+// loadPaymentsConfig reads the payment probe settings. It refuses any gateway
+// credential that is not test mode: the probes charge cards.
+func loadPaymentsConfig(warnings *[]string) (PaymentsConfig, error) {
+	out := PaymentsConfig{
+		SettleTimeout:     getDuration(warnings, "E2EPROBE_PAYMENTS_SETTLE_TIMEOUT", 90*time.Second),
+		AssertKnownIssues: getBool("E2EPROBE_PAYMENTS_ASSERT_KNOWN_ISSUES", false),
+	}
+	for _, name := range strings.Split(os.Getenv("E2EPROBE_PAYMENTS_PROVIDERS"), ",") {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "" {
+			continue
+		}
+		def, ok := paymentDefaultCurrency[name]
+		if !ok {
+			return out, fmt.Errorf("E2EPROBE_PAYMENTS_PROVIDERS: unsupported provider %q (want stripe, chargebee or razorpay)", name)
+		}
+		p := PaymentProviderConfig{
+			Provider:                name,
+			Currency:                strings.ToUpper(os.Getenv("E2EPROBE_PAYMENTS_" + strings.ToUpper(name) + "_CURRENCY")),
+			FixedCustomerExternalID: paymentFixedCustomer[name],
+			DeclineCardLast4:        paymentDeclineCardLast4[name],
+		}
+		if p.Currency == "" {
+			p.Currency = def
+		}
+		p.SettleTimeout = getDuration(warnings, "E2EPROBE_PAYMENTS_"+strings.ToUpper(name)+"_SETTLE_TIMEOUT", paymentDefaultSettleTimeout[name])
+		out.Providers = append(out.Providers, p)
+	}
+	return out, nil
 }
 
 func getBool(key string, def bool) bool {
