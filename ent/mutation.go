@@ -22983,6 +22983,7 @@ type CustomerMutation struct {
 	name                *string
 	email               *string
 	contact             *string
+	billing_currency    *string
 	address_line1       *string
 	address_line2       *string
 	address_city        *string
@@ -23611,6 +23612,55 @@ func (m *CustomerMutation) ResetContact() {
 	delete(m.clearedFields, customer.FieldContact)
 }
 
+// SetBillingCurrency sets the "billing_currency" field.
+func (m *CustomerMutation) SetBillingCurrency(s string) {
+	m.billing_currency = &s
+}
+
+// BillingCurrency returns the value of the "billing_currency" field in the mutation.
+func (m *CustomerMutation) BillingCurrency() (r string, exists bool) {
+	v := m.billing_currency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBillingCurrency returns the old "billing_currency" field's value of the Customer entity.
+// If the Customer object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CustomerMutation) OldBillingCurrency(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBillingCurrency is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBillingCurrency requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBillingCurrency: %w", err)
+	}
+	return oldValue.BillingCurrency, nil
+}
+
+// ClearBillingCurrency clears the value of the "billing_currency" field.
+func (m *CustomerMutation) ClearBillingCurrency() {
+	m.billing_currency = nil
+	m.clearedFields[customer.FieldBillingCurrency] = struct{}{}
+}
+
+// BillingCurrencyCleared returns if the "billing_currency" field was cleared in this mutation.
+func (m *CustomerMutation) BillingCurrencyCleared() bool {
+	_, ok := m.clearedFields[customer.FieldBillingCurrency]
+	return ok
+}
+
+// ResetBillingCurrency resets all changes to the "billing_currency" field.
+func (m *CustomerMutation) ResetBillingCurrency() {
+	m.billing_currency = nil
+	delete(m.clearedFields, customer.FieldBillingCurrency)
+}
+
 // SetAddressLine1 sets the "address_line1" field.
 func (m *CustomerMutation) SetAddressLine1(s string) {
 	m.address_line1 = &s
@@ -24024,7 +24074,7 @@ func (m *CustomerMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CustomerMutation) Fields() []string {
-	fields := make([]string, 0, 20)
+	fields := make([]string, 0, 21)
 	if m.tenant_id != nil {
 		fields = append(fields, customer.FieldTenantID)
 	}
@@ -24060,6 +24110,9 @@ func (m *CustomerMutation) Fields() []string {
 	}
 	if m.contact != nil {
 		fields = append(fields, customer.FieldContact)
+	}
+	if m.billing_currency != nil {
+		fields = append(fields, customer.FieldBillingCurrency)
 	}
 	if m.address_line1 != nil {
 		fields = append(fields, customer.FieldAddressLine1)
@@ -24117,6 +24170,8 @@ func (m *CustomerMutation) Field(name string) (ent.Value, bool) {
 		return m.Email()
 	case customer.FieldContact:
 		return m.Contact()
+	case customer.FieldBillingCurrency:
+		return m.BillingCurrency()
 	case customer.FieldAddressLine1:
 		return m.AddressLine1()
 	case customer.FieldAddressLine2:
@@ -24166,6 +24221,8 @@ func (m *CustomerMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldEmail(ctx)
 	case customer.FieldContact:
 		return m.OldContact(ctx)
+	case customer.FieldBillingCurrency:
+		return m.OldBillingCurrency(ctx)
 	case customer.FieldAddressLine1:
 		return m.OldAddressLine1(ctx)
 	case customer.FieldAddressLine2:
@@ -24275,6 +24332,13 @@ func (m *CustomerMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetContact(v)
 		return nil
+	case customer.FieldBillingCurrency:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBillingCurrency(v)
+		return nil
 	case customer.FieldAddressLine1:
 		v, ok := value.(string)
 		if !ok {
@@ -24379,6 +24443,9 @@ func (m *CustomerMutation) ClearedFields() []string {
 	if m.FieldCleared(customer.FieldContact) {
 		fields = append(fields, customer.FieldContact)
 	}
+	if m.FieldCleared(customer.FieldBillingCurrency) {
+		fields = append(fields, customer.FieldBillingCurrency)
+	}
 	if m.FieldCleared(customer.FieldAddressLine1) {
 		fields = append(fields, customer.FieldAddressLine1)
 	}
@@ -24431,6 +24498,9 @@ func (m *CustomerMutation) ClearField(name string) error {
 		return nil
 	case customer.FieldContact:
 		m.ClearContact()
+		return nil
+	case customer.FieldBillingCurrency:
+		m.ClearBillingCurrency()
 		return nil
 	case customer.FieldAddressLine1:
 		m.ClearAddressLine1()
@@ -24496,6 +24566,9 @@ func (m *CustomerMutation) ResetField(name string) error {
 		return nil
 	case customer.FieldContact:
 		m.ResetContact()
+		return nil
+	case customer.FieldBillingCurrency:
+		m.ResetBillingCurrency()
 		return nil
 	case customer.FieldAddressLine1:
 		m.ResetAddressLine1()
@@ -35042,6 +35115,7 @@ type InvoiceMutation struct {
 	total_discount                *decimal.Decimal
 	total                         *decimal.Decimal
 	custom_currency               **types.CustomCurrency
+	fx_conversion                 **types.FxConversion
 	description                   *string
 	due_date                      *time.Time
 	paid_at                       *time.Time
@@ -36200,6 +36274,55 @@ func (m *InvoiceMutation) CustomCurrencyCleared() bool {
 func (m *InvoiceMutation) ResetCustomCurrency() {
 	m.custom_currency = nil
 	delete(m.clearedFields, invoice.FieldCustomCurrency)
+}
+
+// SetFxConversion sets the "fx_conversion" field.
+func (m *InvoiceMutation) SetFxConversion(tc *types.FxConversion) {
+	m.fx_conversion = &tc
+}
+
+// FxConversion returns the value of the "fx_conversion" field in the mutation.
+func (m *InvoiceMutation) FxConversion() (r *types.FxConversion, exists bool) {
+	v := m.fx_conversion
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFxConversion returns the old "fx_conversion" field's value of the Invoice entity.
+// If the Invoice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceMutation) OldFxConversion(ctx context.Context) (v *types.FxConversion, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFxConversion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFxConversion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFxConversion: %w", err)
+	}
+	return oldValue.FxConversion, nil
+}
+
+// ClearFxConversion clears the value of the "fx_conversion" field.
+func (m *InvoiceMutation) ClearFxConversion() {
+	m.fx_conversion = nil
+	m.clearedFields[invoice.FieldFxConversion] = struct{}{}
+}
+
+// FxConversionCleared returns if the "fx_conversion" field was cleared in this mutation.
+func (m *InvoiceMutation) FxConversionCleared() bool {
+	_, ok := m.clearedFields[invoice.FieldFxConversion]
+	return ok
+}
+
+// ResetFxConversion resets all changes to the "fx_conversion" field.
+func (m *InvoiceMutation) ResetFxConversion() {
+	m.fx_conversion = nil
+	delete(m.clearedFields, invoice.FieldFxConversion)
 }
 
 // SetDescription sets the "description" field.
@@ -37437,7 +37560,7 @@ func (m *InvoiceMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InvoiceMutation) Fields() []string {
-	fields := make([]string, 0, 46)
+	fields := make([]string, 0, 47)
 	if m.tenant_id != nil {
 		fields = append(fields, invoice.FieldTenantID)
 	}
@@ -37509,6 +37632,9 @@ func (m *InvoiceMutation) Fields() []string {
 	}
 	if m.custom_currency != nil {
 		fields = append(fields, invoice.FieldCustomCurrency)
+	}
+	if m.fx_conversion != nil {
+		fields = append(fields, invoice.FieldFxConversion)
 	}
 	if m.description != nil {
 		fields = append(fields, invoice.FieldDescription)
@@ -37632,6 +37758,8 @@ func (m *InvoiceMutation) Field(name string) (ent.Value, bool) {
 		return m.Total()
 	case invoice.FieldCustomCurrency:
 		return m.CustomCurrency()
+	case invoice.FieldFxConversion:
+		return m.FxConversion()
 	case invoice.FieldDescription:
 		return m.Description()
 	case invoice.FieldDueDate:
@@ -37733,6 +37861,8 @@ func (m *InvoiceMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldTotal(ctx)
 	case invoice.FieldCustomCurrency:
 		return m.OldCustomCurrency(ctx)
+	case invoice.FieldFxConversion:
+		return m.OldFxConversion(ctx)
 	case invoice.FieldDescription:
 		return m.OldDescription(ctx)
 	case invoice.FieldDueDate:
@@ -37953,6 +38083,13 @@ func (m *InvoiceMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetCustomCurrency(v)
+		return nil
+	case invoice.FieldFxConversion:
+		v, ok := value.(*types.FxConversion)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFxConversion(v)
 		return nil
 	case invoice.FieldDescription:
 		v, ok := value.(string)
@@ -38201,6 +38338,9 @@ func (m *InvoiceMutation) ClearedFields() []string {
 	if m.FieldCleared(invoice.FieldCustomCurrency) {
 		fields = append(fields, invoice.FieldCustomCurrency)
 	}
+	if m.FieldCleared(invoice.FieldFxConversion) {
+		fields = append(fields, invoice.FieldFxConversion)
+	}
 	if m.FieldCleared(invoice.FieldDescription) {
 		fields = append(fields, invoice.FieldDescription)
 	}
@@ -38310,6 +38450,9 @@ func (m *InvoiceMutation) ClearField(name string) error {
 		return nil
 	case invoice.FieldCustomCurrency:
 		m.ClearCustomCurrency()
+		return nil
+	case invoice.FieldFxConversion:
+		m.ClearFxConversion()
 		return nil
 	case invoice.FieldDescription:
 		m.ClearDescription()
@@ -38450,6 +38593,9 @@ func (m *InvoiceMutation) ResetField(name string) error {
 		return nil
 	case invoice.FieldCustomCurrency:
 		m.ResetCustomCurrency()
+		return nil
+	case invoice.FieldFxConversion:
+		m.ResetFxConversion()
 		return nil
 	case invoice.FieldDescription:
 		m.ResetDescription()
@@ -38671,6 +38817,7 @@ type InvoiceLineItemMutation struct {
 	adjusted_entitlement_quantity *decimal.Decimal
 	parent_line_item_id           *string
 	custom_currency               **types.CustomCurrencyLineItem
+	fx_conversion                 **types.FxConversion
 	clearedFields                 map[string]struct{}
 	invoice                       *string
 	clearedinvoice                bool
@@ -40384,6 +40531,55 @@ func (m *InvoiceLineItemMutation) ResetCustomCurrency() {
 	delete(m.clearedFields, invoicelineitem.FieldCustomCurrency)
 }
 
+// SetFxConversion sets the "fx_conversion" field.
+func (m *InvoiceLineItemMutation) SetFxConversion(tc *types.FxConversion) {
+	m.fx_conversion = &tc
+}
+
+// FxConversion returns the value of the "fx_conversion" field in the mutation.
+func (m *InvoiceLineItemMutation) FxConversion() (r *types.FxConversion, exists bool) {
+	v := m.fx_conversion
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFxConversion returns the old "fx_conversion" field's value of the InvoiceLineItem entity.
+// If the InvoiceLineItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceLineItemMutation) OldFxConversion(ctx context.Context) (v *types.FxConversion, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFxConversion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFxConversion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFxConversion: %w", err)
+	}
+	return oldValue.FxConversion, nil
+}
+
+// ClearFxConversion clears the value of the "fx_conversion" field.
+func (m *InvoiceLineItemMutation) ClearFxConversion() {
+	m.fx_conversion = nil
+	m.clearedFields[invoicelineitem.FieldFxConversion] = struct{}{}
+}
+
+// FxConversionCleared returns if the "fx_conversion" field was cleared in this mutation.
+func (m *InvoiceLineItemMutation) FxConversionCleared() bool {
+	_, ok := m.clearedFields[invoicelineitem.FieldFxConversion]
+	return ok
+}
+
+// ResetFxConversion resets all changes to the "fx_conversion" field.
+func (m *InvoiceLineItemMutation) ResetFxConversion() {
+	m.fx_conversion = nil
+	delete(m.clearedFields, invoicelineitem.FieldFxConversion)
+}
+
 // ClearInvoice clears the "invoice" edge to the Invoice entity.
 func (m *InvoiceLineItemMutation) ClearInvoice() {
 	m.clearedinvoice = true
@@ -40499,7 +40695,7 @@ func (m *InvoiceLineItemMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InvoiceLineItemMutation) Fields() []string {
-	fields := make([]string, 0, 35)
+	fields := make([]string, 0, 36)
 	if m.tenant_id != nil {
 		fields = append(fields, invoicelineitem.FieldTenantID)
 	}
@@ -40605,6 +40801,9 @@ func (m *InvoiceLineItemMutation) Fields() []string {
 	if m.custom_currency != nil {
 		fields = append(fields, invoicelineitem.FieldCustomCurrency)
 	}
+	if m.fx_conversion != nil {
+		fields = append(fields, invoicelineitem.FieldFxConversion)
+	}
 	return fields
 }
 
@@ -40683,6 +40882,8 @@ func (m *InvoiceLineItemMutation) Field(name string) (ent.Value, bool) {
 		return m.ParentLineItemID()
 	case invoicelineitem.FieldCustomCurrency:
 		return m.CustomCurrency()
+	case invoicelineitem.FieldFxConversion:
+		return m.FxConversion()
 	}
 	return nil, false
 }
@@ -40762,6 +40963,8 @@ func (m *InvoiceLineItemMutation) OldField(ctx context.Context, name string) (en
 		return m.OldParentLineItemID(ctx)
 	case invoicelineitem.FieldCustomCurrency:
 		return m.OldCustomCurrency(ctx)
+	case invoicelineitem.FieldFxConversion:
+		return m.OldFxConversion(ctx)
 	}
 	return nil, fmt.Errorf("unknown InvoiceLineItem field %s", name)
 }
@@ -41016,6 +41219,13 @@ func (m *InvoiceLineItemMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetCustomCurrency(v)
 		return nil
+	case invoicelineitem.FieldFxConversion:
+		v, ok := value.(*types.FxConversion)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFxConversion(v)
+		return nil
 	}
 	return fmt.Errorf("unknown InvoiceLineItem field %s", name)
 }
@@ -41124,6 +41334,9 @@ func (m *InvoiceLineItemMutation) ClearedFields() []string {
 	if m.FieldCleared(invoicelineitem.FieldCustomCurrency) {
 		fields = append(fields, invoicelineitem.FieldCustomCurrency)
 	}
+	if m.FieldCleared(invoicelineitem.FieldFxConversion) {
+		fields = append(fields, invoicelineitem.FieldFxConversion)
+	}
 	return fields
 }
 
@@ -41215,6 +41428,9 @@ func (m *InvoiceLineItemMutation) ClearField(name string) error {
 		return nil
 	case invoicelineitem.FieldCustomCurrency:
 		m.ClearCustomCurrency()
+		return nil
+	case invoicelineitem.FieldFxConversion:
+		m.ClearFxConversion()
 		return nil
 	}
 	return fmt.Errorf("unknown InvoiceLineItem nullable field %s", name)
@@ -41328,6 +41544,9 @@ func (m *InvoiceLineItemMutation) ResetField(name string) error {
 		return nil
 	case invoicelineitem.FieldCustomCurrency:
 		m.ResetCustomCurrency()
+		return nil
+	case invoicelineitem.FieldFxConversion:
+		m.ResetFxConversion()
 		return nil
 	}
 	return fmt.Errorf("unknown InvoiceLineItem field %s", name)
@@ -74926,31 +75145,35 @@ func (m *TaskMutation) ResetEdge(name string) error {
 // TaxAppliedMutation represents an operation that mutates the TaxApplied nodes in the graph.
 type TaxAppliedMutation struct {
 	config
-	op                 Op
-	typ                string
-	id                 *string
-	tenant_id          *string
-	status             *string
-	created_at         *time.Time
-	updated_at         *time.Time
-	created_by         *string
-	updated_by         *string
-	environment_id     *string
-	tax_rate_id        *string
-	entity_type        *string
-	entity_id          *string
-	tax_association_id *string
-	taxable_amount     *decimal.Decimal
-	tax_amount         *decimal.Decimal
-	currency           *string
-	applied_at         *time.Time
-	metadata           *map[string]string
-	idempotency_key    *string
-	tax_behavior       *types.TaxBehavior
-	clearedFields      map[string]struct{}
-	done               bool
-	oldValue           func(context.Context) (*TaxApplied, error)
-	predicates         []predicate.TaxApplied
+	op                   Op
+	typ                  string
+	id                   *string
+	tenant_id            *string
+	status               *string
+	created_at           *time.Time
+	updated_at           *time.Time
+	created_by           *string
+	updated_by           *string
+	environment_id       *string
+	tax_rate_id          *string
+	entity_type          *string
+	entity_id            *string
+	tax_association_id   *string
+	taxable_amount       *decimal.Decimal
+	tax_amount           *decimal.Decimal
+	currency             *string
+	applied_at           *time.Time
+	metadata             *map[string]string
+	idempotency_key      *string
+	tax_behavior         *types.TaxBehavior
+	provider             *types.TaxProvider
+	tax_transaction_id   *string
+	tax_transaction_type *types.TaxTransactionType
+	external_tax_details **types.ExternalTaxDetails
+	clearedFields        map[string]struct{}
+	done                 bool
+	oldValue             func(context.Context) (*TaxApplied, error)
+	predicates           []predicate.TaxApplied
 }
 
 var _ ent.Mutation = (*TaxAppliedMutation)(nil)
@@ -75365,7 +75588,7 @@ func (m *TaxAppliedMutation) TaxRateID() (r string, exists bool) {
 // OldTaxRateID returns the old "tax_rate_id" field's value of the TaxApplied entity.
 // If the TaxApplied object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *TaxAppliedMutation) OldTaxRateID(ctx context.Context) (v string, err error) {
+func (m *TaxAppliedMutation) OldTaxRateID(ctx context.Context) (v *string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldTaxRateID is only allowed on UpdateOne operations")
 	}
@@ -75379,9 +75602,22 @@ func (m *TaxAppliedMutation) OldTaxRateID(ctx context.Context) (v string, err er
 	return oldValue.TaxRateID, nil
 }
 
+// ClearTaxRateID clears the value of the "tax_rate_id" field.
+func (m *TaxAppliedMutation) ClearTaxRateID() {
+	m.tax_rate_id = nil
+	m.clearedFields[taxapplied.FieldTaxRateID] = struct{}{}
+}
+
+// TaxRateIDCleared returns if the "tax_rate_id" field was cleared in this mutation.
+func (m *TaxAppliedMutation) TaxRateIDCleared() bool {
+	_, ok := m.clearedFields[taxapplied.FieldTaxRateID]
+	return ok
+}
+
 // ResetTaxRateID resets all changes to the "tax_rate_id" field.
 func (m *TaxAppliedMutation) ResetTaxRateID() {
 	m.tax_rate_id = nil
+	delete(m.clearedFields, taxapplied.FieldTaxRateID)
 }
 
 // SetEntityType sets the "entity_type" field.
@@ -75796,6 +76032,202 @@ func (m *TaxAppliedMutation) ResetTaxBehavior() {
 	delete(m.clearedFields, taxapplied.FieldTaxBehavior)
 }
 
+// SetProvider sets the "provider" field.
+func (m *TaxAppliedMutation) SetProvider(tp types.TaxProvider) {
+	m.provider = &tp
+}
+
+// Provider returns the value of the "provider" field in the mutation.
+func (m *TaxAppliedMutation) Provider() (r types.TaxProvider, exists bool) {
+	v := m.provider
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProvider returns the old "provider" field's value of the TaxApplied entity.
+// If the TaxApplied object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TaxAppliedMutation) OldProvider(ctx context.Context) (v types.TaxProvider, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProvider is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProvider requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProvider: %w", err)
+	}
+	return oldValue.Provider, nil
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (m *TaxAppliedMutation) ClearProvider() {
+	m.provider = nil
+	m.clearedFields[taxapplied.FieldProvider] = struct{}{}
+}
+
+// ProviderCleared returns if the "provider" field was cleared in this mutation.
+func (m *TaxAppliedMutation) ProviderCleared() bool {
+	_, ok := m.clearedFields[taxapplied.FieldProvider]
+	return ok
+}
+
+// ResetProvider resets all changes to the "provider" field.
+func (m *TaxAppliedMutation) ResetProvider() {
+	m.provider = nil
+	delete(m.clearedFields, taxapplied.FieldProvider)
+}
+
+// SetTaxTransactionID sets the "tax_transaction_id" field.
+func (m *TaxAppliedMutation) SetTaxTransactionID(s string) {
+	m.tax_transaction_id = &s
+}
+
+// TaxTransactionID returns the value of the "tax_transaction_id" field in the mutation.
+func (m *TaxAppliedMutation) TaxTransactionID() (r string, exists bool) {
+	v := m.tax_transaction_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaxTransactionID returns the old "tax_transaction_id" field's value of the TaxApplied entity.
+// If the TaxApplied object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TaxAppliedMutation) OldTaxTransactionID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaxTransactionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaxTransactionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaxTransactionID: %w", err)
+	}
+	return oldValue.TaxTransactionID, nil
+}
+
+// ClearTaxTransactionID clears the value of the "tax_transaction_id" field.
+func (m *TaxAppliedMutation) ClearTaxTransactionID() {
+	m.tax_transaction_id = nil
+	m.clearedFields[taxapplied.FieldTaxTransactionID] = struct{}{}
+}
+
+// TaxTransactionIDCleared returns if the "tax_transaction_id" field was cleared in this mutation.
+func (m *TaxAppliedMutation) TaxTransactionIDCleared() bool {
+	_, ok := m.clearedFields[taxapplied.FieldTaxTransactionID]
+	return ok
+}
+
+// ResetTaxTransactionID resets all changes to the "tax_transaction_id" field.
+func (m *TaxAppliedMutation) ResetTaxTransactionID() {
+	m.tax_transaction_id = nil
+	delete(m.clearedFields, taxapplied.FieldTaxTransactionID)
+}
+
+// SetTaxTransactionType sets the "tax_transaction_type" field.
+func (m *TaxAppliedMutation) SetTaxTransactionType(ttt types.TaxTransactionType) {
+	m.tax_transaction_type = &ttt
+}
+
+// TaxTransactionType returns the value of the "tax_transaction_type" field in the mutation.
+func (m *TaxAppliedMutation) TaxTransactionType() (r types.TaxTransactionType, exists bool) {
+	v := m.tax_transaction_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaxTransactionType returns the old "tax_transaction_type" field's value of the TaxApplied entity.
+// If the TaxApplied object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TaxAppliedMutation) OldTaxTransactionType(ctx context.Context) (v types.TaxTransactionType, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaxTransactionType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaxTransactionType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaxTransactionType: %w", err)
+	}
+	return oldValue.TaxTransactionType, nil
+}
+
+// ClearTaxTransactionType clears the value of the "tax_transaction_type" field.
+func (m *TaxAppliedMutation) ClearTaxTransactionType() {
+	m.tax_transaction_type = nil
+	m.clearedFields[taxapplied.FieldTaxTransactionType] = struct{}{}
+}
+
+// TaxTransactionTypeCleared returns if the "tax_transaction_type" field was cleared in this mutation.
+func (m *TaxAppliedMutation) TaxTransactionTypeCleared() bool {
+	_, ok := m.clearedFields[taxapplied.FieldTaxTransactionType]
+	return ok
+}
+
+// ResetTaxTransactionType resets all changes to the "tax_transaction_type" field.
+func (m *TaxAppliedMutation) ResetTaxTransactionType() {
+	m.tax_transaction_type = nil
+	delete(m.clearedFields, taxapplied.FieldTaxTransactionType)
+}
+
+// SetExternalTaxDetails sets the "external_tax_details" field.
+func (m *TaxAppliedMutation) SetExternalTaxDetails(ttd *types.ExternalTaxDetails) {
+	m.external_tax_details = &ttd
+}
+
+// ExternalTaxDetails returns the value of the "external_tax_details" field in the mutation.
+func (m *TaxAppliedMutation) ExternalTaxDetails() (r *types.ExternalTaxDetails, exists bool) {
+	v := m.external_tax_details
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExternalTaxDetails returns the old "external_tax_details" field's value of the TaxApplied entity.
+// If the TaxApplied object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TaxAppliedMutation) OldExternalTaxDetails(ctx context.Context) (v *types.ExternalTaxDetails, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExternalTaxDetails is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExternalTaxDetails requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExternalTaxDetails: %w", err)
+	}
+	return oldValue.ExternalTaxDetails, nil
+}
+
+// ClearExternalTaxDetails clears the value of the "external_tax_details" field.
+func (m *TaxAppliedMutation) ClearExternalTaxDetails() {
+	m.external_tax_details = nil
+	m.clearedFields[taxapplied.FieldExternalTaxDetails] = struct{}{}
+}
+
+// ExternalTaxDetailsCleared returns if the "external_tax_details" field was cleared in this mutation.
+func (m *TaxAppliedMutation) ExternalTaxDetailsCleared() bool {
+	_, ok := m.clearedFields[taxapplied.FieldExternalTaxDetails]
+	return ok
+}
+
+// ResetExternalTaxDetails resets all changes to the "external_tax_details" field.
+func (m *TaxAppliedMutation) ResetExternalTaxDetails() {
+	m.external_tax_details = nil
+	delete(m.clearedFields, taxapplied.FieldExternalTaxDetails)
+}
+
 // Where appends a list predicates to the TaxAppliedMutation builder.
 func (m *TaxAppliedMutation) Where(ps ...predicate.TaxApplied) {
 	m.predicates = append(m.predicates, ps...)
@@ -75830,7 +76262,7 @@ func (m *TaxAppliedMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TaxAppliedMutation) Fields() []string {
-	fields := make([]string, 0, 18)
+	fields := make([]string, 0, 22)
 	if m.tenant_id != nil {
 		fields = append(fields, taxapplied.FieldTenantID)
 	}
@@ -75885,6 +76317,18 @@ func (m *TaxAppliedMutation) Fields() []string {
 	if m.tax_behavior != nil {
 		fields = append(fields, taxapplied.FieldTaxBehavior)
 	}
+	if m.provider != nil {
+		fields = append(fields, taxapplied.FieldProvider)
+	}
+	if m.tax_transaction_id != nil {
+		fields = append(fields, taxapplied.FieldTaxTransactionID)
+	}
+	if m.tax_transaction_type != nil {
+		fields = append(fields, taxapplied.FieldTaxTransactionType)
+	}
+	if m.external_tax_details != nil {
+		fields = append(fields, taxapplied.FieldExternalTaxDetails)
+	}
 	return fields
 }
 
@@ -75929,6 +76373,14 @@ func (m *TaxAppliedMutation) Field(name string) (ent.Value, bool) {
 		return m.IdempotencyKey()
 	case taxapplied.FieldTaxBehavior:
 		return m.TaxBehavior()
+	case taxapplied.FieldProvider:
+		return m.Provider()
+	case taxapplied.FieldTaxTransactionID:
+		return m.TaxTransactionID()
+	case taxapplied.FieldTaxTransactionType:
+		return m.TaxTransactionType()
+	case taxapplied.FieldExternalTaxDetails:
+		return m.ExternalTaxDetails()
 	}
 	return nil, false
 }
@@ -75974,6 +76426,14 @@ func (m *TaxAppliedMutation) OldField(ctx context.Context, name string) (ent.Val
 		return m.OldIdempotencyKey(ctx)
 	case taxapplied.FieldTaxBehavior:
 		return m.OldTaxBehavior(ctx)
+	case taxapplied.FieldProvider:
+		return m.OldProvider(ctx)
+	case taxapplied.FieldTaxTransactionID:
+		return m.OldTaxTransactionID(ctx)
+	case taxapplied.FieldTaxTransactionType:
+		return m.OldTaxTransactionType(ctx)
+	case taxapplied.FieldExternalTaxDetails:
+		return m.OldExternalTaxDetails(ctx)
 	}
 	return nil, fmt.Errorf("unknown TaxApplied field %s", name)
 }
@@ -76109,6 +76569,34 @@ func (m *TaxAppliedMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetTaxBehavior(v)
 		return nil
+	case taxapplied.FieldProvider:
+		v, ok := value.(types.TaxProvider)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProvider(v)
+		return nil
+	case taxapplied.FieldTaxTransactionID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaxTransactionID(v)
+		return nil
+	case taxapplied.FieldTaxTransactionType:
+		v, ok := value.(types.TaxTransactionType)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaxTransactionType(v)
+		return nil
+	case taxapplied.FieldExternalTaxDetails:
+		v, ok := value.(*types.ExternalTaxDetails)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExternalTaxDetails(v)
+		return nil
 	}
 	return fmt.Errorf("unknown TaxApplied field %s", name)
 }
@@ -76148,6 +76636,9 @@ func (m *TaxAppliedMutation) ClearedFields() []string {
 	if m.FieldCleared(taxapplied.FieldEnvironmentID) {
 		fields = append(fields, taxapplied.FieldEnvironmentID)
 	}
+	if m.FieldCleared(taxapplied.FieldTaxRateID) {
+		fields = append(fields, taxapplied.FieldTaxRateID)
+	}
 	if m.FieldCleared(taxapplied.FieldTaxAssociationID) {
 		fields = append(fields, taxapplied.FieldTaxAssociationID)
 	}
@@ -76159,6 +76650,18 @@ func (m *TaxAppliedMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(taxapplied.FieldTaxBehavior) {
 		fields = append(fields, taxapplied.FieldTaxBehavior)
+	}
+	if m.FieldCleared(taxapplied.FieldProvider) {
+		fields = append(fields, taxapplied.FieldProvider)
+	}
+	if m.FieldCleared(taxapplied.FieldTaxTransactionID) {
+		fields = append(fields, taxapplied.FieldTaxTransactionID)
+	}
+	if m.FieldCleared(taxapplied.FieldTaxTransactionType) {
+		fields = append(fields, taxapplied.FieldTaxTransactionType)
+	}
+	if m.FieldCleared(taxapplied.FieldExternalTaxDetails) {
+		fields = append(fields, taxapplied.FieldExternalTaxDetails)
 	}
 	return fields
 }
@@ -76183,6 +76686,9 @@ func (m *TaxAppliedMutation) ClearField(name string) error {
 	case taxapplied.FieldEnvironmentID:
 		m.ClearEnvironmentID()
 		return nil
+	case taxapplied.FieldTaxRateID:
+		m.ClearTaxRateID()
+		return nil
 	case taxapplied.FieldTaxAssociationID:
 		m.ClearTaxAssociationID()
 		return nil
@@ -76194,6 +76700,18 @@ func (m *TaxAppliedMutation) ClearField(name string) error {
 		return nil
 	case taxapplied.FieldTaxBehavior:
 		m.ClearTaxBehavior()
+		return nil
+	case taxapplied.FieldProvider:
+		m.ClearProvider()
+		return nil
+	case taxapplied.FieldTaxTransactionID:
+		m.ClearTaxTransactionID()
+		return nil
+	case taxapplied.FieldTaxTransactionType:
+		m.ClearTaxTransactionType()
+		return nil
+	case taxapplied.FieldExternalTaxDetails:
+		m.ClearExternalTaxDetails()
 		return nil
 	}
 	return fmt.Errorf("unknown TaxApplied nullable field %s", name)
@@ -76256,6 +76774,18 @@ func (m *TaxAppliedMutation) ResetField(name string) error {
 		return nil
 	case taxapplied.FieldTaxBehavior:
 		m.ResetTaxBehavior()
+		return nil
+	case taxapplied.FieldProvider:
+		m.ResetProvider()
+		return nil
+	case taxapplied.FieldTaxTransactionID:
+		m.ResetTaxTransactionID()
+		return nil
+	case taxapplied.FieldTaxTransactionType:
+		m.ResetTaxTransactionType()
+		return nil
+	case taxapplied.FieldExternalTaxDetails:
+		m.ResetExternalTaxDetails()
 		return nil
 	}
 	return fmt.Errorf("unknown TaxApplied field %s", name)

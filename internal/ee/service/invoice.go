@@ -26,6 +26,7 @@ import (
 	"github.com/flexprice/flexprice/internal/integration/stripe"
 	"github.com/flexprice/flexprice/internal/integration/zoho"
 	"github.com/flexprice/flexprice/internal/interfaces"
+	"github.com/flexprice/flexprice/internal/metrics"
 	"github.com/flexprice/flexprice/internal/storage"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
@@ -97,8 +98,8 @@ type InvoiceService interface {
 
 	DistributeInvoiceLevelDiscount(ctx context.Context, lineItems []*invoice.InvoiceLineItem, invoiceDiscountAmount decimal.Decimal) error
 
-	// RecalculateTaxesOnInvoice applies subscription auto-apply taxes and updates
-	// total_tax / total / amount_due. Idempotent via tax-applied records.
+	// RecalculateTaxesOnInvoice recomputes an invoice's tax and updates total_tax / total /
+	// amount_due. Every run replaces the invoice's tax_applied rows.
 	RecalculateTaxesOnInvoice(ctx context.Context, inv *invoice.Invoice) (*invoice.Invoice, error)
 
 	UpdateLineItem(ctx context.Context, invoiceID, lineItemID string, req dto.UpdateLineItemRequest) (*dto.InvoiceResponse, error)
@@ -127,6 +128,10 @@ func (s *invoiceService) CreateOneOffInvoice(ctx context.Context, req dto.Create
 		if err := req.ValidateForCheckout(); err != nil {
 			return nil, err
 		}
+	}
+
+	if err := s.validateInvoiceBillingCurrency(ctx, req); err != nil {
+		return nil, err
 	}
 
 	// Validate coupons
@@ -203,6 +208,7 @@ func (s *invoiceService) CreateEmptyDraftInvoice(ctx context.Context, req dto.Cr
 	}
 
 	var resp *dto.InvoiceResponse
+	var created *invoice.Invoice
 
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		// 1. Generate idempotency key if not provided
@@ -296,10 +302,14 @@ func (s *invoiceService) CreateEmptyDraftInvoice(ctx context.Context, req dto.Cr
 		}
 		code := strings.ToLower(req.Currency)
 		if ccCfg.IsCustom(code) {
-			inv.Currency = ccCfg.DefaultFiatCurrency
+			fiat, rate, err := s.customCurrencyFiatTarget(txCtx, ccCfg, code, req.CustomerID)
+			if err != nil {
+				return err
+			}
+			inv.Currency = fiat
 			inv.CustomCurrency = &types.CustomCurrency{
 				Code: code,
-				Rate: ccCfg.RateFor(code, ccCfg.DefaultFiatCurrency),
+				Rate: rate,
 			}
 		}
 
@@ -312,6 +322,7 @@ func (s *invoiceService) CreateEmptyDraftInvoice(ctx context.Context, req dto.Cr
 		if err := s.InvoiceRepo.Create(txCtx, inv); err != nil {
 			return err
 		}
+		created = inv
 
 		resp = dto.NewInvoiceResponse(inv)
 		return nil
@@ -324,12 +335,23 @@ func (s *invoiceService) CreateEmptyDraftInvoice(ctx context.Context, req dto.Cr
 			"subscription_id", req.SubscriptionID)
 		return nil, err
 	}
+	if created != nil {
+		recordInvoiceTransition(ctx, created)
+	}
 
 	if resp.InvoiceStatus == types.InvoiceStatusFinalized {
 		notifyInvoiceFinalized(ctx, s.ServiceParams, resp.ID)
 	}
 
 	return resp, nil
+}
+
+func recordInvoiceTransition(ctx context.Context, inv *invoice.Invoice) {
+	metrics.RecordCounter(ctx, metrics.InvoiceTransitions, 1,
+		metrics.L(metrics.KeyInvoiceType, string(inv.InvoiceType)),
+		metrics.L(metrics.KeyBillingReason, inv.BillingReason),
+		metrics.L(metrics.KeyStatus, string(inv.InvoiceStatus)),
+	)
 }
 
 // This wrapper delegates to the draft-first flow. Invoice number is assigned during FinalizeInvoice.
@@ -379,6 +401,15 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 }
 
 func (s *invoiceService) CreateComputedDraftInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, bool, error) {
+	// Compute only falls back to resolving tax for subscription invoices, so resolve it here.
+	if req.PreparedTaxRates == nil {
+		preparedTaxRates, err := NewTaxService(s.ServiceParams).PrepareTaxRatesForInvoice(ctx, req)
+		if err != nil {
+			return nil, false, err
+		}
+		req.PreparedTaxRates = preparedTaxRates
+	}
+
 	draftResp, err := s.CreateEmptyDraftInvoice(ctx, req.ToDraftRequest())
 	if err != nil {
 		return nil, false, err
@@ -642,7 +673,7 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 
 	// 3. Take the lock — only for DB writes (line items, credits, coupons, taxes, status update).
 	var computed bool
-	var skipped bool
+	var skipped, wasSkipped bool
 	err = s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		var lockErr error
 		inv, lockErr = s.InvoiceRepo.GetForUpdate(txCtx, invoiceID)
@@ -667,6 +698,7 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 		// Re-check status under lock: allow SKIPPED invoices to be re-computed
 		// (usage may have accumulated since the invoice was first marked SKIPPED).
 		if inv.InvoiceStatus == types.InvoiceStatusSkipped {
+			wasSkipped = true
 			inv.InvoiceStatus = types.InvoiceStatusDraft
 		} else if inv.InvoiceStatus != types.InvoiceStatusDraft {
 			// Finalized/voided between our initial read and the lock — nothing to do.
@@ -707,11 +739,10 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 		}
 
 		// Apply coupons/discounts. For one-off and credit invoices, also apply
-		// credits and taxes here because they are created and finalized in one
-		// shot and RecalculateTaxesOnInvoice is a no-op for non-subscription
-		// invoices. For subscription invoices, credits and taxes are deferred
-		// to the finalization step so wallet debits only happen when the
-		// invoice is actually sealed.
+		// credits and taxes here so a computed draft carries a total. Finalization
+		// recalculates the tax again. For subscription invoices, credits and taxes
+		// are deferred to the finalization step so wallet debits only happen when
+		// the invoice is actually sealed.
 		applyTaxes := false
 		if applyReq != nil {
 			if inv.InvoiceType == types.InvoiceTypeOneOff || inv.InvoiceType == types.InvoiceTypeCredit {
@@ -744,8 +775,6 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 			if err := s.applyTaxesToInvoice(txCtx, inv, *applyReq); err != nil {
 				return err
 			}
-			// Tax was produced in fiat, so it is divided back into the denomination.
-			inv.MirrorTaxIntoDenomination()
 		}
 
 		inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
@@ -769,6 +798,9 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 	// SKIPPED — zero-amount invoices are never synced downstream, so there's nothing to notify.
 	if computed && !skipped {
 		s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdate, invoiceID)
+	}
+	if computed && skipped != wasSkipped {
+		recordInvoiceTransition(ctx, inv)
 	}
 
 	// A skipped renewal owes nothing, so release the new period's held grants now.
@@ -1178,6 +1210,12 @@ func (s *invoiceService) FinalizeInvoice(ctx context.Context, id string, req dto
 		return err
 	}
 
+	taxService := NewTaxService(s.ServiceParams)
+
+	// Tax is filed only once the invoice is sealed, so this runs after finalization rather
+	// than inside it. A failure to file is logged there and never fails the finalize.
+	taxService.CommitTaxToProvider(ctx, inv)
+
 	return nil
 }
 
@@ -1232,10 +1270,12 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 		// One-off and credit invoices already have credits and taxes applied
 		// during ComputeInvoice, so we skip them here.
 		// For subscription invoices, credits and taxes are deferred to this
-		// step so wallet debits only happen when the invoice is sealed.
+		// step so wallet debits only happen when the invoice is sealed. Drafts
+		// converted at checkout are skipped; their paid amount is final.
 		// ====================================================================
 
-		if lockedInv.InvoiceType == types.InvoiceTypeSubscription {
+		taxSubscriptionInvoice := false
+		if lockedInv.InvoiceType == types.InvoiceTypeSubscription && lockedInv.FxConversion == nil {
 			// Load line items — ApplyCreditsToInvoice needs them
 			lineItems, err := s.InvoiceLineItemRepo.ListByInvoiceID(txCtx, lockedInv.ID)
 			if err != nil {
@@ -1277,15 +1317,25 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 				if err := s.InvoiceRepo.Update(txCtx, lockedInv); err != nil {
 					return err
 				}
-
-				// Recalculate taxes with credits factored in
-				if _, err := s.RecalculateTaxesOnInvoice(txCtx, lockedInv); err != nil {
-					return err
-				}
-				// Tax was produced in fiat, so it is divided back into the denomination.
-				lockedInv.MirrorTaxIntoDenomination()
-
+				taxSubscriptionInvoice = true
 			}
+		}
+
+		// ====================================================================
+		// Convert to the billing currency and re-tax. A missing rate leaves the
+		// invoice DRAFT.
+		// ====================================================================
+		if err := s.convertToBillingCurrency(txCtx, lockedInv); err != nil {
+			return err
+		}
+
+		// A converted invoice was already taxed in the billing currency above; tax the rest here.
+		if taxSubscriptionInvoice && lockedInv.FxConversion == nil {
+			if _, err := s.RecalculateTaxesOnInvoice(txCtx, lockedInv); err != nil {
+				return err
+			}
+			// Tax was produced in fiat, so it is divided back into the denomination.
+			lockedInv.MirrorTaxIntoDenomination()
 		}
 
 		// ====================================================================
@@ -1337,6 +1387,7 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 	if err != nil {
 		return err
 	}
+	recordInvoiceTransition(ctx, inv)
 
 	notifyInvoiceFinalized(ctx, s.ServiceParams, inv.ID)
 
@@ -1623,6 +1674,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 	if err != nil {
 		return nil, err
 	}
+	recordInvoiceTransition(ctx, inv)
 
 	// A voided invoice will never be paid, so a purchased-credit transaction still
 	// waiting on it must not stay pending: it blocks the wallet's auto-topup guard
@@ -1650,6 +1702,24 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 		}
 	}
 
+	// A void says the supply never happened, so the whole filing is undone rather than any
+	// part of it. Outside the void transaction, and a failure is logged rather than failing the
+	// void: the invoice is already void by now, so an unreversed tax is an operator's to chase.
+	taxService := NewTaxService(s.ServiceParams)
+	if err := taxService.ReverseTaxOnProvider(ctx, dto.TaxReversalRequest{
+		EntityType: types.TaxRateEntityTypeInvoice,
+		EntityID:   inv.ID,
+		InvoiceID:  inv.ID,
+		Mode:       types.TaxReversalModeFull,
+		Reference:  types.TaxReferenceVoidPrefix + inv.ID,
+		Currency:   inv.Currency,
+	}); err != nil {
+		s.Logger.Error(ctx, "invoice is voided with its tax still filed",
+			"error", err,
+			"invoice_id", inv.ID,
+			"invoice_number", lo.FromPtr(inv.InvoiceNumber))
+	}
+
 	notifyInvoiceVoided(ctx, s.ServiceParams, inv.ID)
 
 	return inv, nil
@@ -1673,6 +1743,12 @@ func (s *invoiceService) ProcessDraftInvoice(ctx context.Context, id string, pay
 	if err := s.performFinalizeInvoiceActions(ctx, inv, ""); err != nil {
 		return err
 	}
+
+	taxService := NewTaxService(s.ServiceParams)
+
+	// Tax is filed only once the invoice is sealed, so this runs after finalization rather
+	// than inside it. A failure to file is logged there and never stops the payment below.
+	taxService.CommitTaxToProvider(ctx, inv)
 
 	// Integration invoice sync is triggered by the shared system event
 	// invoice.update.finalized (published from performFinalizeInvoiceActions).
@@ -2471,13 +2547,10 @@ func (s *invoiceService) CreatePreviewInvoice(ctx context.Context, req dto.Creat
 
 	// Calculate, never apply: applying writes a tax_applied record per rate, and this
 	// invoice is never created.
-	result := taxSvc.CalculateTaxesOnInvoice(ctx, inv, rates)
-	applyTaxResultToInvoice(inv, result)
-	// Tax was produced in fiat, so it is divided back into the denomination.
-	inv.MirrorTaxIntoDenomination()
+	taxes := s.previewTax(ctx, inv, rates)
 
 	response := dto.NewInvoiceResponse(inv)
-	response.WithTaxes(result.TaxAppliedRecords)
+	response.WithTaxes(taxes)
 	return response, nil
 }
 
@@ -2567,15 +2640,11 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 
 	// Calculate, never apply: applying writes a tax_applied record per rate, and this
 	// invoice is never created.
-	taxSvc := NewTaxService(s.ServiceParams)
-	result := taxSvc.CalculateTaxesOnInvoice(ctx, inv, invReq.PreparedTaxRates)
-	applyTaxResultToInvoice(inv, result)
-	// Tax was produced in fiat, so it is divided back into the denomination.
-	inv.MirrorTaxIntoDenomination()
+	taxes := s.previewTax(ctx, inv, invReq.PreparedTaxRates)
 
 	// Create preview response
 	response := dto.NewInvoiceResponse(inv)
-	response.WithTaxes(result.TaxAppliedRecords)
+	response.WithTaxes(taxes)
 	if len(couponApplications) > 0 {
 		response.CouponApplications = couponApplications
 	}
@@ -2646,15 +2715,11 @@ func (s *invoiceService) GetInternalPreviewInvoice(ctx context.Context, req dto.
 
 	// Calculate, never apply: applying writes a tax_applied record per rate, and this
 	// invoice is never created.
-	taxSvc := NewTaxService(s.ServiceParams)
-	result := taxSvc.CalculateTaxesOnInvoice(ctx, inv, invReq.PreparedTaxRates)
-	applyTaxResultToInvoice(inv, result)
-	// Tax was produced in fiat, so it is divided back into the denomination.
-	inv.MirrorTaxIntoDenomination()
+	taxes := s.previewTax(ctx, inv, invReq.PreparedTaxRates)
 
 	// Create preview response
 	response := dto.NewInvoiceResponse(inv)
-	response.WithTaxes(result.TaxAppliedRecords)
+	response.WithTaxes(taxes)
 	if len(couponApplications) > 0 {
 		response.CouponApplications = couponApplications
 	}
@@ -3351,6 +3416,17 @@ func (s *invoiceService) getInvoiceDataForPDFGen(
 	amountPaid, _ := inv.AmountPaid.Round(precision).Float64()
 	amountRemaining, _ := inv.AmountRemaining.Round(precision).Float64()
 
+	// Read at render rather than stored: the rendered PDF is kept, so it freezes them itself.
+	// A failure costs the invoice its tax numbers, not the invoice, so it is logged and the
+	// document is produced without them.
+	billerTaxIDs, customerTaxIDs, err := s.taxIdentifiersForPDF(ctx, inv.CustomerID)
+	if err != nil {
+		s.Logger.Error(ctx, "tax numbers could not be read, the invoice will render without them",
+			"error", err,
+			"invoice_id", inv.ID,
+			"customer_id", inv.CustomerID)
+	}
+
 	// Convert to InvoiceData
 	data := &pdf.InvoiceData{
 		ID:                         inv.ID,
@@ -3366,10 +3442,10 @@ func (s *invoiceService) getInvoiceDataForPDFGen(
 		BillingReason:              inv.BillingReason,
 		Notes:                      "",  // resolved from invoice metadata
 		VAT:                        0.0, // resolved from invoice metadata
-		Biller:                     s.getBillerInfo(tenant),
+		Biller:                     s.getBillerInfo(tenant, billerTaxIDs),
 		PeriodStart:                pdf.CustomTime{Time: lo.FromPtr(inv.PeriodStart)},
 		PeriodEnd:                  pdf.CustomTime{Time: lo.FromPtr(inv.PeriodEnd)},
-		Recipient:                  s.getRecipientInfo(customer),
+		Recipient:                  s.getRecipientInfo(customer, customerTaxIDs),
 		BillingPeriod:              lo.FromPtrOr(inv.BillingPeriod, ""),
 		Description:                inv.Description,
 		AmountPaid:                 amountPaid,
@@ -3562,6 +3638,12 @@ func (s *invoiceService) getInvoiceDataForPDFGen(
 	}
 	data.AppliedTaxes = appliedTaxes
 
+	// A reverse charge invoice is not compliant on a zero alone: it has to say that the
+	// buyer accounts for the tax.
+	if inv.TaxExemptionReasonCode != nil && inv.TaxExemptionReasonCode.RequiresReverseChargeStatement() {
+		data.TaxNotice = types.ReverseChargeStatement
+	}
+
 	// No need to process usage breakdown here as it's already handled in LineItemData
 
 	appliedDiscounts, err := s.getAppliedDiscountsForPDF(ctx, inv)
@@ -3575,7 +3657,24 @@ func (s *invoiceService) getInvoiceDataForPDFGen(
 	return data, nil
 }
 
-func (s *invoiceService) getRecipientInfo(c *customer.Customer) *pdf.RecipientInfo {
+// taxIdentifiersForPDF asks the configured engine for both parties' registered tax numbers.
+// The native engine holds none, so a natively taxed invoice renders without them.
+func (s *invoiceService) taxIdentifiersForPDF(ctx context.Context, customerID string) ([]types.TaxIdentifier, []types.TaxIdentifier, error) {
+	engine, err := NewTaxEngine(ctx, s.ServiceParams)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return engine.TaxIdentifiers(ctx, customerID)
+}
+
+func toPDFTaxIDs(taxIDs []types.TaxIdentifier) []pdf.TaxIDData {
+	return lo.Map(taxIDs, func(id types.TaxIdentifier, _ int) pdf.TaxIDData {
+		return pdf.TaxIDData{Type: id.Type, Value: id.Value}
+	})
+}
+
+func (s *invoiceService) getRecipientInfo(c *customer.Customer, taxIDs []types.TaxIdentifier) *pdf.RecipientInfo {
 	if c == nil {
 		return nil
 	}
@@ -3588,6 +3687,7 @@ func (s *invoiceService) getRecipientInfo(c *customer.Customer) *pdf.RecipientIn
 	result := &pdf.RecipientInfo{
 		Name:    name,
 		Address: pdf.AddressInfo{},
+		TaxIDs:  toPDFTaxIDs(taxIDs),
 	}
 
 	if c.Email != "" {
@@ -3616,7 +3716,7 @@ func (s *invoiceService) getRecipientInfo(c *customer.Customer) *pdf.RecipientIn
 	return result
 }
 
-func (s *invoiceService) getBillerInfo(t *tenant.Tenant) *pdf.BillerInfo {
+func (s *invoiceService) getBillerInfo(t *tenant.Tenant, taxIDs []types.TaxIdentifier) *pdf.BillerInfo {
 	if t == nil {
 		return nil
 	}
@@ -3624,6 +3724,7 @@ func (s *invoiceService) getBillerInfo(t *tenant.Tenant) *pdf.BillerInfo {
 	billerInfo := pdf.BillerInfo{
 		Name:    t.Name,
 		Address: pdf.AddressInfo{},
+		TaxIDs:  toPDFTaxIDs(taxIDs),
 	}
 
 	if t.BillingDetails != (tenant.TenantBillingDetails{}) {
@@ -3698,11 +3799,6 @@ func (s *invoiceService) RecalculateInvoiceAmounts(ctx context.Context, invoiceI
 	}
 
 	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
-		return err
-	}
-
-	// Apply taxes after amount recalculation
-	if _, err := s.RecalculateTaxesOnInvoice(ctx, inv); err != nil {
 		return err
 	}
 
@@ -3991,6 +4087,18 @@ func (s *invoiceService) RecalculateInvoiceV2(ctx context.Context, id string, fi
 			Mark(ierr.ErrValidation)
 	}
 
+	// A converted checkout draft is frozen: recalculating would rate the subscription in the charge
+	// currency onto a billing-currency invoice, and finalize would then skip conversion.
+	if inv.FxConversion != nil {
+		return nil, ierr.NewError("invoice has already been converted to the billing currency").
+			WithHint("A converted draft cannot be recalculated; void it and issue a new one.").
+			WithReportableDetails(map[string]interface{}{
+				"invoice_id": inv.ID,
+				"currency":   inv.Currency,
+			}).
+			Mark(ierr.ErrInvalidOperation)
+	}
+
 	// Validate this is a subscription invoice
 	if inv.InvoiceType != types.InvoiceTypeSubscription || inv.SubscriptionID == nil {
 		return nil, ierr.NewError("invoice is not a subscription invoice").
@@ -4239,55 +4347,201 @@ func (s *invoiceService) projectPreviewToFiat(ctx context.Context, inv *invoice.
 	}
 
 	code := strings.ToLower(inv.Currency)
-	inv.Currency = ccCfg.DefaultFiatCurrency
+	fiat, rate, err := s.customCurrencyFiatTarget(ctx, ccCfg, code, inv.CustomerID)
+	if err != nil {
+		return err
+	}
+	inv.Currency = fiat
 	inv.CustomCurrency = &types.CustomCurrency{
 		Code: code,
-		Rate: ccCfg.RateFor(code, ccCfg.DefaultFiatCurrency),
+		Rate: rate,
 	}
 	inv.CaptureCustomCurrencyDenomination()
 	inv.ProjectCustomCurrency()
 	return nil
 }
 
+// customCurrencyFiatTarget picks the fiat a custom-currency draft is billed in, and its factor:
+// the customer's billing currency when it has a factor, else the tenant default.
+func (s *invoiceService) customCurrencyFiatTarget(ctx context.Context, ccCfg types.CustomCurrencyConfig, code, customerID string) (string, decimal.Decimal, error) {
+	fiat := ccCfg.DefaultFiatCurrency
+	if customerID == "" {
+		return fiat, ccCfg.RateFor(code, fiat), nil
+	}
+
+	cust, err := s.CustomerRepo.Get(ctx, customerID)
+	if err != nil {
+		return "", decimal.Zero, err
+	}
+	if cust.BillingCurrency == nil || *cust.BillingCurrency == "" {
+		return fiat, ccCfg.RateFor(code, fiat), nil
+	}
+
+	billing := strings.ToLower(*cust.BillingCurrency)
+	if types.IsMatchingCurrency(billing, fiat) {
+		return fiat, ccCfg.RateFor(code, fiat), nil
+	}
+
+	// A billing currency with no factor for the custom code can't be issued; reject it here, since
+	// finalize never converts custom-currency invoices.
+	rate := ccCfg.RateFor(code, billing)
+	if rate.IsZero() {
+		return "", decimal.Zero, ierr.NewErrorf("no conversion factor from %s to %s", code, billing).
+			WithHintf("Add a %s to %s factor to the custom currency configuration before invoicing this customer.", code, billing).
+			WithReportableDetails(map[string]any{"custom_currency": code, "billing_currency": billing}).
+			Mark(ierr.ErrValidation)
+	}
+	return billing, rate, nil
+}
+
 func (s *invoiceService) RecalculateTaxesOnInvoice(ctx context.Context, inv *invoice.Invoice) (*invoice.Invoice, error) {
-	// Only apply taxes to subscription invoices
-	if inv.InvoiceType != types.InvoiceTypeSubscription || inv.SubscriptionID == nil {
-		return inv, nil
+	// Draft is the only status whose tax may still move. Rewriting a sealed invoice's tax
+	// makes the Flexprice record disagree with the provider's, and nothing reconciles the two.
+	if inv.InvoiceStatus != types.InvoiceStatusDraft {
+		return nil, ierr.NewErrorf("cannot recalculate tax on a %s invoice", inv.InvoiceStatus).
+			WithHint("Tax can only be recalculated while an invoice is a draft").
+			WithReportableDetails(map[string]any{
+				"invoice_id":     inv.ID,
+				"invoice_status": inv.InvoiceStatus,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	// Create a minimal request for tax preparation
 	// applyTaxesToInvoice gets subscription ID and customer ID from the invoice itself
 	req := dto.InvoiceComputeRequest{}
 
-	// Apply taxes to invoice
-	if err := s.applyTaxesToInvoice(ctx, inv, req); err != nil {
-		return nil, err
-	}
+	// Archiving the old records and writing the new ones has to land with the totals they
+	// produced, or the invoice reports a tax its records do not add up to.
+	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		if err := s.applyTaxesToInvoice(txCtx, inv, req); err != nil {
+			return err
+		}
 
-	// Update the invoice in the database
-	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
-		s.Logger.Error(ctx, "failed to update invoice with tax amounts",
-			"error", err,
-			"invoice_id", inv.ID,
-			"total_tax", inv.TotalTax,
-			"new_total", inv.Total)
+		if err := s.InvoiceRepo.Update(txCtx, inv); err != nil {
+			s.Logger.Error(txCtx, "failed to update invoice with tax amounts",
+				"error", err,
+				"invoice_id", inv.ID,
+				"total_tax", inv.TotalTax,
+				"new_total", inv.Total)
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 
 	return inv, nil
 }
 
-// applyTaxesToInvoice applies taxes to an invoice.
-// For one-off invoices, uses prepared tax rates from req.PreparedTaxRates.
-// For subscription invoices, prepares tax rates from subscription associations.
-func (s *invoiceService) applyTaxesToInvoice(ctx context.Context, inv *invoice.Invoice, req dto.InvoiceComputeRequest) error {
-	taxService := NewTaxService(s.ServiceParams)
-	taxRates := req.PreparedTaxRates
+// previewTax quotes an invoice's tax and applies it, returning the records for the response.
+// A quote is not a bill, so an engine failure leaves the invoice untaxed and unstamped rather
+// than failing the preview.
+func (s *invoiceService) previewTax(ctx context.Context, inv *invoice.Invoice, rates *dto.InvoiceTaxRates) []*dto.TaxAppliedResponse {
+	engine, err := NewTaxEngine(ctx, s.ServiceParams)
+	if err != nil {
+		s.Logger.Error(ctx, "could not resolve the tax engine for a preview, quoting untaxed",
+			"error", err,
+			"customer_id", inv.CustomerID)
+		return nil
+	}
 
-	if taxRates == nil && inv.SubscriptionID != nil {
-		// Not already resolved by the caller (one-off invoices, billing service) — resolve
-		// from the subscription's own associations.
-		prepared, err := taxService.PrepareTaxRatesForInvoice(ctx, dto.CreateInvoiceRequest{
+	taxService := NewTaxService(s.ServiceParams)
+	result := taxService.CalculateTaxesOnInvoice(ctx, inv, rates)
+	if engine.GetProvider().IsExternal() {
+		result, err = engine.Calculate(ctx, invoiceTaxRequest(inv))
+		if err != nil {
+			s.Logger.Error(ctx, "tax engine could not quote a preview, quoting untaxed",
+				"error", err,
+				"customer_id", inv.CustomerID,
+				"provider", engine.GetProvider())
+			return nil
+		}
+	}
+
+	applyTaxResultToInvoice(inv, result)
+	// Tax is computed in fiat, so it is divided back into the denomination.
+	inv.MirrorTaxIntoDenomination()
+
+	return result.TaxAppliedRecords
+}
+
+// applyTaxesToInvoice calculates an invoice's tax with the configured engine and writes it,
+// onto the invoice and its tax_applied records.
+func (s *invoiceService) applyTaxesToInvoice(ctx context.Context, inv *invoice.Invoice, req dto.InvoiceComputeRequest) error {
+	engine, err := NewTaxEngine(ctx, s.ServiceParams)
+	if err != nil {
+		return err
+	}
+
+	var result *dto.TaxCalculationResult
+	if engine.GetProvider().IsExternal() {
+		result, err = s.externalTax(ctx, engine, inv)
+	} else {
+		result, err = s.nativeTax(ctx, inv, req)
+	}
+	if err != nil {
+		return err
+	}
+
+	applyTaxResultToInvoice(inv, result)
+	// Tax is computed in fiat, so it is divided back into the denomination. Reads that
+	// restore from the denomination recompute the total off its tax.
+	inv.MirrorTaxIntoDenomination()
+
+	return nil
+}
+
+// externalTax asks the engine what the invoice's tax is and records what it returned.
+func (s *invoiceService) externalTax(ctx context.Context, engine TaxEngine, inv *invoice.Invoice) (*dto.TaxCalculationResult, error) {
+	// An invoice with no line items is nothing to tax, and the engine refuses one.
+	if len(inv.LineItems) == 0 {
+		lineItems, err := s.InvoiceLineItemRepo.ListByInvoiceID(ctx, inv.ID)
+		if err != nil {
+			return nil, err
+		}
+		inv.LineItems = lineItems
+	}
+	if len(inv.LineItems) == 0 {
+		return nil, ierr.NewError("tax calculation requires at least one line item").
+			WithHint("The invoice has no line items to calculate tax on").
+			WithReportableDetails(map[string]any{"invoice_id": inv.ID}).
+			Mark(ierr.ErrValidation)
+	}
+
+	result, err := engine.Calculate(ctx, invoiceTaxRequest(inv))
+	if err != nil {
+		// No fallback to native. Billing native rates under an external configuration
+		// produces a wrong invoice that looks right.
+		s.Logger.Error(ctx, "tax engine calculation failed",
+			"error", err,
+			"invoice_id", inv.ID,
+			"provider", engine.GetProvider())
+		return nil, err
+	}
+
+	taxService := NewTaxService(s.ServiceParams)
+	if err := taxService.PersistTaxResult(ctx, types.TaxRateEntityTypeInvoice, inv.ID, inv.Currency, result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// nativeTax resolves the rates that apply and computes the tax from them. Rates come from the
+// caller, else the subscription's associations, else the tax the invoice already carries.
+func (s *invoiceService) nativeTax(ctx context.Context, inv *invoice.Invoice, req dto.InvoiceComputeRequest) (*dto.TaxCalculationResult, error) {
+	taxService := NewTaxService(s.ServiceParams)
+
+	// A caller that already prepared them hands them over rather than having them resolved
+	// twice.
+	if req.PreparedTaxRates != nil {
+		return taxService.ApplyTaxesOnInvoice(ctx, inv, req.PreparedTaxRates)
+	}
+
+	if inv.SubscriptionID != nil {
+		taxRates, err := taxService.PrepareTaxRatesForInvoice(ctx, dto.CreateInvoiceRequest{
 			SubscriptionID: inv.SubscriptionID,
 			CustomerID:     inv.CustomerID,
 			// An unstamped association defaults its behavior from this. Omit it and they all
@@ -4299,24 +4553,25 @@ func (s *invoiceService) applyTaxesToInvoice(ctx context.Context, inv *invoice.I
 				"error", err,
 				"invoice_id", inv.ID,
 				"subscription_id", *inv.SubscriptionID)
-			return err
+			return nil, err
 		}
-		taxRates = prepared
+		return taxService.ApplyTaxesOnInvoice(ctx, inv, taxRates)
 	}
 
-	// A nil/empty taxRates is handled by the same path: zero tax, with the reason recorded.
-	taxResult, err := taxService.ApplyTaxesOnInvoice(ctx, inv, taxRates)
+	// A one-off invoice's rates arrived on its create request and are stored nowhere else,
+	// so they are read back off the tax it already carries.
+	taxRates, err := taxService.TaxRatesFromAppliedTaxes(ctx, inv)
 	if err != nil {
-		return err
+		s.Logger.Error(ctx, "failed to read tax rates back from applied tax",
+			"error", err,
+			"invoice_id", inv.ID)
+		return nil, err
 	}
 
-	applyTaxResultToInvoice(inv, taxResult)
-	return nil
+	return taxService.ApplyTaxesOnInvoice(ctx, inv, taxRates)
 }
 
-// applyTaxResultToInvoice writes a result onto an invoice's totals and exemption reason.
-// Shared by the persisted and preview paths so the formula lives in one place.
-func applyTaxResultToInvoice(inv *invoice.Invoice, result *TaxCalculationResult) {
+func applyTaxResultToInvoice(inv *invoice.Invoice, result *dto.TaxCalculationResult) {
 	inv.TotalTax = result.TotalTaxAmount
 
 	inv.Total = inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount)
@@ -4336,7 +4591,13 @@ func applyTaxResultToInvoice(inv *invoice.Invoice, result *TaxCalculationResult)
 	inv.AmountRemaining = inv.Total.Sub(inv.AmountPaid)
 
 	switch {
+	case result.ExemptionReason != nil:
+		// The engine said why it charged zero. A reverse charge is legitimate and a missing
+		// registration is not, and no_tax_configured would misreport either.
+		inv.TaxExemptionReasonCode = result.ExemptionReason
 	case result.Exempt:
+		// Exempt outranks no_tax_configured: the customer being exempt is the more specific
+		// truth, whether or not any rate resolved.
 		inv.TaxExemptionReasonCode = lo.ToPtr(types.TaxExemptionReasonCustomerExempt)
 	case len(result.TaxAppliedRecords) == 0:
 		inv.TaxExemptionReasonCode = lo.ToPtr(types.TaxExemptionReasonNoTaxConfigured)
@@ -4934,6 +5195,10 @@ func (s *invoiceService) recalculateInvoiceTotals(inv *dto.InvoiceResponse) {
 		"amount_remaining", inv.AmountRemaining.StringFixed(2))
 }
 
+// emptyCell is what a tax column shows when the engine reported no value for it. Matches the
+// applied-taxes table in the app, so the same invoice reads the same way in both.
+const emptyCell = "--"
+
 // getAppliedTaxesForPDF retrieves and formats applied tax data for PDF generation
 func (s *invoiceService) getAppliedTaxesForPDF(ctx context.Context, invoiceID string) ([]pdf.AppliedTaxData, error) {
 	// Get applied taxes for this invoice with tax rate details expanded - SINGLE DB CALL!
@@ -4950,7 +5215,7 @@ func (s *invoiceService) getAppliedTaxesForPDF(ctx context.Context, invoiceID st
 
 	s.Logger.Debug(ctx, "Applied taxes response", "count", len(appliedTaxesResponse.Items))
 	for i, item := range appliedTaxesResponse.Items {
-		s.Logger.Debug(ctx, "Applied tax item", "index", i, "tax_rate_id", item.TaxRateID, "has_tax_rate", item.TaxRate != nil)
+		s.Logger.Debug(ctx, "Applied tax item", "index", i, "tax_rate_id", item.GetTaxRateID(), "provider", item.Provider, "has_tax_rate", item.TaxRate != nil)
 		if item.TaxRate != nil {
 			s.Logger.Debug(ctx, "Tax rate details", "name", item.TaxRate.Name, "code", item.TaxRate.Code)
 		}
@@ -4963,16 +5228,39 @@ func (s *invoiceService) getAppliedTaxesForPDF(ctx context.Context, invoiceID st
 	// Convert to PDF format using expanded tax rate data
 	appliedTaxes := make([]pdf.AppliedTaxData, 0, len(appliedTaxesResponse.Items))
 	for _, appliedTax := range appliedTaxesResponse.Items {
+		// A reversal records tax being un-filed, not a tax the invoice charges.
+		if appliedTax.IsReversal() {
+			continue
+		}
+
 		// Round to currency precision before converting to float64
 		precision := types.GetCurrencyPrecision(appliedTax.Currency)
 		taxableAmount, _ := appliedTax.TaxableAmount.Round(precision).Float64()
 		taxAmount, _ := appliedTax.TaxAmount.Round(precision).Float64()
 
 		// Use expanded tax rate data if available
-		var taxName, taxCode, taxType string
+		var taxName, taxCode, taxType, jurisdiction string
 		var taxRateValue float64
 
-		if appliedTax.TaxRate != nil {
+		switch {
+		case appliedTax.IsExternal():
+			// There is no Flexprice rate to expand, so the name comes off what the engine
+			// resolved. The type column carries the kind of rate, as it does for a native row,
+			// and stays empty when the engine imposed no rate at all.
+			taxName = appliedTax.ExternalTaxDetails.GetDisplayName()
+			if taxName == "" {
+				taxName = "Tax"
+			}
+			taxCode = appliedTax.ExternalTaxDetails.GetTaxCode()
+			jurisdiction = appliedTax.ExternalTaxDetails.GetJurisdictionName()
+			// A rate is not an amount: rounding it to the currency's precision turns a real
+			// 8.375% into 8.38%, which is a different rate.
+			if percentage, err := decimal.NewFromString(appliedTax.ExternalTaxDetails.GetPercentage()); err == nil {
+				taxRateValue, _ = percentage.Float64()
+				taxType = string(types.TaxRateTypePercentage)
+			}
+
+		case appliedTax.TaxRate != nil:
 			// Use expanded tax rate data
 			taxName = appliedTax.TaxRate.Name
 			taxCode = appliedTax.TaxRate.Code
@@ -4980,22 +5268,28 @@ func (s *invoiceService) getAppliedTaxesForPDF(ctx context.Context, invoiceID st
 			if appliedTax.TaxRate.TaxRateType == types.TaxRateTypePercentage && appliedTax.TaxRate.PercentageValue != nil {
 				taxRateValue, _ = appliedTax.TaxRate.PercentageValue.Round(precision).Float64()
 			}
-		} else {
+
+		default:
 			// Fallback if tax rate not expanded - this should not happen if expand works
-			s.Logger.Info(ctx, "Tax rate expand failed - falling back to basic info", "tax_rate_id", appliedTax.TaxRateID)
-			taxName = "Tax Rate " + appliedTax.TaxRateID[len(appliedTax.TaxRateID)-6:] // Show last 6 chars
-			taxCode = appliedTax.TaxRateID
+			rateID := appliedTax.GetTaxRateID()
+			s.Logger.Info(ctx, "Tax rate expand failed - falling back to basic info", "tax_rate_id", rateID)
+			taxName = "Tax Rate"
+			if len(rateID) >= 6 {
+				taxName += " " + rateID[len(rateID)-6:] // Show last 6 chars
+			}
+			taxCode = rateID
 			taxType = "Unknown"
 			taxRateValue = 0
 		}
 
 		appliedTaxData := pdf.AppliedTaxData{
 			TaxName:       taxName,
-			TaxCode:       taxCode,
-			TaxType:       taxType,
+			TaxCode:       lo.Ternary(taxCode == "", emptyCell, taxCode),
+			TaxType:       lo.Ternary(taxType == "", emptyCell, taxType),
 			TaxRate:       taxRateValue,
 			TaxableAmount: taxableAmount,
 			TaxAmount:     taxAmount,
+			Jurisdiction:  lo.Ternary(jurisdiction == "", emptyCell, jurisdiction),
 			// AppliedAt:     appliedTax.AppliedAt.Format("Jan 02, 2006"),
 		}
 

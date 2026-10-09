@@ -39,6 +39,7 @@ const (
 	SettingKeyCustomCurrencyConfig        SettingKey = "custom_currency_config"
 	SettingKeyRevenueAnalyticsConfig      SettingKey = "revenue_analytics_config"
 	SettingKeyUsageAlertConfig            SettingKey = "usage_alert_config"
+	SettingKeyTaxConfig                   SettingKey = "tax_config"
 )
 
 func (s *SettingKey) Validate() error {
@@ -64,6 +65,7 @@ func (s *SettingKey) Validate() error {
 		SettingKeyCustomCurrencyConfig,
 		SettingKeyRevenueAnalyticsConfig,
 		SettingKeyUsageAlertConfig,
+		SettingKeyTaxConfig,
 	}
 
 	if !lo.Contains(allowedKeys, *s) {
@@ -933,6 +935,13 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 			},
 			Description: "Tenant-defined custom currencies and their fiat conversion factors. Empty means no enforcement",
 		},
+		SettingKeyTaxConfig: {
+			Key: SettingKeyTaxConfig,
+			// Empty, so the zero value decides: no external engine, and tax is calculated
+			// natively exactly as it is for a tenant that has never held this setting.
+			DefaultValue: map[string]interface{}{},
+			Description:  "Which external tax engine calculates tax, if any. Absent or disabled means the native engine",
+		},
 	}, nil
 }
 
@@ -1097,6 +1106,13 @@ func ValidateSettingValue(key SettingKey, value map[string]interface{}) error {
 	case SettingKeyCustomCurrencyConfig:
 		// Lenient here: a partial update fragment may omit required fields the merged result already has.
 		return nil
+
+	case SettingKeyTaxConfig:
+		config, err := utils.ToStruct[TaxConfig](value)
+		if err != nil {
+			return err
+		}
+		return config.Validate()
 
 	default:
 		return ierr.NewErrorf("unknown setting key: %s", key).

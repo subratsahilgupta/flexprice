@@ -118,6 +118,20 @@ func (_u *TaxAppliedUpdate) SetNillableTaxAmount(v *decimal.Decimal) *TaxApplied
 	return _u
 }
 
+// SetCurrency sets the "currency" field.
+func (_u *TaxAppliedUpdate) SetCurrency(v string) *TaxAppliedUpdate {
+	_u.mutation.SetCurrency(v)
+	return _u
+}
+
+// SetNillableCurrency sets the "currency" field if the given value is not nil.
+func (_u *TaxAppliedUpdate) SetNillableCurrency(v *string) *TaxAppliedUpdate {
+	if v != nil {
+		_u.SetCurrency(*v)
+	}
+	return _u
+}
+
 // SetMetadata sets the "metadata" field.
 func (_u *TaxAppliedUpdate) SetMetadata(v map[string]string) *TaxAppliedUpdate {
 	_u.mutation.SetMetadata(v)
@@ -170,6 +184,78 @@ func (_u *TaxAppliedUpdate) ClearTaxBehavior() *TaxAppliedUpdate {
 	return _u
 }
 
+// SetProvider sets the "provider" field.
+func (_u *TaxAppliedUpdate) SetProvider(v types.TaxProvider) *TaxAppliedUpdate {
+	_u.mutation.SetProvider(v)
+	return _u
+}
+
+// SetNillableProvider sets the "provider" field if the given value is not nil.
+func (_u *TaxAppliedUpdate) SetNillableProvider(v *types.TaxProvider) *TaxAppliedUpdate {
+	if v != nil {
+		_u.SetProvider(*v)
+	}
+	return _u
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (_u *TaxAppliedUpdate) ClearProvider() *TaxAppliedUpdate {
+	_u.mutation.ClearProvider()
+	return _u
+}
+
+// SetTaxTransactionID sets the "tax_transaction_id" field.
+func (_u *TaxAppliedUpdate) SetTaxTransactionID(v string) *TaxAppliedUpdate {
+	_u.mutation.SetTaxTransactionID(v)
+	return _u
+}
+
+// SetNillableTaxTransactionID sets the "tax_transaction_id" field if the given value is not nil.
+func (_u *TaxAppliedUpdate) SetNillableTaxTransactionID(v *string) *TaxAppliedUpdate {
+	if v != nil {
+		_u.SetTaxTransactionID(*v)
+	}
+	return _u
+}
+
+// ClearTaxTransactionID clears the value of the "tax_transaction_id" field.
+func (_u *TaxAppliedUpdate) ClearTaxTransactionID() *TaxAppliedUpdate {
+	_u.mutation.ClearTaxTransactionID()
+	return _u
+}
+
+// SetTaxTransactionType sets the "tax_transaction_type" field.
+func (_u *TaxAppliedUpdate) SetTaxTransactionType(v types.TaxTransactionType) *TaxAppliedUpdate {
+	_u.mutation.SetTaxTransactionType(v)
+	return _u
+}
+
+// SetNillableTaxTransactionType sets the "tax_transaction_type" field if the given value is not nil.
+func (_u *TaxAppliedUpdate) SetNillableTaxTransactionType(v *types.TaxTransactionType) *TaxAppliedUpdate {
+	if v != nil {
+		_u.SetTaxTransactionType(*v)
+	}
+	return _u
+}
+
+// ClearTaxTransactionType clears the value of the "tax_transaction_type" field.
+func (_u *TaxAppliedUpdate) ClearTaxTransactionType() *TaxAppliedUpdate {
+	_u.mutation.ClearTaxTransactionType()
+	return _u
+}
+
+// SetExternalTaxDetails sets the "external_tax_details" field.
+func (_u *TaxAppliedUpdate) SetExternalTaxDetails(v *types.ExternalTaxDetails) *TaxAppliedUpdate {
+	_u.mutation.SetExternalTaxDetails(v)
+	return _u
+}
+
+// ClearExternalTaxDetails clears the value of the "external_tax_details" field.
+func (_u *TaxAppliedUpdate) ClearExternalTaxDetails() *TaxAppliedUpdate {
+	_u.mutation.ClearExternalTaxDetails()
+	return _u
+}
+
 // Mutation returns the TaxAppliedMutation object of the builder.
 func (_u *TaxAppliedUpdate) Mutation() *TaxAppliedMutation {
 	return _u.mutation
@@ -211,7 +297,30 @@ func (_u *TaxAppliedUpdate) defaults() {
 	}
 }
 
+// check runs all checks and user-defined validators on the builder.
+func (_u *TaxAppliedUpdate) check() error {
+	if v, ok := _u.mutation.Currency(); ok {
+		if err := taxapplied.CurrencyValidator(v); err != nil {
+			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "TaxApplied.currency": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.TaxBehavior(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "tax_behavior", err: fmt.Errorf(`ent: validator failed for field "TaxApplied.tax_behavior": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.Provider(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "provider", err: fmt.Errorf(`ent: validator failed for field "TaxApplied.provider": %w`, err)}
+		}
+	}
+	return nil
+}
+
 func (_u *TaxAppliedUpdate) sqlSave(ctx context.Context) (_node int, err error) {
+	if err := _u.check(); err != nil {
+		return _node, err
+	}
 	_spec := sqlgraph.NewUpdateSpec(taxapplied.Table, taxapplied.Columns, sqlgraph.NewFieldSpec(taxapplied.FieldID, field.TypeString))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
@@ -238,6 +347,9 @@ func (_u *TaxAppliedUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 	if _u.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(taxapplied.FieldEnvironmentID, field.TypeString)
 	}
+	if _u.mutation.TaxRateIDCleared() {
+		_spec.ClearField(taxapplied.FieldTaxRateID, field.TypeString)
+	}
 	if value, ok := _u.mutation.TaxAssociationID(); ok {
 		_spec.SetField(taxapplied.FieldTaxAssociationID, field.TypeString, value)
 	}
@@ -249,6 +361,9 @@ func (_u *TaxAppliedUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 	}
 	if value, ok := _u.mutation.TaxAmount(); ok {
 		_spec.SetField(taxapplied.FieldTaxAmount, field.TypeOther, value)
+	}
+	if value, ok := _u.mutation.Currency(); ok {
+		_spec.SetField(taxapplied.FieldCurrency, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Metadata(); ok {
 		_spec.SetField(taxapplied.FieldMetadata, field.TypeJSON, value)
@@ -267,6 +382,30 @@ func (_u *TaxAppliedUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 	}
 	if _u.mutation.TaxBehaviorCleared() {
 		_spec.ClearField(taxapplied.FieldTaxBehavior, field.TypeString)
+	}
+	if value, ok := _u.mutation.Provider(); ok {
+		_spec.SetField(taxapplied.FieldProvider, field.TypeString, value)
+	}
+	if _u.mutation.ProviderCleared() {
+		_spec.ClearField(taxapplied.FieldProvider, field.TypeString)
+	}
+	if value, ok := _u.mutation.TaxTransactionID(); ok {
+		_spec.SetField(taxapplied.FieldTaxTransactionID, field.TypeString, value)
+	}
+	if _u.mutation.TaxTransactionIDCleared() {
+		_spec.ClearField(taxapplied.FieldTaxTransactionID, field.TypeString)
+	}
+	if value, ok := _u.mutation.TaxTransactionType(); ok {
+		_spec.SetField(taxapplied.FieldTaxTransactionType, field.TypeString, value)
+	}
+	if _u.mutation.TaxTransactionTypeCleared() {
+		_spec.ClearField(taxapplied.FieldTaxTransactionType, field.TypeString)
+	}
+	if value, ok := _u.mutation.ExternalTaxDetails(); ok {
+		_spec.SetField(taxapplied.FieldExternalTaxDetails, field.TypeJSON, value)
+	}
+	if _u.mutation.ExternalTaxDetailsCleared() {
+		_spec.ClearField(taxapplied.FieldExternalTaxDetails, field.TypeJSON)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -376,6 +515,20 @@ func (_u *TaxAppliedUpdateOne) SetNillableTaxAmount(v *decimal.Decimal) *TaxAppl
 	return _u
 }
 
+// SetCurrency sets the "currency" field.
+func (_u *TaxAppliedUpdateOne) SetCurrency(v string) *TaxAppliedUpdateOne {
+	_u.mutation.SetCurrency(v)
+	return _u
+}
+
+// SetNillableCurrency sets the "currency" field if the given value is not nil.
+func (_u *TaxAppliedUpdateOne) SetNillableCurrency(v *string) *TaxAppliedUpdateOne {
+	if v != nil {
+		_u.SetCurrency(*v)
+	}
+	return _u
+}
+
 // SetMetadata sets the "metadata" field.
 func (_u *TaxAppliedUpdateOne) SetMetadata(v map[string]string) *TaxAppliedUpdateOne {
 	_u.mutation.SetMetadata(v)
@@ -425,6 +578,78 @@ func (_u *TaxAppliedUpdateOne) SetNillableTaxBehavior(v *types.TaxBehavior) *Tax
 // ClearTaxBehavior clears the value of the "tax_behavior" field.
 func (_u *TaxAppliedUpdateOne) ClearTaxBehavior() *TaxAppliedUpdateOne {
 	_u.mutation.ClearTaxBehavior()
+	return _u
+}
+
+// SetProvider sets the "provider" field.
+func (_u *TaxAppliedUpdateOne) SetProvider(v types.TaxProvider) *TaxAppliedUpdateOne {
+	_u.mutation.SetProvider(v)
+	return _u
+}
+
+// SetNillableProvider sets the "provider" field if the given value is not nil.
+func (_u *TaxAppliedUpdateOne) SetNillableProvider(v *types.TaxProvider) *TaxAppliedUpdateOne {
+	if v != nil {
+		_u.SetProvider(*v)
+	}
+	return _u
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (_u *TaxAppliedUpdateOne) ClearProvider() *TaxAppliedUpdateOne {
+	_u.mutation.ClearProvider()
+	return _u
+}
+
+// SetTaxTransactionID sets the "tax_transaction_id" field.
+func (_u *TaxAppliedUpdateOne) SetTaxTransactionID(v string) *TaxAppliedUpdateOne {
+	_u.mutation.SetTaxTransactionID(v)
+	return _u
+}
+
+// SetNillableTaxTransactionID sets the "tax_transaction_id" field if the given value is not nil.
+func (_u *TaxAppliedUpdateOne) SetNillableTaxTransactionID(v *string) *TaxAppliedUpdateOne {
+	if v != nil {
+		_u.SetTaxTransactionID(*v)
+	}
+	return _u
+}
+
+// ClearTaxTransactionID clears the value of the "tax_transaction_id" field.
+func (_u *TaxAppliedUpdateOne) ClearTaxTransactionID() *TaxAppliedUpdateOne {
+	_u.mutation.ClearTaxTransactionID()
+	return _u
+}
+
+// SetTaxTransactionType sets the "tax_transaction_type" field.
+func (_u *TaxAppliedUpdateOne) SetTaxTransactionType(v types.TaxTransactionType) *TaxAppliedUpdateOne {
+	_u.mutation.SetTaxTransactionType(v)
+	return _u
+}
+
+// SetNillableTaxTransactionType sets the "tax_transaction_type" field if the given value is not nil.
+func (_u *TaxAppliedUpdateOne) SetNillableTaxTransactionType(v *types.TaxTransactionType) *TaxAppliedUpdateOne {
+	if v != nil {
+		_u.SetTaxTransactionType(*v)
+	}
+	return _u
+}
+
+// ClearTaxTransactionType clears the value of the "tax_transaction_type" field.
+func (_u *TaxAppliedUpdateOne) ClearTaxTransactionType() *TaxAppliedUpdateOne {
+	_u.mutation.ClearTaxTransactionType()
+	return _u
+}
+
+// SetExternalTaxDetails sets the "external_tax_details" field.
+func (_u *TaxAppliedUpdateOne) SetExternalTaxDetails(v *types.ExternalTaxDetails) *TaxAppliedUpdateOne {
+	_u.mutation.SetExternalTaxDetails(v)
+	return _u
+}
+
+// ClearExternalTaxDetails clears the value of the "external_tax_details" field.
+func (_u *TaxAppliedUpdateOne) ClearExternalTaxDetails() *TaxAppliedUpdateOne {
+	_u.mutation.ClearExternalTaxDetails()
 	return _u
 }
 
@@ -482,7 +707,30 @@ func (_u *TaxAppliedUpdateOne) defaults() {
 	}
 }
 
+// check runs all checks and user-defined validators on the builder.
+func (_u *TaxAppliedUpdateOne) check() error {
+	if v, ok := _u.mutation.Currency(); ok {
+		if err := taxapplied.CurrencyValidator(v); err != nil {
+			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "TaxApplied.currency": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.TaxBehavior(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "tax_behavior", err: fmt.Errorf(`ent: validator failed for field "TaxApplied.tax_behavior": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.Provider(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "provider", err: fmt.Errorf(`ent: validator failed for field "TaxApplied.provider": %w`, err)}
+		}
+	}
+	return nil
+}
+
 func (_u *TaxAppliedUpdateOne) sqlSave(ctx context.Context) (_node *TaxApplied, err error) {
+	if err := _u.check(); err != nil {
+		return _node, err
+	}
 	_spec := sqlgraph.NewUpdateSpec(taxapplied.Table, taxapplied.Columns, sqlgraph.NewFieldSpec(taxapplied.FieldID, field.TypeString))
 	id, ok := _u.mutation.ID()
 	if !ok {
@@ -526,6 +774,9 @@ func (_u *TaxAppliedUpdateOne) sqlSave(ctx context.Context) (_node *TaxApplied, 
 	if _u.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(taxapplied.FieldEnvironmentID, field.TypeString)
 	}
+	if _u.mutation.TaxRateIDCleared() {
+		_spec.ClearField(taxapplied.FieldTaxRateID, field.TypeString)
+	}
 	if value, ok := _u.mutation.TaxAssociationID(); ok {
 		_spec.SetField(taxapplied.FieldTaxAssociationID, field.TypeString, value)
 	}
@@ -537,6 +788,9 @@ func (_u *TaxAppliedUpdateOne) sqlSave(ctx context.Context) (_node *TaxApplied, 
 	}
 	if value, ok := _u.mutation.TaxAmount(); ok {
 		_spec.SetField(taxapplied.FieldTaxAmount, field.TypeOther, value)
+	}
+	if value, ok := _u.mutation.Currency(); ok {
+		_spec.SetField(taxapplied.FieldCurrency, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Metadata(); ok {
 		_spec.SetField(taxapplied.FieldMetadata, field.TypeJSON, value)
@@ -555,6 +809,30 @@ func (_u *TaxAppliedUpdateOne) sqlSave(ctx context.Context) (_node *TaxApplied, 
 	}
 	if _u.mutation.TaxBehaviorCleared() {
 		_spec.ClearField(taxapplied.FieldTaxBehavior, field.TypeString)
+	}
+	if value, ok := _u.mutation.Provider(); ok {
+		_spec.SetField(taxapplied.FieldProvider, field.TypeString, value)
+	}
+	if _u.mutation.ProviderCleared() {
+		_spec.ClearField(taxapplied.FieldProvider, field.TypeString)
+	}
+	if value, ok := _u.mutation.TaxTransactionID(); ok {
+		_spec.SetField(taxapplied.FieldTaxTransactionID, field.TypeString, value)
+	}
+	if _u.mutation.TaxTransactionIDCleared() {
+		_spec.ClearField(taxapplied.FieldTaxTransactionID, field.TypeString)
+	}
+	if value, ok := _u.mutation.TaxTransactionType(); ok {
+		_spec.SetField(taxapplied.FieldTaxTransactionType, field.TypeString, value)
+	}
+	if _u.mutation.TaxTransactionTypeCleared() {
+		_spec.ClearField(taxapplied.FieldTaxTransactionType, field.TypeString)
+	}
+	if value, ok := _u.mutation.ExternalTaxDetails(); ok {
+		_spec.SetField(taxapplied.FieldExternalTaxDetails, field.TypeJSON, value)
+	}
+	if _u.mutation.ExternalTaxDetailsCleared() {
+		_spec.ClearField(taxapplied.FieldExternalTaxDetails, field.TypeJSON)
 	}
 	_node = &TaxApplied{config: _u.config}
 	_spec.Assign = _node.assignValues
