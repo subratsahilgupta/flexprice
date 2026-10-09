@@ -55,6 +55,13 @@ type InvoiceService interface {
 	// ListOpenCycleDrafts returns the subscription's unfinalized cycle drafts for periods starting
 	// before startedBefore, oldest first, with their line items.
 	ListOpenCycleDrafts(ctx context.Context, subscriptionID string, startedBefore time.Time) ([]*invoice.Invoice, error)
+	// MoveCycleDraft moves the subscription's open draft for its current period to end at periodEnd
+	// under reason, so a flow that ends the period early bills that draft instead of a new invoice.
+	// Returns the moved draft, or nil when there was none.
+	MoveCycleDraft(ctx context.Context, sub *subscription.Subscription, periodEnd time.Time, reason types.InvoiceBillingReason) (*invoice.Invoice, error)
+	// VoidCycleDraft voids the subscription's open draft for its current period, refunding credits
+	// already applied to it. A no-op when there is no open draft.
+	VoidCycleDraft(ctx context.Context, sub *subscription.Subscription) error
 	GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetInternalPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
 	CreatePreviewInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, error)
@@ -207,44 +214,19 @@ func (s *invoiceService) CreateEmptyDraftInvoice(ctx context.Context, req dto.Cr
 		// 1. Generate idempotency key if not provided
 		var idempKey string
 		if req.IdempotencyKey == nil {
-			periodStart := req.PeriodStart
-			periodEnd := req.PeriodEnd
-
-			// To handle potential race conditions and prevent the creation of duplicate subscription invoices
-			// (e.g., when multiple cancellation or update requests are processed simultaneously),
-			// we truncate the billing period's start and end times to minute-level precision for
-			// idempotency key generation. This ensures that any additional requests for the same
-			// billing period within the same minute will generate an identical idempotency key,
-			// allowing the system to correctly identify and deduplicate them.
-			if periodStart != nil && !periodStart.IsZero() {
-				t := periodStart.Truncate(time.Minute)
-				periodStart = &t
-			}
-			if periodEnd != nil && !periodEnd.IsZero() {
-				t := periodEnd.Truncate(time.Minute)
-				periodEnd = &t
-			}
-
-			params := map[string]interface{}{
-				"tenant_id":      types.GetTenantID(ctx),
-				"environment_id": types.GetEnvironmentID(ctx),
-				"customer_id":    req.CustomerID,
-				"period_start":   periodStart,
-				"period_end":     periodEnd,
-				// Including a timestamp here would always generate a new idempotency key
-				// for the same invoice, so it is intentionally omitted.
-				// "timestamp":    time.Now().UTC(),
-			}
-			scope := idempotency.ScopeOneOffInvoice
 			if req.SubscriptionID != nil {
-				scope = idempotency.ScopeSubscriptionInvoice
-				params["subscription_id"] = *req.SubscriptionID
-				params["billing_reason"] = string(req.BillingReason)
+				idempKey = s.subscriptionInvoiceKey(ctx, req.CustomerID, *req.SubscriptionID, req.BillingReason, req.PeriodStart, req.PeriodEnd)
 			} else {
 				// For one-off invoices, a timestamp is required to ensure uniqueness
-				params["timestamp"] = time.Now().UTC()
+				idempKey = s.idempGen.GenerateKey(idempotency.ScopeOneOffInvoice, map[string]interface{}{
+					"tenant_id":      types.GetTenantID(ctx),
+					"environment_id": types.GetEnvironmentID(ctx),
+					"customer_id":    req.CustomerID,
+					"period_start":   truncatedToMinute(req.PeriodStart),
+					"period_end":     truncatedToMinute(req.PeriodEnd),
+					"timestamp":      time.Now().UTC(),
+				})
 			}
-			idempKey = s.idempGen.GenerateKey(scope, params)
 		} else {
 			idempKey = *req.IdempotencyKey
 		}
@@ -445,6 +427,29 @@ func (s *invoiceService) CreateComputedDraftInvoice(ctx context.Context, req dto
 	return dto.NewInvoiceResponse(inv), false, nil
 }
 
+// subscriptionInvoiceKey is the idempotency key of a subscription invoice for a period and billing
+// reason. Period bounds are truncated to the minute so concurrent requests for the same period
+// (e.g. simultaneous cancellations) dedupe to one invoice.
+func (s *invoiceService) subscriptionInvoiceKey(ctx context.Context, customerID, subscriptionID string, reason types.InvoiceBillingReason, periodStart, periodEnd *time.Time) string {
+	return s.idempGen.GenerateKey(idempotency.ScopeSubscriptionInvoice, map[string]interface{}{
+		"tenant_id":       types.GetTenantID(ctx),
+		"environment_id":  types.GetEnvironmentID(ctx),
+		"customer_id":     customerID,
+		"subscription_id": subscriptionID,
+		"billing_reason":  string(reason),
+		"period_start":    truncatedToMinute(periodStart),
+		"period_end":      truncatedToMinute(periodEnd),
+	})
+}
+
+func truncatedToMinute(t *time.Time) *time.Time {
+	if t == nil || t.IsZero() {
+		return t
+	}
+	truncated := t.Truncate(time.Minute)
+	return &truncated
+}
+
 // CreateDraftInvoiceForSubscription creates a zero-dollar draft invoice without line items for a subscription period.
 // No invoice number is assigned. Use ComputeInvoice to populate line items and FinalizeInvoice to assign the number.
 func (s *invoiceService) CreateDraftInvoiceForSubscription(ctx context.Context, req dto.CreateSubscriptionDraftInvoiceRequest) (*dto.InvoiceResponse, error) {
@@ -491,6 +496,70 @@ func (s *invoiceService) GetOrComputeCurrentPeriodDraft(ctx context.Context, sub
 		return nil, false, err
 	}
 	return s.ComputeInvoice(ctx, draft.ID, nil)
+}
+
+func (s *invoiceService) MoveCycleDraft(ctx context.Context, sub *subscription.Subscription, periodEnd time.Time, reason types.InvoiceBillingReason) (*invoice.Invoice, error) {
+	draft, err := s.currentCycleDraft(ctx, sub)
+	if err != nil || draft == nil {
+		return nil, err
+	}
+	key := s.subscriptionInvoiceKey(ctx, draft.CustomerID, sub.ID, reason, draft.PeriodStart, &periodEnd)
+
+	err = s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		// Same row lock as ComputeInvoice, so the expiry job can't apply credits mid-move.
+		if _, err := s.InvoiceRepo.GetForUpdate(txCtx, draft.ID); err != nil {
+			return err
+		}
+		if err := s.InvoiceRepo.UpdateDraftInvoicePeriod(txCtx, draft.ID, periodEnd, string(reason), key); err != nil {
+			return err
+		}
+		s.Logger.Info(ctx, "moved the open draft to the period's new end",
+			"invoice_id", draft.ID,
+			"subscription_id", sub.ID,
+			"period_end", periodEnd,
+			"billing_reason", reason,
+		)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	draft.PeriodEnd = &periodEnd
+	draft.BillingReason = string(reason)
+	draft.IdempotencyKey = &key
+	return draft, nil
+}
+
+func (s *invoiceService) VoidCycleDraft(ctx context.Context, sub *subscription.Subscription) error {
+	draft, err := s.currentCycleDraft(ctx, sub)
+	if err != nil || draft == nil {
+		return err
+	}
+	if _, err := s.VoidInvoice(ctx, draft.ID, dto.InvoiceVoidRequest{}); err != nil {
+		return err
+	}
+	s.Logger.Info(ctx, "voided the open draft of a period that ended without an invoice",
+		"invoice_id", draft.ID,
+		"subscription_id", sub.ID,
+		"credits_refunded", draft.TotalPrepaidCreditsApplied,
+	)
+	return nil
+}
+
+// currentCycleDraft returns the subscription's open cycle draft for its current period, or nil.
+func (s *invoiceService) currentCycleDraft(ctx context.Context, sub *subscription.Subscription) (*invoice.Invoice, error) {
+	draft, err := s.InvoiceRepo.GetForPeriod(ctx, sub.ID, sub.CurrentPeriodStart, sub.CurrentPeriodEnd,
+		string(types.InvoiceBillingReasonSubscriptionCycle))
+	if ierr.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if draft.InvoiceStatus != types.InvoiceStatusDraft {
+		return nil, nil
+	}
+	return draft, nil
 }
 
 func (s *invoiceService) ListOpenCycleDrafts(ctx context.Context, subscriptionID string, startedBefore time.Time) ([]*invoice.Invoice, error) {
@@ -1373,12 +1442,14 @@ func (s *invoiceService) IsFinalizationDue(ctx context.Context, invoiceID string
 		return false, nil
 	}
 
-	pending, err := s.hasPendingExpiringCredit(ctx, inv)
-	if err != nil {
-		return false, err
-	}
-	if pending {
-		return false, nil
+	if inv.InvoiceType == types.InvoiceTypeSubscription && inv.PeriodStart != nil && inv.PeriodEnd != nil {
+		pending, err := NewWalletService(s.ServiceParams).HasPendingExpiringCredit(ctx, inv.CustomerID, inv.DenominationCurrency(), *inv.PeriodStart, *inv.PeriodEnd)
+		if err != nil {
+			return false, err
+		}
+		if pending {
+			return false, nil
+		}
 	}
 
 	settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
@@ -1394,26 +1465,6 @@ func (s *invoiceService) IsFinalizationDue(ctx context.Context, invoiceID string
 
 	dueAt := inv.LastComputedAt.Add(time.Duration(invoiceConfig.FinalizationDelaySeconds) * time.Second)
 	return time.Now().UTC().After(dueAt), nil
-}
-
-// hasPendingExpiringCredit reports whether a credit that expired inside this subscription draft's
-// period is still waiting for the expiry job to settle it against this draft.
-func (s *invoiceService) hasPendingExpiringCredit(ctx context.Context, inv *invoice.Invoice) (bool, error) {
-	if inv.InvoiceType != types.InvoiceTypeSubscription || inv.PeriodStart == nil || inv.PeriodEnd == nil {
-		return false, nil
-	}
-	enabled, err := creditExpirySettlementEnabled(ctx, s.ServiceParams)
-	if err != nil || !enabled {
-		return false, err
-	}
-	pending, err := NewWalletService(s.ServiceParams).HasPendingExpiringCredit(ctx, inv.CustomerID, inv.DenominationCurrency(), *inv.PeriodStart, *inv.PeriodEnd)
-	if err != nil {
-		return false, err
-	}
-	if pending {
-		s.Logger.Info(ctx, "holding finalization until the expiry job applies an expiring credit", "invoice_id", inv.ID)
-	}
-	return pending, nil
 }
 
 // ListAllTenantDraftInvoices returns draft invoices across all tenants with LastComputedAt set.
