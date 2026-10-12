@@ -131,6 +131,7 @@ type ServiceParams struct {
 	WorkflowExecutionRepo        workflowexecution.Repository
 	CheckoutSessionRepo          domainCheckout.Repository
 	AnalyticsViewRepo            domainAnalytics.Repository
+	ReportsRepo                  domainAnalytics.ReportsRepository
 	RevenueFactRepo              revenuefact.Repository
 
 	// Publishers
@@ -237,6 +238,7 @@ func NewServiceParams(
 	usageRecordRepo usagerecord.Repository,
 	encryptionService security.EncryptionService,
 	analyticsViewRepo domainAnalytics.Repository,
+	reportsRepo domainAnalytics.ReportsRepository,
 	revenueFactRepo revenuefact.Repository,
 ) ServiceParams {
 	return ServiceParams{
@@ -310,6 +312,7 @@ func NewServiceParams(
 		WorkflowExecutionRepo:        workflowExecutionRepo,
 		CheckoutSessionRepo:          checkoutSessionRepo,
 		AnalyticsViewRepo:            analyticsViewRepo,
+		ReportsRepo:                  reportsRepo,
 		RevenueFactRepo:              revenueFactRepo,
 	}
 }

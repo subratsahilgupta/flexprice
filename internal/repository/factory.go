@@ -3,6 +3,7 @@ package repository
 import (
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/clickhouse"
+	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/addon"
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/alert"
@@ -308,6 +309,10 @@ func NewCheckoutSessionRepository(p RepositoryParams) checkout.Repository {
 
 func NewAnalyticsViewRepository(p RepositoryParams) domainAnalytics.Repository {
 	return entRepo.NewAnalyticsViewRepository(p.EntClient, p.Logger)
+}
+
+func NewReportsRepository(cfg *config.Configuration, log *logger.Logger) (domainAnalytics.ReportsRepository, error) {
+	return clickhouseRepo.NewReportsRepository(cfg, log)
 }
 
 func NewRevenueFactRepository(p RepositoryParams) revenuefact.Repository {

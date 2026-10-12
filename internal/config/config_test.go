@@ -3,6 +3,8 @@ package config
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // TestSAMLConfigValidate covers the boot-time gate. The alternative to failing
@@ -144,4 +146,11 @@ func TestValidateSAMLDependenciesRequiresSigningSecret(t *testing.T) {
 	if err := off.validateSAMLDependencies(); err != nil {
 		t.Errorf("a non-SAML deployment must not require a signing secret: %v", err)
 	}
+}
+
+func TestReportsConfig_Enabled(t *testing.T) {
+	assert.False(t, ReportsConfig{}.Enabled())
+	assert.False(t, ReportsConfig{Database: "d"}.Enabled())
+	assert.False(t, ReportsConfig{Username: "u"}.Enabled())
+	assert.True(t, ReportsConfig{Database: "d", Username: "u"}.Enabled())
 }
