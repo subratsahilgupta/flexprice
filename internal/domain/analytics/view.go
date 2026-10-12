@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -74,8 +75,9 @@ type TimeSpec struct {
 }
 
 type ViewDefinition struct {
-	Shape      types.Shape    `json:"shape" binding:"required" validate:"required" enums:"timeseries,breakdown"`
-	Metrics    []types.Metric `json:"metrics" binding:"required,min=1" validate:"required,min=1" enums:"usage_quantity,event_count"`
+	Family     types.Family   `json:"family,omitempty" enums:"usage,billing"`
+	Shape      types.Shape    `json:"shape" binding:"required" validate:"required" enums:"timeseries,breakdown,scalar"`
+	Metrics    []types.Metric `json:"metrics" binding:"required,min=1" validate:"required,min=1" enums:"usage_quantity,event_count,invoice_total"`
 	Dimensions []string       `json:"dimensions,omitempty"`
 	Filters    []*Filter      `json:"filters,omitempty"`
 	// Time is optional: an omitted range defaults to last_7_days (see
@@ -111,6 +113,16 @@ func NewViewDefinition(
 }
 
 func (v ViewDefinition) Validate() error {
+	if err := v.Family.Validate(); err != nil {
+		return err
+	}
+	if v.Family == types.FamilyBilling {
+		return v.validateBilling()
+	}
+	return v.validateUsage()
+}
+
+func (v ViewDefinition) validateUsage() error {
 	switch v.Shape {
 	case types.ShapeTimeseries, types.ShapeBreakdown:
 	default:
@@ -131,6 +143,53 @@ func (v ViewDefinition) Validate() error {
 	}
 	if err := v.Time.Grain.Validate(); err != nil {
 		return err
+	}
+	return v.validateCommon()
+}
+
+func (v ViewDefinition) validateBilling() error {
+	if len(v.Metrics) != 1 {
+		return ierr.NewError("billing views take exactly one metric").Mark(ierr.ErrValidation)
+	}
+	bm, ok := LookupBillingMetric(v.Metrics[0])
+	if !ok {
+		return ierr.NewErrorf("unknown billing metric %q", v.Metrics[0]).Mark(ierr.ErrValidation)
+	}
+	if !slices.Contains(bm.Shapes, v.Shape) {
+		return ierr.NewErrorf("shape %q not supported by metric %q", v.Shape, bm.Metric).Mark(ierr.ErrValidation)
+	}
+	for i, d := range v.Dimensions {
+		if _, ok := bm.Dimensions[d]; !ok {
+			return ierr.NewErrorf("illegal dimension %q for metric %q", d, bm.Metric).Mark(ierr.ErrValidation)
+		}
+		if slices.Contains(v.Dimensions[:i], d) {
+			return ierr.NewErrorf("duplicate dimension %q", d).Mark(ierr.ErrValidation)
+		}
+	}
+	if v.Shape == types.ShapeBreakdown && len(v.Dimensions) == 0 {
+		return ierr.NewError("breakdown views need at least one dimension").Mark(ierr.ErrValidation)
+	}
+	switch v.Time.Grain {
+	case "", types.GrainDay, types.GrainWeek, types.GrainMonth:
+	default:
+		return ierr.NewErrorf("grain %q not supported for billing", v.Time.Grain).
+			WithHint("grain must be one of: day, week, month").
+			Mark(ierr.ErrValidation)
+	}
+	for _, f := range v.Filters {
+		if f == nil {
+			continue
+		}
+		if _, ok := bm.Dimensions[f.Field]; !ok {
+			return ierr.NewErrorf("illegal filter field %q for metric %q", f.Field, bm.Metric).Mark(ierr.ErrValidation)
+		}
+	}
+	return v.validateCommon()
+}
+
+func (v ViewDefinition) validateCommon() error {
+	if v.Shape == types.ShapeScalar && (len(v.Sort) > 0 || v.Limit > 0) {
+		return ierr.NewError("sort and limit are not supported for scalar views").Mark(ierr.ErrValidation)
 	}
 	if v.Shape == types.ShapeTimeseries && (len(v.Sort) > 0 || v.Limit > 0) {
 		return ierr.NewError("sort and limit are not supported for timeseries views").
@@ -175,6 +234,7 @@ func (v ViewDefinition) Validate() error {
 // ResolvedView is a ViewDefinition with all variables resolved to concrete
 // values — built by ResolveVariables.
 type ResolvedView struct {
+	Family     types.Family
 	Shape      types.Shape
 	Metrics    []types.Metric
 	Dimensions []string
