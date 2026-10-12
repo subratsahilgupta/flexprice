@@ -69,9 +69,9 @@ type WalletTransaction struct {
 	Currency            string                      `json:"currency"`
 	Metadata            types.Metadata              `json:"metadata,omitempty"`
 
-	SourceType           types.WalletTxSourceType    `json:"source_type,omitempty"`
-	SourceID             string                      `json:"source_id,omitempty"`
-	ConsumptionBreakdown []types.WalletTxConsumption `json:"consumption_breakdown,omitempty"`
+	SourceType           types.WalletTxSourceType     `json:"source_type,omitempty"`
+	SourceID             string                       `json:"source_id,omitempty"`
+	ConsumptionBreakdown []*types.WalletTxConsumption `json:"consumption_breakdown,omitempty"`
 }
 
 func NewWalletTransaction(resp *dto.WalletTransactionResponse) *WalletTransaction {

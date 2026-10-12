@@ -21,17 +21,23 @@ type WalletDebitExporter struct {
 
 // WalletDebitCSV represents the CSV structure for wallet debit export
 type WalletDebitCSV struct {
-	DebitID             string `csv:"debit_id"`
-	ExternalID          string `csv:"external_id"`
-	CustomerName        string `csv:"name"`
-	WalletID            string `csv:"wallet_id"`
-	Currency            string `csv:"currency"`
-	TransactionReason   string `csv:"transaction_reason"`
-	InvoiceID           string `csv:"invoice_id"`
-	CreditTransactionID string `csv:"credit_transaction_id"`
-	Credits             string `csv:"credits"`
-	TopUpUsedAmount     string `csv:"topup_used_amount"` // Empty when the credit drawn from has no paid amount
-	CreatedAt           string `csv:"created_at"`        // RFC3339 format
+	DebitID                    string `csv:"debit_id"`
+	ExternalID                 string `csv:"external_id"`
+	CustomerName               string `csv:"name"`
+	WalletID                   string `csv:"wallet_id"`
+	Currency                   string `csv:"currency"`
+	TransactionReason          string `csv:"transaction_reason"`
+	InvoiceID                  string `csv:"invoice_id"`
+	CreditTransactionID        string `csv:"credit_transaction_id"`
+	Credits                    string `csv:"credits"`
+	CreditBalanceBefore        string `csv:"credit_balance_before"`
+	CreditBalanceAfter         string `csv:"credit_balance_after"`
+	WalletBalanceBefore        string `csv:"wallet_balance_before"`
+	WalletBalanceAfter         string `csv:"wallet_balance_after"`
+	TopUpAmountRemainingBefore string `csv:"topup_amount_remaining_before"`
+	TopUpAmountUsed            string `csv:"topup_amount_used"` // Empty when the credit drawn from has no paid amount
+	TopUpAmountRemainingAfter  string `csv:"topup_amount_remaining_after"`
+	CreatedAt                  string `csv:"created_at"` // RFC3339 format
 }
 
 // NewWalletDebitExporter creates a new wallet debit exporter
@@ -101,27 +107,33 @@ func (e *WalletDebitExporter) PrepareData(ctx context.Context, request *dto.Expo
 
 func toWalletDebitCSV(d *wallet.WalletDebitsExportData) *WalletDebitCSV {
 	return &WalletDebitCSV{
-		DebitID:             d.DebitID,
-		ExternalID:          d.ExternalID,
-		CustomerName:        d.CustomerName,
-		WalletID:            d.WalletID,
-		Currency:            d.Currency,
-		TransactionReason:   string(d.TransactionReason),
-		InvoiceID:           d.InvoiceID,
-		CreditTransactionID: d.CreditTransactionID,
-		Credits:             d.Credits.String(),
-		TopUpUsedAmount:     topUpUsedAmount(d),
-		CreatedAt:           d.CreatedAt.Format(time.RFC3339),
+		DebitID:                    d.DebitID,
+		ExternalID:                 d.ExternalID,
+		CustomerName:               d.CustomerName,
+		WalletID:                   d.WalletID,
+		Currency:                   d.Currency,
+		TransactionReason:          string(d.TransactionReason),
+		InvoiceID:                  d.InvoiceID,
+		CreditTransactionID:        d.CreditTransactionID,
+		Credits:                    d.Credits.String(),
+		CreditBalanceBefore:        d.CreditBalanceBefore.String(),
+		CreditBalanceAfter:         d.CreditBalanceAfter.String(),
+		WalletBalanceBefore:        types.RoundToCurrencyPrecision(d.WalletBalanceBefore, d.Currency).String(),
+		WalletBalanceAfter:         types.RoundToCurrencyPrecision(d.WalletBalanceAfter, d.Currency).String(),
+		TopUpAmountRemainingBefore: types.RoundToCurrencyPrecision(d.TopUpAmountRemainingBefore, d.Currency).String(),
+		TopUpAmountRemainingAfter:  types.RoundToCurrencyPrecision(d.TopUpAmountRemainingAfter, d.Currency).String(),
+		TopUpAmountUsed:            topUpAmountUsed(d),
+		CreatedAt:                  d.CreatedAt.Format(time.RFC3339),
 	}
 }
 
-// topUpUsedAmount spreads the wallet transaction's paid amount evenly over its credits and takes
+// topUpAmountUsed spreads the wallet transaction's paid amount evenly over its credits and takes
 // the share for the credits this debit drew.
-func topUpUsedAmount(d *wallet.WalletDebitsExportData) string {
-	if d.WalletTxnPaidAmount == nil || d.WalletTxnCredits == nil || d.WalletTxnCredits.IsZero() {
+func topUpAmountUsed(d *wallet.WalletDebitsExportData) string {
+	if d.WalletTxnAmountPaid == nil || d.WalletTxnCredits == nil || d.WalletTxnCredits.IsZero() {
 		return ""
 	}
-	amount := d.Credits.Mul(*d.WalletTxnPaidAmount).Div(*d.WalletTxnCredits)
+	amount := d.Credits.Mul(*d.WalletTxnAmountPaid).Div(*d.WalletTxnCredits)
 	return types.RoundToCurrencyPrecision(amount, d.Currency).String()
 }
 
