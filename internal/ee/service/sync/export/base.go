@@ -246,6 +246,12 @@ func (s *ExportService) getExporter(entityType types.ScheduledTaskEntityType) Ex
 			return nil
 		}
 		return NewCreditTopupExporter(s.walletRepo, s.integrationFactory, s.logger)
+	case types.ScheduledTaskEntityTypeWalletDebits:
+		if s.walletRepo == nil {
+			s.logger.Info(context.Background(), "wallet repository not configured for wallet debit export")
+			return nil
+		}
+		return NewWalletDebitExporter(s.walletRepo, s.logger)
 	case types.ScheduledTaskEntityTypeCreditUsage:
 		if s.walletRepo == nil || s.walletBalanceGetter == nil || s.customerRepo == nil {
 			s.logger.Info(context.Background(), "wallet or customer repository not configured for credit usage export",

@@ -27186,6 +27186,17 @@
           }
         }
       },
+      "TopUpCoupon": {
+        "required": [
+          "coupon_code"
+        ],
+        "type": "object",
+        "properties": {
+          "coupon_code": {
+            "type": "string"
+          }
+        }
+      },
       "TopUpWalletRequest": {
         "required": [
           "transaction_reason"
@@ -27206,6 +27217,12 @@
           },
           "checkout": {
             "$ref": "#/components/schemas/CheckoutParams"
+          },
+          "coupons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopUpCoupon"
+            }
           },
           "credits_to_add": {
             "type": "string",
@@ -28667,6 +28684,13 @@
           "amount": {
             "type": "string"
           },
+          "consumption_breakdown": {
+            "type": "array",
+            "description": "ConsumptionBreakdown is set on debits: the credits drawn from each credit batch.",
+            "items": {
+              "$ref": "#/components/schemas/types.WalletTxConsumption"
+            }
+          },
           "conversion_rate": {
             "type": "string",
             "description": "conversion_rate is the conversion rate for the transaction to the currency"
@@ -28733,6 +28757,12 @@
           },
           "reference_type": {
             "$ref": "#/components/schemas/types.WalletTxReferenceType"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "source_type": {
+            "$ref": "#/components/schemas/types.WalletTxSourceType"
           },
           "status": {
             "$ref": "#/components/schemas/types.Status"
@@ -33255,6 +33285,7 @@
           "events",
           "invoice",
           "credit_topups",
+          "wallet_debits",
           "credit_usage",
           "usage_analytics",
           "revenue_facts"
@@ -33263,6 +33294,7 @@
           "ScheduledTaskEntityTypeEvents",
           "ScheduledTaskEntityTypeInvoice",
           "ScheduledTaskEntityTypeCreditTopups",
+          "ScheduledTaskEntityTypeWalletDebits",
           "ScheduledTaskEntityTypeCreditUsage",
           "ScheduledTaskEntityTypeUsageAnalytics",
           "ScheduledTaskEntityTypeRevenueFacts"
@@ -34427,6 +34459,18 @@
         },
         "x-speakeasy-name-override": "WalletTransactionFilter"
       },
+      "types.WalletTxConsumption": {
+        "type": "object",
+        "properties": {
+          "credit_transaction_id": {
+            "type": "string"
+          },
+          "credits": {
+            "type": "string"
+          }
+        },
+        "x-speakeasy-name-override": "WalletTxConsumption"
+      },
       "types.WalletTxReferenceType": {
         "type": "string",
         "enum": [
@@ -34442,6 +34486,16 @@
           "WalletTxReferenceTypeInvoice"
         ],
         "x-speakeasy-name-override": "WalletTxReferenceType"
+      },
+      "types.WalletTxSourceType": {
+        "type": "string",
+        "enum": [
+          "INVOICE"
+        ],
+        "x-enum-varnames": [
+          "WalletTxSourceTypeInvoice"
+        ],
+        "x-speakeasy-name-override": "WalletTxSourceType"
       },
       "types.WalletType": {
         "type": "string",
@@ -36012,6 +36066,12 @@
           "amount": {
             "type": "string"
           },
+          "consumption_breakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.WalletTxConsumption"
+            }
+          },
           "credit_amount": {
             "type": "string"
           },
@@ -36045,6 +36105,12 @@
           },
           "reference_type": {
             "$ref": "#/components/schemas/types.WalletTxReferenceType"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "source_type": {
+            "$ref": "#/components/schemas/types.WalletTxSourceType"
           },
           "transaction_reason": {
             "$ref": "#/components/schemas/types.TransactionReason"
