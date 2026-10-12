@@ -6,7 +6,6 @@ import (
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
-	"github.com/flexprice/flexprice/internal/domain/contact"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -108,9 +107,22 @@ func (Customer) Fields() []ent.Field {
 			}).
 			Default(string(types.TaxTreatmentTaxable)).
 			NotEmpty(),
-		field.JSON("contact_persons", []*contact.Person{}).
+		field.JSON("contact_persons", []*ContactPerson{}).
 			Optional(),
 	}
+}
+
+// ContactPerson is the stored shape of a customer's contact person.
+type ContactPerson struct {
+	ID          string `json:"id,omitempty"`
+	IsPrimary   bool   `json:"is_primary,omitempty"`
+	Salutation  string `json:"salutation,omitempty"`
+	FirstName   string `json:"first_name"`
+	LastName    string `json:"last_name,omitempty"`
+	Email       string `json:"email,omitempty"`
+	Mobile      string `json:"mobile,omitempty"`
+	Designation string `json:"designation,omitempty"`
+	Department  string `json:"department,omitempty"`
 }
 
 // Edges of the Customer.

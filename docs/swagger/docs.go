@@ -14732,6 +14732,47 @@ const docTemplate = `{
                 }
             }
         },
+        "customer.ContactPerson": {
+            "type": "object",
+            "required": [
+                "first_name"
+            ],
+            "properties": {
+                "department": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "designation": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "email": {
+                    "type": "string"
+                },
+                "first_name": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_primary": {
+                    "type": "boolean"
+                },
+                "last_name": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "mobile": {
+                    "type": "string",
+                    "maxLength": 20
+                },
+                "salutation": {
+                    "type": "string",
+                    "maxLength": 25
+                }
+            }
+        },
         "AWSMarketplaceAgreement": {
             "type": "object",
             "required": [
@@ -17112,7 +17153,7 @@ const docTemplate = `{
                     "type": "array",
                     "maxItems": 5,
                     "items": {
-                        "$ref": "#/definitions/types.ContactPerson"
+                        "$ref": "#/definitions/customer.ContactPerson"
                     }
                 },
                 "email": {
@@ -19070,7 +19111,7 @@ const docTemplate = `{
                 "contact_persons": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/types.ContactPerson"
+                        "$ref": "#/definitions/customer.ContactPerson"
                     }
                 },
                 "created_at": {
@@ -25610,7 +25651,7 @@ const docTemplate = `{
                     "type": "array",
                     "maxItems": 5,
                     "items": {
-                        "$ref": "#/definitions/types.ContactPerson"
+                        "$ref": "#/definitions/customer.ContactPerson"
                     }
                 },
                 "email": {
@@ -27266,7 +27307,7 @@ const docTemplate = `{
                 "contact_persons": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/types.ContactPerson"
+                        "$ref": "#/definitions/customer.ContactPerson"
                     }
                 },
                 "created_at": {
@@ -29051,47 +29092,6 @@ const docTemplate = `{
                 "COMMITMENT_TYPE_AMOUNT",
                 "COMMITMENT_TYPE_QUANTITY"
             ]
-        },
-        "types.ContactPerson": {
-            "type": "object",
-            "required": [
-                "first_name"
-            ],
-            "properties": {
-                "department": {
-                    "type": "string",
-                    "maxLength": 100
-                },
-                "designation": {
-                    "type": "string",
-                    "maxLength": 100
-                },
-                "email": {
-                    "type": "string"
-                },
-                "first_name": {
-                    "type": "string",
-                    "maxLength": 100
-                },
-                "id": {
-                    "type": "string"
-                },
-                "is_primary": {
-                    "type": "boolean"
-                },
-                "last_name": {
-                    "type": "string",
-                    "maxLength": 100
-                },
-                "mobile": {
-                    "type": "string",
-                    "maxLength": 20
-                },
-                "salutation": {
-                    "type": "string",
-                    "maxLength": 25
-                }
-            }
         },
         "types.CouponCadence": {
             "type": "string",

@@ -17160,6 +17160,47 @@
           }
         }
       },
+      "customer.ContactPerson": {
+        "required": [
+          "first_name"
+        ],
+        "type": "object",
+        "properties": {
+          "department": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "designation": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "first_name": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_primary": {
+            "type": "boolean"
+          },
+          "last_name": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "mobile": {
+            "maxLength": 20,
+            "type": "string"
+          },
+          "salutation": {
+            "maxLength": 25,
+            "type": "string"
+          }
+        }
+      },
       "AWSMarketplaceAgreement": {
         "required": [
           "customer_aws_account_id",
@@ -19405,7 +19446,7 @@
             "type": "array",
             "description": "contact_persons are people at the customer; at most one may be primary",
             "items": {
-              "$ref": "#/components/schemas/types.ContactPerson"
+              "$ref": "#/components/schemas/customer.ContactPerson"
             }
           },
           "email": {
@@ -21217,7 +21258,7 @@
           "contact_persons": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/types.ContactPerson"
+              "$ref": "#/components/schemas/customer.ContactPerson"
             }
           },
           "created_at": {
@@ -27451,7 +27492,7 @@
             "type": "array",
             "description": "contact_persons replaces the customer's contact persons when provided; at most one may be primary",
             "items": {
-              "$ref": "#/components/schemas/types.ContactPerson"
+              "$ref": "#/components/schemas/customer.ContactPerson"
             }
           },
           "email": {
@@ -29043,7 +29084,7 @@
           "contact_persons": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/types.ContactPerson"
+              "$ref": "#/components/schemas/customer.ContactPerson"
             }
           },
           "created_at": {
@@ -30828,48 +30869,6 @@
           "COMMITMENT_TYPE_QUANTITY"
         ],
         "x-speakeasy-name-override": "CommitmentType"
-      },
-      "types.ContactPerson": {
-        "required": [
-          "first_name"
-        ],
-        "type": "object",
-        "properties": {
-          "department": {
-            "maxLength": 100,
-            "type": "string"
-          },
-          "designation": {
-            "maxLength": 100,
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
-          "first_name": {
-            "maxLength": 100,
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "is_primary": {
-            "type": "boolean"
-          },
-          "last_name": {
-            "maxLength": 100,
-            "type": "string"
-          },
-          "mobile": {
-            "maxLength": 20,
-            "type": "string"
-          },
-          "salutation": {
-            "maxLength": 25,
-            "type": "string"
-          }
-        },
-        "x-speakeasy-name-override": "ContactPerson"
       },
       "types.CouponCadence": {
         "type": "string",

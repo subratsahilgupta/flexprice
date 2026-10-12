@@ -11,7 +11,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent/customer"
-	"github.com/flexprice/flexprice/internal/domain/contact"
+	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -63,7 +63,7 @@ type Customer struct {
 	// TaxTreatment holds the value of the "tax_treatment" field.
 	TaxTreatment types.TaxTreatment `json:"tax_treatment,omitempty"`
 	// ContactPersons holds the value of the "contact_persons" field.
-	ContactPersons []*contact.Person `json:"contact_persons,omitempty"`
+	ContactPersons []*schema.ContactPerson `json:"contact_persons,omitempty"`
 	selectValues   sql.SelectValues
 }
 

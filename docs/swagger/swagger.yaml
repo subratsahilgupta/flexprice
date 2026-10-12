@@ -461,6 +461,35 @@ definitions:
       updated_by:
         type: string
     type: object
+  customer.ContactPerson:
+    properties:
+      department:
+        maxLength: 100
+        type: string
+      designation:
+        maxLength: 100
+        type: string
+      email:
+        type: string
+      first_name:
+        maxLength: 100
+        type: string
+      id:
+        type: string
+      is_primary:
+        type: boolean
+      last_name:
+        maxLength: 100
+        type: string
+      mobile:
+        maxLength: 20
+        type: string
+      salutation:
+        maxLength: 25
+        type: string
+    required:
+    - first_name
+    type: object
   AWSMarketplaceAgreement:
     properties:
       concurrent_agreements:
@@ -2118,7 +2147,7 @@ definitions:
         description: contact_persons are people at the customer; at most one may be
           primary
         items:
-          $ref: '#/definitions/types.ContactPerson'
+          $ref: '#/definitions/customer.ContactPerson'
         maxItems: 5
         type: array
       email:
@@ -3614,7 +3643,7 @@ definitions:
         type: string
       contact_persons:
         items:
-          $ref: '#/definitions/types.ContactPerson'
+          $ref: '#/definitions/customer.ContactPerson'
         type: array
       created_at:
         type: string
@@ -8361,7 +8390,7 @@ definitions:
         description: contact_persons replaces the customer's contact persons when
           provided; at most one may be primary
         items:
-          $ref: '#/definitions/types.ContactPerson'
+          $ref: '#/definitions/customer.ContactPerson'
         maxItems: 5
         type: array
       email:
@@ -9536,7 +9565,7 @@ definitions:
         type: string
       contact_persons:
         items:
-          $ref: '#/definitions/types.ContactPerson'
+          $ref: '#/definitions/customer.ContactPerson'
         type: array
       created_at:
         type: string
@@ -10856,35 +10885,6 @@ definitions:
     x-enum-varnames:
     - COMMITMENT_TYPE_AMOUNT
     - COMMITMENT_TYPE_QUANTITY
-  types.ContactPerson:
-    properties:
-      department:
-        maxLength: 100
-        type: string
-      designation:
-        maxLength: 100
-        type: string
-      email:
-        type: string
-      first_name:
-        maxLength: 100
-        type: string
-      id:
-        type: string
-      is_primary:
-        type: boolean
-      last_name:
-        maxLength: 100
-        type: string
-      mobile:
-        maxLength: 20
-        type: string
-      salutation:
-        maxLength: 25
-        type: string
-    required:
-    - first_name
-    type: object
   types.CouponCadence:
     enum:
     - once
