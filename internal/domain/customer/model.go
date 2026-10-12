@@ -26,6 +26,8 @@ type Customer struct {
 	// BillingCurrency is the fiat currency invoices are issued in; nil means charge currency is used as-is.
 	BillingCurrency *string `db:"billing_currency" json:"billing_currency,omitempty"`
 
+	ContactPersons []*types.ContactPerson `db:"contact_persons" json:"contact_persons,omitempty"`
+
 	// AddressLine1 is the first line of the customer's address
 	AddressLine1 string `db:"address_line1" json:"address_line1"`
 
@@ -72,6 +74,7 @@ func FromEnt(c *ent.Customer) *Customer {
 		Email:             c.Email,
 		Contact:           c.Contact,
 		BillingCurrency:   c.BillingCurrency,
+		ContactPersons:    c.ContactPersons,
 		AddressLine1:      c.AddressLine1,
 		AddressLine2:      c.AddressLine2,
 		AddressCity:       c.AddressCity,

@@ -3,6 +3,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -382,6 +383,7 @@ func (s *CustomerServiceSuite) TestUpdateCustomer() {
 		setup         func()
 		expectedError bool
 		errorCode     ierr.ErrorCode
+		wantPersons   int
 	}{
 		{
 			name: "valid_update",
@@ -408,6 +410,35 @@ func (s *CustomerServiceSuite) TestUpdateCustomer() {
 					Name:           "Original Name",
 					AddressCountry: "US",
 				})
+			},
+			expectedError: true,
+			errorCode:     ierr.ErrCodeValidation,
+		},
+		{
+			name: "contact_persons_replaced",
+			id:   "cust-1",
+			request: dto.UpdateCustomerRequest{
+				ContactPersons: []*types.ContactPerson{
+					{IsPrimary: true, FirstName: "Ravi", Email: "ravi@example.com"},
+					{FirstName: "Fin", Email: "fin@example.com"},
+				},
+			},
+			wantPersons: 2,
+		},
+		{
+			name:        "contact_persons_kept_when_omitted",
+			id:          "cust-1",
+			request:     dto.UpdateCustomerRequest{Name: lo.ToPtr("Renamed")},
+			wantPersons: 2,
+		},
+		{
+			name: "contact_persons_two_primaries",
+			id:   "cust-1",
+			request: dto.UpdateCustomerRequest{
+				ContactPersons: []*types.ContactPerson{
+					{IsPrimary: true, FirstName: "A"},
+					{IsPrimary: true, FirstName: "B"},
+				},
 			},
 			expectedError: true,
 			errorCode:     ierr.ErrCodeValidation,
@@ -446,6 +477,12 @@ func (s *CustomerServiceSuite) TestUpdateCustomer() {
 				}
 				if tc.request.AddressCity != nil {
 					s.Equal(*tc.request.AddressCity, resp.Customer.AddressCity)
+				}
+				if tc.wantPersons > 0 {
+					s.Len(resp.Customer.ContactPersons, tc.wantPersons)
+					for _, p := range resp.Customer.ContactPersons {
+						s.True(strings.HasPrefix(p.ID, types.UUID_PREFIX_CONTACT_PERSON+"_"), p.ID)
+					}
 				}
 			}
 		})

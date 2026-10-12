@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/predicate"
@@ -323,6 +324,24 @@ func (_u *CustomerUpdate) SetNillableTaxTreatment(v *types.TaxTreatment) *Custom
 	return _u
 }
 
+// SetContactPersons sets the "contact_persons" field.
+func (_u *CustomerUpdate) SetContactPersons(v []*types.ContactPerson) *CustomerUpdate {
+	_u.mutation.SetContactPersons(v)
+	return _u
+}
+
+// AppendContactPersons appends value to the "contact_persons" field.
+func (_u *CustomerUpdate) AppendContactPersons(v []*types.ContactPerson) *CustomerUpdate {
+	_u.mutation.AppendContactPersons(v)
+	return _u
+}
+
+// ClearContactPersons clears the value of the "contact_persons" field.
+func (_u *CustomerUpdate) ClearContactPersons() *CustomerUpdate {
+	_u.mutation.ClearContactPersons()
+	return _u
+}
+
 // Mutation returns the CustomerMutation object of the builder.
 func (_u *CustomerUpdate) Mutation() *CustomerMutation {
 	return _u.mutation
@@ -488,6 +507,17 @@ func (_u *CustomerUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.TaxTreatment(); ok {
 		_spec.SetField(customer.FieldTaxTreatment, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ContactPersons(); ok {
+		_spec.SetField(customer.FieldContactPersons, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedContactPersons(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, customer.FieldContactPersons, value)
+		})
+	}
+	if _u.mutation.ContactPersonsCleared() {
+		_spec.ClearField(customer.FieldContactPersons, field.TypeJSON)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -803,6 +833,24 @@ func (_u *CustomerUpdateOne) SetNillableTaxTreatment(v *types.TaxTreatment) *Cus
 	return _u
 }
 
+// SetContactPersons sets the "contact_persons" field.
+func (_u *CustomerUpdateOne) SetContactPersons(v []*types.ContactPerson) *CustomerUpdateOne {
+	_u.mutation.SetContactPersons(v)
+	return _u
+}
+
+// AppendContactPersons appends value to the "contact_persons" field.
+func (_u *CustomerUpdateOne) AppendContactPersons(v []*types.ContactPerson) *CustomerUpdateOne {
+	_u.mutation.AppendContactPersons(v)
+	return _u
+}
+
+// ClearContactPersons clears the value of the "contact_persons" field.
+func (_u *CustomerUpdateOne) ClearContactPersons() *CustomerUpdateOne {
+	_u.mutation.ClearContactPersons()
+	return _u
+}
+
 // Mutation returns the CustomerMutation object of the builder.
 func (_u *CustomerUpdateOne) Mutation() *CustomerMutation {
 	return _u.mutation
@@ -998,6 +1046,17 @@ func (_u *CustomerUpdateOne) sqlSave(ctx context.Context) (_node *Customer, err 
 	}
 	if value, ok := _u.mutation.TaxTreatment(); ok {
 		_spec.SetField(customer.FieldTaxTreatment, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ContactPersons(); ok {
+		_spec.SetField(customer.FieldContactPersons, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedContactPersons(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, customer.FieldContactPersons, value)
+		})
+	}
+	if _u.mutation.ContactPersonsCleared() {
+		_spec.ClearField(customer.FieldContactPersons, field.TypeJSON)
 	}
 	_node = &Customer{config: _u.config}
 	_spec.Assign = _node.assignValues

@@ -29,10 +29,14 @@ func IsZohoErrorCode(err error, code int) bool {
 }
 
 type ContactPerson struct {
-	FirstName        string `json:"first_name,omitempty"`
-	LastName         string `json:"last_name,omitempty"`
-	Email            string `json:"email,omitempty"`
-	Mobile           string `json:"mobile,omitempty"`
+	ContactPersonID  string `json:"contact_person_id,omitempty"`
+	Salutation       string `json:"salutation"`
+	FirstName        string `json:"first_name"`
+	LastName         string `json:"last_name"`
+	Email            string `json:"email"`
+	Mobile           string `json:"mobile"`
+	Designation      string `json:"designation"`
+	Department       string `json:"department"`
 	IsPrimaryContact bool   `json:"is_primary_contact,omitempty"`
 }
 
@@ -69,10 +73,11 @@ type ContactCreateRequest struct {
 type ContactUpdateRequest = ContactCreateRequest
 
 type ContactResponse struct {
-	ContactID      string `json:"contact_id"`
-	ContactName    string `json:"contact_name,omitempty"`
-	Email          string `json:"email,omitempty"`
-	PrimaryContact string `json:"primary_contact_id,omitempty"`
+	ContactID      string          `json:"contact_id"`
+	ContactName    string          `json:"contact_name,omitempty"`
+	Email          string          `json:"email,omitempty"`
+	PrimaryContact string          `json:"primary_contact_id,omitempty"`
+	ContactPersons []ContactPerson `json:"contact_persons,omitempty"`
 }
 
 type ItemCreateRequest struct {

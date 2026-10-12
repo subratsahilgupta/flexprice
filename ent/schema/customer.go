@@ -107,6 +107,8 @@ func (Customer) Fields() []ent.Field {
 			}).
 			Default(string(types.TaxTreatmentTaxable)).
 			NotEmpty(),
+		field.JSON("contact_persons", []*types.ContactPerson{}).
+			Optional(),
 	}
 }
 

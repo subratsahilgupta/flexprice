@@ -43,6 +43,7 @@ func copyCustomer(c *customer.Customer) *customer.Customer {
 		AddressCountry:    c.AddressCountry,
 		Timezone:          c.Timezone,
 		TaxTreatment:      c.TaxTreatment,
+		ContactPersons:    c.ContactPersons,
 		Metadata:          lo.Assign(map[string]string{}, c.Metadata),
 		EnvironmentID:     c.EnvironmentID,
 		BaseModel: types.BaseModel{

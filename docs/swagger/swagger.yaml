@@ -2095,6 +2095,13 @@ definitions:
           phone)
         maxLength: 20
         type: string
+      contact_persons:
+        description: contact_persons are people at the customer; at most one may be
+          primary
+        items:
+          $ref: '#/definitions/types.ContactPerson'
+        maxItems: 5
+        type: array
       email:
         description: email is the customer's email address and must be a valid email
           format if provided
@@ -3586,6 +3593,10 @@ definitions:
         description: Contact is an optional contact number for the customer (e.g.
           phone)
         type: string
+      contact_persons:
+        items:
+          $ref: '#/definitions/types.ContactPerson'
+        type: array
       created_at:
         type: string
       created_by:
@@ -8322,6 +8333,13 @@ definitions:
           phone)
         maxLength: 20
         type: string
+      contact_persons:
+        description: contact_persons replaces the customer's contact persons when
+          provided
+        items:
+          $ref: '#/definitions/types.ContactPerson'
+        maxItems: 5
+        type: array
       email:
         description: email is the updated email address and must be a valid email
           format if provided
@@ -9466,6 +9484,10 @@ definitions:
         description: Contact is an optional contact number for the customer (e.g.
           phone)
         type: string
+      contact_persons:
+        items:
+          $ref: '#/definitions/types.ContactPerson'
+        type: array
       created_at:
         type: string
       created_by:
@@ -10780,6 +10802,35 @@ definitions:
     x-enum-varnames:
     - COMMITMENT_TYPE_AMOUNT
     - COMMITMENT_TYPE_QUANTITY
+  types.ContactPerson:
+    properties:
+      department:
+        maxLength: 100
+        type: string
+      designation:
+        maxLength: 100
+        type: string
+      email:
+        type: string
+      first_name:
+        maxLength: 100
+        type: string
+      id:
+        type: string
+      is_primary:
+        type: boolean
+      last_name:
+        maxLength: 100
+        type: string
+      mobile:
+        maxLength: 20
+        type: string
+      salutation:
+        maxLength: 25
+        type: string
+    required:
+    - first_name
+    type: object
   types.CouponCadence:
     enum:
     - once

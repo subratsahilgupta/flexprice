@@ -22968,34 +22968,36 @@ func (m *CreditNoteLineItemMutation) ResetEdge(name string) error {
 // CustomerMutation represents an operation that mutates the Customer nodes in the graph.
 type CustomerMutation struct {
 	config
-	op                  Op
-	typ                 string
-	id                  *string
-	tenant_id           *string
-	status              *string
-	created_at          *time.Time
-	updated_at          *time.Time
-	created_by          *string
-	updated_by          *string
-	environment_id      *string
-	metadata            *map[string]string
-	external_id         *string
-	name                *string
-	email               *string
-	contact             *string
-	billing_currency    *string
-	address_line1       *string
-	address_line2       *string
-	address_city        *string
-	address_state       *string
-	address_postal_code *string
-	address_country     *string
-	timezone            *string
-	tax_treatment       *types.TaxTreatment
-	clearedFields       map[string]struct{}
-	done                bool
-	oldValue            func(context.Context) (*Customer, error)
-	predicates          []predicate.Customer
+	op                    Op
+	typ                   string
+	id                    *string
+	tenant_id             *string
+	status                *string
+	created_at            *time.Time
+	updated_at            *time.Time
+	created_by            *string
+	updated_by            *string
+	environment_id        *string
+	metadata              *map[string]string
+	external_id           *string
+	name                  *string
+	email                 *string
+	contact               *string
+	billing_currency      *string
+	address_line1         *string
+	address_line2         *string
+	address_city          *string
+	address_state         *string
+	address_postal_code   *string
+	address_country       *string
+	timezone              *string
+	tax_treatment         *types.TaxTreatment
+	contact_persons       *[]*types.ContactPerson
+	appendcontact_persons []*types.ContactPerson
+	clearedFields         map[string]struct{}
+	done                  bool
+	oldValue              func(context.Context) (*Customer, error)
+	predicates            []predicate.Customer
 }
 
 var _ ent.Mutation = (*CustomerMutation)(nil)
@@ -24040,6 +24042,71 @@ func (m *CustomerMutation) ResetTaxTreatment() {
 	m.tax_treatment = nil
 }
 
+// SetContactPersons sets the "contact_persons" field.
+func (m *CustomerMutation) SetContactPersons(tp []*types.ContactPerson) {
+	m.contact_persons = &tp
+	m.appendcontact_persons = nil
+}
+
+// ContactPersons returns the value of the "contact_persons" field in the mutation.
+func (m *CustomerMutation) ContactPersons() (r []*types.ContactPerson, exists bool) {
+	v := m.contact_persons
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldContactPersons returns the old "contact_persons" field's value of the Customer entity.
+// If the Customer object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CustomerMutation) OldContactPersons(ctx context.Context) (v []*types.ContactPerson, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldContactPersons is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldContactPersons requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldContactPersons: %w", err)
+	}
+	return oldValue.ContactPersons, nil
+}
+
+// AppendContactPersons adds tp to the "contact_persons" field.
+func (m *CustomerMutation) AppendContactPersons(tp []*types.ContactPerson) {
+	m.appendcontact_persons = append(m.appendcontact_persons, tp...)
+}
+
+// AppendedContactPersons returns the list of values that were appended to the "contact_persons" field in this mutation.
+func (m *CustomerMutation) AppendedContactPersons() ([]*types.ContactPerson, bool) {
+	if len(m.appendcontact_persons) == 0 {
+		return nil, false
+	}
+	return m.appendcontact_persons, true
+}
+
+// ClearContactPersons clears the value of the "contact_persons" field.
+func (m *CustomerMutation) ClearContactPersons() {
+	m.contact_persons = nil
+	m.appendcontact_persons = nil
+	m.clearedFields[customer.FieldContactPersons] = struct{}{}
+}
+
+// ContactPersonsCleared returns if the "contact_persons" field was cleared in this mutation.
+func (m *CustomerMutation) ContactPersonsCleared() bool {
+	_, ok := m.clearedFields[customer.FieldContactPersons]
+	return ok
+}
+
+// ResetContactPersons resets all changes to the "contact_persons" field.
+func (m *CustomerMutation) ResetContactPersons() {
+	m.contact_persons = nil
+	m.appendcontact_persons = nil
+	delete(m.clearedFields, customer.FieldContactPersons)
+}
+
 // Where appends a list predicates to the CustomerMutation builder.
 func (m *CustomerMutation) Where(ps ...predicate.Customer) {
 	m.predicates = append(m.predicates, ps...)
@@ -24074,7 +24141,7 @@ func (m *CustomerMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CustomerMutation) Fields() []string {
-	fields := make([]string, 0, 21)
+	fields := make([]string, 0, 22)
 	if m.tenant_id != nil {
 		fields = append(fields, customer.FieldTenantID)
 	}
@@ -24138,6 +24205,9 @@ func (m *CustomerMutation) Fields() []string {
 	if m.tax_treatment != nil {
 		fields = append(fields, customer.FieldTaxTreatment)
 	}
+	if m.contact_persons != nil {
+		fields = append(fields, customer.FieldContactPersons)
+	}
 	return fields
 }
 
@@ -24188,6 +24258,8 @@ func (m *CustomerMutation) Field(name string) (ent.Value, bool) {
 		return m.Timezone()
 	case customer.FieldTaxTreatment:
 		return m.TaxTreatment()
+	case customer.FieldContactPersons:
+		return m.ContactPersons()
 	}
 	return nil, false
 }
@@ -24239,6 +24311,8 @@ func (m *CustomerMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldTimezone(ctx)
 	case customer.FieldTaxTreatment:
 		return m.OldTaxTreatment(ctx)
+	case customer.FieldContactPersons:
+		return m.OldContactPersons(ctx)
 	}
 	return nil, fmt.Errorf("unknown Customer field %s", name)
 }
@@ -24395,6 +24469,13 @@ func (m *CustomerMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetTaxTreatment(v)
 		return nil
+	case customer.FieldContactPersons:
+		v, ok := value.([]*types.ContactPerson)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetContactPersons(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Customer field %s", name)
 }
@@ -24467,6 +24548,9 @@ func (m *CustomerMutation) ClearedFields() []string {
 	if m.FieldCleared(customer.FieldTimezone) {
 		fields = append(fields, customer.FieldTimezone)
 	}
+	if m.FieldCleared(customer.FieldContactPersons) {
+		fields = append(fields, customer.FieldContactPersons)
+	}
 	return fields
 }
 
@@ -24522,6 +24606,9 @@ func (m *CustomerMutation) ClearField(name string) error {
 		return nil
 	case customer.FieldTimezone:
 		m.ClearTimezone()
+		return nil
+	case customer.FieldContactPersons:
+		m.ClearContactPersons()
 		return nil
 	}
 	return fmt.Errorf("unknown Customer nullable field %s", name)
@@ -24593,6 +24680,9 @@ func (m *CustomerMutation) ResetField(name string) error {
 		return nil
 	case customer.FieldTaxTreatment:
 		m.ResetTaxTreatment()
+		return nil
+	case customer.FieldContactPersons:
+		m.ResetContactPersons()
 		return nil
 	}
 	return fmt.Errorf("unknown Customer field %s", name)
