@@ -1213,11 +1213,19 @@ func (s *invoiceService) FinalizeInvoice(ctx context.Context, id string, req dto
 		return err
 	}
 
-	taxService := NewTaxService(s.ServiceParams)
+	cust, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
+	if err != nil {
+		return err
+	}
 
-	// Tax is filed only once the invoice is sealed, so this runs after finalization rather
-	// than inside it. A failure to file is logged there and never fails the finalize.
-	taxService.CommitTaxToProvider(ctx, inv)
+	// An exempt customer is never taxed, so there is nothing to file.
+	if cust.TaxTreatment != types.TaxTreatmentExempt {
+		taxService := NewTaxService(s.ServiceParams)
+
+		// Tax is filed only once the invoice is sealed, so this runs after finalization rather
+		// than inside it. A failure to file is logged there and never fails the finalize.
+		taxService.CommitTaxToProvider(ctx, inv)
+	}
 
 	return nil
 }
@@ -1747,11 +1755,19 @@ func (s *invoiceService) ProcessDraftInvoice(ctx context.Context, id string, pay
 		return err
 	}
 
-	taxService := NewTaxService(s.ServiceParams)
+	cust, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
+	if err != nil {
+		return err
+	}
 
-	// Tax is filed only once the invoice is sealed, so this runs after finalization rather
-	// than inside it. A failure to file is logged there and never stops the payment below.
-	taxService.CommitTaxToProvider(ctx, inv)
+	// An exempt customer is never taxed, so there is nothing to file.
+	if cust.TaxTreatment != types.TaxTreatmentExempt {
+		taxService := NewTaxService(s.ServiceParams)
+
+		// Tax is filed only once the invoice is sealed, so this runs after finalization rather
+		// than inside it. A failure to file is logged there and never stops the payment below.
+		taxService.CommitTaxToProvider(ctx, inv)
+	}
 
 	// Integration invoice sync is triggered by the shared system event
 	// invoice.update.finalized (published from performFinalizeInvoiceActions).
@@ -4442,6 +4458,16 @@ func (s *invoiceService) RecalculateTaxesOnInvoice(ctx context.Context, inv *inv
 // A quote is not a bill, so an engine failure leaves the invoice untaxed and unstamped rather
 // than failing the preview.
 func (s *invoiceService) previewTax(ctx context.Context, inv *invoice.Invoice, rates *dto.InvoiceTaxRates) []*dto.TaxAppliedResponse {
+	taxService := NewTaxService(s.ServiceParams)
+
+	// An exempt customer never resolves a tax engine.
+	if rates.IsExempt() {
+		result := taxService.CalculateTaxesOnInvoice(ctx, inv, rates)
+		applyTaxResultToInvoice(inv, result)
+		inv.MirrorTaxIntoDenomination()
+		return result.TaxAppliedRecords
+	}
+
 	engine, err := NewTaxEngine(ctx, s.ServiceParams)
 	if err != nil {
 		s.Logger.Error(ctx, "could not resolve the tax engine for a preview, quoting untaxed",
@@ -4450,9 +4476,8 @@ func (s *invoiceService) previewTax(ctx context.Context, inv *invoice.Invoice, r
 		return nil
 	}
 
-	taxService := NewTaxService(s.ServiceParams)
 	result := taxService.CalculateTaxesOnInvoice(ctx, inv, rates)
-	if engine.GetProvider().IsExternal() && !rates.IsExempt() {
+	if engine.GetProvider().IsExternal() {
 		result, err = engine.Calculate(ctx, invoiceTaxRequest(inv))
 		if err != nil {
 			s.Logger.Error(ctx, "tax engine could not quote a preview, quoting untaxed",
@@ -4478,24 +4503,31 @@ func (s *invoiceService) applyTaxesToInvoice(ctx context.Context, inv *invoice.I
 		return err
 	}
 
+	// An exempt customer never resolves a tax engine. Persisting the empty result clears
+	// earlier tax rows.
+	if cust.TaxTreatment == types.TaxTreatmentExempt {
+		taxService := NewTaxService(s.ServiceParams)
+		result := &dto.TaxCalculationResult{
+			Exempt:          true,
+			ExemptionReason: lo.ToPtr(types.TaxExemptionReasonCustomerExempt),
+		}
+		if err := taxService.PersistTaxResult(ctx, types.TaxRateEntityTypeInvoice, inv.ID, inv.Currency, result); err != nil {
+			return err
+		}
+		applyTaxResultToInvoice(inv, result)
+		inv.MirrorTaxIntoDenomination()
+		return nil
+	}
+
 	engine, err := NewTaxEngine(ctx, s.ServiceParams)
 	if err != nil {
 		return err
 	}
 
-	taxService := NewTaxService(s.ServiceParams)
 	var result *dto.TaxCalculationResult
-	switch {
-	case cust.TaxTreatment == types.TaxTreatmentExempt:
-		// Exempt customers skip every engine. Persisting the empty result clears earlier tax rows.
-		result = &dto.TaxCalculationResult{
-			Exempt:          true,
-			ExemptionReason: lo.ToPtr(types.TaxExemptionReasonCustomerExempt),
-		}
-		err = taxService.PersistTaxResult(ctx, types.TaxRateEntityTypeInvoice, inv.ID, inv.Currency, result)
-	case engine.GetProvider().IsExternal():
+	if engine.GetProvider().IsExternal() {
 		result, err = s.externalTax(ctx, engine, inv)
-	default:
+	} else {
 		result, err = s.nativeTax(ctx, inv, req)
 	}
 	if err != nil {
