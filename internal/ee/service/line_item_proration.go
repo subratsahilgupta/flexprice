@@ -374,6 +374,12 @@ func (s *lineItemProrationService) Settle(ctx context.Context, req *SettleProrat
 		return nil, err
 	}
 
+	invoicingSub, err := invoicingSubscription(ctx, s.params, req.Subscription)
+	if err != nil {
+		return nil, err
+	}
+	req.Subscription = invoicingSub
+
 	result := &SettleProrationResult{Changed: make([]dto.ChangedInvoice, 0, 1)}
 	net := req.Quote.NetAmount()
 
@@ -673,7 +679,13 @@ func buildProrationLineItem(
 		p.Amount.String(),
 		effectiveDate.Format("2 Jan 2006"), periodEnd.Format("2 Jan 2006"))
 
+	metadata := types.Metadata{"description": description}
+	if sub.SubscriptionType == types.SubscriptionTypeGroupedInvoicing {
+		metadata[types.InvoiceLineItemMetadataKeyChildCustomerID] = sub.CustomerID
+	}
+
 	return dto.CreateInvoiceLineItemRequest{
+		SubscriptionID:         &sub.ID,
 		PriceID:                &priceID,
 		PriceType:              &priceType,
 		PlanDisplayName:        &planDisplayName,
@@ -683,7 +695,7 @@ func buildProrationLineItem(
 		PeriodStart:            &effectiveDate,
 		PeriodEnd:              &periodEnd,
 		SubscriptionLineItemID: &subscriptionLineItemID,
-		Metadata:               types.Metadata{"description": description},
+		Metadata:               metadata,
 	}
 }
 
