@@ -18178,6 +18178,9 @@
           "start_date": {
             "type": "string",
             "format": "date-time"
+          },
+          "subscription_id": {
+            "type": "string"
           }
         }
       },
@@ -18258,6 +18261,9 @@
           "start_date": {
             "type": "string",
             "format": "date-time"
+          },
+          "subscription_id": {
+            "type": "string"
           }
         }
       },
@@ -22738,12 +22744,25 @@
         "type": "string",
         "enum": [
           "add",
-          "remove"
+          "remove",
+          "modify"
         ],
         "x-enum-varnames": [
           "GroupedInvoicingActionAdd",
-          "GroupedInvoicingActionRemove"
+          "GroupedInvoicingActionRemove",
+          "GroupedInvoicingActionModify"
         ]
+      },
+      "GroupedInvoicingChange": {
+        "type": "object",
+        "properties": {
+          "addon_bulk_params": {
+            "$ref": "#/components/schemas/SubModifyBulkAddonParams"
+          },
+          "subscription_id": {
+            "type": "string"
+          }
+        }
       },
       "GroupedInvoicingChildRequest": {
         "required": [
@@ -25299,6 +25318,13 @@
         "properties": {
           "action": {
             "$ref": "#/components/schemas/GroupedInvoicingAction"
+          },
+          "changes": {
+            "type": "array",
+            "description": "Changes is required for action 'modify'; the path subscription is the parent.",
+            "items": {
+              "$ref": "#/components/schemas/GroupedInvoicingChange"
+            }
           },
           "child_subscription_ids": {
             "type": "array",
@@ -30743,6 +30769,12 @@
       "types.CheckoutConfiguration": {
         "type": "object",
         "properties": {
+          "add_addon_batch_params": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.AddAddonParams"
+            }
+          },
           "add_addon_params": {
             "$ref": "#/components/schemas/types.AddAddonParams"
           },

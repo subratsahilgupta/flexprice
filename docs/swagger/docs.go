@@ -15780,6 +15780,9 @@ const docTemplate = `{
                 },
                 "start_date": {
                     "type": "string"
+                },
+                "subscription_id": {
+                    "type": "string"
                 }
             }
         },
@@ -15899,6 +15902,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "start_date": {
+                    "type": "string"
+                },
+                "subscription_id": {
                     "type": "string"
                 }
             }
@@ -20584,12 +20590,25 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "add",
-                "remove"
+                "remove",
+                "modify"
             ],
             "x-enum-varnames": [
                 "GroupedInvoicingActionAdd",
-                "GroupedInvoicingActionRemove"
+                "GroupedInvoicingActionRemove",
+                "GroupedInvoicingActionModify"
             ]
+        },
+        "GroupedInvoicingChange": {
+            "type": "object",
+            "properties": {
+                "addon_bulk_params": {
+                    "$ref": "#/definitions/SubModifyBulkAddonParams"
+                },
+                "subscription_id": {
+                    "type": "string"
+                }
+            }
         },
         "GroupedInvoicingChildRequest": {
             "type": "object",
@@ -23260,12 +23279,19 @@ const docTemplate = `{
             ],
             "properties": {
                 "action": {
-                    "description": "Action specifies whether to add or remove the child subscriptions from grouped invoicing.",
+                    "description": "Action adds or removes child subscriptions, or modifies addons across the group ('modify').",
                     "allOf": [
                         {
                             "$ref": "#/definitions/GroupedInvoicingAction"
                         }
                     ]
+                },
+                "changes": {
+                    "description": "Changes is required for action 'modify'; the path subscription is the parent.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/GroupedInvoicingChange"
+                    }
                 },
                 "child_subscription_ids": {
                     "type": "array",
@@ -28980,6 +29006,12 @@ const docTemplate = `{
         "types.CheckoutConfiguration": {
             "type": "object",
             "properties": {
+                "add_addon_batch_params": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.AddAddonParams"
+                    }
+                },
                 "add_addon_params": {
                     "$ref": "#/definitions/types.AddAddonParams"
                 },

@@ -5,7 +5,6 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
-	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -138,18 +137,24 @@ func (s *subscriptionModificationService) executeGroupedAddonChange(
 	params *dto.SubModifyGroupedInvoicingParams,
 	checkout *dto.CheckoutParams,
 ) (*dto.SubscriptionModifyResponse, error) {
-	if checkout != nil {
-		return nil, ierr.NewError("checkout is not supported yet for grouped invoicing action 'modify'").
-			WithHint("Send the change without checkout").
-			Mark(ierr.ErrValidation)
-	}
-
 	reqs, err := s.groupedAddonChangeRequests(ctx, params)
 	if err != nil {
 		return nil, err
 	}
 
-	configs, settled, err := NewAddonChangeService(s.serviceParams).ExecuteGrouped(ctx, parentID, reqs)
+	changeSvc := NewAddonChangeService(s.serviceParams)
+	if checkout != nil {
+		gated, err := changeSvc.ExecutePayFirstGrouped(ctx, parentID, reqs, checkout)
+		if err != nil {
+			return nil, err
+		}
+		if gated != nil {
+			lineItems, associations := groupedAddonChanges(gated.getConfigs(), false)
+			return s.addonModifyResponse(ctx, parentID, lineItems, associations, draftChangedInvoices(gated.getSettled()), gated.getSession())
+		}
+	}
+
+	configs, settled, err := changeSvc.ExecuteGrouped(ctx, parentID, reqs)
 	if err != nil {
 		return nil, err
 	}

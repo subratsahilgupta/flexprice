@@ -277,7 +277,7 @@ type GroupedInvoicingChange struct {
 
 // SubModifyGroupedInvoicingParams is the payload for grouped invoicing membership changes.
 type SubModifyGroupedInvoicingParams struct {
-	// Action specifies whether to add or remove the child subscriptions from grouped invoicing.
+	// Action adds or removes child subscriptions, or modifies addons across the group ('modify').
 	Action GroupedInvoicingAction `json:"action" binding:"required"`
 	// ParentSubscriptionID is required for action 'add'.
 	ParentSubscriptionID string   `json:"parent_subscription_id,omitempty"`

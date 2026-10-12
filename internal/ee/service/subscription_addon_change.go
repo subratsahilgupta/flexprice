@@ -34,6 +34,8 @@ type AddonChangeService interface {
 	ExecuteGrouped(ctx context.Context, parentID string, reqs []AddonChangeRequest) ([]*addonChangeConfig, *SettleProrationResult, error)
 
 	PreviewGrouped(ctx context.Context, parent *subscription.Subscription, reqs []AddonChangeRequest) ([]*addonChangeConfig, *SettleProrationResult, error)
+
+	ExecutePayFirstGrouped(ctx context.Context, parentID string, reqs []AddonChangeRequest, checkout *dto.CheckoutParams) (*ExecutePayFirstResponse, error)
 }
 
 // AddonAdd is one attach in a batch. Existing is set only on a checkout-completion replay,
@@ -86,8 +88,16 @@ func (r AddonChangeRequest) Validate() error {
 // customer pays, the session collecting it, and what Settle raised — a draft holding the net.
 type ExecutePayFirstResponse struct {
 	config  *addonChangeConfig
+	configs []*addonChangeConfig
 	session *dto.CheckoutSessionResponse
 	settled *SettleProrationResult
+}
+
+func (r *ExecutePayFirstResponse) getConfigs() []*addonChangeConfig {
+	if r == nil {
+		return nil
+	}
+	return r.configs
 }
 
 func (r *ExecutePayFirstResponse) getConfig() *addonChangeConfig {
@@ -936,6 +946,106 @@ func (s *addonChangeService) ExecuteGrouped(
 	attemptProrationPayments(ctx, s.ServiceParams, settled.GetChanged())
 
 	return configs, settled, nil
+}
+
+// ExecutePayFirstGrouped is ExecutePayFirst across a grouped invoicing group: one draft on the
+// parent and one checkout for the parent's invoicing customer. Returns nil when the net is not a charge.
+func (s *addonChangeService) ExecutePayFirstGrouped(
+	ctx context.Context,
+	parentID string,
+	reqs []AddonChangeRequest,
+	checkout *dto.CheckoutParams,
+) (*ExecutePayFirstResponse, error) {
+	for _, req := range reqs {
+		if err := validateAddonChangeCheckout(req, checkout); err != nil {
+			return nil, err
+		}
+	}
+
+	var (
+		configs []*addonChangeConfig
+		settled *SettleProrationResult
+		batch   []*types.AddAddonParams
+		payerID string
+	)
+
+	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		parent, err := s.lockGroupedTargets(txCtx, parentID, reqs)
+		if err != nil {
+			return err
+		}
+		payerID = parent.GetInvoicingCustomerID()
+
+		resolved := make([]*addonChangeConfig, 0, len(reqs))
+		net := decimal.Zero
+		for _, req := range reqs {
+			if err := validateAddonChangeCheckout(req, checkout); err != nil {
+				return err
+			}
+			if err := ensureNoPendingCheckoutSession(txCtx, s.ServiceParams, req.Subscription.ID); err != nil {
+				return err
+			}
+
+			config, err := s.Resolve(txCtx, req)
+			if err != nil {
+				return err
+			}
+			net = net.Add(config.getQuote().NetAmount())
+			resolved = append(resolved, config)
+		}
+		if !net.GreaterThan(decimal.Zero) {
+			return nil
+		}
+
+		for _, config := range resolved {
+			if err := s.PersistPending(txCtx, config); err != nil {
+				return err
+			}
+		}
+
+		drafted, err := s.settleGrouped(txCtx, parent, resolved, SettleModeDraft)
+		if err != nil {
+			return err
+		}
+
+		batch = lo.Map(resolved, func(config *addonChangeConfig, _ int) *types.AddAddonParams {
+			return addonChangeCheckoutParams(config)
+		})
+		// Parent first, matching lockGroupedTargets, so completion locks in the same order.
+		sort.SliceStable(batch, func(i, j int) bool { return batch[i].SubscriptionID == parent.ID })
+		if err := (&types.CheckoutConfiguration{AddAddonBatchParams: batch}).Validate(types.CheckoutActionAddAddon); err != nil {
+			return err
+		}
+
+		configs, settled = resolved, drafted
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if configs == nil {
+		return nil, nil
+	}
+
+	session, err := NewCheckoutSessionService(s.ServiceParams).StartPayFirstCheckoutSession(ctx, &dto.PayFirstCheckoutRequest{
+		CustomerID: payerID,
+		Action:     types.CheckoutActionAddAddon,
+		Configuration: types.CheckoutConfiguration{
+			AddAddonBatchParams: batch,
+		},
+		DraftInvoice: &settled.GetDraft().Invoice,
+		Checkout:     checkout,
+	})
+	if err != nil {
+		draft := settled.GetDraft()
+		for _, config := range configs {
+			s.archiveGatedChange(ctx, config, draft, err)
+			draft = nil
+		}
+		return nil, err
+	}
+
+	return &ExecutePayFirstResponse{configs: configs, session: session, settled: settled}, nil
 }
 
 func (s *addonChangeService) PreviewGrouped(
