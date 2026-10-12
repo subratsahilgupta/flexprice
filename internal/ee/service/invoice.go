@@ -4452,7 +4452,7 @@ func (s *invoiceService) previewTax(ctx context.Context, inv *invoice.Invoice, r
 
 	taxService := NewTaxService(s.ServiceParams)
 	result := taxService.CalculateTaxesOnInvoice(ctx, inv, rates)
-	if engine.GetProvider().IsExternal() {
+	if engine.GetProvider().IsExternal() && !rates.IsExempt() {
 		result, err = engine.Calculate(ctx, invoiceTaxRequest(inv))
 		if err != nil {
 			s.Logger.Error(ctx, "tax engine could not quote a preview, quoting untaxed",
@@ -4473,15 +4473,29 @@ func (s *invoiceService) previewTax(ctx context.Context, inv *invoice.Invoice, r
 // applyTaxesToInvoice calculates an invoice's tax with the configured engine and writes it,
 // onto the invoice and its tax_applied records.
 func (s *invoiceService) applyTaxesToInvoice(ctx context.Context, inv *invoice.Invoice, req dto.InvoiceComputeRequest) error {
+	cust, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
+	if err != nil {
+		return err
+	}
+
 	engine, err := NewTaxEngine(ctx, s.ServiceParams)
 	if err != nil {
 		return err
 	}
 
+	taxService := NewTaxService(s.ServiceParams)
 	var result *dto.TaxCalculationResult
-	if engine.GetProvider().IsExternal() {
+	switch {
+	case cust.TaxTreatment == types.TaxTreatmentExempt:
+		// Exempt customers skip every engine. Persisting the empty result clears earlier tax rows.
+		result = &dto.TaxCalculationResult{
+			Exempt:          true,
+			ExemptionReason: lo.ToPtr(types.TaxExemptionReasonCustomerExempt),
+		}
+		err = taxService.PersistTaxResult(ctx, types.TaxRateEntityTypeInvoice, inv.ID, inv.Currency, result)
+	case engine.GetProvider().IsExternal():
 		result, err = s.externalTax(ctx, engine, inv)
-	} else {
+	default:
 		result, err = s.nativeTax(ctx, inv, req)
 	}
 	if err != nil {
@@ -4577,15 +4591,9 @@ func (s *invoiceService) nativeTax(ctx context.Context, inv *invoice.Invoice, re
 func applyTaxResultToInvoice(inv *invoice.Invoice, result *dto.TaxCalculationResult) {
 	inv.TotalTax = result.TotalTaxAmount
 
-	inv.Total = inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount)
-	if result.Exempt {
-		// An exempt customer pays neither kind, so the tax baked into the price comes back out.
-		inv.Total = inv.Total.Sub(result.InclusiveTax)
-	} else {
-		// Inclusive tax is already inside subtotal and only reported, never added back. Only
-		// exclusive tax moves the total.
-		inv.Total = inv.Total.Add(result.ExclusiveTax)
-	}
+	// Inclusive tax is already inside subtotal and only reported, never added back. Only
+	// exclusive tax moves the total.
+	inv.Total = inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount).Add(result.ExclusiveTax)
 
 	if inv.Total.IsNegative() {
 		inv.Total = decimal.Zero
