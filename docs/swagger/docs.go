@@ -4750,7 +4750,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-scope": "delete"
             }
         },
         "/groups": {
@@ -13003,6 +13004,52 @@ const docTemplate = `{
                 }
             }
         },
+        "/webhook-events/invoice.sync.failed": {
+            "post": {
+                "description": "Fired once per provider when an invoice sync fails after its last retry.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhook Events"
+                ],
+                "summary": "invoice.sync.failed",
+                "responses": {
+                    "200": {
+                        "description": "Webhook payload",
+                        "schema": {
+                            "$ref": "#/definitions/webhookDto.InvoiceSyncWebhookPayload"
+                        }
+                    }
+                }
+            }
+        },
+        "/webhook-events/invoice.sync.success": {
+            "post": {
+                "description": "Fired once per provider when an invoice is synced to that provider.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhook Events"
+                ],
+                "summary": "invoice.sync.success",
+                "responses": {
+                    "200": {
+                        "description": "Webhook payload",
+                        "schema": {
+                            "$ref": "#/definitions/webhookDto.InvoiceSyncWebhookPayload"
+                        }
+                    }
+                }
+            }
+        },
         "/webhook-events/invoice.update": {
             "post": {
                 "description": "Fired when an invoice is updated. ` + "`" + `invoice.line_items` + "`" + ` omits line items with neither an amount nor a quantity (period fan-out emits one per window whether or not usage landed in it), and ` + "`" + `invoice.subscription.plan.prices` + "`" + ` carries only the prices this invoice references, not the plan's full catalogue. Doc-only for parsing.",
@@ -14685,6 +14732,47 @@ const docTemplate = `{
                 }
             }
         },
+        "customer.ContactPerson": {
+            "type": "object",
+            "required": [
+                "first_name"
+            ],
+            "properties": {
+                "department": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "designation": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "email": {
+                    "type": "string"
+                },
+                "first_name": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_primary": {
+                    "type": "boolean"
+                },
+                "last_name": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "mobile": {
+                    "type": "string",
+                    "maxLength": 20
+                },
+                "salutation": {
+                    "type": "string",
+                    "maxLength": 25
+                }
+            }
+        },
         "AWSMarketplaceAgreement": {
             "type": "object",
             "required": [
@@ -14752,6 +14840,13 @@ const docTemplate = `{
                 "checkout": {
                     "$ref": "#/definitions/CheckoutParams"
                 },
+                "coupons": {
+                    "description": "Coupons apply to this addon's line items; price_id targets one price, omitted targets all.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/SubscriptionCouponInput"
+                    }
+                },
                 "line_item_commitments": {
                     "description": "LineItemCommitments allows setting commitment configuration per addon line item (keyed by price_id)",
                     "type": "object",
@@ -14800,6 +14895,13 @@ const docTemplate = `{
                             "$ref": "#/definitions/types.ScheduleType"
                         }
                     ]
+                },
+                "coupons": {
+                    "description": "Coupons apply to this addon's line items; price_id targets one price, omitted targets all.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/SubscriptionCouponInput"
+                    }
                 },
                 "line_item_commitments": {
                     "description": "LineItemCommitments allows setting commitment configuration per addon line item (keyed by price_id)",
@@ -16154,7 +16256,7 @@ const docTemplate = `{
                     "description": "Expanded data (populated when expand options are specified)",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/meter.Meter"
+                            "$ref": "#/definitions/Meter"
                         }
                     ]
                 },
@@ -16886,6 +16988,14 @@ const docTemplate = `{
                 "priority": {
                     "type": "integer"
                 },
+                "proration_behavior": {
+                    "description": "ProrationBehavior applies to SUBSCRIPTION scope only. create_prorations scales the first\napplication to the rest of the current billing period and puts later ones on the\nsubscription's billing dates, when the grant recurs on the subscription's billing period.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ProrationBehavior"
+                        }
+                    ]
+                },
                 "scope": {
                     "$ref": "#/definitions/types.CreditGrantScope"
                 },
@@ -17037,6 +17147,14 @@ const docTemplate = `{
                     "description": "contact is an optional contact number for the customer (e.g. phone)",
                     "type": "string",
                     "maxLength": 20
+                },
+                "contact_persons": {
+                    "description": "contact_persons are people at the customer; at most one may be primary",
+                    "type": "array",
+                    "maxItems": 5,
+                    "items": {
+                        "$ref": "#/definitions/customer.ContactPerson"
+                    }
                 },
                 "email": {
                     "description": "email is the customer's email address and must be a valid email format if provided",
@@ -18989,6 +19107,12 @@ const docTemplate = `{
                 "contact": {
                     "description": "Contact is an optional contact number for the customer (e.g. phone)",
                     "type": "string"
+                },
+                "contact_persons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/customer.ContactPerson"
+                    }
                 },
                 "created_at": {
                     "type": "string"
@@ -21269,6 +21393,13 @@ const docTemplate = `{
                     "description": "Amount reprices the charge. Flat fee only for now.",
                     "type": "string"
                 },
+                "coupons": {
+                    "description": "Coupons apply to the new line item created by this change.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/SubscriptionCouponInput"
+                    }
+                },
                 "effective_date": {
                     "type": "string"
                 },
@@ -21524,7 +21655,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "meter": {
-                    "$ref": "#/definitions/meter.Meter"
+                    "$ref": "#/definitions/Meter"
                 },
                 "meter_id": {
                     "type": "string"
@@ -23804,7 +23935,7 @@ const docTemplate = `{
                     "description": "Meter is populated when the caller adds \"meters\" to a subscription-scoped\nexpand string alongside \"subscription_line_items\". Only usage line items\n(PriceType == USAGE with a non-empty MeterID) will have a non-nil Meter.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/meter.Meter"
+                            "$ref": "#/definitions/Meter"
                         }
                     ]
                 },
@@ -25248,6 +25379,17 @@ const docTemplate = `{
                 }
             }
         },
+        "TopUpCoupon": {
+            "type": "object",
+            "required": [
+                "coupon_code"
+            ],
+            "properties": {
+                "coupon_code": {
+                    "type": "string"
+                }
+            }
+        },
         "TopUpWalletRequest": {
             "type": "object",
             "required": [
@@ -25273,6 +25415,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/CheckoutParams"
                         }
                     ]
+                },
+                "coupons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/TopUpCoupon"
+                    }
                 },
                 "credits_to_add": {
                     "description": "credits_to_add is the number of credits to add to the wallet",
@@ -25514,6 +25662,14 @@ const docTemplate = `{
                     "description": "contact is the updated contact number for the customer (e.g. phone)",
                     "type": "string",
                     "maxLength": 20
+                },
+                "contact_persons": {
+                    "description": "contact_persons replaces the customer's contact persons when provided; at most one may be primary",
+                    "type": "array",
+                    "maxItems": 5,
+                    "items": {
+                        "$ref": "#/definitions/customer.ContactPerson"
+                    }
                 },
                 "email": {
                     "description": "email is the updated email address and must be a valid email format if provided",
@@ -26080,11 +26236,51 @@ const docTemplate = `{
                 }
             }
         },
+        "UpdateTenantAddress": {
+            "type": "object",
+            "properties": {
+                "address_city": {
+                    "type": "string"
+                },
+                "address_country": {
+                    "type": "string"
+                },
+                "address_line1": {
+                    "type": "string"
+                },
+                "address_line2": {
+                    "type": "string"
+                },
+                "address_postal_code": {
+                    "type": "string"
+                },
+                "address_state": {
+                    "type": "string"
+                }
+            }
+        },
+        "UpdateTenantBillingDetails": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "$ref": "#/definitions/UpdateTenantAddress"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "help_email": {
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
+                }
+            }
+        },
         "UpdateTenantRequest": {
             "type": "object",
             "properties": {
                 "billing_details": {
-                    "$ref": "#/definitions/TenantBillingDetails"
+                    "$ref": "#/definitions/UpdateTenantBillingDetails"
                 },
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
@@ -26272,7 +26468,7 @@ const docTemplate = `{
                     "description": "Full meter object (only if expand includes \"meter\")",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/meter.Meter"
+                            "$ref": "#/definitions/Meter"
                         }
                     ]
                 },
@@ -26785,6 +26981,13 @@ const docTemplate = `{
                 "amount": {
                     "type": "string"
                 },
+                "consumption_breakdown": {
+                    "description": "ConsumptionBreakdown is set on debits: the credits drawn from each credit batch.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.WalletTxConsumption"
+                    }
+                },
                 "conversion_rate": {
                     "description": "conversion_rate is the conversion rate for the transaction to the currency",
                     "type": "string"
@@ -26849,6 +27052,17 @@ const docTemplate = `{
                 },
                 "reference_type": {
                     "$ref": "#/definitions/types.WalletTxReferenceType"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "description": "SourceType/SourceID identify the entity this transaction's value comes from or goes to\n(e.g. an invoice). Empty when there is none.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WalletTxSourceType"
+                        }
+                    ]
                 },
                 "status": {
                     "$ref": "#/definitions/types.Status"
@@ -27125,6 +27339,12 @@ const docTemplate = `{
                     "description": "Contact is an optional contact number for the customer (e.g. phone)",
                     "type": "string"
                 },
+                "contact_persons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/customer.ContactPerson"
+                    }
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -27244,6 +27464,68 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "unit_singular": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "Meter": {
+            "type": "object",
+            "properties": {
+                "aggregation": {
+                    "description": "Aggregation defines the aggregation type and field for the meter\nIt is used to aggregate the events into a single value for calculating the usage",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/meter.Aggregation"
+                        }
+                    ]
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "description": "EnvironmentID is the environment identifier for the meter",
+                    "type": "string"
+                },
+                "event_name": {
+                    "description": "EventName is the unique identifier for the event that this meter is tracking\nIt is a mandatory field in the events table and hence being used as the primary matching field\nWe can have multiple meters tracking the same event but with different filters and aggregation",
+                    "type": "string"
+                },
+                "filters": {
+                    "description": "Filters define the criteria for the meter to be applied on the events before aggregation\nIt also defines the possible values on which later the charges will be applied",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/meter.Filter"
+                    }
+                },
+                "id": {
+                    "description": "ID is the unique identifier for the meter",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is the display name of the meter",
+                    "type": "string"
+                },
+                "reset_usage": {
+                    "description": "ResetUsage defines whether the usage should be reset periodically or not\nFor ex meters tracking total storage used do not get reset but meters tracking\ntotal API requests do.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ResetUsage"
+                        }
+                    ]
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -27575,68 +27857,6 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
-                }
-            }
-        },
-        "meter.Meter": {
-            "type": "object",
-            "properties": {
-                "aggregation": {
-                    "description": "Aggregation defines the aggregation type and field for the meter\nIt is used to aggregate the events into a single value for calculating the usage",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/meter.Aggregation"
-                        }
-                    ]
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "environment_id": {
-                    "description": "EnvironmentID is the environment identifier for the meter",
-                    "type": "string"
-                },
-                "event_name": {
-                    "description": "EventName is the unique identifier for the event that this meter is tracking\nIt is a mandatory field in the events table and hence being used as the primary matching field\nWe can have multiple meters tracking the same event but with different filters and aggregation",
-                    "type": "string"
-                },
-                "filters": {
-                    "description": "Filters define the criteria for the meter to be applied on the events before aggregation\nIt also defines the possible values on which later the charges will be applied",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/meter.Filter"
-                    }
-                },
-                "id": {
-                    "description": "ID is the unique identifier for the meter",
-                    "type": "string"
-                },
-                "name": {
-                    "description": "Name is the display name of the meter",
-                    "type": "string"
-                },
-                "reset_usage": {
-                    "description": "ResetUsage defines whether the usage should be reset periodically or not\nFor ex meters tracking total storage used do not get reset but meters tracking\ntotal API requests do.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.ResetUsage"
-                        }
-                    ]
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "string"
                 }
             }
         },
@@ -27982,7 +28202,7 @@ const docTemplate = `{
                     "description": "Meter is populated when the caller adds \"meters\" to a subscription-scoped\nexpand string alongside \"subscription_line_items\". Only usage line items\n(PriceType == USAGE with a non-empty MeterID) will have a non-nil Meter.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/meter.Meter"
+                            "$ref": "#/definitions/Meter"
                         }
                     ]
                 },
@@ -28197,6 +28417,12 @@ const docTemplate = `{
                 },
                 "cadence": {
                     "$ref": "#/definitions/types.AddonCadence"
+                },
+                "coupons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.CouponRef"
+                    }
                 },
                 "proration_behavior": {
                     "description": "Needed to prorate the addon's first credit grant.",
@@ -28963,6 +29189,26 @@ const docTemplate = `{
                 },
                 "status": {
                     "$ref": "#/definitions/types.Status"
+                }
+            }
+        },
+        "types.CouponRef": {
+            "type": "object",
+            "properties": {
+                "association_id": {
+                    "type": "string"
+                },
+                "coupon_id": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "price_id": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
                 }
             }
         },
@@ -30390,6 +30636,12 @@ const docTemplate = `{
                 "amount": {
                     "type": "string"
                 },
+                "coupons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.CouponRef"
+                    }
+                },
                 "effective_date": {
                     "type": "string"
                 },
@@ -31241,6 +31493,7 @@ const docTemplate = `{
                 "events",
                 "invoice",
                 "credit_topups",
+                "wallet_debits",
                 "credit_usage",
                 "usage_analytics",
                 "revenue_facts"
@@ -31249,6 +31502,7 @@ const docTemplate = `{
                 "ScheduledTaskEntityTypeEvents",
                 "ScheduledTaskEntityTypeInvoice",
                 "ScheduledTaskEntityTypeCreditTopups",
+                "ScheduledTaskEntityTypeWalletDebits",
                 "ScheduledTaskEntityTypeCreditUsage",
                 "ScheduledTaskEntityTypeUsageAnalytics",
                 "ScheduledTaskEntityTypeRevenueFacts"
@@ -32404,6 +32658,17 @@ const docTemplate = `{
                 }
             }
         },
+        "types.WalletTxConsumption": {
+            "type": "object",
+            "properties": {
+                "credit_transaction_id": {
+                    "type": "string"
+                },
+                "credits": {
+                    "type": "string"
+                }
+            }
+        },
         "types.WalletTxReferenceType": {
             "type": "string",
             "enum": [
@@ -32417,6 +32682,15 @@ const docTemplate = `{
                 "WalletTxReferenceTypeExternal",
                 "WalletTxReferenceTypeRequest",
                 "WalletTxReferenceTypeInvoice"
+            ]
+        },
+        "types.WalletTxSourceType": {
+            "type": "string",
+            "enum": [
+                "INVOICE"
+            ],
+            "x-enum-varnames": [
+                "WalletTxSourceTypeInvoice"
             ]
         },
         "types.WalletType": {
@@ -32472,6 +32746,8 @@ const docTemplate = `{
                 "invoice.update.voided",
                 "invoice.update",
                 "invoice.payment.overdue",
+                "invoice.sync.success",
+                "invoice.sync.failed",
                 "wallet.credit_balance.dropped",
                 "wallet.credit_balance.recovered",
                 "wallet.ongoing_balance.dropped",
@@ -32534,6 +32810,8 @@ const docTemplate = `{
                 "WebhookEventInvoiceUpdateVoided",
                 "WebhookEventInvoiceUpdate",
                 "WebhookEventInvoicePaymentOverdue",
+                "WebhookEventInvoiceSyncSuccess",
+                "WebhookEventInvoiceSyncFailed",
                 "WebhookEventWalletCreditBalanceDropped",
                 "WebhookEventWalletCreditBalanceRecovered",
                 "WebhookEventWalletOngoingBalanceDropped",
@@ -33250,6 +33528,23 @@ const docTemplate = `{
                 }
             }
         },
+        "webhookDto.InvoiceSyncWebhookPayload": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "event_type": {
+                    "$ref": "#/definitions/types.WebhookEventName"
+                },
+                "invoice": {
+                    "$ref": "#/definitions/webhookDto.Invoice"
+                },
+                "provider_details": {
+                    "$ref": "#/definitions/webhookDto.ProviderDetails"
+                }
+            }
+        },
         "webhookDto.InvoiceWebhookPayload": {
             "type": "object",
             "properties": {
@@ -33436,6 +33731,20 @@ const docTemplate = `{
                 },
                 "type": {
                     "$ref": "#/definitions/types.PriceType"
+                }
+            }
+        },
+        "webhookDto.ProviderDetails": {
+            "type": "object",
+            "properties": {
+                "hosted_invoice_url": {
+                    "type": "string"
+                },
+                "invoice_id": {
+                    "type": "string"
+                },
+                "provider": {
+                    "$ref": "#/definitions/types.SecretProvider"
                 }
             }
         },
@@ -33924,6 +34233,12 @@ const docTemplate = `{
                 "amount": {
                     "type": "string"
                 },
+                "consumption_breakdown": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.WalletTxConsumption"
+                    }
+                },
                 "credit_amount": {
                     "type": "string"
                 },
@@ -33956,6 +34271,12 @@ const docTemplate = `{
                 },
                 "reference_type": {
                     "$ref": "#/definitions/types.WalletTxReferenceType"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "$ref": "#/definitions/types.WalletTxSourceType"
                 },
                 "transaction_reason": {
                     "$ref": "#/definitions/types.TransactionReason"

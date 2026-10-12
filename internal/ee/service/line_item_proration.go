@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
@@ -16,6 +15,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -38,6 +38,9 @@ type LineItemProrationRequest struct {
 	Behavior       types.ProrationBehavior
 	Reason         string // shown in wallet credit description
 	IdempotencyKey string
+
+	// Coupons discount the matching charge lines before credits are netted.
+	Coupons []dto.InvoiceLineItemCoupon
 }
 
 type LineItemProrationSummary struct {
@@ -49,6 +52,10 @@ type LineItemProrationSummary struct {
 	CreditLineItems   []dto.CreateInvoiceLineItemRequest
 	TotalCreditAmount decimal.Decimal
 
+	// Coupons matched to charge lines and their discount, netted before credits.
+	LineItemCoupons     []dto.InvoiceLineItemCoupon
+	TotalDiscountAmount decimal.Decimal
+
 	Currency  string
 	IsPreview bool
 }
@@ -56,8 +63,9 @@ type LineItemProrationSummary struct {
 // emptyProrationSummary is the zero quote for callers that resolved to "nothing to prorate".
 func emptyProrationSummary(sub *subscription.Subscription) *LineItemProrationSummary {
 	summary := &LineItemProrationSummary{
-		TotalChargeAmount: decimal.Zero,
-		TotalCreditAmount: decimal.Zero,
+		TotalChargeAmount:   decimal.Zero,
+		TotalCreditAmount:   decimal.Zero,
+		TotalDiscountAmount: decimal.Zero,
 	}
 
 	if sub != nil {
@@ -77,16 +85,30 @@ func (s *LineItemProrationSummary) Merge(others ...*LineItemProrationSummary) *L
 		s.CreditLineItems = append(s.CreditLineItems, other.CreditLineItems...)
 		s.TotalChargeAmount = s.TotalChargeAmount.Add(other.TotalChargeAmount)
 		s.TotalCreditAmount = s.TotalCreditAmount.Add(other.TotalCreditAmount)
+		s.LineItemCoupons = append(s.LineItemCoupons, other.LineItemCoupons...)
+		s.TotalDiscountAmount = s.TotalDiscountAmount.Add(other.TotalDiscountAmount)
 	}
 
 	return s
 }
 
-func (s *LineItemProrationSummary) NetAmount() decimal.Decimal {
+// Subtotal is charges minus credits, before any discount.
+func (s *LineItemProrationSummary) Subtotal() decimal.Decimal {
 	if s == nil {
 		return decimal.Zero
 	}
 	return s.TotalChargeAmount.Sub(s.TotalCreditAmount)
+}
+
+func (s *LineItemProrationSummary) NetAmount() decimal.Decimal {
+	return s.Subtotal().Sub(s.getTotalDiscountAmount())
+}
+
+func (s *LineItemProrationSummary) getTotalDiscountAmount() decimal.Decimal {
+	if s == nil {
+		return decimal.Zero
+	}
+	return s.TotalDiscountAmount
 }
 
 type SettleMode int
@@ -190,30 +212,25 @@ type LineItemProrationService interface {
 }
 
 type lineItemProrationService struct {
-	params ServiceParams
+	params       ServiceParams
+	priceService PriceService
 }
 
 func NewLineItemProrationService(params ServiceParams) LineItemProrationService {
-	return &lineItemProrationService{params: params}
+	return &lineItemProrationService{params: params, priceService: NewPriceService(params)}
 }
 
 func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemProrationRequest) (*LineItemProrationSummary, error) {
 	sub := req.Subscription
 	prorationSvc := NewProrationService(s.params)
 
-	customerTimezone := sub.Timezone
-	if customerTimezone == "" {
-		customerTimezone = types.DefaultTimezone
-	}
-
 	summary := &LineItemProrationSummary{
-		Currency:          sub.Currency,
-		IsPreview:         req.Behavior == types.ProrationBehaviorNone,
-		TotalChargeAmount: decimal.Zero,
-		TotalCreditAmount: decimal.Zero,
+		Currency:            sub.Currency,
+		IsPreview:           req.Behavior == types.ProrationBehaviorNone,
+		TotalChargeAmount:   decimal.Zero,
+		TotalCreditAmount:   decimal.Zero,
+		TotalDiscountAmount: decimal.Zero,
 	}
-
-	billed := s.creditBasisForInvoiceLineItems(ctx, req)
 
 	for _, entry := range req.Entries {
 		item := entry.LineItem
@@ -234,23 +251,72 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 			continue
 		}
 
+		// One-time prices are never prorated: an advance one is charged in full when added.
+		if item.BillingPeriod == types.BILLING_PERIOD_ONETIME {
+			if entry.Action == types.ProrationActionAddItem {
+				amount := s.priceService.CalculateCost(ctx, entry.NewPrice, entry.NewQuantity)
+				if amount.IsPositive() {
+					summary.ChargeLineItems = append(summary.ChargeLineItems, buildProrationLineItem(
+						sub, item, entry.NewPrice, entry.NewQuantity, amount, "One-time charge", req.EffectiveDate, req.EffectiveDate,
+					))
+					summary.TotalChargeAmount = summary.TotalChargeAmount.Add(amount)
+				}
+			}
+			continue
+		}
+
 		// A line item is priced against its own cadence, so a monthly addon on a quarterly
 		// subscription is quoted as one partial month plus the whole months that follow —
 		// the same lines the opening invoice would have raised. Same-cadence items yield a
 		// single window equal to the subscription period, which is the previous behaviour.
-		windows, err := splitInvoicePeriodByLineItemCadence(sub.CurrentPeriodStart, sub.CurrentPeriodEnd, item, sub)
-		if err != nil {
-			return nil, err
+		// A longer-cadence item has one window: its own period containing the change, on its own grid.
+		// e.g. annual item on a monthly sub, removed Jun 10 → credit [Jun 10, Jan 1) of [Jan 1, Jan 1).
+		gridSub := sub
+		var windows []periodWindow
+		if types.IsLongerCadence(item.BillingPeriod, item.BillingPeriodCount, sub.BillingPeriod, sub.BillingPeriodCount) {
+			// A removal on an item boundary closes the period ending there, not the next unbilled one.
+			at := req.EffectiveDate
+			if entry.Action == types.ProrationActionRemoveItem || entry.Action == types.ProrationActionCancellation {
+				at = at.Add(-time.Nanosecond)
+			}
+			itemPeriod, err := longerItemPeriod(sub, item, at)
+			if err != nil {
+				return nil, err
+			}
+			itemSub := *sub
+			itemSub.BillingAnchor = longerItemAnchor(sub, item)
+			gridSub = &itemSub
+			windows = []periodWindow{{Start: itemPeriod.Start, End: itemPeriod.End}}
+		} else {
+			var err error
+			windows, err = splitInvoicePeriodByLineItemCadence(sub.CurrentPeriodStart, sub.CurrentPeriodEnd, item, sub)
+			if err != nil {
+				return nil, err
+			}
 		}
 
-		originalPaid, creditsIssued := creditBasis(item, entry.CurrentPrice, billed)
-
+		creditedEarlier := decimal.Zero
 		for _, w := range windows {
 			if !w.End.After(req.EffectiveDate) {
 				continue
 			}
+			// Skip items ended before the cancel; stop at a period-end removal.
+			if entry.Action == types.ProrationActionCancellation && !item.EndDate.IsZero() {
+				if !item.EndDate.After(req.EffectiveDate) {
+					continue
+				}
+				if !item.EndDate.Before(sub.CurrentPeriodEnd) && item.EndDate.Before(w.End) {
+					w.End = item.EndDate
+				}
+			}
 
-			params, skip := s.buildProrationParams(ctx, sub, entry, req, customerTimezone, w, originalPaid, creditsIssued)
+			originalPaid, creditsIssued := s.creditBasisForWindow(ctx, req, entry, w)
+			// A merged invoice row spans every window, so earlier windows' credits draw on it too.
+			// e.g. one $30 row for a monthly item's quarter: windows credit 13.33 + 16.67 + 0, not 3 × up to $30.
+			if sub.LineItemGrouping.MergesIntoBillingPeriod() {
+				creditsIssued = creditsIssued.Add(creditedEarlier)
+			}
+			params, skip := s.buildProrationParams(ctx, gridSub, entry, req, w, originalPaid, creditsIssued)
 			if skip {
 				continue
 			}
@@ -291,10 +357,13 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 
 				summary.CreditLineItems = append(summary.CreditLineItems, lineItem)
 				summary.TotalCreditAmount = summary.TotalCreditAmount.Add(result.NetAmount.Abs())
-				// Later windows may only credit what this line item has not been credited yet.
-				creditsIssued = creditsIssued.Add(result.NetAmount.Abs())
+				creditedEarlier = creditedEarlier.Add(result.NetAmount.Abs())
 			}
 		}
+	}
+
+	if err := s.applyCoupons(ctx, summary, req.Coupons); err != nil {
+		return nil, err
 	}
 
 	return summary, nil
@@ -304,6 +373,12 @@ func (s *lineItemProrationService) Settle(ctx context.Context, req *SettleProrat
 	if err := req.validate(); err != nil {
 		return nil, err
 	}
+
+	invoicingSub, err := invoicingSubscription(ctx, s.params, req.Subscription)
+	if err != nil {
+		return nil, err
+	}
+	req.Subscription = invoicingSub
 
 	result := &SettleProrationResult{Changed: make([]dto.ChangedInvoice, 0, 1)}
 	net := req.Quote.NetAmount()
@@ -360,6 +435,7 @@ func (s *lineItemProrationService) Settle(ctx context.Context, req *SettleProrat
 		}
 
 	case net.IsNegative():
+		// No invoice means no coupon application row, so a repeated coupon does not use up a period here.
 		credit, err := s.creditWallet(ctx, req, net.Abs())
 		if err != nil {
 			return nil, err
@@ -413,57 +489,95 @@ func buildNettedProrationInvoiceRequest(req *SettleProrationRequest) dto.CreateI
 	if billingPeriod == "" {
 		billingPeriod = string(sub.BillingPeriod)
 	}
-	net := quote.NetAmount()
+	// Pre-discount: invoice compute subtracts the coupons itself.
+	subtotal := quote.Subtotal()
 	periodStart, periodEnd := req.PeriodStart, req.PeriodEnd
 
 	return dto.CreateInvoiceRequest{
-		CustomerID:     sub.GetInvoicingCustomerID(),
-		SubscriptionID: &sub.ID,
-		InvoiceType:    types.InvoiceTypeOneOff,
-		Currency:       sub.Currency,
-		BillingReason:  types.InvoiceBillingReasonSubscriptionUpdate,
-		AmountDue:      net,
-		Total:          net,
-		Subtotal:       net,
-		PeriodStart:    &periodStart,
-		PeriodEnd:      &periodEnd,
-		BillingPeriod:  &billingPeriod,
-		LineItems:      lineItems,
-		IdempotencyKey: &req.IdempotencyKey,
-		Metadata:       types.WithCollapsedInvoiceDisplayName(nil, req.DisplayName),
+		CustomerID:      sub.GetInvoicingCustomerID(),
+		SubscriptionID:  &sub.ID,
+		InvoiceType:     types.InvoiceTypeOneOff,
+		Currency:        sub.Currency,
+		BillingReason:   types.InvoiceBillingReasonSubscriptionUpdate,
+		AmountDue:       subtotal,
+		Total:           subtotal,
+		Subtotal:        subtotal,
+		PeriodStart:     &periodStart,
+		PeriodEnd:       &periodEnd,
+		BillingPeriod:   &billingPeriod,
+		LineItems:       lineItems,
+		LineItemCoupons: quote.LineItemCoupons,
+		IdempotencyKey:  &req.IdempotencyKey,
+		Metadata:        types.WithCollapsedInvoiceDisplayName(nil, req.DisplayName),
 	}
 }
 
-// Cap removal credits at amounts actually billed (list price never binds).
-func (s *lineItemProrationService) creditBasisForInvoiceLineItems(
+func (s *lineItemProrationService) applyCoupons(
 	ctx context.Context,
-	req LineItemProrationRequest,
-) map[string]*invoice.BilledAmounts {
-	lineItemIDs := make([]string, 0, len(req.Entries))
-	for _, entry := range req.Entries {
-		if entry.LineItem == nil {
-			continue
-		}
-		switch entry.Action {
-		case types.ProrationActionRemoveItem, types.ProrationActionPriceChange:
-			lineItemIDs = append(lineItemIDs, entry.LineItem.ID)
-		}
-	}
-	if len(lineItemIDs) == 0 {
+	quote *LineItemProrationSummary,
+	coupons []dto.InvoiceLineItemCoupon,
+) error {
+	// Only charge lines are discounted; a credit line never carries a coupon.
+	chargedItemIDs := lo.FilterMap(quote.ChargeLineItems, func(li dto.CreateInvoiceLineItemRequest, _ int) (string, bool) {
+		return lo.FromPtr(li.SubscriptionLineItemID), li.SubscriptionLineItemID != nil
+	})
+	coupons = lo.Filter(coupons, func(c dto.InvoiceLineItemCoupon, _ int) bool {
+		return lo.Contains(chargedItemIDs, lo.FromPtr(c.SubscriptionLineItemID))
+	})
+	if len(coupons) == 0 {
 		return nil
 	}
 
+	inv, err := (&dto.CreateInvoiceRequest{Currency: quote.Currency, LineItems: quote.ChargeLineItems}).ToInvoice(ctx)
+	if err != nil {
+		return err
+	}
+
+	result, err := NewCouponApplicationService(s.params).CalculateCouponsForInvoice(ctx, dto.ApplyCouponsToInvoiceRequest{
+		Invoice:         inv,
+		LineItemCoupons: coupons,
+	})
+	if err != nil {
+		return err
+	}
+
+	quote.LineItemCoupons = coupons
+	quote.TotalDiscountAmount = result.TotalDiscountAmount
+	return nil
+}
+
+// creditBasisForWindow caps a window's credit at what was billed for that window.
+// e.g. monthly item on a quarterly sub removed Apr 11: Apr reads April's $20 row, May its own, June its own.
+func (s *lineItemProrationService) creditBasisForWindow(
+	ctx context.Context,
+	req LineItemProrationRequest,
+	entry LineItemProrationEntry,
+	window periodWindow,
+) (originalAmountPaid, previousCredits decimal.Decimal) {
+	listTotal := s.priceService.CalculateCost(ctx, entry.CurrentPrice, entry.LineItem.Quantity)
+
+	switch entry.Action {
+	case types.ProrationActionRemoveItem, types.ProrationActionPriceChange, types.ProrationActionCancellation:
+	default:
+		return listTotal, decimal.Zero
+	}
+
+	asOf := req.EffectiveDate
+	if window.Start.After(asOf) {
+		asOf = window.Start
+	}
+
 	billed, err := s.params.InvoiceLineItemRepo.GetBilledAmountsBySubscriptionLineItem(
-		ctx, lineItemIDs, req.EffectiveDate,
+		ctx, []string{entry.LineItem.ID}, asOf,
 	)
 	if err != nil {
 		s.params.Logger.Info(ctx, "failed to read billed amounts for credit basis, falling back to list price",
 			"error", err,
-			"subscription_id", req.Subscription.ID)
-		return nil
+			"subscription_id", req.Subscription.ID,
+			"line_item_id", entry.LineItem.ID)
 	}
 
-	return billed
+	return creditBasis(entry.LineItem, billed, listTotal)
 }
 
 func (s *lineItemProrationService) buildProrationParams(
@@ -471,13 +585,11 @@ func (s *lineItemProrationService) buildProrationParams(
 	sub *subscription.Subscription,
 	entry LineItemProrationEntry,
 	req LineItemProrationRequest,
-	customerTimezone string,
 	window periodWindow,
 	originalPaid decimal.Decimal,
 	creditsIssued decimal.Decimal,
 ) (proration.ProrationParams, bool) {
 	item := entry.LineItem
-	periodEnd := window.End.Add(-time.Second)
 
 	// Windows that start after the change are charged or credited in full.
 	prorationDate := req.EffectiveDate
@@ -485,25 +597,18 @@ func (s *lineItemProrationService) buildProrationParams(
 		prorationDate = window.Start
 	}
 
-	// The fraction is of one whole period of this line item. A window clipped short by a
-	// calendar stub keeps the full period as its divisor, so the quote matches what the
-	// invoice would charge for the same days.
-	windowDuration := window.End.Sub(window.Start)
-	periodStart := window.End.Add(-fullPeriodDuration(
-		ctx, s.params.Logger, item, window.Start, customerTimezone, windowDuration,
-	))
-
 	base := proration.ProrationParams{
+		Subscription:       sub,
+		BillingPeriod:      item.BillingPeriod,
+		BillingPeriodCount: item.BillingPeriodCount,
 		SubscriptionID:     sub.ID,
 		LineItemID:         item.ID,
-		CurrentPeriodStart: periodStart,
-		CurrentPeriodEnd:   periodEnd,
+		CurrentPeriodStart: window.Start,
+		CurrentPeriodEnd:   window.End,
 		ProrationDate:      prorationDate,
 		ProrationBehavior:  req.Behavior,
-		ProrationStrategy:  types.StrategySecondBased,
 		Currency:           sub.Currency,
 		PlanDisplayName:    item.DisplayName,
-		Timezone:           customerTimezone,
 	}
 
 	switch entry.Action {
@@ -512,14 +617,14 @@ func (s *lineItemProrationService) buildProrationParams(
 		base.PlanPayInAdvance = entry.NewPrice.InvoiceCadence == types.InvoiceCadenceAdvance
 		base.NewPriceID = item.PriceID
 		base.NewQuantity = entry.NewQuantity
-		base.NewPricePerUnit = entry.NewPrice.Amount
+		base.NewPricePerUnit = s.priceService.CalculateUnitCost(ctx, entry.NewPrice, entry.NewQuantity)
 
-	case types.ProrationActionRemoveItem:
-		base.Action = types.ProrationActionRemoveItem
+	case types.ProrationActionRemoveItem, types.ProrationActionCancellation:
+		base.Action = entry.Action
 		base.PlanPayInAdvance = entry.CurrentPrice.InvoiceCadence == types.InvoiceCadenceAdvance
 		base.OldPriceID = item.PriceID
 		base.OldQuantity = entry.CurrentQuantity
-		base.OldPricePerUnit = entry.CurrentPrice.Amount
+		base.OldPricePerUnit = s.priceService.CalculateUnitCost(ctx, entry.CurrentPrice, entry.CurrentQuantity)
 		base.CancellationType = types.CancellationTypeImmediate
 		base.CancellationReason = req.Reason
 		base.RefundEligible = true
@@ -535,8 +640,8 @@ func (s *lineItemProrationService) buildProrationParams(
 		base.NewPriceID = item.PriceID
 		base.OldQuantity = entry.CurrentQuantity
 		base.NewQuantity = entry.NewQuantity
-		base.OldPricePerUnit = entry.CurrentPrice.Amount
-		base.NewPricePerUnit = entry.NewPrice.Amount
+		base.OldPricePerUnit = s.priceService.CalculateUnitCost(ctx, entry.CurrentPrice, entry.CurrentQuantity)
+		base.NewPricePerUnit = s.priceService.CalculateUnitCost(ctx, entry.NewPrice, entry.NewQuantity)
 		base.OriginalAmountPaid, base.PreviousCreditsIssued = originalPaid, creditsIssued
 
 	default:
@@ -574,7 +679,13 @@ func buildProrationLineItem(
 		p.Amount.String(),
 		effectiveDate.Format("2 Jan 2006"), periodEnd.Format("2 Jan 2006"))
 
+	metadata := types.Metadata{"description": description}
+	if sub.SubscriptionType == types.SubscriptionTypeGroupedInvoicing {
+		metadata[types.InvoiceLineItemMetadataKeyChildCustomerID] = sub.CustomerID
+	}
+
 	return dto.CreateInvoiceLineItemRequest{
+		SubscriptionID:         &sub.ID,
 		PriceID:                &priceID,
 		PriceType:              &priceType,
 		PlanDisplayName:        &planDisplayName,
@@ -584,7 +695,7 @@ func buildProrationLineItem(
 		PeriodStart:            &effectiveDate,
 		PeriodEnd:              &periodEnd,
 		SubscriptionLineItemID: &subscriptionLineItemID,
-		Metadata:               types.Metadata{"description": description},
+		Metadata:               metadata,
 	}
 }
 

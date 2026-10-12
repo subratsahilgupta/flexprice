@@ -1084,6 +1084,11 @@ func (s *taxService) PrepareTaxRatesForInvoice(ctx context.Context, req dto.Crea
 		return nil, err
 	}
 
+	// An exempt customer is never taxed, so no rate is worth resolving.
+	if cust.TaxTreatment == types.TaxTreatmentExempt {
+		return dto.NewInvoiceTaxRates(nil, cust), nil
+	}
+
 	if len(req.TaxRateOverrides) > 0 {
 		s.Logger.Info(ctx, "processing tax rate overrides for invoice",
 			"overrides_count", len(req.TaxRateOverrides))
@@ -1227,6 +1232,14 @@ func invoiceTaxRequest(inv *invoice.Invoice) dto.TaxCalculationRequest {
 // TaxAppliedRecords are built in memory, so it is safe for a preview of an invoice that will
 // never exist. ApplyTaxesOnInvoice calls this and then persists them.
 func (s *taxService) CalculateTaxesOnInvoice(ctx context.Context, inv *invoice.Invoice, taxRates *dto.InvoiceTaxRates) *dto.TaxCalculationResult {
+	// An exempt customer is never taxed, so no rate is evaluated.
+	if taxRates.IsExempt() {
+		return &dto.TaxCalculationResult{
+			Exempt:          true,
+			ExemptionReason: lo.ToPtr(types.TaxExemptionReasonCustomerExempt),
+		}
+	}
+
 	taxableAmt := taxableAmount(inv)
 	rateLines, rateByID := s.buildRateLines(ctx, inv, taxRates.GetRates())
 
@@ -1236,30 +1249,8 @@ func (s *taxService) CalculateTaxesOnInvoice(ctx context.Context, inv *invoice.I
 		"invoice_id", inv.ID, "taxable_amount", taxableAmt,
 		"inclusive_tax", breakdown.inclusiveTax, "exclusive_tax", breakdown.exclusiveTax)
 
-	// Tax is computed the same way for everyone; exemption only zeroes what is charged. One
-	// override at the end, rather than a branch inside the maths.
-	exempt := taxRates.IsExempt()
-
-	// Every engine reports why it charged zero, so the caller reads one field rather than
-	// inferring it from a flag.
-	var exemptionReason *types.TaxExemptionReasonCode
-	if exempt {
-		exemptionReason = lo.ToPtr(types.TaxExemptionReasonCustomerExempt)
-	}
-	totalTaxCharged := breakdown.inclusiveTax.Add(breakdown.exclusiveTax)
-	if exempt {
-		s.Logger.Info(ctx, "exemption applied at compute",
-			"invoice_id", inv.ID, "customer_id", inv.CustomerID,
-			"waived_inclusive_tax", breakdown.inclusiveTax, "waived_exclusive_tax", breakdown.exclusiveTax)
-		totalTaxCharged = decimal.Zero
-	}
-
 	taxAppliedRecords := make([]*dto.TaxAppliedResponse, 0, len(breakdown.lines))
 	for _, line := range breakdown.lines {
-		chargedAmount := line.taxAmount
-		if exempt {
-			chargedAmount = decimal.Zero
-		}
 		rate := rateByID[line.rateID]
 
 		taxAppliedRecords = append(taxAppliedRecords, &dto.TaxAppliedResponse{
@@ -1268,7 +1259,7 @@ func (s *taxService) CalculateTaxesOnInvoice(ctx context.Context, inv *invoice.I
 				EntityType:    types.TaxRateEntityTypeInvoice,
 				EntityID:      inv.ID,
 				TaxableAmount: line.taxableAmount,
-				TaxAmount:     chargedAmount,
+				TaxAmount:     line.taxAmount,
 				TaxBehavior:   line.taxBehavior,
 				Currency:      inv.Currency,
 				AppliedAt:     time.Now().UTC(),
@@ -1280,9 +1271,7 @@ func (s *taxService) CalculateTaxesOnInvoice(ctx context.Context, inv *invoice.I
 	return &dto.TaxCalculationResult{
 		InclusiveTax:      breakdown.inclusiveTax,
 		ExclusiveTax:      breakdown.exclusiveTax,
-		TotalTaxAmount:    totalTaxCharged,
-		Exempt:            exempt,
-		ExemptionReason:   exemptionReason,
+		TotalTaxAmount:    breakdown.inclusiveTax.Add(breakdown.exclusiveTax),
 		TaxAppliedRecords: taxAppliedRecords,
 	}
 }

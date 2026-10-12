@@ -461,6 +461,35 @@ definitions:
       updated_by:
         type: string
     type: object
+  customer.ContactPerson:
+    properties:
+      department:
+        maxLength: 100
+        type: string
+      designation:
+        maxLength: 100
+        type: string
+      email:
+        type: string
+      first_name:
+        maxLength: 100
+        type: string
+      id:
+        type: string
+      is_primary:
+        type: boolean
+      last_name:
+        maxLength: 100
+        type: string
+      mobile:
+        maxLength: 20
+        type: string
+      salutation:
+        maxLength: 25
+        type: string
+    required:
+    - first_name
+    type: object
   AWSMarketplaceAgreement:
     properties:
       concurrent_agreements:
@@ -507,6 +536,12 @@ definitions:
           with StartDate; omit both to attach now.
       checkout:
         $ref: '#/definitions/CheckoutParams'
+      coupons:
+        description: Coupons apply to this addon's line items; price_id targets one
+          price, omitted targets all.
+        items:
+          $ref: '#/definitions/SubscriptionCouponInput'
+        type: array
       line_item_commitments:
         additionalProperties:
           $ref: '#/definitions/LineItemCommitmentConfig'
@@ -544,6 +579,12 @@ definitions:
         description: |-
           ChangeAt names when the attach applies without computing a date. Mutually exclusive
           with StartDate; omit both to attach now.
+      coupons:
+        description: Coupons apply to this addon's line items; price_id targets one
+          price, omitted targets all.
+        items:
+          $ref: '#/definitions/SubscriptionCouponInput'
+        type: array
       line_item_commitments:
         additionalProperties:
           $ref: '#/definitions/LineItemCommitmentConfig'
@@ -1470,7 +1511,7 @@ definitions:
         type: string
       meter:
         allOf:
-        - $ref: '#/definitions/meter.Meter'
+        - $ref: '#/definitions/Meter'
         description: Expanded data (populated when expand options are specified)
       meter_id:
         type: string
@@ -1963,6 +2004,13 @@ definitions:
         type: string
       priority:
         type: integer
+      proration_behavior:
+        allOf:
+        - $ref: '#/definitions/types.ProrationBehavior'
+        description: |-
+          ProrationBehavior applies to SUBSCRIPTION scope only. create_prorations scales the first
+          application to the rest of the current billing period and puts later ones on the
+          subscription's billing dates, when the grant recurs on the subscription's billing period.
       scope:
         $ref: '#/definitions/types.CreditGrantScope'
       start_date:
@@ -2095,6 +2143,13 @@ definitions:
           phone)
         maxLength: 20
         type: string
+      contact_persons:
+        description: contact_persons are people at the customer; at most one may be
+          primary
+        items:
+          $ref: '#/definitions/customer.ContactPerson'
+        maxItems: 5
+        type: array
       email:
         description: email is the customer's email address and must be a valid email
           format if provided
@@ -3586,6 +3641,10 @@ definitions:
         description: Contact is an optional contact number for the customer (e.g.
           phone)
         type: string
+      contact_persons:
+        items:
+          $ref: '#/definitions/customer.ContactPerson'
+        type: array
       created_at:
         type: string
       created_by:
@@ -5269,6 +5328,11 @@ definitions:
       amount:
         description: Amount reprices the charge. Flat fee only for now.
         type: string
+      coupons:
+        description: Coupons apply to the new line item created by this change.
+        items:
+          $ref: '#/definitions/SubscriptionCouponInput'
+        type: array
       effective_date:
         type: string
       id:
@@ -5445,7 +5509,7 @@ definitions:
       event_name:
         type: string
       meter:
-        $ref: '#/definitions/meter.Meter'
+        $ref: '#/definitions/Meter'
       meter_id:
         type: string
     type: object
@@ -7048,7 +7112,7 @@ definitions:
         type: object
       meter:
         allOf:
-        - $ref: '#/definitions/meter.Meter'
+        - $ref: '#/definitions/Meter'
         description: |-
           Meter is populated when the caller adds "meters" to a subscription-scoped
           expand string alongside "subscription_line_items". Only usage line items
@@ -8112,6 +8176,13 @@ definitions:
       updated_at:
         type: string
     type: object
+  TopUpCoupon:
+    properties:
+      coupon_code:
+        type: string
+    required:
+    - coupon_code
+    type: object
   TopUpWalletRequest:
     properties:
       amount:
@@ -8143,6 +8214,10 @@ definitions:
           checkout opts into pay-first hosted checkout for PURCHASED_CREDIT_INVOICED top-ups.
           When set, credits are applied only after checkout payment succeeds.
           Omit for today's pay-later / auto-complete behavior.
+      coupons:
+        items:
+          $ref: '#/definitions/TopUpCoupon'
+        type: array
       credits_to_add:
         description: credits_to_add is the number of credits to add to the wallet
         type: string
@@ -8322,6 +8397,13 @@ definitions:
           phone)
         maxLength: 20
         type: string
+      contact_persons:
+        description: contact_persons replaces the customer's contact persons when
+          provided; at most one may be primary
+        items:
+          $ref: '#/definitions/customer.ContactPerson'
+        maxItems: 5
+        type: array
       email:
         description: email is the updated email address and must be a valid email
           format if provided
@@ -8723,10 +8805,36 @@ definitions:
         - $ref: '#/definitions/types.TaxRateStatus'
         description: tax_rate_status is the updated status of the tax rate
     type: object
+  UpdateTenantAddress:
+    properties:
+      address_city:
+        type: string
+      address_country:
+        type: string
+      address_line1:
+        type: string
+      address_line2:
+        type: string
+      address_postal_code:
+        type: string
+      address_state:
+        type: string
+    type: object
+  UpdateTenantBillingDetails:
+    properties:
+      address:
+        $ref: '#/definitions/UpdateTenantAddress'
+      email:
+        type: string
+      help_email:
+        type: string
+      phone:
+        type: string
+    type: object
   UpdateTenantRequest:
     properties:
       billing_details:
-        $ref: '#/definitions/TenantBillingDetails'
+        $ref: '#/definitions/UpdateTenantBillingDetails'
       metadata:
         $ref: '#/definitions/types.Metadata'
       name:
@@ -8848,7 +8956,7 @@ definitions:
         description: Group when the feature belongs to a group (object includes id)
       meter:
         allOf:
-        - $ref: '#/definitions/meter.Meter'
+        - $ref: '#/definitions/Meter'
         description: Full meter object (only if expand includes "meter")
       meter_id:
         description: Meter ID
@@ -9221,6 +9329,12 @@ definitions:
     properties:
       amount:
         type: string
+      consumption_breakdown:
+        description: 'ConsumptionBreakdown is set on debits: the credits drawn from
+          each credit batch.'
+        items:
+          $ref: '#/definitions/types.WalletTxConsumption'
+        type: array
       conversion_rate:
         description: conversion_rate is the conversion rate for the transaction to
           the currency
@@ -9268,6 +9382,14 @@ definitions:
         type: string
       reference_type:
         $ref: '#/definitions/types.WalletTxReferenceType'
+      source_id:
+        type: string
+      source_type:
+        allOf:
+        - $ref: '#/definitions/types.WalletTxSourceType'
+        description: |-
+          SourceType/SourceID identify the entity this transaction's value comes from or goes to
+          (e.g. an invoice). Empty when there is none.
       status:
         $ref: '#/definitions/types.Status'
       tenant_id:
@@ -9466,6 +9588,10 @@ definitions:
         description: Contact is an optional contact number for the customer (e.g.
           phone)
         type: string
+      contact_persons:
+        items:
+          $ref: '#/definitions/customer.ContactPerson'
+        type: array
       created_at:
         type: string
       created_by:
@@ -9549,6 +9675,56 @@ definitions:
       unit_plural:
         type: string
       unit_singular:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
+  Meter:
+    properties:
+      aggregation:
+        allOf:
+        - $ref: '#/definitions/meter.Aggregation'
+        description: |-
+          Aggregation defines the aggregation type and field for the meter
+          It is used to aggregate the events into a single value for calculating the usage
+      created_at:
+        type: string
+      created_by:
+        type: string
+      environment_id:
+        description: EnvironmentID is the environment identifier for the meter
+        type: string
+      event_name:
+        description: |-
+          EventName is the unique identifier for the event that this meter is tracking
+          It is a mandatory field in the events table and hence being used as the primary matching field
+          We can have multiple meters tracking the same event but with different filters and aggregation
+        type: string
+      filters:
+        description: |-
+          Filters define the criteria for the meter to be applied on the events before aggregation
+          It also defines the possible values on which later the charges will be applied
+        items:
+          $ref: '#/definitions/meter.Filter'
+        type: array
+      id:
+        description: ID is the unique identifier for the meter
+        type: string
+      name:
+        description: Name is the display name of the meter
+        type: string
+      reset_usage:
+        allOf:
+        - $ref: '#/definitions/types.ResetUsage'
+        description: |-
+          ResetUsage defines whether the usage should be reset periodically or not
+          For ex meters tracking total storage used do not get reset but meters tracking
+          total API requests do.
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
         type: string
       updated_at:
         type: string
@@ -9808,56 +9984,6 @@ definitions:
           type: string
         type: array
     type: object
-  meter.Meter:
-    properties:
-      aggregation:
-        allOf:
-        - $ref: '#/definitions/meter.Aggregation'
-        description: |-
-          Aggregation defines the aggregation type and field for the meter
-          It is used to aggregate the events into a single value for calculating the usage
-      created_at:
-        type: string
-      created_by:
-        type: string
-      environment_id:
-        description: EnvironmentID is the environment identifier for the meter
-        type: string
-      event_name:
-        description: |-
-          EventName is the unique identifier for the event that this meter is tracking
-          It is a mandatory field in the events table and hence being used as the primary matching field
-          We can have multiple meters tracking the same event but with different filters and aggregation
-        type: string
-      filters:
-        description: |-
-          Filters define the criteria for the meter to be applied on the events before aggregation
-          It also defines the possible values on which later the charges will be applied
-        items:
-          $ref: '#/definitions/meter.Filter'
-        type: array
-      id:
-        description: ID is the unique identifier for the meter
-        type: string
-      name:
-        description: Name is the display name of the meter
-        type: string
-      reset_usage:
-        allOf:
-        - $ref: '#/definitions/types.ResetUsage'
-        description: |-
-          ResetUsage defines whether the usage should be reset periodically or not
-          For ex meters tracking total storage used do not get reset but meters tracking
-          total API requests do.
-      status:
-        $ref: '#/definitions/types.Status'
-      tenant_id:
-        type: string
-      updated_at:
-        type: string
-      updated_by:
-        type: string
-    type: object
   models.TemporalWorkflowResult:
     properties:
       message:
@@ -10113,7 +10239,7 @@ definitions:
         type: object
       meter:
         allOf:
-        - $ref: '#/definitions/meter.Meter'
+        - $ref: '#/definitions/Meter'
         description: |-
           Meter is populated when the caller adds "meters" to a subscription-scoped
           expand string alongside "subscription_line_items". Only usage line items
@@ -10264,6 +10390,10 @@ definitions:
         type: string
       cadence:
         $ref: '#/definitions/types.AddonCadence'
+      coupons:
+        items:
+          $ref: '#/definitions/types.CouponRef'
+        type: array
       proration_behavior:
         allOf:
         - $ref: '#/definitions/types.ProrationBehavior'
@@ -10824,6 +10954,19 @@ definitions:
         type: array
       status:
         $ref: '#/definitions/types.Status'
+    type: object
+  types.CouponRef:
+    properties:
+      association_id:
+        type: string
+      coupon_id:
+        type: string
+      end_date:
+        type: string
+      price_id:
+        type: string
+      start_date:
+        type: string
     type: object
   types.CouponType:
     enum:
@@ -11895,6 +12038,10 @@ definitions:
     properties:
       amount:
         type: string
+      coupons:
+        items:
+          $ref: '#/definitions/types.CouponRef'
+        type: array
       effective_date:
         type: string
       line_item_id:
@@ -12526,6 +12673,7 @@ definitions:
     - events
     - invoice
     - credit_topups
+    - wallet_debits
     - credit_usage
     - usage_analytics
     - revenue_facts
@@ -12534,6 +12682,7 @@ definitions:
     - ScheduledTaskEntityTypeEvents
     - ScheduledTaskEntityTypeInvoice
     - ScheduledTaskEntityTypeCreditTopups
+    - ScheduledTaskEntityTypeWalletDebits
     - ScheduledTaskEntityTypeCreditUsage
     - ScheduledTaskEntityTypeUsageAnalytics
     - ScheduledTaskEntityTypeRevenueFacts
@@ -13397,6 +13546,13 @@ definitions:
       type:
         $ref: '#/definitions/types.TransactionType'
     type: object
+  types.WalletTxConsumption:
+    properties:
+      credit_transaction_id:
+        type: string
+      credits:
+        type: string
+    type: object
   types.WalletTxReferenceType:
     enum:
     - PAYMENT
@@ -13409,6 +13565,12 @@ definitions:
     - WalletTxReferenceTypeExternal
     - WalletTxReferenceTypeRequest
     - WalletTxReferenceTypeInvoice
+  types.WalletTxSourceType:
+    enum:
+    - INVOICE
+    type: string
+    x-enum-varnames:
+    - WalletTxSourceTypeInvoice
   types.WalletType:
     enum:
     - PRE_PAID
@@ -13458,6 +13620,8 @@ definitions:
     - invoice.update.voided
     - invoice.update
     - invoice.payment.overdue
+    - invoice.sync.success
+    - invoice.sync.failed
     - wallet.credit_balance.dropped
     - wallet.credit_balance.recovered
     - wallet.ongoing_balance.dropped
@@ -13520,6 +13684,8 @@ definitions:
     - WebhookEventInvoiceUpdateVoided
     - WebhookEventInvoiceUpdate
     - WebhookEventInvoicePaymentOverdue
+    - WebhookEventInvoiceSyncSuccess
+    - WebhookEventInvoiceSyncFailed
     - WebhookEventWalletCreditBalanceDropped
     - WebhookEventWalletCreditBalanceRecovered
     - WebhookEventWalletOngoingBalanceDropped
@@ -14007,6 +14173,17 @@ definitions:
       subscription_line_item_id:
         type: string
     type: object
+  webhookDto.InvoiceSyncWebhookPayload:
+    properties:
+      error:
+        type: string
+      event_type:
+        $ref: '#/definitions/types.WebhookEventName'
+      invoice:
+        $ref: '#/definitions/webhookDto.Invoice'
+      provider_details:
+        $ref: '#/definitions/webhookDto.ProviderDetails'
+    type: object
   webhookDto.InvoiceWebhookPayload:
     properties:
       event_type:
@@ -14130,6 +14307,15 @@ definitions:
         $ref: '#/definitions/price.JSONBTransformQuantity'
       type:
         $ref: '#/definitions/types.PriceType'
+    type: object
+  webhookDto.ProviderDetails:
+    properties:
+      hosted_invoice_url:
+        type: string
+      invoice_id:
+        type: string
+      provider:
+        $ref: '#/definitions/types.SecretProvider'
     type: object
   webhookDto.Refund:
     properties:
@@ -14450,6 +14636,10 @@ definitions:
     properties:
       amount:
         type: string
+      consumption_breakdown:
+        items:
+          $ref: '#/definitions/types.WalletTxConsumption'
+        type: array
       credit_amount:
         type: string
       credit_balance_after:
@@ -14472,6 +14662,10 @@ definitions:
         type: string
       reference_type:
         $ref: '#/definitions/types.WalletTxReferenceType'
+      source_id:
+        type: string
+      source_type:
+        $ref: '#/definitions/types.WalletTxSourceType'
       transaction_reason:
         $ref: '#/definitions/types.TransactionReason'
       transaction_status:
@@ -17517,6 +17711,7 @@ paths:
       summary: Delete an FX rate
       tags:
       - FX Rates
+      x-scope: delete
     get:
       consumes:
       - application/json
@@ -23163,6 +23358,37 @@ paths:
           schema:
             $ref: '#/definitions/webhookDto.InvoiceWebhookPayload'
       summary: invoice.payment.overdue
+      tags:
+      - Webhook Events
+  /webhook-events/invoice.sync.failed:
+    post:
+      consumes:
+      - application/json
+      description: Fired once per provider when an invoice sync fails after its last
+        retry.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Webhook payload
+          schema:
+            $ref: '#/definitions/webhookDto.InvoiceSyncWebhookPayload'
+      summary: invoice.sync.failed
+      tags:
+      - Webhook Events
+  /webhook-events/invoice.sync.success:
+    post:
+      consumes:
+      - application/json
+      description: Fired once per provider when an invoice is synced to that provider.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Webhook payload
+          schema:
+            $ref: '#/definitions/webhookDto.InvoiceSyncWebhookPayload'
+      summary: invoice.sync.success
       tags:
       - Webhook Events
   /webhook-events/invoice.update:

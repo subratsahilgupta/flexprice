@@ -5740,7 +5740,8 @@
           {
             "ApiKeyAuth": []
           }
-        ]
+        ],
+        "x-scope": "delete"
       }
     },
     "/groups": {
@@ -15550,6 +15551,48 @@
         }
       }
     },
+    "/webhook-events/invoice.sync.failed": {
+      "post": {
+        "tags": [
+          "Webhook Events"
+        ],
+        "summary": "invoice.sync.failed",
+        "description": "Fired once per provider when an invoice sync fails after its last retry.",
+        "responses": {
+          "200": {
+            "description": "Webhook payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/webhookDto.InvoiceSyncWebhookPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhook-events/invoice.sync.success": {
+      "post": {
+        "tags": [
+          "Webhook Events"
+        ],
+        "summary": "invoice.sync.success",
+        "description": "Fired once per provider when an invoice is synced to that provider.",
+        "responses": {
+          "200": {
+            "description": "Webhook payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/webhookDto.InvoiceSyncWebhookPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/webhook-events/invoice.update": {
       "post": {
         "tags": [
@@ -17117,6 +17160,47 @@
           }
         }
       },
+      "customer.ContactPerson": {
+        "required": [
+          "first_name"
+        ],
+        "type": "object",
+        "properties": {
+          "department": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "designation": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "first_name": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_primary": {
+            "type": "boolean"
+          },
+          "last_name": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "mobile": {
+            "maxLength": 20,
+            "type": "string"
+          },
+          "salutation": {
+            "maxLength": 25,
+            "type": "string"
+          }
+        }
+      },
       "AWSMarketplaceAgreement": {
         "required": [
           "customer_aws_account_id",
@@ -17180,6 +17264,13 @@
           "checkout": {
             "$ref": "#/components/schemas/CheckoutParams"
           },
+          "coupons": {
+            "type": "array",
+            "description": "Coupons apply to this addon's line items; price_id targets one price, omitted targets all.",
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionCouponInput"
+            }
+          },
           "line_item_commitments": {
             "type": "object",
             "additionalProperties": {
@@ -17224,6 +17315,13 @@
           },
           "change_at": {
             "$ref": "#/components/schemas/types.ScheduleType"
+          },
+          "coupons": {
+            "type": "array",
+            "description": "Coupons apply to this addon's line items; price_id targets one price, omitted targets all.",
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionCouponInput"
+            }
           },
           "line_item_commitments": {
             "type": "object",
@@ -18495,7 +18593,7 @@
             "type": "string"
           },
           "meter": {
-            "$ref": "#/components/schemas/meter.Meter"
+            "$ref": "#/components/schemas/Meter"
           },
           "meter_id": {
             "type": "string"
@@ -19208,6 +19306,9 @@
           "priority": {
             "type": "integer"
           },
+          "proration_behavior": {
+            "$ref": "#/components/schemas/types.ProrationBehavior"
+          },
           "scope": {
             "$ref": "#/components/schemas/types.CreditGrantScope"
           },
@@ -19339,6 +19440,14 @@
             "maxLength": 20,
             "type": "string",
             "description": "contact is an optional contact number for the customer (e.g. phone)"
+          },
+          "contact_persons": {
+            "maxItems": 5,
+            "type": "array",
+            "description": "contact_persons are people at the customer; at most one may be primary",
+            "items": {
+              "$ref": "#/components/schemas/customer.ContactPerson"
+            }
           },
           "email": {
             "type": "string",
@@ -21145,6 +21254,12 @@
           "contact": {
             "type": "string",
             "description": "Contact is an optional contact number for the customer (e.g. phone)"
+          },
+          "contact_persons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/customer.ContactPerson"
+            }
           },
           "created_at": {
             "type": "string",
@@ -23381,6 +23496,13 @@
             "type": "string",
             "description": "Amount reprices the charge. Flat fee only for now."
           },
+          "coupons": {
+            "type": "array",
+            "description": "Coupons apply to the new line item created by this change.",
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionCouponInput"
+            }
+          },
           "effective_date": {
             "type": "string",
             "format": "date-time"
@@ -23633,7 +23755,7 @@
             "type": "string"
           },
           "meter": {
-            "$ref": "#/components/schemas/meter.Meter"
+            "$ref": "#/components/schemas/Meter"
           },
           "meter_id": {
             "type": "string"
@@ -25746,7 +25868,7 @@
             }
           },
           "meter": {
-            "$ref": "#/components/schemas/meter.Meter"
+            "$ref": "#/components/schemas/Meter"
           },
           "meter_display_name": {
             "type": "string"
@@ -27119,6 +27241,17 @@
           }
         }
       },
+      "TopUpCoupon": {
+        "required": [
+          "coupon_code"
+        ],
+        "type": "object",
+        "properties": {
+          "coupon_code": {
+            "type": "string"
+          }
+        }
+      },
       "TopUpWalletRequest": {
         "required": [
           "transaction_reason"
@@ -27139,6 +27272,12 @@
           },
           "checkout": {
             "$ref": "#/components/schemas/CheckoutParams"
+          },
+          "coupons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopUpCoupon"
+            }
           },
           "credits_to_add": {
             "type": "string",
@@ -27364,6 +27503,14 @@
             "maxLength": 20,
             "type": "string",
             "description": "contact is the updated contact number for the customer (e.g. phone)"
+          },
+          "contact_persons": {
+            "maxItems": 5,
+            "type": "array",
+            "description": "contact_persons replaces the customer's contact persons when provided; at most one may be primary",
+            "items": {
+              "$ref": "#/components/schemas/customer.ContactPerson"
+            }
           },
           "email": {
             "type": "string",
@@ -27891,11 +28038,51 @@
           }
         }
       },
+      "UpdateTenantAddress": {
+        "type": "object",
+        "properties": {
+          "address_city": {
+            "type": "string"
+          },
+          "address_country": {
+            "type": "string"
+          },
+          "address_line1": {
+            "type": "string"
+          },
+          "address_line2": {
+            "type": "string"
+          },
+          "address_postal_code": {
+            "type": "string"
+          },
+          "address_state": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateTenantBillingDetails": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/UpdateTenantAddress"
+          },
+          "email": {
+            "type": "string"
+          },
+          "help_email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          }
+        }
+      },
       "UpdateTenantRequest": {
         "type": "object",
         "properties": {
           "billing_details": {
-            "$ref": "#/components/schemas/TenantBillingDetails"
+            "$ref": "#/components/schemas/UpdateTenantBillingDetails"
           },
           "metadata": {
             "$ref": "#/components/schemas/types.Metadata"
@@ -28065,7 +28252,7 @@
             "$ref": "#/components/schemas/group.Group"
           },
           "meter": {
-            "$ref": "#/components/schemas/meter.Meter"
+            "$ref": "#/components/schemas/Meter"
           },
           "meter_id": {
             "type": "string",
@@ -28560,6 +28747,13 @@
           "amount": {
             "type": "string"
           },
+          "consumption_breakdown": {
+            "type": "array",
+            "description": "ConsumptionBreakdown is set on debits: the credits drawn from each credit batch.",
+            "items": {
+              "$ref": "#/components/schemas/types.WalletTxConsumption"
+            }
+          },
           "conversion_rate": {
             "type": "string",
             "description": "conversion_rate is the conversion rate for the transaction to the currency"
@@ -28626,6 +28820,12 @@
           },
           "reference_type": {
             "$ref": "#/components/schemas/types.WalletTxReferenceType"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "source_type": {
+            "$ref": "#/components/schemas/types.WalletTxSourceType"
           },
           "status": {
             "$ref": "#/components/schemas/types.Status"
@@ -28911,6 +29111,12 @@
             "type": "string",
             "description": "Contact is an optional contact number for the customer (e.g. phone)"
           },
+          "contact_persons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/customer.ContactPerson"
+            }
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -29023,6 +29229,60 @@
             "type": "string"
           },
           "unit_singular": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": "string"
+          }
+        }
+      },
+      "Meter": {
+        "type": "object",
+        "properties": {
+          "aggregation": {
+            "$ref": "#/components/schemas/meter.Aggregation"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "environment_id": {
+            "type": "string",
+            "description": "EnvironmentID is the environment identifier for the meter"
+          },
+          "event_name": {
+            "type": "string",
+            "description": "EventName is the unique identifier for the event that this meter is tracking\nIt is a mandatory field in the events table and hence being used as the primary matching field\nWe can have multiple meters tracking the same event but with different filters and aggregation"
+          },
+          "filters": {
+            "type": "array",
+            "description": "Filters define the criteria for the meter to be applied on the events before aggregation\nIt also defines the possible values on which later the charges will be applied",
+            "items": {
+              "$ref": "#/components/schemas/meter.Filter"
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "ID is the unique identifier for the meter"
+          },
+          "name": {
+            "type": "string",
+            "description": "Name is the display name of the meter"
+          },
+          "reset_usage": {
+            "$ref": "#/components/schemas/types.ResetUsage"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.Status"
+          },
+          "tenant_id": {
             "type": "string"
           },
           "updated_at": {
@@ -29353,60 +29613,6 @@
           }
         }
       },
-      "meter.Meter": {
-        "type": "object",
-        "properties": {
-          "aggregation": {
-            "$ref": "#/components/schemas/meter.Aggregation"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "created_by": {
-            "type": "string"
-          },
-          "environment_id": {
-            "type": "string",
-            "description": "EnvironmentID is the environment identifier for the meter"
-          },
-          "event_name": {
-            "type": "string",
-            "description": "EventName is the unique identifier for the event that this meter is tracking\nIt is a mandatory field in the events table and hence being used as the primary matching field\nWe can have multiple meters tracking the same event but with different filters and aggregation"
-          },
-          "filters": {
-            "type": "array",
-            "description": "Filters define the criteria for the meter to be applied on the events before aggregation\nIt also defines the possible values on which later the charges will be applied",
-            "items": {
-              "$ref": "#/components/schemas/meter.Filter"
-            }
-          },
-          "id": {
-            "type": "string",
-            "description": "ID is the unique identifier for the meter"
-          },
-          "name": {
-            "type": "string",
-            "description": "Name is the display name of the meter"
-          },
-          "reset_usage": {
-            "$ref": "#/components/schemas/types.ResetUsage"
-          },
-          "status": {
-            "$ref": "#/components/schemas/types.Status"
-          },
-          "tenant_id": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updated_by": {
-            "type": "string"
-          }
-        }
-      },
       "models.TemporalWorkflowResult": {
         "type": "object",
         "properties": {
@@ -29726,7 +29932,7 @@
             }
           },
           "meter": {
-            "$ref": "#/components/schemas/meter.Meter"
+            "$ref": "#/components/schemas/Meter"
           },
           "meter_display_name": {
             "type": "string"
@@ -29949,6 +30155,12 @@
           },
           "cadence": {
             "$ref": "#/components/schemas/types.AddonCadence"
+          },
+          "coupons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.CouponRef"
+            }
           },
           "proration_behavior": {
             "$ref": "#/components/schemas/types.ProrationBehavior"
@@ -30753,6 +30965,29 @@
           }
         },
         "x-speakeasy-name-override": "CouponFilter"
+      },
+      "types.CouponRef": {
+        "type": "object",
+        "properties": {
+          "association_id": {
+            "type": "string"
+          },
+          "coupon_id": {
+            "type": "string"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "price_id": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "x-speakeasy-name-override": "CouponRef"
       },
       "types.CouponType": {
         "type": "string",
@@ -32225,6 +32460,12 @@
           "amount": {
             "type": "string"
           },
+          "coupons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.CouponRef"
+            }
+          },
           "effective_date": {
             "type": "string",
             "format": "date-time"
@@ -33113,6 +33354,7 @@
           "events",
           "invoice",
           "credit_topups",
+          "wallet_debits",
           "credit_usage",
           "usage_analytics",
           "revenue_facts"
@@ -33121,6 +33363,7 @@
           "ScheduledTaskEntityTypeEvents",
           "ScheduledTaskEntityTypeInvoice",
           "ScheduledTaskEntityTypeCreditTopups",
+          "ScheduledTaskEntityTypeWalletDebits",
           "ScheduledTaskEntityTypeCreditUsage",
           "ScheduledTaskEntityTypeUsageAnalytics",
           "ScheduledTaskEntityTypeRevenueFacts"
@@ -34285,6 +34528,18 @@
         },
         "x-speakeasy-name-override": "WalletTransactionFilter"
       },
+      "types.WalletTxConsumption": {
+        "type": "object",
+        "properties": {
+          "credit_transaction_id": {
+            "type": "string"
+          },
+          "credits": {
+            "type": "string"
+          }
+        },
+        "x-speakeasy-name-override": "WalletTxConsumption"
+      },
       "types.WalletTxReferenceType": {
         "type": "string",
         "enum": [
@@ -34300,6 +34555,16 @@
           "WalletTxReferenceTypeInvoice"
         ],
         "x-speakeasy-name-override": "WalletTxReferenceType"
+      },
+      "types.WalletTxSourceType": {
+        "type": "string",
+        "enum": [
+          "INVOICE"
+        ],
+        "x-enum-varnames": [
+          "WalletTxSourceTypeInvoice"
+        ],
+        "x-speakeasy-name-override": "WalletTxSourceType"
       },
       "types.WalletType": {
         "type": "string",
@@ -34355,6 +34620,8 @@
           "invoice.update.voided",
           "invoice.update",
           "invoice.payment.overdue",
+          "invoice.sync.success",
+          "invoice.sync.failed",
           "wallet.credit_balance.dropped",
           "wallet.credit_balance.recovered",
           "wallet.ongoing_balance.dropped",
@@ -34417,6 +34684,8 @@
           "WebhookEventInvoiceUpdateVoided",
           "WebhookEventInvoiceUpdate",
           "WebhookEventInvoicePaymentOverdue",
+          "WebhookEventInvoiceSyncSuccess",
+          "WebhookEventInvoiceSyncFailed",
           "WebhookEventWalletCreditBalanceDropped",
           "WebhookEventWalletCreditBalanceRecovered",
           "WebhookEventWalletOngoingBalanceDropped",
@@ -35146,6 +35415,23 @@
           }
         }
       },
+      "webhookDto.InvoiceSyncWebhookPayload": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "event_type": {
+            "$ref": "#/components/schemas/types.WebhookEventName"
+          },
+          "invoice": {
+            "$ref": "#/components/schemas/webhookDto.Invoice"
+          },
+          "provider_details": {
+            "$ref": "#/components/schemas/webhookDto.ProviderDetails"
+          }
+        }
+      },
       "webhookDto.InvoiceWebhookPayload": {
         "type": "object",
         "properties": {
@@ -35336,6 +35622,20 @@
           },
           "type": {
             "$ref": "#/components/schemas/types.PriceType"
+          }
+        }
+      },
+      "webhookDto.ProviderDetails": {
+        "type": "object",
+        "properties": {
+          "hosted_invoice_url": {
+            "type": "string"
+          },
+          "invoice_id": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/types.SecretProvider"
           }
         }
       },
@@ -35835,6 +36135,12 @@
           "amount": {
             "type": "string"
           },
+          "consumption_breakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.WalletTxConsumption"
+            }
+          },
           "credit_amount": {
             "type": "string"
           },
@@ -35868,6 +36174,12 @@
           },
           "reference_type": {
             "$ref": "#/components/schemas/types.WalletTxReferenceType"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "source_type": {
+            "$ref": "#/components/schemas/types.WalletTxSourceType"
           },
           "transaction_reason": {
             "$ref": "#/components/schemas/types.TransactionReason"

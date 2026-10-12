@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/customer"
+	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -283,6 +284,12 @@ func (_c *CustomerCreate) SetNillableTaxTreatment(v *types.TaxTreatment) *Custom
 	return _c
 }
 
+// SetContactPersons sets the "contact_persons" field.
+func (_c *CustomerCreate) SetContactPersons(v []*schema.ContactPerson) *CustomerCreate {
+	_c.mutation.SetContactPersons(v)
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *CustomerCreate) SetID(v string) *CustomerCreate {
 	_c.mutation.SetID(v)
@@ -511,6 +518,10 @@ func (_c *CustomerCreate) createSpec() (*Customer, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.TaxTreatment(); ok {
 		_spec.SetField(customer.FieldTaxTreatment, field.TypeString, value)
 		_node.TaxTreatment = value
+	}
+	if value, ok := _c.mutation.ContactPersons(); ok {
+		_spec.SetField(customer.FieldContactPersons, field.TypeJSON, value)
+		_node.ContactPersons = value
 	}
 	return _node, _spec
 }
