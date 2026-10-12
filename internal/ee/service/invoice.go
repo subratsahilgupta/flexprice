@@ -2529,6 +2529,10 @@ func (s *invoiceService) CreatePreviewInvoice(ctx context.Context, req dto.Creat
 		return nil, err
 	}
 
+	if _, err := s.applyPreviewCoupons(ctx, inv, &req); err != nil {
+		return nil, err
+	}
+
 	if !inv.Subtotal.IsPositive() {
 		return dto.NewInvoiceResponse(inv), nil
 	}
@@ -3487,6 +3491,14 @@ func (s *invoiceService) getInvoiceDataForPDFGen(
 				return nil, ierr.WithError(err).WithHintf("failed to parse VAT %s", vat).Mark(ierr.ErrDatabase)
 			}
 			data.VAT = vatValue
+		}
+	}
+
+	// Fall back to the customer's po_number when the invoice carries none; some
+	// tenants record the PO on the customer record rather than per invoice.
+	if data.PONumber == "" && customer != nil && customer.Metadata != nil {
+		if po, ok := customer.Metadata["po_number"]; ok {
+			data.PONumber = po
 		}
 	}
 
