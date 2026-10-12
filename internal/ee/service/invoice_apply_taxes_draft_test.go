@@ -1,8 +1,12 @@
 package service
 
 import (
-	"github.com/flexprice/flexprice/internal/api/dto"
+	"context"
 	"time"
+
+	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/customer"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 
 	"github.com/flexprice/flexprice/internal/domain/connection"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
@@ -313,4 +317,42 @@ func (s *InvoiceServiceSuite) TestProcessDraftInvoice_ExemptCustomerSkipsExterna
 	s.Equal(types.TaxExemptionReasonCustomerExempt, *got.TaxExemptionReasonCode)
 	s.Len(rec.getByProviderCalls, paymentLookups,
 		"selecting Stripe as the tax engine must add no connection lookups for an exempt customer")
+}
+
+// sealedInvoiceCustomerRepo fails customer reads once the watched invoice is finalized, so only
+// reads made after sealing fail.
+type sealedInvoiceCustomerRepo struct {
+	customer.Repository
+	invoices  invoice.Repository
+	invoiceID string
+}
+
+func (r *sealedInvoiceCustomerRepo) Get(ctx context.Context, id string) (*customer.Customer, error) {
+	inv, err := r.invoices.Get(ctx, r.invoiceID)
+	if err == nil && inv.InvoiceStatus == types.InvoiceStatusFinalized {
+		return nil, ierr.NewError("customer read failed").Mark(ierr.ErrDatabase)
+	}
+	return r.Repository.Get(ctx, id)
+}
+
+// The customer is read after the invoice is sealed and only to decide tax filing, so a failed
+// read is logged and the finalize still succeeds.
+func (s *InvoiceServiceSuite) TestFinalizeInvoice_CustomerReadFailureDoesNotFailFinalize() {
+	ctx := s.GetContext()
+	inv := s.buildDraftSubscriptionInvoice("inv_draft_oneoff_customer_read_fails", decimal.NewFromInt(100), true)
+	inv.InvoiceType = types.InvoiceTypeOneOff
+	inv.SubscriptionID = nil
+	s.Require().NoError(s.invoiceRepo.Update(ctx, inv))
+
+	s.service.(*invoiceService).CustomerRepo = &sealedInvoiceCustomerRepo{
+		Repository: s.GetStores().CustomerRepo,
+		invoices:   s.invoiceRepo,
+		invoiceID:  inv.ID,
+	}
+
+	s.Require().NoError(s.service.FinalizeInvoice(ctx, inv.ID, dto.FinalizeInvoiceRequest{}))
+
+	got, err := s.invoiceRepo.Get(ctx, inv.ID)
+	s.Require().NoError(err)
+	s.Equal(types.InvoiceStatusFinalized, got.InvoiceStatus)
 }

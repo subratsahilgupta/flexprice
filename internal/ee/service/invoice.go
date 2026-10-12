@@ -1213,13 +1213,17 @@ func (s *invoiceService) FinalizeInvoice(ctx context.Context, id string, req dto
 		return err
 	}
 
+	// The invoice is already sealed, so a failed read is logged and filing proceeds as before.
 	cust, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
 	if err != nil {
-		return err
+		s.Logger.Error(ctx, "customer could not be read before filing tax",
+			"error", err,
+			"invoice_id", inv.ID,
+			"customer_id", inv.CustomerID)
 	}
 
 	// An exempt customer is never taxed, so there is nothing to file.
-	if cust.TaxTreatment != types.TaxTreatmentExempt {
+	if cust == nil || cust.TaxTreatment != types.TaxTreatmentExempt {
 		taxService := NewTaxService(s.ServiceParams)
 
 		// Tax is filed only once the invoice is sealed, so this runs after finalization rather
@@ -1755,13 +1759,17 @@ func (s *invoiceService) ProcessDraftInvoice(ctx context.Context, id string, pay
 		return err
 	}
 
+	// The invoice is already sealed, so a failed read is logged and filing proceeds as before.
 	cust, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
 	if err != nil {
-		return err
+		s.Logger.Error(ctx, "customer could not be read before filing tax",
+			"error", err,
+			"invoice_id", inv.ID,
+			"customer_id", inv.CustomerID)
 	}
 
 	// An exempt customer is never taxed, so there is nothing to file.
-	if cust.TaxTreatment != types.TaxTreatmentExempt {
+	if cust == nil || cust.TaxTreatment != types.TaxTreatmentExempt {
 		taxService := NewTaxService(s.ServiceParams)
 
 		// Tax is filed only once the invoice is sealed, so this runs after finalization rather
