@@ -92,16 +92,19 @@ runs:
           exit 1
         fi
         echo "Execution: $EXEC"
-        while true; do
+        # Outlasts the ECS action's 60m timeout.
+        for _ in $(seq 1 210); do
           STATUS=$(aws codepipeline get-pipeline-execution --pipeline-name "$PIPELINE" \
             --pipeline-execution-id "$EXEC" --query 'pipelineExecution.status' --output text)
           echo "Pipeline status: $STATUS"
           case "$STATUS" in
             Succeeded) exit 0 ;;
-            Failed|Stopped|Superseded)
+            Failed|Stopped|Superseded|Cancelled)
               echo "::error::Pipeline execution $EXEC ended $STATUS"
               exit 1
               ;;
           esac
           sleep 20
         done
+        echo "::error::Pipeline execution $EXEC still $STATUS after 70 minutes"
+        exit 1
