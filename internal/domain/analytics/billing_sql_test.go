@@ -85,6 +85,41 @@ func TestBuildBillingQuery_BreakdownOrdersByMeasure(t *testing.T) {
 	assert.Contains(t, q.SQL, "ORDER BY sum(total) DESC")
 }
 
+func TestBuildBillingQuery_TopNPushesLimit(t *testing.T) {
+	rv := billingRV(types.ShapeBreakdown, "customer_id")
+	rv.Limit = 10
+	q, err := BuildBillingQuery(rv, "reports_db", "t", "e", 1000)
+	require.NoError(t, err)
+	assert.True(t, q.TopN)
+	assert.Contains(t, q.SQL, "ORDER BY sum(total) DESC LIMIT 10")
+	assert.NotContains(t, q.SQL, "LIMIT 1001")
+
+	rv.Sort = []*SortSpec{{Field: "invoice_total", Dir: types.SortDirectionDesc}}
+	q, err = BuildBillingQuery(rv, "reports_db", "t", "e", 1000)
+	require.NoError(t, err)
+	assert.True(t, q.TopN)
+
+	rv.Limit = 5000
+	q, err = BuildBillingQuery(rv, "reports_db", "t", "e", 1000)
+	require.NoError(t, err)
+	assert.Contains(t, q.SQL, "LIMIT 1000")
+}
+
+func TestBuildBillingQuery_NonTopNKeepsOverflowProbe(t *testing.T) {
+	rv := billingRV(types.ShapeBreakdown, "customer_id")
+	rv.Limit = 10
+	rv.Sort = []*SortSpec{{Field: "customer_id", Dir: types.SortDirectionAsc}}
+	q, err := BuildBillingQuery(rv, "reports_db", "t", "e", 1000)
+	require.NoError(t, err)
+	assert.False(t, q.TopN)
+	assert.Contains(t, q.SQL, "LIMIT 1001")
+
+	rv.Sort = []*SortSpec{{Field: "invoice_total"}}
+	q, err = BuildBillingQuery(rv, "reports_db", "t", "e", 1000)
+	require.NoError(t, err)
+	assert.False(t, q.TopN)
+}
+
 func TestBuildBillingQuery_FilterValuesAreParams(t *testing.T) {
 	rv := billingRV(types.ShapeScalar)
 	evil := "x' OR 1=1 --"

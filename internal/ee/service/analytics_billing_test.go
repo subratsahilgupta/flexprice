@@ -84,6 +84,17 @@ func TestExecuteView_BillingOverflowIsValidationError(t *testing.T) {
 	assert.True(t, ierr.IsValidation(err))
 }
 
+func TestExecuteView_BillingTopNSkipsOverflow(t *testing.T) {
+	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Max: 2, Rows: [][]string{
+		{"c1", "usd", "50"}, {"c2", "usd", "20"}, {"c3", "usd", "5"},
+	}}
+	v := billingView(types.ShapeBreakdown, "customer_id")
+	v.Limit = 2
+	res, err := newBillingSvc(repo).ExecuteView(billingCtx(), v, nil)
+	require.NoError(t, err)
+	assert.Len(t, res.Rows, 2)
+}
+
 func TestExecuteView_BillingRunErrorWithNilLogger(t *testing.T) {
 	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Err: ierr.NewError("boom").Mark(ierr.ErrDatabase)}
 	_, err := newBillingSvc(repo).ExecuteView(billingCtx(), billingView(types.ShapeScalar), nil)

@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,12 +51,14 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, repo.Enabled())
 
+	var filters []*analytics.Filter
 	run := func(shape types.Shape, grain types.Grain, dims ...string) [][]string {
 		rv := &analytics.ResolvedView{
 			Family:     types.FamilyBilling,
 			Shape:      shape,
 			Metrics:    []types.Metric{types.MetricInvoiceTotal},
 			Dimensions: dims,
+			Filters:    filters,
 			Time: analytics.TimeSpec{
 				From:  time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC),
 				To:    time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
@@ -69,7 +72,7 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 		return rows
 	}
 
-	// Excludes duplicates, voided, draft, other tenant, epoch, deleted.
+	// Dedup, status, tenant, epoch filters.
 	assert.Equal(t, [][]string{{"inr", "5"}, {"usd", "12"}}, run(types.ShapeScalar, ""))
 
 	assert.Equal(t, [][]string{
@@ -82,4 +85,17 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 		{"c1", "usd", "12"},
 		{"c2", "inr", "5"},
 	}, run(types.ShapeBreakdown, "", "customer_id"))
+
+	filters = []*analytics.Filter{{Field: "customer_id", Op: types.IN, Value: []string{"c2"}}}
+	assert.Equal(t, [][]string{{"inr", "5"}}, run(types.ShapeScalar, ""))
+	filters = nil
+
+	weekly := run(types.ShapeTimeseries, types.GrainWeek)
+	require.NotEmpty(t, weekly)
+	for _, r := range weekly {
+		assert.True(t, strings.HasSuffix(r[0], "T00:00:00Z"), r[0])
+		bucket, err := time.Parse(time.RFC3339, r[0])
+		require.NoError(t, err)
+		assert.Equal(t, time.Monday, bucket.Weekday())
+	}
 }

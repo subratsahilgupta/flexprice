@@ -22,6 +22,8 @@ type ReportQuery struct {
 	SQL     string
 	Params  map[string]string
 	Columns []ReportColumn
+	// TopN: LIMIT is the view limit.
+	TopN bool
 }
 
 const (
@@ -93,7 +95,7 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 		"tenant_id = {tenant_id:String}",
 		"environment_id = {environment_id:String}",
 		"_peerdb_is_deleted = 0",
-		"status = 'published'",
+		"status = '" + string(types.StatusPublished) + "'",
 	}
 	where = append(where, bm.Where...)
 	where = append(where,
@@ -128,16 +130,36 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 	if len(groups) > 0 {
 		b.WriteString(" GROUP BY " + strings.Join(groups, ", "))
 	}
-	switch rv.Shape {
-	case types.ShapeTimeseries, types.ShapeScalar:
-		b.WriteString(" ORDER BY " + strings.Join(groups, ", "))
-	case types.ShapeBreakdown:
+	if rv.Shape == types.ShapeBreakdown {
 		b.WriteString(" ORDER BY " + bm.Measure + " DESC")
+	} else if len(groups) > 0 {
+		b.WriteString(" ORDER BY " + strings.Join(groups, ", "))
 	}
-	// One extra row detects overflow.
-	if maxRows > 0 {
+	topN := billingTopN(rv, bm.Metric)
+	switch {
+	case topN && maxRows > 0:
+		fmt.Fprintf(&b, " LIMIT %d", min(rv.Limit, maxRows))
+	case topN:
+		fmt.Fprintf(&b, " LIMIT %d", rv.Limit)
+	case maxRows > 0:
+		// One extra row detects overflow.
 		fmt.Fprintf(&b, " LIMIT %d", maxRows+1)
 	}
 
-	return &ReportQuery{SQL: b.String(), Params: params, Columns: cols}, nil
+	return &ReportQuery{SQL: b.String(), Params: params, Columns: cols, TopN: topN}, nil
+}
+
+// billingTopN: SQL order equals view order.
+func billingTopN(rv *ResolvedView, metric types.Metric) bool {
+	if rv.Shape != types.ShapeBreakdown || rv.Limit <= 0 {
+		return false
+	}
+	switch len(rv.Sort) {
+	case 0:
+		return true
+	case 1:
+		s := rv.Sort[0]
+		return s != nil && s.Field == string(metric) && s.Dir == types.SortDirectionDesc
+	}
+	return false
 }

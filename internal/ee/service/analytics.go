@@ -85,7 +85,7 @@ func (s *analyticsService) executeBilling(ctx context.Context, rv *analytics.Res
 		}
 		return nil, err
 	}
-	if maxRows > 0 && len(rows) > maxRows {
+	if !q.TopN && maxRows > 0 && len(rows) > maxRows {
 		return nil, ierr.NewErrorf("result exceeds %d rows", maxRows).
 			WithHint("Narrow the time range or remove dimensions").
 			Mark(ierr.ErrValidation)
