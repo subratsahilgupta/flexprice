@@ -8335,7 +8335,7 @@ definitions:
         type: string
       contact_persons:
         description: contact_persons replaces the customer's contact persons when
-          provided
+          provided; at most one may be primary
         items:
           $ref: '#/definitions/types.ContactPerson'
         maxItems: 5

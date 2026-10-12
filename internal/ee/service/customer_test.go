@@ -444,6 +444,13 @@ func (s *CustomerServiceSuite) TestUpdateCustomer() {
 			errorCode:     ierr.ErrCodeValidation,
 		},
 		{
+			name:          "contact_persons_null_entry",
+			id:            "cust-1",
+			request:       dto.UpdateCustomerRequest{ContactPersons: []*types.ContactPerson{nil}},
+			expectedError: true,
+			errorCode:     ierr.ErrCodeValidation,
+		},
+		{
 			name: "customer_not_found",
 			id:   "nonexistent-id",
 			request: dto.UpdateCustomerRequest{

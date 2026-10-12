@@ -27382,7 +27382,7 @@
           "contact_persons": {
             "maxItems": 5,
             "type": "array",
-            "description": "contact_persons replaces the customer's contact persons when provided",
+            "description": "contact_persons replaces the customer's contact persons when provided; at most one may be primary",
             "items": {
               "$ref": "#/components/schemas/types.ContactPerson"
             }
