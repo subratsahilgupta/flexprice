@@ -6,6 +6,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
+	"github.com/flexprice/flexprice/internal/domain/contact"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -107,7 +108,7 @@ func (Customer) Fields() []ent.Field {
 			}).
 			Default(string(types.TaxTreatmentTaxable)).
 			NotEmpty(),
-		field.JSON("contact_persons", []*types.ContactPerson{}).
+		field.JSON("contact_persons", []*contact.Person{}).
 			Optional(),
 	}
 }

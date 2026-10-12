@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/contact"
 	domainCustomer "github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
@@ -418,7 +419,7 @@ func (s *CustomerServiceSuite) TestUpdateCustomer() {
 			name: "contact_persons_replaced",
 			id:   "cust-1",
 			request: dto.UpdateCustomerRequest{
-				ContactPersons: []*types.ContactPerson{
+				ContactPersons: []*contact.Person{
 					{IsPrimary: true, FirstName: "Ravi", Email: "ravi@example.com"},
 					{FirstName: "Fin", Email: "fin@example.com"},
 				},
@@ -435,7 +436,7 @@ func (s *CustomerServiceSuite) TestUpdateCustomer() {
 			name: "contact_persons_two_primaries",
 			id:   "cust-1",
 			request: dto.UpdateCustomerRequest{
-				ContactPersons: []*types.ContactPerson{
+				ContactPersons: []*contact.Person{
 					{IsPrimary: true, FirstName: "A"},
 					{IsPrimary: true, FirstName: "B"},
 				},
@@ -446,7 +447,7 @@ func (s *CustomerServiceSuite) TestUpdateCustomer() {
 		{
 			name:          "contact_persons_null_entry",
 			id:            "cust-1",
-			request:       dto.UpdateCustomerRequest{ContactPersons: []*types.ContactPerson{nil}},
+			request:       dto.UpdateCustomerRequest{ContactPersons: []*contact.Person{nil}},
 			expectedError: true,
 			errorCode:     ierr.ErrCodeValidation,
 		},

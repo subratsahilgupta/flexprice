@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/flexprice/flexprice/internal/domain/contact"
 	customerDomain "github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entityintegrationmapping"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -317,8 +318,8 @@ func TestFormatMobile(t *testing.T) {
 
 func TestBuildContactPersons(t *testing.T) {
 	phone := "9581401234"
-	extra := &types.ContactPerson{FirstName: "Fin", LastName: "Person", Email: "fin@example.test", Mobile: "9876543210", Designation: "Finance"}
-	primary := &types.ContactPerson{IsPrimary: true, Salutation: "Mr.", FirstName: "Ravi", LastName: "Kumar", Email: "ravi@example.test", Mobile: "+919581401234"}
+	extra := &contact.Person{FirstName: "Fin", LastName: "Person", Email: "fin@example.test", Mobile: "9876543210", Designation: "Finance"}
+	primary := &contact.Person{IsPrimary: true, Salutation: "Mr.", FirstName: "Ravi", LastName: "Kumar", Email: "ravi@example.test", Mobile: "+919581401234"}
 
 	tests := []struct {
 		name     string
@@ -332,7 +333,7 @@ func TestBuildContactPersons(t *testing.T) {
 		},
 		{
 			name:     "extras without a primary entry keep the customer as primary",
-			customer: &customerDomain.Customer{Email: "org@example.test", AddressCountry: "IN", ContactPersons: []*types.ContactPerson{extra}},
+			customer: &customerDomain.Customer{Email: "org@example.test", AddressCountry: "IN", ContactPersons: []*contact.Person{extra}},
 			want: []ContactPerson{
 				{IsPrimaryContact: true, Email: "org@example.test"},
 				{FirstName: "Fin", LastName: "Person", Email: "fin@example.test", Mobile: "+91-9876543210", Designation: "Finance"},
@@ -340,7 +341,7 @@ func TestBuildContactPersons(t *testing.T) {
 		},
 		{
 			name:     "primary entry replaces the customer as primary",
-			customer: &customerDomain.Customer{Email: "org@example.test", Contact: &phone, AddressCountry: "IN", ContactPersons: []*types.ContactPerson{extra, primary}},
+			customer: &customerDomain.Customer{Email: "org@example.test", Contact: &phone, AddressCountry: "IN", ContactPersons: []*contact.Person{extra, primary}},
 			want: []ContactPerson{
 				{FirstName: "Fin", LastName: "Person", Email: "fin@example.test", Mobile: "+91-9876543210", Designation: "Finance"},
 				{IsPrimaryContact: true, Salutation: "Mr.", FirstName: "Ravi", LastName: "Kumar", Email: "ravi@example.test", Mobile: "+91-9581401234"},
@@ -371,7 +372,7 @@ func TestCreateContactStoresPersonIDs(t *testing.T) {
 	svc := newTestCustomerService(client, repo)
 
 	c := indianCustomer()
-	c.ContactPersons = []*types.ContactPerson{
+	c.ContactPersons = []*contact.Person{
 		{ID: "cp_1", IsPrimary: true, FirstName: "Ravi", Email: "ravi@example.test"},
 		{ID: "cp_2", FirstName: "Fin", Email: "fin@example.test"},
 	}
@@ -396,7 +397,7 @@ func TestMergeContactPersons(t *testing.T) {
 			hand,
 		},
 	}
-	fin := &types.ContactPerson{ID: "cp_fin", FirstName: "Fin", Email: "fin@example.test", Designation: "Finance Lead"}
+	fin := &contact.Person{ID: "cp_fin", FirstName: "Fin", Email: "fin@example.test", Designation: "Finance Lead"}
 	stored := map[string]interface{}{
 		mappingKeyPrimaryContactID: "zp",
 		mappingKeyContactPersonIDs: map[string]interface{}{"cp_fin": "zx", "cp_ops": "zy"},
@@ -411,7 +412,7 @@ func TestMergeContactPersons(t *testing.T) {
 	}{
 		{
 			name:     "contact from before this change keeps its primary and hand-added persons",
-			customer: &customerDomain.Customer{Email: "org@example.test", ContactPersons: []*types.ContactPerson{fin}},
+			customer: &customerDomain.Customer{Email: "org@example.test", ContactPersons: []*contact.Person{fin}},
 			current:  &ContactResponse{PrimaryContact: "zp", ContactPersons: []ContactPerson{{ContactPersonID: "zp", IsPrimaryContact: true}, hand}},
 			want: []ContactPerson{
 				{ContactPersonID: "zp", IsPrimaryContact: true, Email: "org@example.test"},
@@ -421,7 +422,7 @@ func TestMergeContactPersons(t *testing.T) {
 		},
 		{
 			name:     "stored ids update in place and a removed person is left out",
-			customer: &customerDomain.Customer{Email: "org@example.test", ContactPersons: []*types.ContactPerson{fin}},
+			customer: &customerDomain.Customer{Email: "org@example.test", ContactPersons: []*contact.Person{fin}},
 			current:  current,
 			metadata: stored,
 			want: []ContactPerson{
@@ -432,7 +433,7 @@ func TestMergeContactPersons(t *testing.T) {
 		},
 		{
 			name:     "stored id deleted in Zoho is sent as new",
-			customer: &customerDomain.Customer{Email: "org@example.test", ContactPersons: []*types.ContactPerson{fin}},
+			customer: &customerDomain.Customer{Email: "org@example.test", ContactPersons: []*contact.Person{fin}},
 			current:  &ContactResponse{PrimaryContact: "zp", ContactPersons: []ContactPerson{{ContactPersonID: "zp", IsPrimaryContact: true}}},
 			metadata: stored,
 			want: []ContactPerson{
@@ -442,7 +443,7 @@ func TestMergeContactPersons(t *testing.T) {
 		},
 		{
 			name: "new primary entry takes over the primary id",
-			customer: &customerDomain.Customer{Email: "org@example.test", ContactPersons: []*types.ContactPerson{
+			customer: &customerDomain.Customer{Email: "org@example.test", ContactPersons: []*contact.Person{
 				{ID: "cp_ravi", IsPrimary: true, FirstName: "Ravi", Email: "ravi@example.test"}, fin,
 			}},
 			current:  current,
@@ -455,7 +456,7 @@ func TestMergeContactPersons(t *testing.T) {
 		},
 		{
 			name: "extra promoted to primary keeps its own id and the old primary is left out",
-			customer: &customerDomain.Customer{Email: "org@example.test", ContactPersons: []*types.ContactPerson{
+			customer: &customerDomain.Customer{Email: "org@example.test", ContactPersons: []*contact.Person{
 				{ID: "cp_fin", IsPrimary: true, FirstName: "Fin", Email: "fin@example.test"},
 			}},
 			current:  current,
@@ -467,7 +468,7 @@ func TestMergeContactPersons(t *testing.T) {
 		},
 		{
 			name:     "removed primary entry is left out and the customer becomes primary as a new person",
-			customer: &customerDomain.Customer{Email: "org@example.test", ContactPersons: []*types.ContactPerson{fin}},
+			customer: &customerDomain.Customer{Email: "org@example.test", ContactPersons: []*contact.Person{fin}},
 			current: &ContactResponse{PrimaryContact: "zn", ContactPersons: []ContactPerson{
 				{ContactPersonID: "zn", IsPrimaryContact: true, FirstName: "Neha"},
 				{ContactPersonID: "zx", FirstName: "Fin"},
@@ -506,7 +507,7 @@ func TestSyncCustomerUpdateStoresPersonIDs(t *testing.T) {
 	svc := newTestCustomerService(client, repo)
 
 	c := indianCustomer()
-	c.ContactPersons = []*types.ContactPerson{{ID: "cp_fin", FirstName: "Fin", Email: "fin@example.test"}}
+	c.ContactPersons = []*contact.Person{{ID: "cp_fin", FirstName: "Fin", Email: "fin@example.test"}}
 	require.NoError(t, svc.SyncCustomerUpdate(context.Background(), c))
 
 	assert.Equal(t, 1, repo.updateCalls)

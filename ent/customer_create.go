@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/customer"
+	"github.com/flexprice/flexprice/internal/domain/contact"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -284,7 +285,7 @@ func (_c *CustomerCreate) SetNillableTaxTreatment(v *types.TaxTreatment) *Custom
 }
 
 // SetContactPersons sets the "contact_persons" field.
-func (_c *CustomerCreate) SetContactPersons(v []*types.ContactPerson) *CustomerCreate {
+func (_c *CustomerCreate) SetContactPersons(v []*contact.Person) *CustomerCreate {
 	_c.mutation.SetContactPersons(v)
 	return _c
 }

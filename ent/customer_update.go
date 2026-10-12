@@ -14,6 +14,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/predicate"
+	"github.com/flexprice/flexprice/internal/domain/contact"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -325,13 +326,13 @@ func (_u *CustomerUpdate) SetNillableTaxTreatment(v *types.TaxTreatment) *Custom
 }
 
 // SetContactPersons sets the "contact_persons" field.
-func (_u *CustomerUpdate) SetContactPersons(v []*types.ContactPerson) *CustomerUpdate {
+func (_u *CustomerUpdate) SetContactPersons(v []*contact.Person) *CustomerUpdate {
 	_u.mutation.SetContactPersons(v)
 	return _u
 }
 
 // AppendContactPersons appends value to the "contact_persons" field.
-func (_u *CustomerUpdate) AppendContactPersons(v []*types.ContactPerson) *CustomerUpdate {
+func (_u *CustomerUpdate) AppendContactPersons(v []*contact.Person) *CustomerUpdate {
 	_u.mutation.AppendContactPersons(v)
 	return _u
 }
@@ -834,13 +835,13 @@ func (_u *CustomerUpdateOne) SetNillableTaxTreatment(v *types.TaxTreatment) *Cus
 }
 
 // SetContactPersons sets the "contact_persons" field.
-func (_u *CustomerUpdateOne) SetContactPersons(v []*types.ContactPerson) *CustomerUpdateOne {
+func (_u *CustomerUpdateOne) SetContactPersons(v []*contact.Person) *CustomerUpdateOne {
 	_u.mutation.SetContactPersons(v)
 	return _u
 }
 
 // AppendContactPersons appends value to the "contact_persons" field.
-func (_u *CustomerUpdateOne) AppendContactPersons(v []*types.ContactPerson) *CustomerUpdateOne {
+func (_u *CustomerUpdateOne) AppendContactPersons(v []*contact.Person) *CustomerUpdateOne {
 	_u.mutation.AppendContactPersons(v)
 	return _u
 }

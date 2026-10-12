@@ -2,6 +2,7 @@ package customer
 
 import (
 	"github.com/flexprice/flexprice/ent"
+	"github.com/flexprice/flexprice/internal/domain/contact"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
@@ -26,7 +27,7 @@ type Customer struct {
 	// BillingCurrency is the fiat currency invoices are issued in; nil means charge currency is used as-is.
 	BillingCurrency *string `db:"billing_currency" json:"billing_currency,omitempty"`
 
-	ContactPersons []*types.ContactPerson `db:"contact_persons" json:"contact_persons,omitempty"`
+	ContactPersons []*contact.Person `db:"contact_persons" json:"contact_persons,omitempty"`
 
 	// AddressLine1 is the first line of the customer's address
 	AddressLine1 string `db:"address_line1" json:"address_line1"`

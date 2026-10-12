@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/domain/contact"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -66,7 +67,7 @@ type CreateCustomerRequest struct {
 	TaxTreatment types.TaxTreatment `json:"tax_treatment,omitempty"`
 
 	// contact_persons are people at the customer; at most one may be primary
-	ContactPersons []*types.ContactPerson `json:"contact_persons,omitempty" validate:"omitempty,max=5,dive,required"`
+	ContactPersons []*contact.Person `json:"contact_persons,omitempty" validate:"omitempty,max=5,dive,required"`
 
 	// metadata contains additional key-value pairs for storing extra information
 	Metadata map[string]string `json:"metadata,omitempty"`
@@ -129,7 +130,7 @@ type UpdateCustomerRequest struct {
 	TaxTreatment *types.TaxTreatment `json:"tax_treatment,omitempty"`
 
 	// contact_persons replaces the customer's contact persons when provided; at most one may be primary
-	ContactPersons []*types.ContactPerson `json:"contact_persons,omitempty" validate:"omitempty,max=5,dive,required"`
+	ContactPersons []*contact.Person `json:"contact_persons,omitempty" validate:"omitempty,max=5,dive,required"`
 
 	// metadata contains updated key-value pairs that will replace existing metadata
 	Metadata map[string]string `json:"metadata,omitempty"`
@@ -202,7 +203,7 @@ func (r *CreateCustomerRequest) Validate() error {
 		}
 	}
 
-	return types.ValidateContactPersons(r.ContactPersons)
+	return contact.ValidatePersons(r.ContactPersons)
 }
 
 // NormalizeBillingCurrency lowercases a billing currency, returning nil for a nil or empty value
@@ -273,7 +274,7 @@ func (r *UpdateCustomerRequest) Validate() error {
 		}
 	}
 
-	return types.ValidateContactPersons(r.ContactPersons)
+	return contact.ValidatePersons(r.ContactPersons)
 }
 
 // PortalSessionResponse is the response containing the portal URL

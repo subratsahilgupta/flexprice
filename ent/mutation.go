@@ -71,6 +71,7 @@ import (
 	"github.com/flexprice/flexprice/ent/wallettransaction"
 	"github.com/flexprice/flexprice/ent/workflowexecution"
 	"github.com/flexprice/flexprice/internal/domain/analytics"
+	"github.com/flexprice/flexprice/internal/domain/contact"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -22992,8 +22993,8 @@ type CustomerMutation struct {
 	address_country       *string
 	timezone              *string
 	tax_treatment         *types.TaxTreatment
-	contact_persons       *[]*types.ContactPerson
-	appendcontact_persons []*types.ContactPerson
+	contact_persons       *[]*contact.Person
+	appendcontact_persons []*contact.Person
 	clearedFields         map[string]struct{}
 	done                  bool
 	oldValue              func(context.Context) (*Customer, error)
@@ -24043,13 +24044,13 @@ func (m *CustomerMutation) ResetTaxTreatment() {
 }
 
 // SetContactPersons sets the "contact_persons" field.
-func (m *CustomerMutation) SetContactPersons(tp []*types.ContactPerson) {
-	m.contact_persons = &tp
+func (m *CustomerMutation) SetContactPersons(c []*contact.Person) {
+	m.contact_persons = &c
 	m.appendcontact_persons = nil
 }
 
 // ContactPersons returns the value of the "contact_persons" field in the mutation.
-func (m *CustomerMutation) ContactPersons() (r []*types.ContactPerson, exists bool) {
+func (m *CustomerMutation) ContactPersons() (r []*contact.Person, exists bool) {
 	v := m.contact_persons
 	if v == nil {
 		return
@@ -24060,7 +24061,7 @@ func (m *CustomerMutation) ContactPersons() (r []*types.ContactPerson, exists bo
 // OldContactPersons returns the old "contact_persons" field's value of the Customer entity.
 // If the Customer object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *CustomerMutation) OldContactPersons(ctx context.Context) (v []*types.ContactPerson, err error) {
+func (m *CustomerMutation) OldContactPersons(ctx context.Context) (v []*contact.Person, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldContactPersons is only allowed on UpdateOne operations")
 	}
@@ -24074,13 +24075,13 @@ func (m *CustomerMutation) OldContactPersons(ctx context.Context) (v []*types.Co
 	return oldValue.ContactPersons, nil
 }
 
-// AppendContactPersons adds tp to the "contact_persons" field.
-func (m *CustomerMutation) AppendContactPersons(tp []*types.ContactPerson) {
-	m.appendcontact_persons = append(m.appendcontact_persons, tp...)
+// AppendContactPersons adds c to the "contact_persons" field.
+func (m *CustomerMutation) AppendContactPersons(c []*contact.Person) {
+	m.appendcontact_persons = append(m.appendcontact_persons, c...)
 }
 
 // AppendedContactPersons returns the list of values that were appended to the "contact_persons" field in this mutation.
-func (m *CustomerMutation) AppendedContactPersons() ([]*types.ContactPerson, bool) {
+func (m *CustomerMutation) AppendedContactPersons() ([]*contact.Person, bool) {
 	if len(m.appendcontact_persons) == 0 {
 		return nil, false
 	}
@@ -24470,7 +24471,7 @@ func (m *CustomerMutation) SetField(name string, value ent.Value) error {
 		m.SetTaxTreatment(v)
 		return nil
 	case customer.FieldContactPersons:
-		v, ok := value.([]*types.ContactPerson)
+		v, ok := value.([]*contact.Person)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
