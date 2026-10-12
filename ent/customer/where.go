@@ -1575,6 +1575,16 @@ func TaxTreatmentContainsFold(v types.TaxTreatment) predicate.Customer {
 	return predicate.Customer(sql.FieldContainsFold(FieldTaxTreatment, vc))
 }
 
+// ContactPersonsIsNil applies the IsNil predicate on the "contact_persons" field.
+func ContactPersonsIsNil() predicate.Customer {
+	return predicate.Customer(sql.FieldIsNull(FieldContactPersons))
+}
+
+// ContactPersonsNotNil applies the NotNil predicate on the "contact_persons" field.
+func ContactPersonsNotNil() predicate.Customer {
+	return predicate.Customer(sql.FieldNotNull(FieldContactPersons))
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.Customer) predicate.Customer {
 	return predicate.Customer(sql.AndPredicates(predicates...))

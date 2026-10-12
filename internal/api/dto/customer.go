@@ -65,6 +65,9 @@ type CreateCustomerRequest struct {
 	// tax_treatment is the customer's tax treatment. Defaults to "taxable" if not provided.
 	TaxTreatment types.TaxTreatment `json:"tax_treatment,omitempty"`
 
+	// contact_persons are people at the customer; at most one may be primary
+	ContactPersons []*customer.ContactPerson `json:"contact_persons,omitempty" validate:"omitempty,max=5,dive,required"`
+
 	// metadata contains additional key-value pairs for storing extra information
 	Metadata map[string]string `json:"metadata,omitempty"`
 
@@ -124,6 +127,9 @@ type UpdateCustomerRequest struct {
 
 	// tax_treatment is the updated tax treatment for the customer
 	TaxTreatment *types.TaxTreatment `json:"tax_treatment,omitempty"`
+
+	// contact_persons replaces the customer's contact persons when provided; at most one may be primary
+	ContactPersons []*customer.ContactPerson `json:"contact_persons,omitempty" validate:"omitempty,max=5,dive,required"`
 
 	// metadata contains updated key-value pairs that will replace existing metadata
 	Metadata map[string]string `json:"metadata,omitempty"`
@@ -196,7 +202,7 @@ func (r *CreateCustomerRequest) Validate() error {
 		}
 	}
 
-	return nil
+	return customer.ValidatePersons(r.ContactPersons)
 }
 
 // NormalizeBillingCurrency lowercases a billing currency, returning nil for a nil or empty value
@@ -228,6 +234,7 @@ func (r *CreateCustomerRequest) ToCustomer(ctx context.Context) *customer.Custom
 		Email:             r.Email,
 		Contact:           r.Contact,
 		BillingCurrency:   NormalizeBillingCurrency(r.BillingCurrency),
+		ContactPersons:    r.ContactPersons,
 		AddressLine1:      r.AddressLine1,
 		AddressLine2:      r.AddressLine2,
 		AddressCity:       r.AddressCity,
@@ -266,7 +273,7 @@ func (r *UpdateCustomerRequest) Validate() error {
 		}
 	}
 
-	return nil
+	return customer.ValidatePersons(r.ContactPersons)
 }
 
 // PortalSessionResponse is the response containing the portal URL

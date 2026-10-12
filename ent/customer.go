@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent/customer"
+	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -61,7 +62,9 @@ type Customer struct {
 	Timezone string `json:"timezone,omitempty"`
 	// TaxTreatment holds the value of the "tax_treatment" field.
 	TaxTreatment types.TaxTreatment `json:"tax_treatment,omitempty"`
-	selectValues sql.SelectValues
+	// ContactPersons holds the value of the "contact_persons" field.
+	ContactPersons []*schema.ContactPerson `json:"contact_persons,omitempty"`
+	selectValues   sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -69,7 +72,7 @@ func (*Customer) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case customer.FieldMetadata:
+		case customer.FieldMetadata, customer.FieldContactPersons:
 			values[i] = new([]byte)
 		case customer.FieldID, customer.FieldTenantID, customer.FieldStatus, customer.FieldCreatedBy, customer.FieldUpdatedBy, customer.FieldEnvironmentID, customer.FieldExternalID, customer.FieldName, customer.FieldEmail, customer.FieldContact, customer.FieldBillingCurrency, customer.FieldAddressLine1, customer.FieldAddressLine2, customer.FieldAddressCity, customer.FieldAddressState, customer.FieldAddressPostalCode, customer.FieldAddressCountry, customer.FieldTimezone, customer.FieldTaxTreatment:
 			values[i] = new(sql.NullString)
@@ -226,6 +229,14 @@ func (_m *Customer) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.TaxTreatment = types.TaxTreatment(value.String)
 			}
+		case customer.FieldContactPersons:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field contact_persons", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.ContactPersons); err != nil {
+					return fmt.Errorf("unmarshal field contact_persons: %w", err)
+				}
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -328,6 +339,9 @@ func (_m *Customer) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("tax_treatment=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TaxTreatment))
+	builder.WriteString(", ")
+	builder.WriteString("contact_persons=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ContactPersons))
 	builder.WriteByte(')')
 	return builder.String()
 }

@@ -14732,6 +14732,47 @@ const docTemplate = `{
                 }
             }
         },
+        "customer.ContactPerson": {
+            "type": "object",
+            "required": [
+                "first_name"
+            ],
+            "properties": {
+                "department": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "designation": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "email": {
+                    "type": "string"
+                },
+                "first_name": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_primary": {
+                    "type": "boolean"
+                },
+                "last_name": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "mobile": {
+                    "type": "string",
+                    "maxLength": 20
+                },
+                "salutation": {
+                    "type": "string",
+                    "maxLength": 25
+                }
+            }
+        },
         "AWSMarketplaceAgreement": {
             "type": "object",
             "required": [
@@ -17107,6 +17148,14 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 20
                 },
+                "contact_persons": {
+                    "description": "contact_persons are people at the customer; at most one may be primary",
+                    "type": "array",
+                    "maxItems": 5,
+                    "items": {
+                        "$ref": "#/definitions/customer.ContactPerson"
+                    }
+                },
                 "email": {
                     "description": "email is the customer's email address and must be a valid email format if provided",
                     "type": "string"
@@ -19058,6 +19107,12 @@ const docTemplate = `{
                 "contact": {
                     "description": "Contact is an optional contact number for the customer (e.g. phone)",
                     "type": "string"
+                },
+                "contact_persons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/customer.ContactPerson"
+                    }
                 },
                 "created_at": {
                     "type": "string"
@@ -25608,6 +25663,14 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 20
                 },
+                "contact_persons": {
+                    "description": "contact_persons replaces the customer's contact persons when provided; at most one may be primary",
+                    "type": "array",
+                    "maxItems": 5,
+                    "items": {
+                        "$ref": "#/definitions/customer.ContactPerson"
+                    }
+                },
                 "email": {
                     "description": "email is the updated email address and must be a valid email format if provided",
                     "type": "string"
@@ -27275,6 +27338,12 @@ const docTemplate = `{
                 "contact": {
                     "description": "Contact is an optional contact number for the customer (e.g. phone)",
                     "type": "string"
+                },
+                "contact_persons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/customer.ContactPerson"
+                    }
                 },
                 "created_at": {
                     "type": "string"

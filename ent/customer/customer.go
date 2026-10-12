@@ -56,6 +56,8 @@ const (
 	FieldTimezone = "timezone"
 	// FieldTaxTreatment holds the string denoting the tax_treatment field in the database.
 	FieldTaxTreatment = "tax_treatment"
+	// FieldContactPersons holds the string denoting the contact_persons field in the database.
+	FieldContactPersons = "contact_persons"
 	// Table holds the table name of the customer in the database.
 	Table = "customers"
 )
@@ -84,6 +86,7 @@ var Columns = []string{
 	FieldAddressCountry,
 	FieldTimezone,
 	FieldTaxTreatment,
+	FieldContactPersons,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).

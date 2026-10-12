@@ -255,6 +255,9 @@ func (s *customerService) UpdateCustomer(ctx context.Context, id string, req dto
 		}
 		cust.BillingCurrency = normalized
 	}
+	if req.ContactPersons != nil {
+		cust.ContactPersons = req.ContactPersons
+	}
 
 	// Update address fields
 	if req.AddressLine1 != nil {
