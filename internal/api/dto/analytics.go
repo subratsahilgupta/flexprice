@@ -113,6 +113,8 @@ type ReportCatalogEntry struct {
 	Dimensions      []ReportDimension `json:"dimensions"`
 	Grains          []string          `json:"grains" enums:"day,week,month"`
 	SupportsCompare bool              `json:"supports_compare"`
+	VariantOf       string            `json:"variant_of,omitempty"`
+	VariantLabel    string            `json:"variant_label,omitempty"`
 }
 
 type ReportCatalogResponse struct {

@@ -26,6 +26,8 @@ type ReportCatalogEntry struct {
 	Grains          []types.Grain
 	SupportsCompare bool
 	Family          types.Family
+	VariantOf       types.Metric
+	VariantLabel    string
 }
 
 var reportCatalog = []ReportCatalogEntry{
@@ -88,7 +90,7 @@ var reportCatalog = []ReportCatalogEntry{
 	{
 		Key:            types.MetricARPU,
 		Name:           "ARPU",
-		Description:    "Paid amount per paying customer",
+		Description:    "Paid revenue per paying customer",
 		Category:       "customers",
 		Kind:           "ratio",
 		ValueType:      "money",
@@ -96,6 +98,21 @@ var reportCatalog = []ReportCatalogEntry{
 		Shapes:         []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
 		DefaultShape:   types.ShapeTimeseries,
 		Grains:         []types.Grain{types.GrainMonth},
+		VariantLabel:   "Paid",
+	},
+	{
+		Key:            types.MetricARPUBilled,
+		Name:           "ARPU (billed)",
+		Description:    "Billed revenue per billed customer",
+		Category:       "customers",
+		Kind:           "ratio",
+		ValueType:      "money",
+		HigherIsBetter: true,
+		Shapes:         []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
+		DefaultShape:   types.ShapeTimeseries,
+		Grains:         []types.Grain{types.GrainMonth},
+		VariantOf:      types.MetricARPU,
+		VariantLabel:   "Billed",
 	},
 	{
 		Key:            types.MetricCreditConsumption,

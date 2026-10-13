@@ -363,6 +363,25 @@ func TestBuildBillingQuery_CustomBuildHook(t *testing.T) {
 	assert.True(t, ierr.IsPermissionDenied(err))
 }
 
+func TestBuildBillingQuery_ARPUBilled(t *testing.T) {
+	rv := billingRV(types.ShapeTimeseries)
+	rv.Metrics = []types.Metric{types.MetricARPUBilled}
+	q, err := BuildBillingQuery(rv, "reports_db", "t", "e", 0)
+	require.NoError(t, err)
+	assert.Contains(t, q.SQL, "sum(total) / uniqExact(customer_id)")
+	assert.Contains(t, q.SQL, "invoice_status = 'FINALIZED'")
+	assert.Contains(t, q.SQL, "status = 'published'")
+	assert.Contains(t, q.SQL, "_peerdb_is_deleted = 0")
+	assert.Contains(t, q.SQL, invoiceBillingTime(""))
+	assert.NotContains(t, q.SQL, "paid_at")
+	assert.NotContains(t, q.SQL, "amount_paid")
+
+	rv.Compare = "previous_period"
+	_, err = BuildBillingQuery(rv, "reports_db", "t", "e", 0)
+	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
+}
+
 func TestBuildBillingQuery_ARPURejectsCompare(t *testing.T) {
 	rv := billingRV(types.ShapeScalar)
 	rv.Metrics = []types.Metric{types.MetricARPU}

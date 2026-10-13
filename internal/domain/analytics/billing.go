@@ -131,6 +131,16 @@ var billingMetrics = map[types.Metric]*BillingMetric{
 		Shapes:     []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
 		Currency:   true,
 	},
+	types.MetricARPUBilled: {
+		Metric:     types.MetricARPUBilled,
+		Table:      "invoices",
+		TimeCol:    invoiceBillingTime(""),
+		Measure:    "sum(total) / uniqExact(customer_id)",
+		Where:      []string{"invoice_status = '" + string(types.InvoiceStatusFinalized) + "'"},
+		Dimensions: map[string]string{"currency": "currency"},
+		Shapes:     []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
+		Currency:   true,
+	},
 	types.MetricCreditConsumption: {
 		Metric:  types.MetricCreditConsumption,
 		Table:   "wallet_transactions",

@@ -151,6 +151,7 @@ func TestReportsRepository_GenericReports(t *testing.T) {
 		invoice_status String, payment_status String, customer_id String, currency String,
 		amount_remaining Decimal(20, 9), amount_paid Decimal(20, 9),
 		finalized_at DateTime64(6), due_date DateTime64(6), issue_date DateTime64(6), paid_at DateTime64(6),
+		total Decimal(20, 9), period_start DateTime64(6),
 		_peerdb_is_deleted UInt8, _peerdb_version Int64
 	) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`))
 	require.NoError(t, admin.GetConn().Exec(ctx, `CREATE TABLE `+db+`.wallet_transactions (
@@ -165,8 +166,12 @@ func TestReportsRepository_GenericReports(t *testing.T) {
 	d10 := time.Now().UTC().AddDate(0, 0, -10).Format("2006-01-02 15:04:05")
 	d100 := time.Now().UTC().AddDate(0, 0, -100).Format("2006-01-02 15:04:05")
 	inv := func(id, invStatus, pay, cust string, remaining, paid int, due, issue, paidAt string) string {
-		return fmt.Sprintf("('%s','t1','e1','published','%s','%s','%s','usd',%d,%d,'2026-09-01 00:00:00','%s','%s','%s',0,1)",
-			id, invStatus, pay, cust, remaining, paid, due, issue, paidAt)
+		return fmt.Sprintf("('%s','t1','e1','published','%s','%s','%s','usd',%d,%d,'2026-09-01 00:00:00','%s','%s','%s',%d,'%s',0,1)",
+			id, invStatus, pay, cust, remaining, paid, due, issue, paidAt, remaining+paid, epoch)
+	}
+	unpaid := func(id, invStatus, cust string, total int, period string) string {
+		return fmt.Sprintf("('%s','t1','e1','published','%s','PENDING','%s','usd',0,0,'2026-09-01 00:00:00','%s','%s','%s',%d,'%s',0,1)",
+			id, invStatus, cust, epoch, epoch, epoch, total, period)
 	}
 	require.NoError(t, admin.GetConn().Exec(ctx, `INSERT INTO `+db+`.invoices VALUES `+strings.Join([]string{
 		inv("a1", "FINALIZED", "PENDING", "c1", 30, 0, epoch, epoch, epoch),
@@ -178,6 +183,10 @@ func TestReportsRepository_GenericReports(t *testing.T) {
 		inv("p1", "FINALIZED", "SUCCEEDED", "c1", 0, 100, epoch, "2026-09-01 00:00:00", "2026-09-11 00:00:00"),
 		inv("p2", "FINALIZED", "SUCCEEDED", "c1", 0, 50, epoch, "2026-09-05 00:00:00", "2026-09-25 00:00:00"),
 		inv("p3", "FINALIZED", "OVERPAID", "c2", 0, 30, epoch, epoch, "2026-09-13 00:00:00"),
+		unpaid("b1", "FINALIZED", "c3", 200, "2026-09-15 00:00:00"),
+		unpaid("b2", "FINALIZED", "c3", 100, "2026-09-16 00:00:00"),
+		unpaid("b3", "FINALIZED", "c4", 60, "2026-09-17 00:00:00"),
+		unpaid("b4", "DRAFT", "c5", 999, "2026-09-18 00:00:00"),
 	}, ",")))
 
 	tx := func(id, typ, st, reason string, amount int) string {
@@ -233,6 +242,22 @@ func TestReportsRepository_GenericReports(t *testing.T) {
 	assert.Equal(t, [][]string{{"usd", "12"}}, run(types.MetricCreditConsumption, types.ShapeScalar))
 
 	assert.Equal(t, [][]string{{"usd", "90"}}, run(types.MetricARPU, types.ShapeScalar))
+
+	// p1, p2 (c1), b1, b2 (c3), b3 (c4): 510 over 3 customers.
+	assert.Equal(t, [][]string{{"usd", "170"}}, run(types.MetricARPUBilled, types.ShapeScalar))
+	monthly := &analytics.ResolvedView{
+		Family: types.FamilyBilling, Shape: types.ShapeTimeseries, Metrics: []types.Metric{types.MetricARPUBilled},
+		Time: analytics.TimeSpec{
+			From:  time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+			To:    time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
+			Grain: types.GrainMonth,
+		},
+	}
+	mq, err := analytics.BuildBillingQuery(monthly, repo.Database(), "t1", "e1", 100)
+	require.NoError(t, err)
+	mrows, err := repo.Run(ctx, mq)
+	require.NoError(t, err)
+	assert.Equal(t, [][]string{{"2026-09-01T00:00:00Z", "usd", "170"}}, mrows)
 }
 
 func TestReportsRepository_CustomReports(t *testing.T) {

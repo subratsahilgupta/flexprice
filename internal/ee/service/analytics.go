@@ -401,6 +401,8 @@ func (s *analyticsService) ListReports(_ context.Context) (*dto.ReportCatalogRes
 			HigherIsBetter:  e.HigherIsBetter,
 			DefaultShape:    string(e.DefaultShape),
 			SupportsCompare: e.SupportsCompare,
+			VariantOf:       string(e.VariantOf),
+			VariantLabel:    e.VariantLabel,
 			Shapes:          []string{},
 			Dimensions:      []dto.ReportDimension{},
 			Grains:          []string{},

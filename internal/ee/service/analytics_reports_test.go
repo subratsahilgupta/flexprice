@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 	"testing"
@@ -28,6 +29,26 @@ func TestListReports(t *testing.T) {
 	require.NotEmpty(t, res.Items)
 	assert.Equal(t, "invoice_total", res.Items[0].Key)
 	assert.Equal(t, "Total billing", res.Items[0].Name)
+}
+
+func TestListReports_VariantFieldsOnlyWhereSet(t *testing.T) {
+	res, err := reportsSvc(&testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}).ListReports(billingCtx())
+	require.NoError(t, err)
+	raw := map[string]map[string]any{}
+	for _, it := range res.Items {
+		b, err := json.Marshal(it)
+		require.NoError(t, err)
+		m := map[string]any{}
+		require.NoError(t, json.Unmarshal(b, &m))
+		raw[it.Key] = m
+	}
+	assert.Equal(t, "Paid", raw["arpu"]["variant_label"])
+	assert.NotContains(t, raw["arpu"], "variant_of")
+	assert.Equal(t, "Billed", raw["arpu_billed"]["variant_label"])
+	assert.Equal(t, "arpu", raw["arpu_billed"]["variant_of"])
+	assert.Equal(t, "ARPU (billed)", raw["arpu_billed"]["name"])
+	assert.NotContains(t, raw["invoice_total"], "variant_label")
+	assert.NotContains(t, raw["invoice_total"], "variant_of")
 }
 
 func TestListReports_DisabledIs403(t *testing.T) {

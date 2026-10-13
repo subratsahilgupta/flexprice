@@ -109,6 +109,7 @@ const (
 	MetricReceivablesAging  Metric = "receivables_aging"
 	MetricDaysToPay         Metric = "days_to_pay"
 	MetricARPU              Metric = "arpu"
+	MetricARPUBilled        Metric = "arpu_billed"
 	MetricCreditConsumption Metric = "credit_consumption"
 	MetricCreditTopups      Metric = "credit_topups"
 	MetricNetBilling        Metric = "net_billing"

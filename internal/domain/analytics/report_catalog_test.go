@@ -71,6 +71,27 @@ func TestReportCatalog_InvoiceTotal(t *testing.T) {
 	assert.True(t, slices.ContainsFunc(e.Dimensions, func(d ReportDimension) bool { return d.Key == "customer_id" }))
 }
 
+func TestReportCatalog_ARPUVariants(t *testing.T) {
+	paid, ok := LookupReport("arpu")
+	require.True(t, ok)
+	billed, ok := LookupReport("arpu_billed")
+	require.True(t, ok)
+	assert.Equal(t, types.Metric(""), paid.VariantOf)
+	assert.Equal(t, "Paid", paid.VariantLabel)
+	assert.Equal(t, types.MetricARPU, billed.VariantOf)
+	assert.Equal(t, "Billed", billed.VariantLabel)
+	assert.Equal(t, paid.Category, billed.Category)
+	assert.Equal(t, paid.Kind, billed.Kind)
+	assert.Equal(t, paid.ValueType, billed.ValueType)
+	assert.False(t, billed.SupportsCompare)
+	for _, e := range ReportCatalog() {
+		if e.VariantOf != "" {
+			_, ok := LookupReport(string(e.VariantOf))
+			assert.True(t, ok, "variant_of of %q", e.Key)
+		}
+	}
+}
+
 func TestReportCatalog_UnknownAndCopy(t *testing.T) {
 	_, ok := LookupReport("nope")
 	assert.False(t, ok)
