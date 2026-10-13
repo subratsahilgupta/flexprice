@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -40,6 +42,19 @@ var billingGrainFn = map[types.Grain]string{
 	types.GrainMonth: "toStartOfMonth",
 }
 
+func PreviousWindow(from, to time.Time, compare string) (time.Time, time.Time, error) {
+	switch compare {
+	case "previous_period":
+		d := to.Sub(from)
+		return from.Add(-d), from, nil
+	case "previous_year":
+		return from.AddDate(-1, 0, 0), to.AddDate(-1, 0, 0), nil
+	}
+	return time.Time{}, time.Time{}, ierr.NewErrorf("unsupported compare %q", compare).
+		WithHint("compare must be previous_period or previous_year").
+		Mark(ierr.ErrValidation)
+}
+
 func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, maxRows int) (*ReportQuery, error) {
 	if tenantID == "" || environmentID == "" {
 		return nil, ierr.NewError("tenant and environment are required").Mark(ierr.ErrPermissionDenied)
@@ -71,11 +86,37 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 		"to":             rv.Time.To.UTC().Format(chTimeLayout),
 	}
 	timeExpr := fmt.Sprintf("nullIf(%s, %s)", bm.TimeCol, chEpoch)
+	curCond := fmt.Sprintf("%s >= toDateTime64({from:String}, 6, 'UTC') AND %s < toDateTime64({to:String}, 6, 'UTC')", timeExpr, timeExpr)
+	bucketExpr := timeExpr
+	measure := bm.Measure
+	prevMeasure := ""
+	timeWhere := []string{
+		timeExpr + " >= toDateTime64({from:String}, 6, 'UTC')",
+		timeExpr + " < toDateTime64({to:String}, 6, 'UTC')",
+	}
+	if rv.Compare != "" {
+		pf, pt, err := PreviousWindow(rv.Time.From, rv.Time.To, rv.Compare)
+		if err != nil {
+			return nil, err
+		}
+		params["prev_from"] = pf.UTC().Format(chTimeLayout)
+		params["prev_to"] = pt.UTC().Format(chTimeLayout)
+		prevCond := fmt.Sprintf("%s >= toDateTime64({prev_from:String}, 6, 'UTC') AND %s < toDateTime64({prev_to:String}, 6, 'UTC')", timeExpr, timeExpr)
+		shifted := fmt.Sprintf("addYears(%s, 1)", timeExpr)
+		if rv.Compare == "previous_period" {
+			params["shift_s"] = strconv.FormatInt(int64(rv.Time.To.Sub(rv.Time.From).Seconds()), 10)
+			shifted = fmt.Sprintf("addSeconds(%s, {shift_s:Int64})", timeExpr)
+		}
+		bucketExpr = fmt.Sprintf("if(%s, %s, %s)", curCond, timeExpr, shifted)
+		measure = fmt.Sprintf("%sIf(%s, %s)", bm.Agg, bm.Arg, curCond)
+		prevMeasure = fmt.Sprintf("%sIf(%s, %s)", bm.Agg, bm.Arg, prevCond)
+		timeWhere = []string{fmt.Sprintf("((%s) OR (%s))", curCond, prevCond)}
+	}
 
 	var selects, groups []string
 	var cols []ReportColumn
 	if rv.Shape == types.ShapeTimeseries {
-		selects = append(selects, fmt.Sprintf("ifNull(formatDateTime(toDateTime(%s(%s, 'UTC'), 'UTC'), '%%Y-%%m-%%dT%%H:%%i:%%SZ'), '') AS bucket", grainFn, timeExpr))
+		selects = append(selects, fmt.Sprintf("ifNull(formatDateTime(toDateTime(%s(%s, 'UTC'), 'UTC'), '%%Y-%%m-%%dT%%H:%%i:%%SZ'), '') AS bucket", grainFn, bucketExpr))
 		groups = append(groups, "bucket")
 		cols = append(cols, ReportColumn{Name: "bucket", Type: types.ColumnTypeDatetime, Role: types.ColumnRoleDimension})
 	}
@@ -88,8 +129,12 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 		groups = append(groups, "d_"+d)
 		cols = append(cols, ReportColumn{Name: d, Type: types.ColumnTypeString, Role: types.ColumnRoleDimension})
 	}
-	selects = append(selects, fmt.Sprintf("ifNull(toString(%s), '') AS m_value", bm.Measure))
+	selects = append(selects, fmt.Sprintf("ifNull(toString(%s), '') AS m_value", measure))
 	cols = append(cols, ReportColumn{Name: string(bm.Metric), Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric})
+	if prevMeasure != "" {
+		selects = append(selects, fmt.Sprintf("ifNull(toString(%s), '') AS m_prev", prevMeasure))
+		cols = append(cols, ReportColumn{Name: string(bm.Metric) + "_prev", Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric})
+	}
 
 	where := []string{
 		"tenant_id = {tenant_id:String}",
@@ -98,10 +143,7 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 		"status = '" + string(types.StatusPublished) + "'",
 	}
 	where = append(where, bm.Where...)
-	where = append(where,
-		timeExpr+" >= toDateTime64({from:String}, 6, 'UTC')",
-		timeExpr+" < toDateTime64({to:String}, 6, 'UTC')",
-	)
+	where = append(where, timeWhere...)
 	for i, f := range rv.Filters {
 		if f == nil {
 			continue
@@ -131,7 +173,7 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 		b.WriteString(" GROUP BY " + strings.Join(groups, ", "))
 	}
 	if rv.Shape == types.ShapeBreakdown {
-		b.WriteString(" ORDER BY " + bm.Measure + " DESC")
+		b.WriteString(" ORDER BY " + measure + " DESC")
 	} else if len(groups) > 0 {
 		b.WriteString(" ORDER BY " + strings.Join(groups, ", "))
 	}

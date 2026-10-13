@@ -98,4 +98,24 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, time.Monday, bucket.Weekday())
 	}
+
+	runCmp := func(shape types.Shape, grain types.Grain, compare string, dims ...string) [][]string {
+		rv := &analytics.ResolvedView{
+			Family: types.FamilyBilling, Shape: shape, Metrics: []types.Metric{types.MetricInvoiceTotal}, Dimensions: dims,
+			Time:    analytics.TimeSpec{From: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Grain: grain},
+			Compare: compare,
+		}
+		q, err := analytics.BuildBillingQuery(rv, repo.Database(), "t1", "e1", 100)
+		require.NoError(t, err)
+		rows, err := repo.Run(ctx, q)
+		require.NoError(t, err)
+		return rows
+	}
+
+	assert.Equal(t, [][]string{{"inr", "5", "0"}, {"usd", "10", "2"}}, runCmp(types.ShapeScalar, "", "previous_period"))
+	assert.Equal(t, [][]string{
+		{"2026-09-01T00:00:00Z", "inr", "5", "0"},
+		{"2026-09-01T00:00:00Z", "usd", "10", "2"},
+	}, runCmp(types.ShapeTimeseries, types.GrainMonth, "previous_period"))
+	assert.Contains(t, runCmp(types.ShapeBreakdown, "", "previous_period", "customer_id"), []string{"c1", "usd", "10", "2"})
 }
