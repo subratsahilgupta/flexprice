@@ -13,6 +13,15 @@ func TestReportCatalog_AgreesWithRegistry(t *testing.T) {
 	entries := ReportCatalog()
 	require.NotEmpty(t, entries)
 	for _, e := range entries {
+		if e.Family == types.FamilyUsage {
+			assert.NoError(t, types.MetricEventCount.Validate())
+			assert.Contains(t, e.Shapes, e.DefaultShape)
+			for _, d := range e.Dimensions {
+				assert.NoError(t, ValidateDimensions([]string{d.Key}), "dimension %q of %q", d.Key, e.Key)
+			}
+			assert.False(t, e.SupportsCompare)
+			continue
+		}
 		bm, ok := LookupBillingMetric(e.Key)
 		require.True(t, ok, "catalog key %q has no billing metric", e.Key)
 		if bm.Agg != "" {

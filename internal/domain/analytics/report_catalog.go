@@ -25,6 +25,7 @@ type ReportCatalogEntry struct {
 	Dimensions      []ReportDimension
 	Grains          []types.Grain
 	SupportsCompare bool
+	Family          types.Family
 }
 
 var reportCatalog = []ReportCatalogEntry{
@@ -151,6 +152,21 @@ var reportCatalog = []ReportCatalogEntry{
 		HigherIsBetter: true,
 		Shapes:         []types.Shape{types.ShapeScalar},
 		DefaultShape:   types.ShapeScalar,
+	},
+	{
+		Key:          types.MetricEventsVolume,
+		Name:         "Events volume",
+		Description:  "Usage events ingested",
+		Category:     "usage",
+		Kind:         "flow",
+		ValueType:    "count",
+		Shapes:       []types.Shape{types.ShapeTimeseries, types.ShapeBreakdown},
+		DefaultShape: types.ShapeTimeseries,
+		Dimensions: []ReportDimension{
+			{Key: "meter_id", Label: "Meter"},
+		},
+		Grains: []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
+		Family: types.FamilyUsage,
 	},
 }
 

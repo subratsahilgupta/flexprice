@@ -142,3 +142,51 @@ func TestValidateReportRequest_UnsupportedCompareAndNoCurrency(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, ierr.IsValidation(err))
 }
+
+func (s *AnalyticsServiceSuite) runEventsVolume(req *dto.ReportQueryRequest) (*dto.AnalyticsQueryResult, error) {
+	svc := NewAnalyticsService(ServiceParams{
+		Logger:         s.GetLogger(),
+		Config:         s.GetConfig(),
+		DB:             s.GetDB(),
+		MeterUsageRepo: s.meterUsageRepo,
+		MeterRepo:      s.GetStores().MeterRepo,
+		CustomerRepo:   s.GetStores().CustomerRepo,
+		FeatureRepo:    s.GetStores().FeatureRepo,
+		PriceRepo:      s.GetStores().PriceRepo,
+		ReportsRepo:    &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Max: 500},
+	})
+	req.Range = s.rangeStart.Format("2006-01-02") + ".." + s.rangeEnd.Format("2006-01-02")
+	return svc.RunReport(s.GetContext(), "events_volume", req)
+}
+
+func (s *AnalyticsServiceSuite) TestRunReport_EventsVolumeRenamesMetricColumn() {
+	ctx := s.GetContext()
+	s.insertUsage(ctx, s.sumMeter.ID, s.now, 3, nil)
+	s.insertUsage(ctx, s.sumMeter.ID, s.now, 4, nil)
+
+	for _, req := range []*dto.ReportQueryRequest{
+		{Shape: "timeseries", Grain: "day"},
+		{Shape: "breakdown", Dimensions: []string{"meter_id"}},
+	} {
+		res, err := s.runEventsVolume(req)
+		s.Require().NoError(err, req.Shape)
+		names := []string{}
+		for _, c := range res.Columns {
+			names = append(names, c.Name)
+		}
+		s.Contains(names, "events_volume", req.Shape)
+		s.NotContains(names, "event_count", req.Shape)
+	}
+}
+
+func (s *AnalyticsServiceSuite) TestRunReport_EventsVolumeRejectsCompareAndCurrency() {
+	for _, req := range []*dto.ReportQueryRequest{
+		{Shape: "timeseries", Grain: "day", Compare: "previous_period"},
+		{Shape: "timeseries", Grain: "day", Currency: "usd"},
+		{Shape: "scalar"},
+	} {
+		_, err := s.runEventsVolume(req)
+		s.Require().Error(err)
+		s.True(ierr.IsValidation(err), "%+v", req)
+	}
+}

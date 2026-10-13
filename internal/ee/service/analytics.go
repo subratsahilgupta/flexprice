@@ -530,6 +530,10 @@ func (s *analyticsService) RunReport(ctx context.Context, key string, req *dto.R
 		return nil, err
 	}
 
+	if entry.Family == types.FamilyUsage {
+		return s.runUsageReport(ctx, entry, req)
+	}
+
 	def := analytics.ViewDefinition{
 		Family:     types.FamilyBilling,
 		Shape:      types.Shape(req.Shape),
@@ -559,6 +563,37 @@ func (s *analyticsService) RunReport(ctx context.Context, key string, req *dto.R
 	}
 	if req.Compare != "" {
 		addChangePct(res, string(entry.Key))
+	}
+	return res, nil
+}
+
+func (s *analyticsService) runUsageReport(ctx context.Context, entry *analytics.ReportCatalogEntry, req *dto.ReportQueryRequest) (*dto.AnalyticsQueryResult, error) {
+	def := analytics.ViewDefinition{
+		Family:     types.FamilyUsage,
+		Shape:      types.Shape(req.Shape),
+		Metrics:    []types.Metric{types.MetricEventCount},
+		Dimensions: req.Dimensions,
+		Time:       analytics.TimeSpecRaw{Range: req.Range, Grain: types.Grain(req.Grain)},
+		Limit:      req.Limit,
+	}
+	for _, f := range req.Filters {
+		def.Filters = append(def.Filters, &analytics.Filter{Field: f.Field, Op: types.FilterOperatorType(f.Op), Value: f.Value})
+	}
+	for _, so := range req.Sort {
+		field := so.Field
+		if field == string(entry.Key) {
+			field = string(types.MetricEventCount)
+		}
+		def.Sort = append(def.Sort, &analytics.SortSpec{Field: field, Dir: types.SortDirection(so.Dir)})
+	}
+	res, err := s.ExecuteView(ctx, &def, nil)
+	if err != nil {
+		return nil, err
+	}
+	for i := range res.Columns {
+		if res.Columns[i].Name == string(types.MetricEventCount) {
+			res.Columns[i].Name = string(entry.Key)
+		}
 	}
 	return res, nil
 }
