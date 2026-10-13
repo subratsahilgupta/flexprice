@@ -10,7 +10,10 @@ type BillingMetric struct {
 	Table   string
 	TimeCol string
 	Measure string
-	Where   []string
+	// Aggregate name and argument.
+	Agg   string
+	Arg   string
+	Where []string
 	// Dimension name to source column.
 	Dimensions map[string]string
 	Shapes     []types.Shape
@@ -24,6 +27,8 @@ var billingMetrics = map[types.Metric]*BillingMetric{
 		Table:   "invoices",
 		TimeCol: "finalized_at",
 		Measure: "sum(total)",
+		Agg:     "sum",
+		Arg:     "total",
 		Where:   []string{"invoice_status = '" + string(types.InvoiceStatusFinalized) + "'"},
 		Dimensions: map[string]string{
 			"currency":     "currency",
