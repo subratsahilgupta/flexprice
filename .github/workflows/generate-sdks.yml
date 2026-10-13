@@ -4,16 +4,17 @@
 # Version: strictly from the release tag only (e.g. v1.2.3 -> 1.2.3). No manual input, sdk-version.json, or npm lookup. Skip when version equals .speakeasy/gen/go.yaml.
 # Docs: generate uploads the spec plus the Go, Python and TypeScript code samples to the Speakeasy registry and promotes
 # them to the main tag, which rebuilds https://spec.speakeasy.com/flexprice/prod/swagger-json-with-code-samples.
-# refresh-docs waits for that URL to match the release, copies that file to S3 (served at https://swagger.flexprice.io),
+# refresh-docs waits for that URL to match the release, copies that file to S3 (served by CloudFront),
 # then adds the release to version.mdx in the docs repo so Mintlify redeploys.
 #
 # Triggers: release published only. When version unchanged vs gen/go.yaml, generate and publish are skipped.
 # Required secrets: SPEAKEASY_API_KEY, SDK_DEPLOY_GIT_TOKEN (fine-grained PAT: Contents R/W + Metadata Read on target SDK repos), NPM_TOKEN, PYPI_TOKEN.
 # Docs redeploy: secret DOCS_REPO_TOKEN (fine-grained PAT: Contents R/W on the docs repo); optional variables DOCS_REPO
 # (default flexprice/flexprice-docs) and DOCS_BRANCH (default main). refresh-docs fails when the token is unset.
-# Spec copy: variable OPENAPI_SPEC_S3, JSON {"role", "region", "bucket", "distribution"}; skipped while unset.
+# Spec copy: variable OPENAPI_SPEC_S3, JSON {"role", "region", "bucket", "distribution", "url"}; skipped while unset.
 # When set, secret AWS_ACCOUNT_ID is required to construct the role ARN. The role needs
 # s3:PutObject on <bucket>/openapi.json, and cloudfront:CreateInvalidation and cloudfront:GetInvalidation on the distribution.
+# url is where the distribution is served, e.g. https://swagger.flexprice.io.
 # Published packages: pip install flexprice | npm i @flexprice/sdk | npm i @flexprice/mcp-server
 # Default SDK repos (override via SDK_GO_REPO, SDK_PYTHON_REPO, SDK_TYPESCRIPT_REPO, SDK_MCP_REPO): flexprice/go-sdk, flexprice/javascript-sdk, flexprice/python-sdk, flexprice/mcp-server.
 #
@@ -248,15 +249,23 @@ jobs:
             exit 1
           fi
 
-      - name: Check AWS account ID for S3 publication
+      - name: Check the S3 publication settings
         if: vars.OPENAPI_SPEC_S3 != ''
         env:
           AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          OPENAPI_SPEC_S3: ${{ vars.OPENAPI_SPEC_S3 }}
         run: |
+          set -euo pipefail
           if ! [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]; then
             echo "::error::AWS_ACCOUNT_ID must be set to a 12-digit AWS account ID when OPENAPI_SPEC_S3 is set. Configure the secret in repository Settings -> Secrets and variables -> Actions."
             exit 1
           fi
+          for key in role region bucket distribution url; do
+            if ! jq -e --arg k "$key" '(.[$k] // "") | test("\\S")' <<<"$OPENAPI_SPEC_S3" >/dev/null; then
+              echo "::error::OPENAPI_SPEC_S3 is missing the \"$key\" key. It needs role, region, bucket, distribution and url."
+              exit 1
+            fi
+          done
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -279,7 +288,7 @@ jobs:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ fromJson(vars.OPENAPI_SPEC_S3).role }}
           aws-region: ${{ fromJson(vars.OPENAPI_SPEC_S3).region }}
 
-      # CloudFront serves openapi.json at the root of swagger.flexprice.io (its default root object).
+      # CloudFront serves openapi.json at the site root (its default root object).
       - name: Upload the spec to S3 and clear the CloudFront cache
         if: vars.OPENAPI_SPEC_S3 != ''
         env:
@@ -291,12 +300,19 @@ jobs:
           aws s3 cp "$RUNNER_TEMP/openapi.json" "s3://$BUCKET/openapi.json" --only-show-errors \
             --content-type application/json --cache-control "public, max-age=300"
           INVALIDATION=$(aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" \
-            --paths "/*" --query Invalidation.Id --output text)
+            --paths /openapi.json --query Invalidation.Id --output text)
           aws cloudfront wait invalidation-completed --distribution-id "$DISTRIBUTION" --id "$INVALIDATION"
 
-      - name: Check swagger.flexprice.io serves this release
+      # Two assertions: the CDN serves the bytes just uploaded (no truncation, no stale
+      # cache), and those bytes still carry this release's base spec.
+      - name: Check the hosted spec serves this release
         if: vars.OPENAPI_SPEC_S3 != ''
-        run: python3 scripts/wait-for-docs-spec.py "$RUNNER_TEMP/openapi.json" --url https://swagger.flexprice.io --exact
+        env:
+          SPEC_URL: ${{ fromJson(vars.OPENAPI_SPEC_S3).url }}
+        run: |
+          set -euo pipefail
+          python3 scripts/wait-for-docs-spec.py "$RUNNER_TEMP/openapi.json" --url "$SPEC_URL" --exact
+          python3 scripts/wait-for-docs-spec.py release-spec/swagger-3-0.json --url "$SPEC_URL" --timeout 0
 
       # The release is recorded as a new row in the docs repo's version.mdx.
       - name: Redeploy docs
