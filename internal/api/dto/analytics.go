@@ -130,13 +130,11 @@ type ReportSort struct {
 	Dir   string `json:"dir" enums:"asc,desc"`
 }
 
-// ReportQueryRequest is the body for POST /v1/analytics/reports/{key}/query.
-// Range is absolute (YYYY-MM-DD..YYYY-MM-DD, end exclusive), last_N_days,
-// today or yesterday; presets like this_month are not supported.
+// ReportQueryRequest is a report query body.
 type ReportQueryRequest struct {
 	Shape      string         `json:"shape" validate:"required" enums:"timeseries,breakdown,scalar"`
 	Dimensions []string       `json:"dimensions,omitempty"`
-	Range      string         `json:"range" validate:"required"`
+	Range      string         `json:"range" validate:"required" example:"2026-09-01..2026-10-01"`
 	Grain      string         `json:"grain,omitempty" enums:"day,week,month"`
 	Currency   string         `json:"currency,omitempty"`
 	Filters    []ReportFilter `json:"filters,omitempty"`

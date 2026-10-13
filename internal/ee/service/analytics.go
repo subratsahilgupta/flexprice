@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sort"
 	"strings"
@@ -418,7 +419,7 @@ func (s *analyticsService) ListReports(_ context.Context) (*dto.ReportCatalogRes
 	return out, nil
 }
 
-func validateReportRequest(e *analytics.ReportCatalogEntry, req *dto.ReportQueryRequest) error {
+func validateReportRequest(e *analytics.ReportCatalogEntry, req *dto.ReportQueryRequest, maxRows int) error {
 	shapes := make([]string, len(e.Shapes))
 	for i, sh := range e.Shapes {
 		shapes[i] = string(sh)
@@ -437,6 +438,46 @@ func validateReportRequest(e *analytics.ReportCatalogEntry, req *dto.ReportQuery
 			return ierr.NewErrorf("dimension %q not allowed", d).
 				WithHint("dimensions must be one of: " + strings.Join(dims, ", ")).
 				Mark(ierr.ErrValidation)
+		}
+	}
+	if req.Grain != "" && req.Shape != string(types.ShapeTimeseries) {
+		return ierr.NewError("grain only applies to timeseries").
+			WithHint("omit grain unless shape is timeseries").
+			Mark(ierr.ErrValidation)
+	}
+	if req.Limit < 0 || (maxRows > 0 && req.Limit > maxRows) {
+		return ierr.NewErrorf("limit %d not allowed", req.Limit).
+			WithHint(fmt.Sprintf("limit must be between 0 and %d (0 = no limit)", maxRows)).
+			Mark(ierr.ErrValidation)
+	}
+	bm, _ := analytics.LookupBillingMetric(e.Key)
+	hasCurrency := bm != nil && bm.Currency
+	if req.Currency != "" && !hasCurrency {
+		return ierr.NewError("report has no currency").
+			WithHint("omit currency for this report").
+			Mark(ierr.ErrValidation)
+	}
+	if len(req.Sort) > 0 {
+		if req.Shape != string(types.ShapeBreakdown) {
+			return ierr.NewError("sort only applies to breakdown").
+				WithHint("omit sort unless shape is breakdown").
+				Mark(ierr.ErrValidation)
+		}
+		fields := append(slices.Clone(dims), string(e.Key))
+		if req.Compare != "" {
+			fields = append(fields, string(e.Key)+"_prev")
+		}
+		for _, so := range req.Sort {
+			if so.Dir != "asc" && so.Dir != "desc" {
+				return ierr.NewErrorf("sort dir %q not allowed", so.Dir).
+					WithHint("dir must be asc or desc").
+					Mark(ierr.ErrValidation)
+			}
+			if !slices.Contains(fields, so.Field) {
+				return ierr.NewErrorf("sort field %q not allowed", so.Field).
+					WithHint("sort field must be one of: " + strings.Join(fields, ", ")).
+					Mark(ierr.ErrValidation)
+			}
 		}
 	}
 	if req.Shape == string(types.ShapeTimeseries) && req.Grain != "" {
@@ -458,14 +499,14 @@ func validateReportRequest(e *analytics.ReportCatalogEntry, req *dto.ReportQuery
 		}
 	}
 	for _, f := range req.Filters {
-		if f.Field != "currency" && !slices.Contains(dims, f.Field) {
+		if !slices.Contains(dims, f.Field) && !(f.Field == "currency" && hasCurrency) {
 			return ierr.NewErrorf("filter field %q not allowed", f.Field).
 				WithHint("filter fields must be one of: currency, " + strings.Join(dims, ", ")).
 				Mark(ierr.ErrValidation)
 		}
-		if f.Op != "eq" && f.Op != "in" {
-			return ierr.NewErrorf("filter op %q not allowed", f.Op).
-				WithHint("op must be eq or in").
+		if (f.Op != "eq" && f.Op != "in") || len(f.Value) == 0 || (f.Op == "eq" && len(f.Value) != 1) {
+			return ierr.NewErrorf("filter on %q invalid", f.Field).
+				WithHint("op must be eq (1 value) or in (1+ values)").
 				Mark(ierr.ErrValidation)
 		}
 	}
@@ -480,7 +521,7 @@ func (s *analyticsService) RunReport(ctx context.Context, key string, req *dto.R
 	if !ok {
 		return nil, ierr.NewErrorf("report %q not found", key).Mark(ierr.ErrNotFound)
 	}
-	if err := validateReportRequest(entry, req); err != nil {
+	if err := validateReportRequest(entry, req, s.ReportsRepo.MaxRows()); err != nil {
 		return nil, err
 	}
 

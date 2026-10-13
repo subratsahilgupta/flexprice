@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/analytics"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/testutil"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -85,4 +87,55 @@ func TestRunReport_NoCompareNoMetaPrev(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, res.Meta.PrevFrom)
 	assert.Len(t, res.Columns, 2)
+}
+
+func TestRunReport_ValidationRules(t *testing.T) {
+	const rng = "2026-09-01..2026-10-01"
+	svc := reportsSvc(&testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Max: 100})
+	cases := map[string]*dto.ReportQueryRequest{
+		"negative limit":      {Shape: "breakdown", Range: rng, Limit: -1},
+		"limit over max":      {Shape: "breakdown", Range: rng, Limit: 101},
+		"sort on scalar":      {Shape: "scalar", Range: rng, Sort: []dto.ReportSort{{Field: "invoice_total", Dir: "asc"}}},
+		"sort bad dir":        {Shape: "breakdown", Range: rng, Sort: []dto.ReportSort{{Field: "invoice_total", Dir: "up"}}},
+		"sort bad field":      {Shape: "breakdown", Range: rng, Sort: []dto.ReportSort{{Field: "tenant_id", Dir: "asc"}}},
+		"sort prev w/o cmp":   {Shape: "breakdown", Range: rng, Sort: []dto.ReportSort{{Field: "invoice_total_prev", Dir: "asc"}}},
+		"sort change_pct":     {Shape: "breakdown", Range: rng, Compare: "previous_period", Sort: []dto.ReportSort{{Field: "invoice_total_change_pct", Dir: "asc"}}},
+		"grain on scalar":     {Shape: "scalar", Range: rng, Grain: "day"},
+		"grain on breakdown":  {Shape: "breakdown", Range: rng, Grain: "day"},
+		"eq two values":       {Shape: "scalar", Range: rng, Filters: []dto.ReportFilter{{Field: "customer_id", Op: "eq", Value: []string{"a", "b"}}}},
+		"eq no values":        {Shape: "scalar", Range: rng, Filters: []dto.ReportFilter{{Field: "customer_id", Op: "eq"}}},
+		"in no values":        {Shape: "scalar", Range: rng, Filters: []dto.ReportFilter{{Field: "customer_id", Op: "in"}}},
+		"bad op":              {Shape: "scalar", Range: rng, Filters: []dto.ReportFilter{{Field: "customer_id", Op: "gt", Value: []string{"a"}}}},
+		"currency filter bad": {Shape: "scalar", Range: rng, Filters: []dto.ReportFilter{{Field: "tenant_id", Op: "eq", Value: []string{"a"}}}},
+	}
+	for name, req := range cases {
+		_, err := svc.RunReport(billingCtx(), "invoice_total", req)
+		require.Error(t, err, name)
+		assert.True(t, ierr.IsValidation(err), name)
+	}
+
+	ok := []*dto.ReportQueryRequest{
+		{Shape: "breakdown", Dimensions: []string{"customer_id"}, Range: rng, Limit: 100, Sort: []dto.ReportSort{{Field: "invoice_total", Dir: "desc"}}},
+		{Shape: "breakdown", Dimensions: []string{"customer_id"}, Range: rng, Compare: "previous_period", Sort: []dto.ReportSort{{Field: "invoice_total_prev", Dir: "asc"}}},
+		{Shape: "scalar", Range: rng, Filters: []dto.ReportFilter{{Field: "customer_id", Op: "in", Value: []string{"a", "b"}}}},
+	}
+	for _, req := range ok {
+		_, err := svc.RunReport(billingCtx(), "invoice_total", req)
+		require.NoError(t, err, "%+v", req)
+	}
+}
+
+func TestValidateReportRequest_UnsupportedCompareAndNoCurrency(t *testing.T) {
+	e := &analytics.ReportCatalogEntry{
+		Key:          types.Metric("no_such_metric"),
+		Shapes:       []types.Shape{types.ShapeScalar},
+		DefaultShape: types.ShapeScalar,
+	}
+	err := validateReportRequest(e, &dto.ReportQueryRequest{Shape: "scalar", Compare: "previous_period"}, 0)
+	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
+
+	err = validateReportRequest(e, &dto.ReportQueryRequest{Shape: "scalar", Currency: "usd"}, 0)
+	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
 }
