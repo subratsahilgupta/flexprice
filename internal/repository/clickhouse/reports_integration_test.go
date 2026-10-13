@@ -124,3 +124,102 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 	assert.Contains(t, byCustomer, []string{"c1", "usd", "10", "2"})
 	assert.Contains(t, byCustomer, []string{"c4", "usd", "0", "4"})
 }
+
+func TestReportsRepository_GenericReports(t *testing.T) {
+	address := chEnvOrDefault("FLEXPRICE_TEST_CLICKHOUSE_ADDRESS", "localhost:9000")
+	username := chEnvOrDefault("FLEXPRICE_TEST_CLICKHOUSE_USERNAME", "flexprice")
+	password := chEnvOrDefault("FLEXPRICE_TEST_CLICKHOUSE_PASSWORD", "flexprice123")
+	db := fmt.Sprintf("reports_gen_%d", time.Now().UnixNano())
+
+	admin := newRealClickHouseTestStore(t)
+	ctx := context.Background()
+	require.NoError(t, admin.GetConn().Exec(ctx, "CREATE DATABASE "+db))
+	t.Cleanup(func() { _ = admin.GetConn().Exec(context.Background(), "DROP DATABASE IF EXISTS "+db) })
+	require.NoError(t, admin.GetConn().Exec(ctx, `CREATE TABLE `+db+`.invoices (
+		id String, tenant_id String, environment_id String, status String,
+		invoice_status String, payment_status String, customer_id String, currency String,
+		amount_remaining Decimal(20, 9), amount_paid Decimal(20, 9),
+		finalized_at DateTime64(6), due_date DateTime64(6), issue_date DateTime64(6), paid_at DateTime64(6),
+		_peerdb_is_deleted UInt8, _peerdb_version Int64
+	) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`))
+	require.NoError(t, admin.GetConn().Exec(ctx, `CREATE TABLE `+db+`.wallet_transactions (
+		id String, tenant_id String, environment_id String, status String,
+		type String, transaction_status String, transaction_reason String,
+		customer_id String, currency String, amount Decimal(20, 9), created_at DateTime64(6),
+		_peerdb_is_deleted UInt8, _peerdb_version Int64
+	) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`))
+
+	epoch := "1970-01-01 00:00:00"
+	future := time.Now().UTC().AddDate(0, 0, 10).Format("2006-01-02 15:04:05")
+	d10 := time.Now().UTC().AddDate(0, 0, -10).Format("2006-01-02 15:04:05")
+	d100 := time.Now().UTC().AddDate(0, 0, -100).Format("2006-01-02 15:04:05")
+	inv := func(id, invStatus, pay, cust string, remaining, paid int, due, issue, paidAt string) string {
+		return fmt.Sprintf("('%s','t1','e1','published','%s','%s','%s','usd',%d,%d,'2026-09-01 00:00:00','%s','%s','%s',0,1)",
+			id, invStatus, pay, cust, remaining, paid, due, issue, paidAt)
+	}
+	require.NoError(t, admin.GetConn().Exec(ctx, `INSERT INTO `+db+`.invoices VALUES `+strings.Join([]string{
+		inv("a1", "FINALIZED", "PENDING", "c1", 30, 0, epoch, epoch, epoch),
+		inv("a2", "FINALIZED", "PENDING", "c1", 70, 0, future, epoch, epoch),
+		inv("a3", "FINALIZED", "SUCCEEDED", "c1", 0, 5, d10, epoch, epoch),
+		inv("a4", "DRAFT", "PENDING", "c1", 500, 0, d10, epoch, epoch),
+		inv("a5", "FINALIZED", "PENDING", "c2", 11, 0, d10, epoch, epoch),
+		inv("a6", "FINALIZED", "PENDING", "c2", 13, 0, d100, epoch, epoch),
+		inv("p1", "FINALIZED", "SUCCEEDED", "c1", 0, 100, epoch, "2026-09-01 00:00:00", "2026-09-11 00:00:00"),
+		inv("p2", "FINALIZED", "SUCCEEDED", "c1", 0, 50, epoch, "2026-09-05 00:00:00", "2026-09-25 00:00:00"),
+		inv("p3", "FINALIZED", "OVERPAID", "c2", 0, 30, epoch, epoch, "2026-09-13 00:00:00"),
+	}, ",")))
+
+	tx := func(id, typ, st, reason string, amount int) string {
+		return fmt.Sprintf("('%s','t1','e1','published','%s','%s','%s','c1','usd',%d,'2026-09-10 00:00:00',0,1)", id, typ, st, reason, amount)
+	}
+	require.NoError(t, admin.GetConn().Exec(ctx, `INSERT INTO `+db+`.wallet_transactions VALUES `+strings.Join([]string{
+		tx("w1", "credit", "completed", "PURCHASED_CREDIT_DIRECT", 50),
+		tx("w2", "credit", "completed", "FREE_CREDIT_GRANT", 10),
+		tx("w3", "credit", "failed", "PURCHASED_CREDIT_INVOICED", 99),
+		tx("w4", "credit", "completed", "CREDIT_NOTE", 7),
+		tx("w5", "debit", "completed", "INVOICE_PAYMENT", 12),
+		tx("w6", "debit", "completed", "CREDIT_EXPIRED", 5),
+	}, ",")))
+
+	cfg := &config.Configuration{
+		ClickHouse: config.ClickHouseConfig{Address: address, Username: username, Password: password, Database: "default", MaxMemoryUsage: 1},
+		Reports:    config.ReportsConfig{Database: db, Username: username, Password: password},
+	}
+	repo, err := NewReportsRepository(cfg, nil)
+	require.NoError(t, err)
+
+	run := func(metric types.Metric, shape types.Shape, dims ...string) [][]string {
+		rv := &analytics.ResolvedView{
+			Family: types.FamilyBilling, Shape: shape, Metrics: []types.Metric{metric}, Dimensions: dims,
+			Time: analytics.TimeSpec{
+				From: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+				To:   time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
+			},
+		}
+		q, err := analytics.BuildBillingQuery(rv, repo.Database(), "t1", "e1", 100)
+		require.NoError(t, err)
+		rows, err := repo.Run(ctx, q)
+		require.NoError(t, err)
+		return rows
+	}
+
+	// Snapshot ignores the window.
+	assert.Equal(t, [][]string{{"usd", "124"}}, run(types.MetricTotalReceivables, types.ShapeScalar))
+
+	aging := map[string]string{}
+	for _, r := range run(types.MetricReceivablesAging, types.ShapeBreakdown, "aging_bucket") {
+		aging[r[0]] = r[2]
+	}
+	assert.Equal(t, map[string]string{"No due date": "30", "Current": "70", "1-30": "11", "90+": "13"}, aging)
+
+	assert.Equal(t, [][]string{{"usd", "15"}}, run(types.MetricDaysToPay, types.ShapeScalar))
+
+	assert.ElementsMatch(t, [][]string{
+		{"FREE_CREDIT_GRANT", "usd", "10"},
+		{"PURCHASED_CREDIT_DIRECT", "usd", "50"},
+	}, run(types.MetricCreditTopups, types.ShapeBreakdown, "transaction_reason"))
+
+	assert.Equal(t, [][]string{{"usd", "12"}}, run(types.MetricCreditConsumption, types.ShapeScalar))
+
+	assert.Equal(t, [][]string{{"usd", "90"}}, run(types.MetricARPU, types.ShapeScalar))
+}

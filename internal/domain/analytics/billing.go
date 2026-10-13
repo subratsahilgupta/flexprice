@@ -1,6 +1,8 @@
 package analytics
 
 import (
+	"strings"
+
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -37,7 +39,130 @@ type BuildInput struct {
 	MaxRows  int
 }
 
+const agingBucketExpr = "multiIf(nullIf(due_date, toDateTime64(0, 6)) IS NULL, 'No due date', " +
+	"dateDiff('day', due_date, now64(6, 'UTC'), 'UTC') <= 0, 'Current', " +
+	"dateDiff('day', due_date, now64(6, 'UTC'), 'UTC') <= 30, '1-30', " +
+	"dateDiff('day', due_date, now64(6, 'UTC'), 'UTC') <= 60, '31-60', " +
+	"dateDiff('day', due_date, now64(6, 'UTC'), 'UTC') <= 90, '61-90', '90+')"
+
+var (
+	paidIn = "payment_status IN ('" + string(types.PaymentStatusSucceeded) + "','" + string(types.PaymentStatusOverpaid) + "')"
+	// Open invoices with a balance.
+	receivableWhere = []string{
+		"invoice_status = '" + string(types.InvoiceStatusFinalized) + "'",
+		"amount_remaining > 0",
+	}
+	creditTopupReasons = []types.TransactionReason{
+		types.TransactionReasonPurchasedCreditDirect,
+		types.TransactionReasonPurchasedCreditInvoiced,
+		types.TransactionReasonPurchasedCreditBonus,
+		types.TransactionReasonFreeCredit,
+		types.TransactionReasonSubscriptionCredit,
+	}
+)
+
+func quotedList[T ~string](vs []T) string {
+	q := make([]string, len(vs))
+	for i, v := range vs {
+		q[i] = "'" + string(v) + "'"
+	}
+	return strings.Join(q, ",")
+}
+
 var billingMetrics = map[types.Metric]*BillingMetric{
+	types.MetricTotalReceivables: {
+		Metric:     types.MetricTotalReceivables,
+		Table:      "invoices",
+		TimeCol:    "finalized_at",
+		Measure:    "sum(amount_remaining)",
+		Agg:        "sum",
+		Arg:        "amount_remaining",
+		Where:      receivableWhere,
+		Dimensions: map[string]string{"currency": "currency"},
+		Shapes:     []types.Shape{types.ShapeScalar, types.ShapeBreakdown},
+		Currency:   true,
+		Snapshot:   true,
+	},
+	types.MetricReceivablesAging: {
+		Metric:  types.MetricReceivablesAging,
+		Table:   "invoices",
+		TimeCol: "finalized_at",
+		Measure: "sum(amount_remaining)",
+		Agg:     "sum",
+		Arg:     "amount_remaining",
+		Where:   receivableWhere,
+		Dimensions: map[string]string{
+			"aging_bucket": agingBucketExpr,
+			"customer_id":  "customer_id",
+			"currency":     "currency",
+		},
+		Shapes:   []types.Shape{types.ShapeBreakdown},
+		Currency: true,
+		Snapshot: true,
+	},
+	types.MetricDaysToPay: {
+		Metric:  types.MetricDaysToPay,
+		Table:   "invoices",
+		TimeCol: "paid_at",
+		Measure: "avg(dateDiff('day', issue_date, paid_at, 'UTC'))",
+		Agg:     "avg",
+		Arg:     "dateDiff('day', issue_date, paid_at, 'UTC')",
+		Where: []string{
+			paidIn,
+			"paid_at > " + chEpoch,
+			"issue_date > " + chEpoch,
+		},
+		Dimensions: map[string]string{"customer_id": "customer_id", "currency": "currency"},
+		Shapes:     []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
+		Currency:   true,
+	},
+	types.MetricARPU: {
+		Metric:     types.MetricARPU,
+		Table:      "invoices",
+		TimeCol:    "paid_at",
+		Measure:    "sum(amount_paid) / uniqExact(customer_id)",
+		Where:      []string{paidIn, "paid_at > " + chEpoch},
+		Dimensions: map[string]string{"currency": "currency"},
+		Shapes:     []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
+		Currency:   true,
+	},
+	types.MetricCreditConsumption: {
+		Metric:  types.MetricCreditConsumption,
+		Table:   "wallet_transactions",
+		TimeCol: "created_at",
+		Measure: "sum(amount)",
+		Agg:     "sum",
+		Arg:     "amount",
+		Where: []string{
+			"type = '" + string(types.TransactionTypeDebit) + "'",
+			"transaction_status = '" + string(types.TransactionStatusCompleted) + "'",
+			"transaction_reason = '" + string(types.TransactionReasonInvoicePayment) + "'",
+		},
+		Dimensions: map[string]string{"customer_id": "customer_id", "currency": "currency"},
+		Shapes:     []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
+		Currency:   true,
+	},
+	types.MetricCreditTopups: {
+		Metric:  types.MetricCreditTopups,
+		Table:   "wallet_transactions",
+		TimeCol: "created_at",
+		Measure: "sum(amount)",
+		Agg:     "sum",
+		Arg:     "amount",
+		Where: []string{
+			"type = '" + string(types.TransactionTypeCredit) + "'",
+			"transaction_status = '" + string(types.TransactionStatusCompleted) + "'",
+			"transaction_reason IN (" + quotedList(creditTopupReasons) + ")",
+		},
+		Dimensions: map[string]string{
+			"transaction_reason": "transaction_reason",
+			"customer_id":        "customer_id",
+			"currency":           "currency",
+		},
+		Shapes:   []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
+		Currency: true,
+	},
+
 	types.MetricInvoiceTotal: {
 		Metric:  types.MetricInvoiceTotal,
 		Table:   "invoices",

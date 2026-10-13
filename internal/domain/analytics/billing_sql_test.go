@@ -360,3 +360,15 @@ func TestBuildBillingQuery_CustomBuildHook(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, ierr.IsPermissionDenied(err))
 }
+
+func TestBuildBillingQuery_ARPURejectsCompare(t *testing.T) {
+	rv := billingRV(types.ShapeScalar)
+	rv.Metrics = []types.Metric{types.MetricARPU}
+	_, err := BuildBillingQuery(rv, "reports_db", "t", "e", 0)
+	require.NoError(t, err)
+
+	rv.Compare = "previous_period"
+	_, err = BuildBillingQuery(rv, "reports_db", "t", "e", 0)
+	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
+}

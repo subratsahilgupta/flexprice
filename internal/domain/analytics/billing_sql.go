@@ -130,6 +130,11 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 			WithHint("snapshot metrics support neither compare nor timeseries").
 			Mark(ierr.ErrValidation)
 	}
+	if rv.Compare != "" && bm.Agg == "" {
+		return nil, ierr.NewErrorf("metric %q does not support compare", bm.Metric).
+			WithHint("remove compare for this metric").
+			Mark(ierr.ErrValidation)
+	}
 	timeExpr := fmt.Sprintf("nullIf(%s, %s)", bm.TimeCol, chEpoch)
 	curCond := fmt.Sprintf("%s >= toDateTime64({from:String}, 6, 'UTC') AND %s < toDateTime64({to:String}, 6, 'UTC')", timeExpr, timeExpr)
 	bucketExpr := timeExpr

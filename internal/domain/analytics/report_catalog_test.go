@@ -15,7 +15,11 @@ func TestReportCatalog_AgreesWithRegistry(t *testing.T) {
 	for _, e := range entries {
 		bm, ok := LookupBillingMetric(e.Key)
 		require.True(t, ok, "catalog key %q has no billing metric", e.Key)
-		assert.Equal(t, bm.Agg+"("+bm.Arg+")", bm.Measure, "measure of %q", e.Key)
+		if bm.Agg != "" {
+			assert.Equal(t, bm.Agg+"("+bm.Arg+")", bm.Measure, "measure of %q", e.Key)
+		} else {
+			assert.False(t, e.SupportsCompare, "compare of %q", e.Key)
+		}
 		for _, s := range e.Shapes {
 			assert.Contains(t, bm.Shapes, s, "shape %q of %q", s, e.Key)
 		}
