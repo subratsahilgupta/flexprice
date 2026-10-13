@@ -73,12 +73,12 @@ ways listed in 3.1.
 - A per-association watermark, the new `addon_associations.synced_price_sequence`, records how far each
   association has been reconciled. An association is behind when its watermark is below its add-on's target.
 - Two passes per behind association, usage-only, raising no invoice.
-  - Terminate. End-date the add-on usage line item whose catalog price was ended
-    (`end_date = GREATEST(line_item.start, price.end_date)`).
   - Create. For each active catalog usage price the association is missing, create a line item with the same
     `addon_association_id`, skipping any charge the subscription overrode (subscription-scoped price
     lineage). Eligibility uses the add-on attach rule (currency match plus divisor-compatible cadence), so a
     multi-cadence add-on charge reaches the subscription exactly as attach would.
+  - Terminate. End-date the add-on usage line item whose catalog price was ended
+    (`end_date = GREATEST(line_item.start, price.end_date)`).
   - Stamp the association's watermark to the target.
 - Scope. Active, recurring associations (`addon_status = 'active'`, association `end_date IS NULL`) on
   active or trialing subscriptions. One-time add-ons are excluded because they are already billed.
@@ -106,7 +106,7 @@ differently.
   divisor-compatible cadence), so a new or overridden charge reaches the subscription exactly as attach
   would. The plan price sync matches cadence strictly and does not support this.
 
-Everything else (usage-only, the terminate-then-create-then-stamp passes, the override skip by
+Everything else (usage-only, the create-then-terminate-then-stamp passes, the override skip by
 `parent_price_id` lineage, raising no invoice) follows the same principles as the plan price sync.
 
 ## 4. Use cases
