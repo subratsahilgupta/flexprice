@@ -82,7 +82,10 @@ func (s *InvoiceService) SyncInvoiceToZoho(ctx context.Context, req ZohoInvoiceS
 	filter.ProviderTypes = []string{string(types.SecretProviderZohoBooks)}
 	filter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
 	mappings, err := s.mappingRepo.List(ctx, filter)
-	if err == nil && len(mappings) > 0 {
+	if err != nil {
+		return nil, err
+	}
+	if len(mappings) > 0 {
 		zohoID := mappings[0].ProviderEntityID
 		if req.Resync {
 			if err := s.resyncInvoice(ctx, flexInvoice, zohoID); err != nil {
