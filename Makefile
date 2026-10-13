@@ -222,7 +222,7 @@ install-ent:
 .PHONY: generate-ent
 generate-ent: install-ent
 	@echo "Generating ent code..."
-	@go run -mod=mod entgo.io/ent/cmd/ent generate --feature sql/execquery ./ent/schema
+	@go run -mod=mod entgo.io/ent/cmd/ent generate --feature sql/execquery --template ./ent/template ./ent/schema
 
 .PHONY: migrate-ent
 migrate-ent:
@@ -382,6 +382,8 @@ init-kafka:
 				events_post_processing_backfill \
 				system_events \
 				wallet_alert \
+				activity_logs \
+				activity_logs_dlq \
 				onboarding_events \
 				staging_benchmarking \
 				prod_events_v4 \
