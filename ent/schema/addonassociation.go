@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"entgo.io/ent"
+	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
@@ -86,6 +87,13 @@ func (AddonAssociation) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "jsonb",
 			}),
+
+		// synced_price_sequence records how far this association's line items have
+		// been reconciled with its addon's usage prices. Bumped by the addon
+		// usage-price sync.
+		field.Int64("synced_price_sequence").
+			Default(0).
+			Annotations(entsql.Default("0")),
 	}
 }
 
@@ -98,5 +106,10 @@ func (AddonAssociation) Edges() []ent.Edge {
 func (AddonAssociation) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("tenant_id", "environment_id", "entity_id", "entity_type", "addon_id"),
+		// Drives the addon usage-price sync's "which associations are behind?"
+		// lookup, keyed to active/recurring/published rows.
+		index.Fields("tenant_id", "environment_id", "addon_id", "synced_price_sequence", "id").
+			Annotations(entsql.IndexWhere(
+				"(((status)::text = 'published'::text) AND ((addon_status)::text = 'active'::text) AND (end_date IS NULL))")),
 	}
 }

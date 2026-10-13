@@ -5,6 +5,7 @@ import (
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/addon"
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
+	"github.com/flexprice/flexprice/internal/domain/addonpricesync"
 	"github.com/flexprice/flexprice/internal/domain/alert"
 	"github.com/flexprice/flexprice/internal/domain/alertlogs"
 	domainAnalytics "github.com/flexprice/flexprice/internal/domain/analytics"
@@ -128,6 +129,7 @@ type ServiceParams struct {
 	GroupRepo                    group.Repository
 	ScheduledTaskRepo            scheduledtask.Repository
 	PlanPriceSyncRepo            planpricesync.Repository
+	AddonPriceSyncRepo           addonpricesync.Repository
 	WorkflowExecutionRepo        workflowexecution.Repository
 	CheckoutSessionRepo          domainCheckout.Repository
 	AnalyticsViewRepo            domainAnalytics.Repository
@@ -232,6 +234,7 @@ func NewServiceParams(
 	walletBalanceAlertPubSub types.WalletBalanceAlertPubSub,
 	webhookPubSub pubsub.PubSub,
 	planPriceSyncRepo planpricesync.Repository,
+	addonPriceSyncRepo addonpricesync.Repository,
 	workflowExecutionRepo workflowexecution.Repository,
 	checkoutSessionRepo domainCheckout.Repository,
 	usageRecordRepo usagerecord.Repository,
@@ -307,6 +310,7 @@ func NewServiceParams(
 		WalletBalanceAlertPubSub:     walletBalanceAlertPubSub,
 		WebhookPubSub:                webhookPubSub,
 		PlanPriceSyncRepo:            planPriceSyncRepo,
+		AddonPriceSyncRepo:           addonPriceSyncRepo,
 		WorkflowExecutionRepo:        workflowExecutionRepo,
 		CheckoutSessionRepo:          checkoutSessionRepo,
 		AnalyticsViewRepo:            analyticsViewRepo,

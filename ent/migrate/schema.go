@@ -59,6 +59,7 @@ var (
 		{Name: "cancellation_reason", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "cancelled_at", Type: field.TypeTime, Nullable: true},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "synced_price_sequence", Type: field.TypeInt64, Default: "0"},
 	}
 	// AddonAssociationsTable holds the schema information for the "addon_associations" table.
 	AddonAssociationsTable = &schema.Table{
@@ -70,6 +71,14 @@ var (
 				Name:    "addonassociation_tenant_id_environment_id_entity_id_entity_type_addon_id",
 				Unique:  false,
 				Columns: []*schema.Column{AddonAssociationsColumns[1], AddonAssociationsColumns[7], AddonAssociationsColumns[8], AddonAssociationsColumns[9], AddonAssociationsColumns[10]},
+			},
+			{
+				Name:    "addonassociation_tenant_id_environment_id_addon_id_synced_price_sequence_id",
+				Unique:  false,
+				Columns: []*schema.Column{AddonAssociationsColumns[1], AddonAssociationsColumns[7], AddonAssociationsColumns[10], AddonAssociationsColumns[17], AddonAssociationsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "(((status)::text = 'published'::text) AND ((addon_status)::text = 'active'::text) AND (end_date IS NULL))",
+				},
 			},
 		},
 	}

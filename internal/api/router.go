@@ -337,6 +337,7 @@ func NewRouter(
 			addon.PUT("/:id", write(types.EntityAddon, types.ActionWrite), handlers.Addon.UpdateAddon)
 			addon.GET("/:id/entitlements", handlers.Addon.GetAddonEntitlements)
 			addon.GET("/:id/creditgrants", handlers.Addon.GetAddonCreditGrants)
+			addon.POST("/:id/sync/subscriptions", write(types.EntityAddon, types.ActionWrite), handlers.Addon.SyncAddonPrices)
 			addon.DELETE("/:id", write(types.EntityAddon, types.ActionWrite), handlers.Addon.DeleteAddon)
 		}
 

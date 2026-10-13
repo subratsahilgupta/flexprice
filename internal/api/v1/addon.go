@@ -4,9 +4,12 @@ import (
 	"net/http"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/temporal/models"
+	temporalservice "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 )
@@ -14,13 +17,23 @@ import (
 type AddonHandler struct {
 	service            service.AddonService
 	entitlementService service.EntitlementService
+	temporalService    temporalservice.TemporalService
+	locker             cache.Locker
 	log                *logger.Logger
 }
 
-func NewAddonHandler(service service.AddonService, entitlementService service.EntitlementService, log *logger.Logger) *AddonHandler {
+func NewAddonHandler(
+	service service.AddonService,
+	entitlementService service.EntitlementService,
+	temporalService temporalservice.TemporalService,
+	locker cache.Locker,
+	log *logger.Logger,
+) *AddonHandler {
 	return &AddonHandler{
 		service:            service,
 		entitlementService: entitlementService,
+		temporalService:    temporalService,
+		locker:             locker,
 		log:                log,
 	}
 }
@@ -307,4 +320,63 @@ func (h *AddonHandler) GetAddonCreditGrants(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+func addonPriceSyncLockKey(addonID string) string {
+	return cache.PrefixAddonPriceSyncLock + addonID
+}
+
+func (h *AddonHandler) SyncAddonPrices(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.Error(ierr.NewError("addon ID is required").
+			WithHint("Addon ID is required").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	// Verify the addon exists
+	if _, err := h.service.GetAddon(c.Request.Context(), id); err != nil {
+		c.Error(err)
+		return
+	}
+
+	// Acquire addon-level lock (Redis SetNX, 2h TTL)
+	if h.locker == nil {
+		c.Error(ierr.NewError("addon price sync lock unavailable").
+			WithHint("Redis cache is not available. Try again later.").
+			Mark(ierr.ErrServiceUnavailable))
+		return
+	}
+
+	lockKey := addonPriceSyncLockKey(id)
+	lock, err := h.locker.AcquireLock(c.Request.Context(), lockKey, cache.ExpiryPriceSyncLock)
+	if err != nil {
+		h.log.Error(c.Request.Context(), "addon_price_sync_lock_acquire_failed", "addon_id", id, "lock_key", lockKey, "error", err)
+		c.Error(ierr.NewError("failed to acquire addon price sync lock").
+			WithHint("Try again later.").
+			Mark(ierr.ErrInternal))
+		return
+	}
+	if !lock.AcquiredSuccessfully() {
+		h.log.Info(c.Request.Context(), "addon_price_sync_lock_rejected", "addon_id", id, "lock_key", lockKey, "reason", "already_held")
+		c.Error(ierr.NewError("price sync already in progress for this addon").
+			WithHint("Try again later or wait up to 2 hours for the current sync to complete.").
+			Mark(ierr.ErrAlreadyExists))
+		return
+	}
+	h.log.Info(c.Request.Context(), "addon_price_sync_lock_acquired", "addon_id", id, "lock_key", lockKey)
+
+	// Start the addon price sync workflow (the activity releases the lock when done)
+	workflowRun, err := h.temporalService.ExecuteWorkflow(c.Request.Context(), types.TemporalAddonPriceSyncWorkflow, id)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, models.TemporalWorkflowResult{
+		Message:    "addon price sync workflow started successfully",
+		WorkflowID: workflowRun.GetID(),
+		RunID:      workflowRun.GetRunID(),
+	})
 }
