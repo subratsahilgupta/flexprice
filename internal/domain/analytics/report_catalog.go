@@ -32,7 +32,7 @@ var reportCatalog = []ReportCatalogEntry{
 	{
 		Key:            types.MetricInvoiceTotal,
 		Name:           "Total billing",
-		Description:    "Sum of finalized invoice totals in the period",
+		Description:    "Finalized invoice totals by billing period",
 		Category:       "billing",
 		Kind:           "flow",
 		ValueType:      "money",
@@ -133,7 +133,7 @@ var reportCatalog = []ReportCatalogEntry{
 	{
 		Key:            types.MetricNetBilling,
 		Name:           "Net billing",
-		Description:    "Total billing minus finalized credit notes",
+		Description:    "Billing by period minus finalized credit notes",
 		Category:       "billing",
 		Kind:           "flow",
 		ValueType:      "money",

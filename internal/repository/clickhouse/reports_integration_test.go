@@ -28,9 +28,11 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 		id String, tenant_id String, environment_id String, status String,
 		invoice_status String, invoice_type String, customer_id String, currency String,
 		total Decimal(20, 9), finalized_at DateTime64(6),
+		period_start DateTime64(6) DEFAULT finalized_at, issue_date DateTime64(6) DEFAULT toDateTime64(0, 6),
 		_peerdb_is_deleted UInt8, _peerdb_version Int64
 	) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`))
-	ins := `INSERT INTO ` + db + `.invoices VALUES `
+	baseCols := `(id, tenant_id, environment_id, status, invoice_status, invoice_type, customer_id, currency, total, finalized_at, _peerdb_is_deleted, _peerdb_version)`
+	ins := `INSERT INTO ` + db + `.invoices ` + baseCols + ` VALUES `
 	require.NoError(t, admin.GetConn().Exec(ctx, ins+
 		`('i1','t1','e1','published','FINALIZED','SUBSCRIPTION','c1','usd',10,'2026-09-05 00:00:00',0,1),`+
 		`('i1','t1','e1','published','FINALIZED','SUBSCRIPTION','c1','usd',10,'2026-09-05 00:00:00',0,2),`+
@@ -43,6 +45,12 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 		`('i7','t1','e1','published','VOIDED','SUBSCRIPTION','c3','usd',70,'2026-08-10 00:00:00',0,2),`+
 		`('i8','t1','e1','published','FINALIZED','SUBSCRIPTION','c1','usd',2,'2026-08-20 00:00:00',0,1),`+
 		`('i9','t1','e1','published','FINALIZED','SUBSCRIPTION','c4','usd',4,'2026-08-15 00:00:00',0,1)`))
+	// Finalized later than the period it bills for.
+	require.NoError(t, admin.GetConn().Exec(ctx, `INSERT INTO `+db+`.invoices
+		(id, tenant_id, environment_id, status, invoice_status, invoice_type, customer_id, currency, total, finalized_at, period_start, issue_date, _peerdb_is_deleted, _peerdb_version) VALUES
+		('i10','t1','e1','published','FINALIZED','SUBSCRIPTION','c5','usd',100,'2026-10-02 00:00:00','2026-09-15 00:00:00','2026-09-15 00:00:00',0,1),
+		('i11','t1','e1','published','FINALIZED','ONE_OFF','c6','usd',7,'2026-10-03 00:00:00','1970-01-01 00:00:00','2026-08-25 00:00:00',0,1),
+		('i12','t1','e1','published','FINALIZED','SUBSCRIPTION','c7','usd',50,'2026-09-10 00:00:00','2026-07-01 00:00:00','2026-07-01 00:00:00',0,1)`))
 
 	cfg := &config.Configuration{
 		ClickHouse: config.ClickHouseConfig{Address: address, Username: username, Password: password, Database: "default", MaxMemoryUsage: 1},
@@ -73,17 +81,20 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 		return rows
 	}
 
-	// Dedup, status, tenant, epoch filters.
-	assert.Equal(t, [][]string{{"inr", "5"}, {"usd", "16"}}, run(types.ShapeScalar, ""))
+	// Dedup, status, tenant, epoch filters; period_start attribution.
+	assert.Equal(t, [][]string{{"inr", "5"}, {"usd", "123"}}, run(types.ShapeScalar, ""))
 
+	// i10 follows period_start, i11 falls back to issue_date.
 	assert.Equal(t, [][]string{
-		{"2026-08-01T00:00:00Z", "usd", "6"},
+		{"2026-08-01T00:00:00Z", "usd", "13"},
 		{"2026-09-01T00:00:00Z", "inr", "5"},
-		{"2026-09-01T00:00:00Z", "usd", "10"},
+		{"2026-09-01T00:00:00Z", "usd", "110"},
 	}, run(types.ShapeTimeseries, types.GrainMonth))
 
 	assert.Equal(t, [][]string{
+		{"c5", "usd", "100"},
 		{"c1", "usd", "12"},
+		{"c6", "usd", "7"},
 		{"c2", "inr", "5"},
 		{"c4", "usd", "4"},
 	}, run(types.ShapeBreakdown, "", "customer_id"))
@@ -114,10 +125,10 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 		return rows
 	}
 
-	assert.Equal(t, [][]string{{"inr", "5", "0"}, {"usd", "10", "6"}}, runCmp(types.ShapeScalar, "", "previous_period"))
+	assert.Equal(t, [][]string{{"inr", "5", "0"}, {"usd", "110", "13"}}, runCmp(types.ShapeScalar, "", "previous_period"))
 	assert.Equal(t, [][]string{
 		{"2026-09-01T00:00:00Z", "inr", "5", "0"},
-		{"2026-09-01T00:00:00Z", "usd", "10", "6"},
+		{"2026-09-01T00:00:00Z", "usd", "110", "13"},
 	}, runCmp(types.ShapeTimeseries, types.GrainMonth, "previous_period"))
 	assert.Contains(t, runCmp(types.ShapeTimeseries, types.GrainDay, "previous_period"), []string{"2026-09-20T00:00:00Z", "usd", "0", "2"})
 	byCustomer := runCmp(types.ShapeBreakdown, "", "previous_period", "customer_id")
@@ -237,6 +248,7 @@ func TestReportsRepository_CustomReports(t *testing.T) {
 	require.NoError(t, admin.GetConn().Exec(ctx, `CREATE TABLE `+db+`.invoices (
 		id String, tenant_id String, environment_id String, status String,
 		invoice_status String, currency String, total Decimal(20, 9), finalized_at DateTime64(6),
+		period_start DateTime64(6), issue_date DateTime64(6),
 		_peerdb_is_deleted UInt8, _peerdb_version Int64
 	) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`))
 	require.NoError(t, admin.GetConn().Exec(ctx, `CREATE TABLE `+db+`.credit_notes (
@@ -253,8 +265,10 @@ func TestReportsRepository_CustomReports(t *testing.T) {
 	) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`))
 
 	require.NoError(t, admin.GetConn().Exec(ctx, `INSERT INTO `+db+`.invoices VALUES
-		('i1','t1','e1','published','FINALIZED','usd',100,'2026-09-10 00:00:00',0,1),
-		('i2','t1','e1','published','DRAFT','usd',500,'2026-09-10 00:00:00',0,1)`))
+		('i1','t1','e1','published','FINALIZED','usd',100,'2026-09-10 00:00:00','2026-09-10 00:00:00','2026-09-10 00:00:00',0,1),
+		('i2','t1','e1','published','DRAFT','usd',500,'2026-09-10 00:00:00','2026-09-10 00:00:00','2026-09-10 00:00:00',0,1),
+		('i3','t1','e1','published','FINALIZED','usd',30,'2026-10-05 00:00:00','2026-09-20 00:00:00','2026-09-20 00:00:00',0,1),
+		('i4','t1','e1','published','FINALIZED','usd',8,'2026-09-02 00:00:00','1970-01-01 00:00:00','2026-10-08 00:00:00',0,1)`))
 	require.NoError(t, admin.GetConn().Exec(ctx, `INSERT INTO `+db+`.credit_notes VALUES
 		('n1','t1','e1','published','FINALIZED','usd',20,'2026-09-12 00:00:00','1970-01-01 00:00:00',0,1),
 		('n2','t1','e1','published','FINALIZED','usd',15,'2026-10-03 00:00:00','1970-01-01 00:00:00',0,1),
@@ -297,8 +311,8 @@ func TestReportsRepository_CustomReports(t *testing.T) {
 	oct := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 
 	assert.Equal(t, [][]string{
-		{"2026-09-01T00:00:00Z", "usd", "80"},
-		{"2026-10-01T00:00:00Z", "usd", "-15"},
+		{"2026-09-01T00:00:00Z", "usd", "110"},
+		{"2026-10-01T00:00:00Z", "usd", "-7"},
 	}, run(types.MetricNetBilling, types.ShapeTimeseries, sep, time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)))
 
 	nov := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)

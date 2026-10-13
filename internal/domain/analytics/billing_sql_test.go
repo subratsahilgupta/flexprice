@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const billTime = "nullIf(coalesce(nullIf(period_start, toDateTime64(0, 6)), issue_date), toDateTime64(0, 6))"
+
 func billingRV(shape types.Shape, dims ...string) *ResolvedView {
 	return &ResolvedView{
 		Family:     types.FamilyBilling,
@@ -35,8 +37,8 @@ func TestBuildBillingQuery_ScopesAndInvariants(t *testing.T) {
 		"_peerdb_is_deleted = 0",
 		"status = 'published'",
 		"invoice_status = 'FINALIZED'",
-		"nullIf(finalized_at, toDateTime64(0, 6)) >= toDateTime64({from:String}, 6, 'UTC')",
-		"nullIf(finalized_at, toDateTime64(0, 6)) < toDateTime64({to:String}, 6, 'UTC')",
+		billTime + " >= toDateTime64({from:String}, 6, 'UTC')",
+		billTime + " < toDateTime64({to:String}, 6, 'UTC')",
 		"LIMIT 1001",
 	} {
 		assert.Contains(t, q.SQL, frag)
@@ -60,7 +62,7 @@ func TestBuildBillingQuery_ScalarForcesCurrency(t *testing.T) {
 func TestBuildBillingQuery_TimeseriesBucketsInUTC(t *testing.T) {
 	q, err := BuildBillingQuery(billingRV(types.ShapeTimeseries, "customer_id"), "reports_db", "t", "e", 0)
 	require.NoError(t, err)
-	assert.Contains(t, q.SQL, "toStartOfMonth(nullIf(finalized_at, toDateTime64(0, 6)), 'UTC')")
+	assert.Contains(t, q.SQL, "toStartOfMonth("+billTime+", 'UTC')")
 	assert.Equal(t, []string{"bucket", "customer_id", "currency", "invoice_total"}, columnNames(q))
 	assert.Contains(t, q.SQL, "GROUP BY bucket, d_customer_id, d_currency")
 	assert.Contains(t, q.SQL, "ORDER BY bucket, d_customer_id, d_currency")
@@ -242,9 +244,9 @@ func TestBuildBillingQuery_CompareTimeseries(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"bucket", "currency", "invoice_total", "invoice_total_prev"}, columnNames(q))
 	assert.Contains(t, q.SQL, "sumIf(total, ")
-	assert.Contains(t, q.SQL, "addMonths(nullIf(finalized_at, toDateTime64(0, 6)), {shift_m:Int32})")
+	assert.Contains(t, q.SQL, "addMonths("+billTime+", {shift_m:Int32})")
 	assert.Contains(t, q.SQL, "toDateTime64({prev_from:String}, 6, 'UTC')")
-	tc := "nullIf(finalized_at, toDateTime64(0, 6))"
+	tc := billTime
 	cur := tc + " >= toDateTime64({from:String}, 6, 'UTC') AND " + tc + " < toDateTime64({to:String}, 6, 'UTC')"
 	prev := tc + " >= toDateTime64({prev_from:String}, 6, 'UTC') AND " + tc + " < toDateTime64({prev_to:String}, 6, 'UTC')"
 	assert.Contains(t, q.SQL, " AND (("+cur+") OR ("+prev+"))")
@@ -262,7 +264,7 @@ func TestBuildBillingQuery_CompareRollingUsesSeconds(t *testing.T) {
 	rv.Compare = "previous_period"
 	q, err := BuildBillingQuery(rv, "reports_db", "t", "e", 0)
 	require.NoError(t, err)
-	assert.Contains(t, q.SQL, "addSeconds(nullIf(finalized_at, toDateTime64(0, 6)), {shift_s:Int64})")
+	assert.Contains(t, q.SQL, "addSeconds("+billTime+", {shift_s:Int64})")
 	assert.Equal(t, "604800", q.Params["shift_s"])
 	_, hasShift := q.Params["shift_m"]
 	assert.False(t, hasShift)
@@ -273,7 +275,7 @@ func TestBuildBillingQuery_CompareYearUsesAddYears(t *testing.T) {
 	rv.Compare = "previous_year"
 	q, err := BuildBillingQuery(rv, "reports_db", "t", "e", 0)
 	require.NoError(t, err)
-	assert.Contains(t, q.SQL, "addYears(nullIf(finalized_at, toDateTime64(0, 6)), 1)")
+	assert.Contains(t, q.SQL, "addYears("+billTime+", 1)")
 	_, hasShift := q.Params["shift_s"]
 	assert.False(t, hasShift)
 }

@@ -45,6 +45,11 @@ const agingBucketExpr = "multiIf(nullIf(due_date, toDateTime64(0, 6)) IS NULL, '
 	"dateDiff('day', due_date, now64(6, 'UTC'), 'UTC') <= 60, '31-60', " +
 	"dateDiff('day', due_date, now64(6, 'UTC'), 'UTC') <= 90, '61-90', '90+')"
 
+// invoiceBillingTime: billed period; one-offs use issue date.
+func invoiceBillingTime(prefix string) string {
+	return "coalesce(nullIf(" + prefix + "period_start, " + chEpoch + "), " + prefix + "issue_date)"
+}
+
 var (
 	paidIn = "payment_status IN ('" + string(types.PaymentStatusSucceeded) + "','" + string(types.PaymentStatusOverpaid) + "')"
 	// Open invoices with a balance.
@@ -165,7 +170,7 @@ var billingMetrics = map[types.Metric]*BillingMetric{
 	types.MetricInvoiceTotal: {
 		Metric:  types.MetricInvoiceTotal,
 		Table:   "invoices",
-		TimeCol: "finalized_at",
+		TimeCol: invoiceBillingTime(""),
 		Measure: "sum(total)",
 		Agg:     "sum",
 		Arg:     "total",

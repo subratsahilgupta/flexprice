@@ -88,10 +88,10 @@ func buildNetBilling(in BuildInput) (*ReportQuery, error) {
 		cols = append(cols, ReportColumn{Name: "bucket", Type: types.ColumnTypeDatetime, Role: types.ColumnRoleDimension})
 	}
 	b.WriteString("ifNull(toString(c), '') AS d_currency, ifNull(toString(sum(v)), '') AS m_value FROM (")
-	b.WriteString("SELECT nullIf(finalized_at, " + chEpoch + ") AS b, currency AS c, toDecimal128(total, 9) AS v")
+	b.WriteString("SELECT nullIf(" + invoiceBillingTime("") + ", " + chEpoch + ") AS b, currency AS c, toDecimal128(total, 9) AS v")
 	b.WriteString(" FROM " + in.DB + ".invoices AS i FINAL WHERE " + in.Scope("i"))
 	b.WriteString(" AND i.invoice_status = '" + string(types.InvoiceStatusFinalized) + "'")
-	b.WriteString(" AND " + in.TimeCond("i.finalized_at") + currencyCond(in, "i"))
+	b.WriteString(" AND " + in.TimeCond(invoiceBillingTime("i.")) + currencyCond(in, "i"))
 	b.WriteString(" UNION ALL ")
 	b.WriteString("SELECT nullIf(created_at, " + chEpoch + "), currency, -toDecimal128(total_amount, 9)")
 	b.WriteString(" FROM " + in.DB + ".credit_notes AS n FINAL WHERE " + in.Scope("n"))
