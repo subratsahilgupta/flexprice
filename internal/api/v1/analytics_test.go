@@ -84,6 +84,8 @@ func setupAnalyticsRouter(t *testing.T, svc service.AnalyticsService) *gin.Engin
 	router.Use(middleware.ErrorHandler())
 	router.POST("/v1/analytics/query", handler.Query)
 	router.POST("/v1/analytics/views", handler.CreateView)
+	router.GET("/v1/analytics/reports", handler.ListReports)
+	router.POST("/v1/analytics/reports/:key/query", handler.RunReport)
 
 	return router
 }
@@ -234,4 +236,42 @@ func TestAnalyticsQuery_ServiceError_MapsToNotFound(t *testing.T) {
 	var errResp ierr.ErrorResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &errResp))
 	require.Equal(t, "no such view", errResp.Message)
+}
+
+func doRunReport(r *gin.Engine, key, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/v1/analytics/reports/"+key+"/query", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func TestListReportsHandler_OK(t *testing.T) {
+	stub := &stubAnalyticsService{catalog: &dto.ReportCatalogResponse{Items: []*dto.ReportCatalogEntry{{Key: "invoice_total", Name: "Total billing"}}}}
+	r := setupAnalyticsRouter(t, stub)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/analytics/reports", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"key":"invoice_total"`)
+}
+
+func TestRunReportHandler_PassesKeyAndBody(t *testing.T) {
+	stub := &stubAnalyticsService{result: cannedBreakdownResult()}
+	r := setupAnalyticsRouter(t, stub)
+	w := doRunReport(r, "invoice_total", `{"shape":"timeseries","range":"2026-09-01..2026-10-01","grain":"month","compare":"previous_period"}`)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "invoice_total", stub.lastKey)
+	require.Equal(t, "previous_period", stub.lastReq.Compare)
+}
+
+func TestRunReportHandler_MissingShapeIs400(t *testing.T) {
+	r := setupAnalyticsRouter(t, &stubAnalyticsService{result: cannedBreakdownResult()})
+	w := doRunReport(r, "invoice_total", `{"range":"2026-09-01..2026-10-01"}`)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestRunReportHandler_NotFoundIs404(t *testing.T) {
+	r := setupAnalyticsRouter(t, &stubAnalyticsService{err: ierr.NewError("report not found").Mark(ierr.ErrNotFound)})
+	w := doRunReport(r, "nope", `{"shape":"scalar","range":"2026-09-01..2026-10-01"}`)
+	require.Equal(t, http.StatusNotFound, w.Code)
 }
