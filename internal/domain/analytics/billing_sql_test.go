@@ -200,6 +200,10 @@ func TestPreviousWindow(t *testing.T) {
 		{"rolling", d(2026, 9, 5), d(2026, 9, 12), "previous_period", d(2026, 8, 29), d(2026, 9, 5), 0},
 		{"year", from, to, "previous_year", d(2025, 9, 1), d(2025, 10, 1), 12},
 		{"leap", d(2028, 2, 29), d(2028, 3, 1), "previous_year", d(2027, 3, 1), d(2027, 3, 1), 12},
+		{"mar full", d(2026, 3, 1), d(2026, 3, 31), "previous_period", d(2026, 2, 1), d(2026, 3, 1), 1},
+		{"q1 to mar 31", d(2026, 1, 1), d(2026, 3, 31), "previous_period", d(2025, 10, 1), d(2025, 12, 31), 3},
+		{"may full", d(2026, 5, 1), d(2026, 5, 31), "previous_period", d(2026, 4, 1), d(2026, 5, 1), 1},
+		{"oct full", d(2026, 10, 1), d(2026, 10, 31), "previous_period", d(2026, 9, 1), d(2026, 10, 1), 1},
 	}
 	for _, c := range cases {
 		pf, pt, shift, err := PreviousWindow(c.from, c.to, c.compare)
@@ -211,6 +215,24 @@ func TestPreviousWindow(t *testing.T) {
 
 	_, _, _, err := PreviousWindow(from, to, "bogus")
 	require.Error(t, err)
+}
+
+func TestPreviousWindow_NeverOverlaps(t *testing.T) {
+	for m := time.January; m <= time.December; m++ {
+		from := time.Date(2026, m, 1, 0, 0, 0, 0, time.UTC)
+		for day := 2; day <= 31; day++ {
+			to := time.Date(2026, m, day, 0, 0, 0, 0, time.UTC)
+			if to.Month() != m {
+				continue
+			}
+			for _, cmp := range []string{"previous_period", "previous_year"} {
+				pf, pt, _, err := PreviousWindow(from, to, cmp)
+				require.NoError(t, err)
+				assert.False(t, pt.After(from), "%s %s..%s -> %s..%s", cmp, from, to, pf, pt)
+				assert.True(t, pf.Before(pt), "%s %s..%s", cmp, from, to)
+			}
+		}
+	}
 }
 
 func TestBuildBillingQuery_CompareTimeseries(t *testing.T) {
