@@ -40,6 +40,20 @@ func TestBuildNetBilling(t *testing.T) {
 	assert.NotContains(t, q.SQL, "LIMIT")
 }
 
+func TestBuildNetBillingIssued(t *testing.T) {
+	q, err := BuildBillingQuery(customRV(types.MetricNetBillingIssued, types.ShapeTimeseries), "reports_db", "t", "e", 10)
+	require.NoError(t, err)
+	assert.Contains(t, q.SQL, "nullIf(i.issue_date, toDateTime64(0, 6)) >= toDateTime64({from:String}, 6, 'UTC')")
+	assert.Contains(t, q.SQL, "SELECT nullIf(issue_date, toDateTime64(0, 6)) AS b")
+	assert.NotContains(t, q.SQL, "period_start")
+	assert.Contains(t, q.SQL, "nullIf(n.created_at, toDateTime64(0, 6)) >= toDateTime64({from:String}, 6, 'UTC')")
+	require.Len(t, q.Columns, 3)
+	assert.Equal(t, "net_billing_issued", q.Columns[2].Name)
+
+	_, err = BuildBillingQuery(customRV(types.MetricNetBillingIssued, types.ShapeBreakdown), "reports_db", "t", "e", 0)
+	require.Error(t, err)
+}
+
 func TestBuildNetBilling_Rejects(t *testing.T) {
 	rv := customRV(types.MetricNetBilling, types.ShapeScalar)
 	rv.Compare = "previous_period"

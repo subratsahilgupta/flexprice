@@ -47,8 +47,12 @@ func TestListReports_VariantFieldsOnlyWhereSet(t *testing.T) {
 	assert.Equal(t, "Billed", raw["arpu_billed"]["variant_label"])
 	assert.Equal(t, "arpu", raw["arpu_billed"]["variant_of"])
 	assert.Equal(t, "ARPU (billed)", raw["arpu_billed"]["name"])
-	assert.NotContains(t, raw["invoice_total"], "variant_label")
+	assert.Equal(t, "Billing period", raw["invoice_total"]["variant_label"])
 	assert.NotContains(t, raw["invoice_total"], "variant_of")
+	assert.Equal(t, "Invoice date", raw["invoice_total_issued"]["variant_label"])
+	assert.Equal(t, "invoice_total", raw["invoice_total_issued"]["variant_of"])
+	assert.Equal(t, "Billing period", raw["net_billing"]["variant_label"])
+	assert.Equal(t, "net_billing", raw["net_billing_issued"]["variant_of"])
 }
 
 func TestListReports_DisabledIs403(t *testing.T) {

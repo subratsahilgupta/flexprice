@@ -363,6 +363,24 @@ func TestBuildBillingQuery_CustomBuildHook(t *testing.T) {
 	assert.True(t, ierr.IsPermissionDenied(err))
 }
 
+func TestBuildBillingQuery_InvoiceTotalIssued(t *testing.T) {
+	const issueTime = "nullIf(issue_date, toDateTime64(0, 6))"
+	rv := billingRV(types.ShapeTimeseries)
+	rv.Metrics = []types.Metric{types.MetricInvoiceTotalIssued}
+	rv.Compare = "previous_period"
+	q, err := BuildBillingQuery(rv, "reports_db", "t", "e", 0)
+	require.NoError(t, err)
+	assert.Contains(t, q.SQL, issueTime+" >= toDateTime64({from:String}, 6, 'UTC')")
+	assert.Contains(t, q.SQL, "invoice_status = 'FINALIZED'")
+	assert.NotContains(t, q.SQL, "period_start")
+	assert.Equal(t, []string{"bucket", "currency", "invoice_total_issued", "invoice_total_issued_prev"}, columnNames(q))
+
+	base, err := BuildBillingQuery(billingRV(types.ShapeTimeseries), "reports_db", "t", "e", 0)
+	require.NoError(t, err)
+	assert.Contains(t, base.SQL, billTime)
+	assert.NotContains(t, base.SQL, issueTime+" >=")
+}
+
 func TestBuildBillingQuery_ARPUBilled(t *testing.T) {
 	rv := billingRV(types.ShapeTimeseries)
 	rv.Metrics = []types.Metric{types.MetricARPUBilled}

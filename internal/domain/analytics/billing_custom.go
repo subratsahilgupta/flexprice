@@ -68,8 +68,8 @@ func limitClause(maxRows int) string {
 }
 
 // Invoices plus negative finalized credit notes.
-func buildNetBilling(in BuildInput) (*ReportQuery, error) {
-	if err := rejectCustom(in, types.MetricNetBilling, types.ShapeScalar, types.ShapeTimeseries); err != nil {
+func buildNetBilling(m types.Metric, invoiceTime func(prefix string) string, in BuildInput) (*ReportQuery, error) {
+	if err := rejectCustom(in, m, types.ShapeScalar, types.ShapeTimeseries); err != nil {
 		return nil, err
 	}
 	grainFn, ok := billingGrainFn[in.RV.Time.Grain]
@@ -88,10 +88,10 @@ func buildNetBilling(in BuildInput) (*ReportQuery, error) {
 		cols = append(cols, ReportColumn{Name: "bucket", Type: types.ColumnTypeDatetime, Role: types.ColumnRoleDimension})
 	}
 	b.WriteString("ifNull(toString(c), '') AS d_currency, ifNull(toString(sum(v)), '') AS m_value FROM (")
-	b.WriteString("SELECT nullIf(" + invoiceBillingTime("") + ", " + chEpoch + ") AS b, currency AS c, toDecimal128(total, 9) AS v")
+	b.WriteString("SELECT nullIf(" + invoiceTime("") + ", " + chEpoch + ") AS b, currency AS c, toDecimal128(total, 9) AS v")
 	b.WriteString(" FROM " + in.DB + ".invoices AS i FINAL WHERE " + in.Scope("i"))
 	b.WriteString(" AND i.invoice_status = '" + string(types.InvoiceStatusFinalized) + "'")
-	b.WriteString(" AND " + in.TimeCond(invoiceBillingTime("i.")) + currencyCond(in, "i"))
+	b.WriteString(" AND " + in.TimeCond(invoiceTime("i.")) + currencyCond(in, "i"))
 	b.WriteString(" UNION ALL ")
 	b.WriteString("SELECT nullIf(created_at, " + chEpoch + "), currency, -toDecimal128(total_amount, 9)")
 	b.WriteString(" FROM " + in.DB + ".credit_notes AS n FINAL WHERE " + in.Scope("n"))
@@ -101,7 +101,7 @@ func buildNetBilling(in BuildInput) (*ReportQuery, error) {
 
 	cols = append(cols,
 		ReportColumn{Name: "currency", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension},
-		ReportColumn{Name: string(types.MetricNetBilling), Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric},
+		ReportColumn{Name: string(m), Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric},
 	)
 	return &ReportQuery{SQL: b.String(), Params: in.Params, Columns: cols}, nil
 }

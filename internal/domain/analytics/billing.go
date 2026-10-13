@@ -50,6 +50,41 @@ func invoiceBillingTime(prefix string) string {
 	return "coalesce(nullIf(" + prefix + "period_start, " + chEpoch + "), " + prefix + "issue_date)"
 }
 
+func invoiceIssueTime(prefix string) string {
+	return prefix + "issue_date"
+}
+
+func invoiceTotalMetric(m types.Metric, timeCol string) *BillingMetric {
+	return &BillingMetric{
+		Metric:  m,
+		Table:   "invoices",
+		TimeCol: timeCol,
+		Measure: "sum(total)",
+		Agg:     "sum",
+		Arg:     "total",
+		Where:   []string{"invoice_status = '" + string(types.InvoiceStatusFinalized) + "'"},
+		Dimensions: map[string]string{
+			"currency":     "currency",
+			"customer_id":  "customer_id",
+			"invoice_type": "invoice_type",
+		},
+		Shapes:   []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
+		Currency: true,
+	}
+}
+
+func netBillingMetric(m types.Metric, invoiceTime func(prefix string) string) *BillingMetric {
+	return &BillingMetric{
+		Metric:     m,
+		Dimensions: map[string]string{"currency": "currency"},
+		Shapes:     []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
+		Currency:   true,
+		Build: func(in BuildInput) (*ReportQuery, error) {
+			return buildNetBilling(m, invoiceTime, in)
+		},
+	}
+}
+
 var (
 	paidIn = "payment_status IN ('" + string(types.PaymentStatusSucceeded) + "','" + string(types.PaymentStatusOverpaid) + "')"
 	// Open invoices with a balance.
@@ -177,29 +212,10 @@ var billingMetrics = map[types.Metric]*BillingMetric{
 		Shapes:   []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
 		Currency: true,
 	},
-	types.MetricInvoiceTotal: {
-		Metric:  types.MetricInvoiceTotal,
-		Table:   "invoices",
-		TimeCol: invoiceBillingTime(""),
-		Measure: "sum(total)",
-		Agg:     "sum",
-		Arg:     "total",
-		Where:   []string{"invoice_status = '" + string(types.InvoiceStatusFinalized) + "'"},
-		Dimensions: map[string]string{
-			"currency":     "currency",
-			"customer_id":  "customer_id",
-			"invoice_type": "invoice_type",
-		},
-		Shapes:   []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
-		Currency: true,
-	},
-	types.MetricNetBilling: {
-		Metric:     types.MetricNetBilling,
-		Dimensions: map[string]string{"currency": "currency"},
-		Shapes:     []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
-		Currency:   true,
-		Build:      buildNetBilling,
-	},
+	types.MetricInvoiceTotal:       invoiceTotalMetric(types.MetricInvoiceTotal, invoiceBillingTime("")),
+	types.MetricInvoiceTotalIssued: invoiceTotalMetric(types.MetricInvoiceTotalIssued, "issue_date"),
+	types.MetricNetBilling:         netBillingMetric(types.MetricNetBilling, invoiceBillingTime),
+	types.MetricNetBillingIssued:   netBillingMetric(types.MetricNetBillingIssued, invoiceIssueTime),
 	types.MetricActiveCustomers: {
 		Metric:     types.MetricActiveCustomers,
 		Dimensions: map[string]string{"currency": "currency"},

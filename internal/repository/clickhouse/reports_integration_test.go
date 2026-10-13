@@ -293,7 +293,8 @@ func TestReportsRepository_CustomReports(t *testing.T) {
 		('i1','t1','e1','published','FINALIZED','usd',100,'2026-09-10 00:00:00','2026-09-10 00:00:00','2026-09-10 00:00:00',0,1),
 		('i2','t1','e1','published','DRAFT','usd',500,'2026-09-10 00:00:00','2026-09-10 00:00:00','2026-09-10 00:00:00',0,1),
 		('i3','t1','e1','published','FINALIZED','usd',30,'2026-10-05 00:00:00','2026-09-20 00:00:00','2026-09-20 00:00:00',0,1),
-		('i4','t1','e1','published','FINALIZED','usd',8,'2026-09-02 00:00:00','1970-01-01 00:00:00','2026-10-08 00:00:00',0,1)`))
+		('i4','t1','e1','published','FINALIZED','usd',8,'2026-09-02 00:00:00','1970-01-01 00:00:00','2026-10-08 00:00:00',0,1),
+		('i5','t1','e1','published','FINALIZED','usd',40,'2026-10-05 00:00:00','2026-09-25 00:00:00','2026-10-05 00:00:00',0,1)`))
 	require.NoError(t, admin.GetConn().Exec(ctx, `INSERT INTO `+db+`.credit_notes VALUES
 		('n1','t1','e1','published','FINALIZED','usd',20,'2026-09-12 00:00:00','1970-01-01 00:00:00',0,1),
 		('n2','t1','e1','published','FINALIZED','usd',15,'2026-10-03 00:00:00','1970-01-01 00:00:00',0,1),
@@ -321,10 +322,13 @@ func TestReportsRepository_CustomReports(t *testing.T) {
 	repo, err := NewReportsRepository(cfg, nil)
 	require.NoError(t, err)
 
-	run := func(metric types.Metric, shape types.Shape, from, to time.Time) [][]string {
+	run := func(metric types.Metric, shape types.Shape, from, to time.Time, compare ...string) [][]string {
 		rv := &analytics.ResolvedView{
 			Family: types.FamilyBilling, Shape: shape, Metrics: []types.Metric{metric},
 			Time: analytics.TimeSpec{From: from, To: to, Grain: types.GrainMonth},
+		}
+		if len(compare) > 0 {
+			rv.Compare = compare[0]
 		}
 		q, err := analytics.BuildBillingQuery(rv, repo.Database(), "t1", "e1", 100)
 		require.NoError(t, err)
@@ -336,9 +340,25 @@ func TestReportsRepository_CustomReports(t *testing.T) {
 	oct := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 
 	assert.Equal(t, [][]string{
-		{"2026-09-01T00:00:00Z", "usd", "110"},
+		{"2026-09-01T00:00:00Z", "usd", "150"},
 		{"2026-10-01T00:00:00Z", "usd", "-7"},
 	}, run(types.MetricNetBilling, types.ShapeTimeseries, sep, time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)))
+
+	// i5: period in Sep, issued in Oct.
+	assert.Equal(t, [][]string{
+		{"2026-09-01T00:00:00Z", "usd", "110"},
+		{"2026-10-01T00:00:00Z", "usd", "33"},
+	}, run(types.MetricNetBillingIssued, types.ShapeTimeseries, sep, time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)))
+	assert.Equal(t, [][]string{
+		{"2026-09-01T00:00:00Z", "usd", "170"},
+		{"2026-10-01T00:00:00Z", "usd", "8"},
+	}, run(types.MetricInvoiceTotal, types.ShapeTimeseries, sep, time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)))
+	assert.Equal(t, [][]string{
+		{"2026-09-01T00:00:00Z", "usd", "130"},
+		{"2026-10-01T00:00:00Z", "usd", "48"},
+	}, run(types.MetricInvoiceTotalIssued, types.ShapeTimeseries, sep, time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)))
+	assert.Equal(t, [][]string{{"usd", "48", "130"}},
+		run(types.MetricInvoiceTotalIssued, types.ShapeScalar, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC), "previous_period"))
 
 	nov := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 	late := time.Date(2026, 9, 21, 0, 0, 0, 0, time.UTC)
