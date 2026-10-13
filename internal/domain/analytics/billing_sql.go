@@ -110,6 +110,26 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 		"from":           rv.Time.From.UTC().Format(chTimeLayout),
 		"to":             rv.Time.To.UTC().Format(chTimeLayout),
 	}
+	if bm.Build != nil {
+		return bm.Build(BuildInput{
+			RV:     rv,
+			DB:     db,
+			Params: params,
+			Scope: func(alias string) string {
+				return fmt.Sprintf("%[1]s.tenant_id = {tenant_id:String} AND %[1]s.environment_id = {environment_id:String} AND %[1]s._peerdb_is_deleted = 0 AND %[1]s.status = '%s'", alias, types.StatusPublished)
+			},
+			TimeCond: func(col string) string {
+				e := fmt.Sprintf("nullIf(%s, %s)", col, chEpoch)
+				return fmt.Sprintf("%s >= toDateTime64({from:String}, 6, 'UTC') AND %s < toDateTime64({to:String}, 6, 'UTC')", e, e)
+			},
+			MaxRows: maxRows,
+		})
+	}
+	if bm.Snapshot && (rv.Compare != "" || rv.Shape == types.ShapeTimeseries) {
+		return nil, ierr.NewErrorf("metric %q is a snapshot", bm.Metric).
+			WithHint("snapshot metrics support neither compare nor timeseries").
+			Mark(ierr.ErrValidation)
+	}
 	timeExpr := fmt.Sprintf("nullIf(%s, %s)", bm.TimeCol, chEpoch)
 	curCond := fmt.Sprintf("%s >= toDateTime64({from:String}, 6, 'UTC') AND %s < toDateTime64({to:String}, 6, 'UTC')", timeExpr, timeExpr)
 	bucketExpr := timeExpr
@@ -172,7 +192,9 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 		"status = '" + string(types.StatusPublished) + "'",
 	}
 	where = append(where, bm.Where...)
-	where = append(where, timeWhere...)
+	if !bm.Snapshot {
+		where = append(where, timeWhere...)
+	}
 	for i, f := range rv.Filters {
 		if f == nil {
 			continue

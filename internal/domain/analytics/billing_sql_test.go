@@ -304,3 +304,59 @@ func TestBuildBillingQuery_RejectsBadCompare(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, ierr.IsValidation(err))
 }
+
+func TestBuildBillingQuery_SnapshotHasNoTimeWindow(t *testing.T) {
+	withMetric(t, &BillingMetric{
+		Metric: "test_snapshot", Table: "invoices", TimeCol: "finalized_at", Measure: "sum(amount_remaining)", Agg: "sum", Arg: "amount_remaining",
+		Dimensions: map[string]string{"currency": "currency"}, Shapes: []types.Shape{types.ShapeScalar, types.ShapeBreakdown}, Currency: true, Snapshot: true,
+	})
+	rv := billingRV(types.ShapeScalar)
+	rv.Metrics = []types.Metric{"test_snapshot"}
+	q, err := BuildBillingQuery(rv, "reports_db", "t", "e", 0)
+	require.NoError(t, err)
+	assert.NotContains(t, q.SQL, "{from:String}")
+	assert.NotContains(t, q.SQL, "{to:String}")
+
+	rv.Compare = "previous_period"
+	_, err = BuildBillingQuery(rv, "reports_db", "t", "e", 0)
+	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
+}
+
+func TestBuildBillingQuery_ExpressionDimension(t *testing.T) {
+	withMetric(t, &BillingMetric{
+		Metric: "test_expr", Table: "invoices", TimeCol: "finalized_at", Measure: "sum(total)", Agg: "sum", Arg: "total",
+		Dimensions: map[string]string{"bucket_x": "multiIf(total > 100, 'big', 'small')", "currency": "currency"},
+		Shapes:     []types.Shape{types.ShapeBreakdown}, Currency: true,
+	})
+	rv := billingRV(types.ShapeBreakdown, "bucket_x")
+	rv.Metrics = []types.Metric{"test_expr"}
+	rv.Filters = []*Filter{{Field: "bucket_x", Op: types.EQUAL, Value: []string{"big"}}}
+	q, err := BuildBillingQuery(rv, "reports_db", "t", "e", 0)
+	require.NoError(t, err)
+	assert.Contains(t, q.SQL, "ifNull(toString(multiIf(total > 100, 'big', 'small')), '') AS d_bucket_x")
+	assert.Contains(t, q.SQL, "GROUP BY d_bucket_x")
+	assert.Contains(t, q.SQL, "multiIf(total > 100, 'big', 'small') IN ({f0_0:String})")
+}
+
+func TestBuildBillingQuery_CustomBuildHook(t *testing.T) {
+	var got BuildInput
+	withMetric(t, &BillingMetric{
+		Metric: "test_custom", Shapes: []types.Shape{types.ShapeScalar}, Currency: true,
+		Build: func(in BuildInput) (*ReportQuery, error) {
+			got = in
+			return &ReportQuery{SQL: "SELECT 1 FROM " + in.DB + ".x i WHERE " + in.Scope("i") + " AND " + in.TimeCond("i.created_at"), Params: in.Params}, nil
+		},
+	})
+	rv := billingRV(types.ShapeScalar)
+	rv.Metrics = []types.Metric{"test_custom"}
+	q, err := BuildBillingQuery(rv, "reports_db", "tenant_1", "env_1", 0)
+	require.NoError(t, err)
+	assert.Equal(t, "tenant_1", got.Params["tenant_id"])
+	assert.Contains(t, q.SQL, "i.tenant_id = {tenant_id:String} AND i.environment_id = {environment_id:String} AND i._peerdb_is_deleted = 0 AND i.status = 'published'")
+	assert.Contains(t, q.SQL, "nullIf(i.created_at, toDateTime64(0, 6)) >= toDateTime64({from:String}, 6, 'UTC')")
+
+	_, err = BuildBillingQuery(rv, "reports_db", "", "env_1", 0)
+	require.Error(t, err)
+	assert.True(t, ierr.IsPermissionDenied(err))
+}

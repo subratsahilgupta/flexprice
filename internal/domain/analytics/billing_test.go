@@ -106,3 +106,14 @@ func TestLookupBillingMetric_InvoiceTotalUsesConstants(t *testing.T) {
 	assert.Contains(t, bm.Where, "invoice_status = '"+string(types.InvoiceStatusFinalized)+"'")
 	assert.True(t, bm.Currency)
 }
+
+func TestBillingValidate_SnapshotRejectsTimeseries(t *testing.T) {
+	withMetric(t, &BillingMetric{
+		Metric: "test_snap_v", Table: "invoices", TimeCol: "finalized_at", Measure: "sum(total)", Agg: "sum", Arg: "total",
+		Dimensions: map[string]string{"currency": "currency"},
+		Shapes:     []types.Shape{types.ShapeScalar, types.ShapeTimeseries}, Snapshot: true,
+	})
+	d := billingDef(types.ShapeTimeseries)
+	d.Metrics = []types.Metric{"test_snap_v"}
+	requireValidationErr(t, d.Validate())
+}

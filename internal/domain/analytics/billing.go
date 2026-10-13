@@ -19,6 +19,22 @@ type BillingMetric struct {
 	Shapes     []types.Shape
 	// Forces currency into the group-by.
 	Currency bool
+	// Point-in-time metric; no time window.
+	Snapshot bool
+	// Replaces the generic builder.
+	Build func(BuildInput) (*ReportQuery, error)
+}
+
+// BuildInput is handed to custom builders.
+type BuildInput struct {
+	RV     *ResolvedView
+	DB     string
+	Params map[string]string
+	// Standard row invariants for alias.
+	Scope func(alias string) string
+	// Half-open window predicate on expr.
+	TimeCond func(col string) string
+	MaxRows  int
 }
 
 var billingMetrics = map[types.Metric]*BillingMetric{
