@@ -209,12 +209,12 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 	topN := billingTopN(rv, bm.Metric)
 	switch {
 	case topN && maxRows > 0:
-		fmt.Fprintf(&b, " LIMIT %d", min(rv.Limit, maxRows))
+		b.WriteString(" LIMIT " + strconv.Itoa(min(rv.Limit, maxRows)))
 	case topN:
-		fmt.Fprintf(&b, " LIMIT %d", rv.Limit)
+		b.WriteString(" LIMIT " + strconv.Itoa(rv.Limit))
 	case maxRows > 0:
 		// One extra row detects overflow.
-		fmt.Fprintf(&b, " LIMIT %d", maxRows+1)
+		b.WriteString(" LIMIT " + strconv.Itoa(maxRows+1))
 	}
 
 	return &ReportQuery{SQL: b.String(), Params: params, Columns: cols, TopN: topN}, nil
