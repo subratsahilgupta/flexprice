@@ -24,7 +24,7 @@ import (
 
 // tsvectorUnsafe matches chars that break the ::tsvector cast of Text search attributes
 // on PostgreSQL visibility (notably ':')
-var tsvectorUnsafe = regexp.MustCompile(`[:'\\\r\n\t]+`)
+var tsvectorUnsafe = regexp.MustCompile(`[:'\\\r\n\t\x00]+`)
 
 const (
 	// Custom Search Attribute Keys
