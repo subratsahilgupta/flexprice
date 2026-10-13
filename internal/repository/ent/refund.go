@@ -170,7 +170,7 @@ func (r *refundRepository) Update(ctx context.Context, ref *domainRefund.Refund)
 		SetNillableSucceededAt(ref.SucceededAt).
 		SetNillableFailedAt(ref.FailedAt).
 		SetNillableCancelledAt(ref.CancelledAt).
-		Save(ctx)
+		SaveReturning(ctx)
 
 	if err != nil {
 		SetSpanError(span, err)
@@ -214,7 +214,7 @@ func (r *refundRepository) Delete(ctx context.Context, id string) error {
 			refund.TenantID(types.GetTenantID(ctx)),
 		).
 		SetStatus(string(types.StatusArchived)).
-		Save(ctx)
+		SaveReturning(ctx)
 
 	if err != nil {
 		SetSpanError(span, err)
@@ -729,4 +729,19 @@ func (o RefundQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.
 	}
 
 	return query
+}
+
+// GetLinkedCustomerID returns the customer of the refunded invoice.
+func (r *refundRepository) GetLinkedCustomerID(ctx context.Context, id string) (string, error) {
+	return linkedCustomerID(ctx, "refund", id, func() (string, error) {
+		client := r.client.Reader(ctx)
+		invoiceID, err := client.Refund.Query().
+			Where(refund.ID(id), refund.TenantID(types.GetTenantID(ctx)), refund.EnvironmentID(types.GetEnvironmentID(ctx))).
+			Select(refund.FieldInvoiceID).
+			String(ctx)
+		if err != nil {
+			return "", err
+		}
+		return invoiceCustomerID(ctx, client, invoiceID)
+	})
 }
