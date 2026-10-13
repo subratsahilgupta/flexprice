@@ -223,3 +223,80 @@ func TestReportsRepository_GenericReports(t *testing.T) {
 
 	assert.Equal(t, [][]string{{"usd", "90"}}, run(types.MetricARPU, types.ShapeScalar))
 }
+
+func TestReportsRepository_CustomReports(t *testing.T) {
+	address := chEnvOrDefault("FLEXPRICE_TEST_CLICKHOUSE_ADDRESS", "localhost:9000")
+	username := chEnvOrDefault("FLEXPRICE_TEST_CLICKHOUSE_USERNAME", "flexprice")
+	password := chEnvOrDefault("FLEXPRICE_TEST_CLICKHOUSE_PASSWORD", "flexprice123")
+	db := fmt.Sprintf("reports_cus_%d", time.Now().UnixNano())
+
+	admin := newRealClickHouseTestStore(t)
+	ctx := context.Background()
+	require.NoError(t, admin.GetConn().Exec(ctx, "CREATE DATABASE "+db))
+	t.Cleanup(func() { _ = admin.GetConn().Exec(context.Background(), "DROP DATABASE IF EXISTS "+db) })
+	require.NoError(t, admin.GetConn().Exec(ctx, `CREATE TABLE `+db+`.invoices (
+		id String, tenant_id String, environment_id String, status String,
+		invoice_status String, currency String, total Decimal(20, 9), finalized_at DateTime64(6),
+		_peerdb_is_deleted UInt8, _peerdb_version Int64
+	) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`))
+	require.NoError(t, admin.GetConn().Exec(ctx, `CREATE TABLE `+db+`.credit_notes (
+		id String, tenant_id String, environment_id String, status String,
+		credit_note_status String, currency String, total_amount Decimal(20, 8),
+		created_at DateTime64(6), finalized_at DateTime64(6),
+		_peerdb_is_deleted UInt8, _peerdb_version Int64
+	) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`))
+	require.NoError(t, admin.GetConn().Exec(ctx, `CREATE TABLE `+db+`.subscriptions (
+		id String, tenant_id String, environment_id String, status String,
+		customer_id String, currency String, subscription_status String,
+		start_date DateTime64(6), end_date DateTime64(6), cancelled_at DateTime64(6),
+		_peerdb_is_deleted UInt8, _peerdb_version Int64
+	) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`))
+
+	require.NoError(t, admin.GetConn().Exec(ctx, `INSERT INTO `+db+`.invoices VALUES
+		('i1','t1','e1','published','FINALIZED','usd',100,'2026-09-10 00:00:00',0,1),
+		('i2','t1','e1','published','DRAFT','usd',500,'2026-09-10 00:00:00',0,1)`))
+	require.NoError(t, admin.GetConn().Exec(ctx, `INSERT INTO `+db+`.credit_notes VALUES
+		('n1','t1','e1','published','FINALIZED','usd',20,'2026-09-12 00:00:00','1970-01-01 00:00:00',0,1),
+		('n2','t1','e1','published','FINALIZED','usd',15,'2026-10-03 00:00:00','1970-01-01 00:00:00',0,1),
+		('n3','t1','e1','published','DRAFT','usd',99,'2026-09-12 00:00:00','1970-01-01 00:00:00',0,1)`))
+
+	epoch := "1970-01-01 00:00:00"
+	sub := func(id, cust, st, start, end, cancelled string) string {
+		return fmt.Sprintf("('%s','t1','e1','published','%s','usd','%s','%s','%s','%s',0,1)", id, cust, st, start, end, cancelled)
+	}
+	require.NoError(t, admin.GetConn().Exec(ctx, `INSERT INTO `+db+`.subscriptions VALUES `+strings.Join([]string{
+		sub("s1", "c1", "active", "2026-01-01 00:00:00", epoch, epoch),
+		sub("s2", "c1", "active", "2026-08-15 00:00:00", epoch, epoch),
+		sub("s3", "c2", "trialing", "2026-08-20 00:00:00", epoch, epoch),
+		sub("s4", "c3", "active", "2026-01-01 00:00:00", epoch, "2026-07-15 00:00:00"),
+		sub("s5", "c4", "active", "2026-10-05 00:00:00", epoch, epoch),
+	}, ",")))
+
+	cfg := &config.Configuration{
+		ClickHouse: config.ClickHouseConfig{Address: address, Username: username, Password: password, Database: "default", MaxMemoryUsage: 1},
+		Reports:    config.ReportsConfig{Database: db, Username: username, Password: password},
+	}
+	repo, err := NewReportsRepository(cfg, nil)
+	require.NoError(t, err)
+
+	run := func(metric types.Metric, shape types.Shape, from, to time.Time) [][]string {
+		rv := &analytics.ResolvedView{
+			Family: types.FamilyBilling, Shape: shape, Metrics: []types.Metric{metric},
+			Time: analytics.TimeSpec{From: from, To: to, Grain: types.GrainMonth},
+		}
+		q, err := analytics.BuildBillingQuery(rv, repo.Database(), "t1", "e1", 100)
+		require.NoError(t, err)
+		rows, err := repo.Run(ctx, q)
+		require.NoError(t, err)
+		return rows
+	}
+	sep := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	oct := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+
+	assert.Equal(t, [][]string{
+		{"2026-09-01T00:00:00Z", "usd", "80"},
+		{"2026-10-01T00:00:00Z", "usd", "-15"},
+	}, run(types.MetricNetBilling, types.ShapeTimeseries, sep, time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)))
+
+	assert.Equal(t, [][]string{{"usd", "2"}}, run(types.MetricActiveCustomers, types.ShapeScalar, sep, oct))
+}

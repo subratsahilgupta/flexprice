@@ -129,6 +129,29 @@ var reportCatalog = []ReportCatalogEntry{
 		Grains:          []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
 		SupportsCompare: true,
 	},
+	{
+		Key:            types.MetricNetBilling,
+		Name:           "Net billing",
+		Description:    "Total billing minus finalized credit notes",
+		Category:       "billing",
+		Kind:           "flow",
+		ValueType:      "money",
+		HigherIsBetter: true,
+		Shapes:         []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
+		DefaultShape:   types.ShapeTimeseries,
+		Grains:         []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
+	},
+	{
+		Key:            types.MetricActiveCustomers,
+		Name:           "Active customers",
+		Description:    "Customers with an active or trialing subscription in the period",
+		Category:       "customers",
+		Kind:           "ratio",
+		ValueType:      "count",
+		HigherIsBetter: true,
+		Shapes:         []types.Shape{types.ShapeScalar},
+		DefaultShape:   types.ShapeScalar,
+	},
 }
 
 func ReportCatalog() []ReportCatalogEntry {

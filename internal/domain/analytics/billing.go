@@ -179,6 +179,19 @@ var billingMetrics = map[types.Metric]*BillingMetric{
 		Shapes:   []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
 		Currency: true,
 	},
+
+	types.MetricNetBilling: {
+		Metric:   types.MetricNetBilling,
+		Shapes:   []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
+		Currency: true,
+		Build:    buildNetBilling,
+	},
+	types.MetricActiveCustomers: {
+		Metric:   types.MetricActiveCustomers,
+		Shapes:   []types.Shape{types.ShapeScalar},
+		Currency: true,
+		Build:    buildActiveCustomers,
+	},
 }
 
 func LookupBillingMetric(m types.Metric) (*BillingMetric, bool) {
