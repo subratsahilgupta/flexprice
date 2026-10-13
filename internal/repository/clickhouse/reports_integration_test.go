@@ -241,12 +241,12 @@ func TestReportsRepository_GenericReports(t *testing.T) {
 
 	assert.Equal(t, [][]string{{"usd", "12"}}, run(types.MetricCreditConsumption, types.ShapeScalar))
 
-	assert.Equal(t, [][]string{{"usd", "90"}}, run(types.MetricARPU, types.ShapeScalar))
+	assert.Equal(t, [][]string{{"usd", "90"}}, run(types.MetricARPUPaid, types.ShapeScalar))
 
 	// p1, p2 (c1), b1, b2 (c3), b3 (c4): 510 over 3 customers.
-	assert.Equal(t, [][]string{{"usd", "170"}}, run(types.MetricARPUBilled, types.ShapeScalar))
+	assert.Equal(t, [][]string{{"usd", "170"}}, run(types.MetricARPU, types.ShapeScalar))
 	monthly := &analytics.ResolvedView{
-		Family: types.FamilyBilling, Shape: types.ShapeTimeseries, Metrics: []types.Metric{types.MetricARPUBilled},
+		Family: types.FamilyBilling, Shape: types.ShapeTimeseries, Metrics: []types.Metric{types.MetricARPU},
 		Time: analytics.TimeSpec{
 			From:  time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
 			To:    time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),

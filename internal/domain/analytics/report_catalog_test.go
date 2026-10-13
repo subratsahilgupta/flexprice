@@ -63,17 +63,20 @@ func TestReportCatalog_InvoiceTotal(t *testing.T) {
 }
 
 func TestReportCatalog_ARPUVariants(t *testing.T) {
-	paid, ok := LookupReport("arpu")
+	billed, ok := LookupReport("arpu")
 	require.True(t, ok)
-	billed, ok := LookupReport("arpu_billed")
+	paid, ok := LookupReport("arpu_paid")
 	require.True(t, ok)
-	assert.Equal(t, types.Metric(""), paid.VariantOf)
-	assert.Equal(t, "Paid", paid.VariantLabel)
-	assert.Equal(t, types.MetricARPU, billed.VariantOf)
+	_, ok = LookupReport("arpu_billed")
+	assert.False(t, ok)
+	assert.Equal(t, types.Metric(""), billed.VariantOf)
 	assert.Equal(t, "Billed", billed.VariantLabel)
-	assert.Equal(t, paid.Category, billed.Category)
-	assert.Equal(t, paid.Kind, billed.Kind)
-	assert.Equal(t, paid.ValueType, billed.ValueType)
+	assert.Equal(t, types.MetricARPU, paid.VariantOf)
+	assert.Equal(t, "Paid", paid.VariantLabel)
+	assert.Equal(t, billed.Category, paid.Category)
+	assert.Equal(t, billed.Kind, paid.Kind)
+	assert.Equal(t, billed.ValueType, paid.ValueType)
+	assert.False(t, paid.SupportsCompare)
 	assert.False(t, billed.SupportsCompare)
 	for _, e := range ReportCatalog() {
 		if e.VariantOf != "" {

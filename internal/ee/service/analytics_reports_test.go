@@ -40,11 +40,11 @@ func TestListReports_VariantFieldsOnlyWhereSet(t *testing.T) {
 		require.NoError(t, json.Unmarshal(b, &m))
 		raw[it.Key] = m
 	}
-	assert.Equal(t, "Paid", raw["arpu"]["variant_label"])
+	assert.Equal(t, "Billed", raw["arpu"]["variant_label"])
 	assert.NotContains(t, raw["arpu"], "variant_of")
-	assert.Equal(t, "Billed", raw["arpu_billed"]["variant_label"])
-	assert.Equal(t, "arpu", raw["arpu_billed"]["variant_of"])
-	assert.Equal(t, "ARPU (billed)", raw["arpu_billed"]["name"])
+	assert.Equal(t, "Paid", raw["arpu_paid"]["variant_label"])
+	assert.Equal(t, "arpu", raw["arpu_paid"]["variant_of"])
+	assert.Equal(t, "ARPU (paid)", raw["arpu_paid"]["name"])
 	assert.Equal(t, "Billing period", raw["invoice_total"]["variant_label"])
 	assert.NotContains(t, raw["invoice_total"], "variant_of")
 	assert.Equal(t, "Invoice date", raw["invoice_total_issued"]["variant_label"])

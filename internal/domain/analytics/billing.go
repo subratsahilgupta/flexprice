@@ -156,8 +156,8 @@ var billingMetrics = map[types.Metric]*BillingMetric{
 		Shapes:     []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
 		Currency:   true,
 	},
-	types.MetricARPU: {
-		Metric:     types.MetricARPU,
+	types.MetricARPUPaid: {
+		Metric:     types.MetricARPUPaid,
 		Table:      "invoices",
 		TimeCol:    "paid_at",
 		Measure:    "sum(amount_paid) / uniqExact(customer_id)",
@@ -166,8 +166,8 @@ var billingMetrics = map[types.Metric]*BillingMetric{
 		Shapes:     []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
 		Currency:   true,
 	},
-	types.MetricARPUBilled: {
-		Metric:     types.MetricARPUBilled,
+	types.MetricARPU: {
+		Metric:     types.MetricARPU,
 		Table:      "invoices",
 		TimeCol:    invoiceBillingTime(""),
 		Measure:    "sum(total) / uniqExact(customer_id)",

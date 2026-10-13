@@ -383,7 +383,7 @@ func TestBuildBillingQuery_InvoiceTotalIssued(t *testing.T) {
 
 func TestBuildBillingQuery_ARPUBilled(t *testing.T) {
 	rv := billingRV(types.ShapeTimeseries)
-	rv.Metrics = []types.Metric{types.MetricARPUBilled}
+	rv.Metrics = []types.Metric{types.MetricARPU}
 	q, err := BuildBillingQuery(rv, "reports_db", "t", "e", 0)
 	require.NoError(t, err)
 	assert.Contains(t, q.SQL, "sum(total) / uniqExact(customer_id)")
@@ -402,7 +402,7 @@ func TestBuildBillingQuery_ARPUBilled(t *testing.T) {
 
 func TestBuildBillingQuery_ARPURejectsCompare(t *testing.T) {
 	rv := billingRV(types.ShapeScalar)
-	rv.Metrics = []types.Metric{types.MetricARPU}
+	rv.Metrics = []types.Metric{types.MetricARPUPaid}
 	_, err := BuildBillingQuery(rv, "reports_db", "t", "e", 0)
 	require.NoError(t, err)
 
