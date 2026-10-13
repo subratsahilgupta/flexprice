@@ -20,6 +20,10 @@ type fakeEnvironmentService struct {
 	req  admindto.CreateEnvironmentRequest
 	resp *admindto.EnvironmentResponse
 	err  error
+
+	listTenantID string
+	listResp     *admindto.ListEnvironmentsResponse
+	listErr      error
 }
 
 func (f *fakeEnvironmentService) CreateEnvironment(_ context.Context, req admindto.CreateEnvironmentRequest) (*admindto.EnvironmentResponse, error) {
@@ -27,17 +31,40 @@ func (f *fakeEnvironmentService) CreateEnvironment(_ context.Context, req admind
 	return f.resp, f.err
 }
 
+func (f *fakeEnvironmentService) ListEnvironments(_ context.Context, tenantID string) (*admindto.ListEnvironmentsResponse, error) {
+	f.listTenantID = tenantID
+	return f.listResp, f.listErr
+}
+
 type fakeTenantService struct {
 	called bool
 	req    admindto.CreateTenantRequest
 	resp   *admindto.CreateTenantResponse
 	err    error
+
+	listCalled bool
+	listResp   *admindto.ListTenantsResponse
+	listErr    error
+
+	getID   string
+	getResp *admindto.TenantDetailResponse
+	getErr  error
 }
 
 func (f *fakeTenantService) CreateTenant(_ context.Context, req admindto.CreateTenantRequest) (*admindto.CreateTenantResponse, error) {
 	f.called = true
 	f.req = req
 	return f.resp, f.err
+}
+
+func (f *fakeTenantService) ListTenants(_ context.Context, _ admindto.ListTenantsRequest) (*admindto.ListTenantsResponse, error) {
+	f.listCalled = true
+	return f.listResp, f.listErr
+}
+
+func (f *fakeTenantService) GetTenant(_ context.Context, tenantID string) (*admindto.TenantDetailResponse, error) {
+	f.getID = tenantID
+	return f.getResp, f.getErr
 }
 
 func newTestServer(environments *fakeEnvironmentService) *Server {
@@ -133,6 +160,37 @@ func TestCreateEnvironmentUnauthorized(t *testing.T) {
 		rec := httptest.NewRecorder()
 		server.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusUnauthorized, rec.Code)
+	}
+}
+
+func TestMe(t *testing.T) {
+	tests := []struct {
+		name       string
+		secret     string
+		wantStatus int
+		wantBody   string
+	}{
+		{name: "accepted secret", secret: "test-secret", wantStatus: http.StatusOK, wantBody: `{"ok": true}`},
+		{name: "missing secret", wantStatus: http.StatusUnauthorized},
+		{name: "wrong secret", secret: "wrong-secret", wantStatus: http.StatusUnauthorized},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := NewRouter(Handlers{Health: v1.NewHealthHandler(), Me: v1.NewMeHandler()}, nil, "test-secret")
+
+			req := httptest.NewRequest(http.MethodGet, "/v1/me", nil)
+			if tt.secret != "" {
+				req.Header.Set(secretHeader, tt.secret)
+			}
+			rec := httptest.NewRecorder()
+			server.ServeHTTP(rec, req)
+
+			assert.Equal(t, tt.wantStatus, rec.Code)
+			if tt.wantBody != "" {
+				assert.JSONEq(t, tt.wantBody, rec.Body.String())
+			}
+		})
 	}
 }
 
@@ -239,6 +297,96 @@ func TestCreateTenantErrors(t *testing.T) {
 	}
 }
 
+func TestListTenantsRoute(t *testing.T) {
+	tests := []struct {
+		name       string
+		secret     string
+		wantStatus int
+		wantCalled bool
+	}{
+		{name: "with the secret", secret: "test-secret", wantStatus: http.StatusOK, wantCalled: true},
+		{name: "missing secret", wantStatus: http.StatusUnauthorized},
+		{name: "wrong secret", secret: "wrong-secret", wantStatus: http.StatusUnauthorized},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeTenantService{listResp: &admindto.ListTenantsResponse{Items: []*admindto.TenantResponse{}}}
+			server := newTestServerWith(&fakeEnvironmentService{}, fake)
+
+			req := httptest.NewRequest(http.MethodGet, "/v1/tenants?search=acme", nil)
+			if tt.secret != "" {
+				req.Header.Set(secretHeader, tt.secret)
+			}
+			rec := httptest.NewRecorder()
+			server.ServeHTTP(rec, req)
+
+			assert.Equal(t, tt.wantStatus, rec.Code)
+			assert.Equal(t, tt.wantCalled, fake.listCalled)
+		})
+	}
+}
+
+func TestGetTenantRoute(t *testing.T) {
+	tests := []struct {
+		name       string
+		secret     string
+		wantStatus int
+		wantID     string
+	}{
+		{name: "with the secret", secret: "test-secret", wantStatus: http.StatusOK, wantID: "tenant_1"},
+		{name: "missing secret", wantStatus: http.StatusUnauthorized},
+		{name: "wrong secret", secret: "wrong-secret", wantStatus: http.StatusUnauthorized},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeTenantService{getResp: &admindto.TenantDetailResponse{TenantResponse: admindto.TenantResponse{ID: "tenant_1"}}}
+			server := newTestServerWith(&fakeEnvironmentService{}, fake)
+
+			req := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant_1", nil)
+			if tt.secret != "" {
+				req.Header.Set(secretHeader, tt.secret)
+			}
+			rec := httptest.NewRecorder()
+			server.ServeHTTP(rec, req)
+
+			assert.Equal(t, tt.wantStatus, rec.Code)
+			assert.Equal(t, tt.wantID, fake.getID)
+		})
+	}
+}
+
+func TestListEnvironmentsRoute(t *testing.T) {
+	tests := []struct {
+		name         string
+		secret       string
+		wantStatus   int
+		wantTenantID string
+	}{
+		{name: "with the secret", secret: "test-secret", wantStatus: http.StatusOK, wantTenantID: "tenant_1"},
+		{name: "missing secret", wantStatus: http.StatusUnauthorized},
+		{name: "wrong secret", secret: "wrong-secret", wantStatus: http.StatusUnauthorized},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeEnvironmentService{listResp: &admindto.ListEnvironmentsResponse{Items: []*admindto.EnvironmentResponse{}}}
+			server := newTestServer(fake)
+
+			req := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant_1/environments", nil)
+			if tt.secret != "" {
+				req.Header.Set(secretHeader, tt.secret)
+			}
+			rec := httptest.NewRecorder()
+			server.ServeHTTP(rec, req)
+
+			assert.Equal(t, tt.wantStatus, rec.Code)
+			assert.Equal(t, tt.wantTenantID, fake.listTenantID)
+		})
+	}
+}
+
 type fakeUserService struct {
 	called bool
 	req    admindto.AddUserRequest
@@ -249,6 +397,10 @@ type fakeUserService struct {
 	removeReq    admindto.RemoveUserRequest
 	removeResp   *admindto.RemoveUserResponse
 	removeErr    error
+
+	listTenantID string
+	listResp     *admindto.ListUsersResponse
+	listErr      error
 }
 
 func (f *fakeUserService) AddUser(_ context.Context, req admindto.AddUserRequest) (*admindto.UserResponse, error) {
@@ -261,6 +413,11 @@ func (f *fakeUserService) RemoveUser(_ context.Context, req admindto.RemoveUserR
 	f.removeCalled = true
 	f.removeReq = req
 	return f.removeResp, f.removeErr
+}
+
+func (f *fakeUserService) ListUsersForTenant(_ context.Context, tenantID string) (*admindto.ListUsersResponse, error) {
+	f.listTenantID = tenantID
+	return f.listResp, f.listErr
 }
 
 func newUserTestServer(users *fakeUserService) *Server {
@@ -364,17 +521,56 @@ func TestAddUserErrors(t *testing.T) {
 	}
 }
 
+func TestListUsersForTenantRoute(t *testing.T) {
+	tests := []struct {
+		name         string
+		secret       string
+		wantStatus   int
+		wantTenantID string
+	}{
+		{name: "with the secret", secret: "test-secret", wantStatus: http.StatusOK, wantTenantID: "tenant_1"},
+		{name: "missing secret", wantStatus: http.StatusUnauthorized},
+		{name: "wrong secret", secret: "wrong-secret", wantStatus: http.StatusUnauthorized},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeUserService{listResp: &admindto.ListUsersResponse{Items: []*admindto.TenantUserResponse{}}}
+			server := newUserTestServer(fake)
+
+			req := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant_1/users", nil)
+			if tt.secret != "" {
+				req.Header.Set(secretHeader, tt.secret)
+			}
+			rec := httptest.NewRecorder()
+			server.ServeHTTP(rec, req)
+
+			assert.Equal(t, tt.wantStatus, rec.Code)
+			assert.Equal(t, tt.wantTenantID, fake.listTenantID)
+		})
+	}
+}
+
 type fakeSettingsService struct {
 	called bool
 	req    admindto.UpdateTenantConfigRequest
 	resp   *admindto.TenantConfigResponse
 	err    error
+
+	listTenantID string
+	listResp     *admindto.ListSettingsResponse
+	listErr      error
 }
 
 func (f *fakeSettingsService) UpdateTenantConfig(_ context.Context, req admindto.UpdateTenantConfigRequest) (*admindto.TenantConfigResponse, error) {
 	f.called = true
 	f.req = req
 	return f.resp, f.err
+}
+
+func (f *fakeSettingsService) ListTenantSettings(_ context.Context, tenantID string) (*admindto.ListSettingsResponse, error) {
+	f.listTenantID = tenantID
+	return f.listResp, f.listErr
 }
 
 func newSettingsTestServer(settings *fakeSettingsService) *Server {
@@ -541,6 +737,36 @@ func TestRemoveUserErrors(t *testing.T) {
 
 			assert.Equal(t, tt.wantStatus, rec.Code)
 			assert.Equal(t, tt.wantCalled, fake.removeCalled)
+		})
+	}
+}
+
+func TestListTenantSettingsRoute(t *testing.T) {
+	tests := []struct {
+		name         string
+		secret       string
+		wantStatus   int
+		wantTenantID string
+	}{
+		{name: "with the secret", secret: "test-secret", wantStatus: http.StatusOK, wantTenantID: "tenant_1"},
+		{name: "missing secret", wantStatus: http.StatusUnauthorized},
+		{name: "wrong secret", secret: "wrong-secret", wantStatus: http.StatusUnauthorized},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeSettingsService{listResp: &admindto.ListSettingsResponse{Items: []*admindto.SettingResponse{}}}
+			server := newSettingsTestServer(fake)
+
+			req := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant_1/settings", nil)
+			if tt.secret != "" {
+				req.Header.Set(secretHeader, tt.secret)
+			}
+			rec := httptest.NewRecorder()
+			server.ServeHTTP(rec, req)
+
+			assert.Equal(t, tt.wantStatus, rec.Code)
+			assert.Equal(t, tt.wantTenantID, fake.listTenantID)
 		})
 	}
 }
