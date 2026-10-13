@@ -26,8 +26,20 @@ import (
 // from the real translate/execute/shape pipeline already covered by
 // internal/ee/service/analytics_test.go.
 type stubAnalyticsService struct {
-	result *dto.AnalyticsQueryResult
-	err    error
+	result  *dto.AnalyticsQueryResult
+	err     error
+	catalog *dto.ReportCatalogResponse
+	lastKey string
+	lastReq *dto.ReportQueryRequest
+}
+
+func (s *stubAnalyticsService) ListReports(_ context.Context) (*dto.ReportCatalogResponse, error) {
+	return s.catalog, s.err
+}
+
+func (s *stubAnalyticsService) RunReport(_ context.Context, key string, req *dto.ReportQueryRequest) (*dto.AnalyticsQueryResult, error) {
+	s.lastKey, s.lastReq = key, req
+	return s.result, s.err
 }
 
 func (s *stubAnalyticsService) ExecuteView(_ context.Context, _ *analytics.ViewDefinition, _ map[string][]string) (*dto.AnalyticsQueryResult, error) {

@@ -80,6 +80,10 @@ func NewAnalyticsColumn(name string, columnType types.ColumnType, role types.Col
 // AnalyticsQueryMeta carries non-tabular metadata about a query result.
 type AnalyticsQueryMeta struct {
 	QuerySource string `json:"query_source"`
+	From        string `json:"from,omitempty"`
+	To          string `json:"to,omitempty"`
+	PrevFrom    string `json:"prev_from,omitempty"`
+	PrevTo      string `json:"prev_to,omitempty"`
 }
 
 // AnalyticsQueryResult is the visualization-agnostic shape every analytics
@@ -89,4 +93,58 @@ type AnalyticsQueryResult struct {
 	Columns []*AnalyticsColumn `json:"columns"`
 	Rows    [][]string         `json:"rows"`
 	Meta    AnalyticsQueryMeta `json:"meta"`
+}
+
+type ReportDimension struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+}
+
+type ReportCatalogEntry struct {
+	Key             string            `json:"key"`
+	Name            string            `json:"name"`
+	Description     string            `json:"description"`
+	Category        string            `json:"category" enums:"billing"`
+	Kind            string            `json:"kind" enums:"flow,ratio"`
+	ValueType       string            `json:"value_type" enums:"money,count,percent"`
+	HigherIsBetter  bool              `json:"higher_is_better"`
+	Shapes          []string          `json:"shapes" enums:"timeseries,breakdown,scalar"`
+	DefaultShape    string            `json:"default_shape" enums:"timeseries,breakdown,scalar"`
+	Dimensions      []ReportDimension `json:"dimensions"`
+	Grains          []string          `json:"grains" enums:"day,week,month"`
+	SupportsCompare bool              `json:"supports_compare"`
+}
+
+type ReportCatalogResponse struct {
+	Items []*ReportCatalogEntry `json:"items"`
+}
+
+type ReportFilter struct {
+	Field string   `json:"field"`
+	Op    string   `json:"op" enums:"eq,in"`
+	Value []string `json:"value"`
+}
+
+type ReportSort struct {
+	Field string `json:"field"`
+	Dir   string `json:"dir" enums:"asc,desc"`
+}
+
+// ReportQueryRequest is the body for POST /v1/analytics/reports/{key}/query.
+// Range is absolute (YYYY-MM-DD..YYYY-MM-DD, end exclusive), last_N_days,
+// today or yesterday; presets like this_month are not supported.
+type ReportQueryRequest struct {
+	Shape      string         `json:"shape" validate:"required" enums:"timeseries,breakdown,scalar"`
+	Dimensions []string       `json:"dimensions,omitempty"`
+	Range      string         `json:"range" validate:"required"`
+	Grain      string         `json:"grain,omitempty" enums:"day,week,month"`
+	Currency   string         `json:"currency,omitempty"`
+	Filters    []ReportFilter `json:"filters,omitempty"`
+	Compare    string         `json:"compare,omitempty" enums:"previous_period,previous_year"`
+	Limit      int            `json:"limit,omitempty"`
+	Sort       []ReportSort   `json:"sort,omitempty"`
+}
+
+func (r *ReportQueryRequest) Validate() error {
+	return validator.ValidateRequest(r)
 }
