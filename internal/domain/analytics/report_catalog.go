@@ -27,6 +27,7 @@ type ReportCatalogEntry struct {
 	SupportsCompare bool
 	VariantOf       types.Metric
 	VariantLabel    string
+	MaxRangeDays    int
 }
 
 var reportCatalog = []ReportCatalogEntry{
@@ -216,7 +217,8 @@ var reportCatalog = []ReportCatalogEntry{
 		Dimensions: []ReportDimension{
 			{Key: "meter_id", Label: "Meter"},
 		},
-		Grains: []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
+		Grains:       []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
+		MaxRangeDays: 7,
 	},
 }
 

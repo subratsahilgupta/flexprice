@@ -2,9 +2,11 @@ package clickhouse
 
 import (
 	"context"
+	"errors"
 
 	clickhouse_go "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/proto"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/analytics"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -55,6 +57,21 @@ func (r *ReportsRepository) Database() string { return r.cfg.Database }
 
 func (r *ReportsRepository) MaxRows() int { return r.cfg.MaxResultRows }
 
+const (
+	chCodeTimeoutExceeded     = 159
+	chCodeMemoryLimitExceeded = 241
+)
+
+func reportError(err error, hint string) error {
+	var ex *proto.Exception
+	if errors.As(err, &ex) && (ex.Code == chCodeTimeoutExceeded || ex.Code == chCodeMemoryLimitExceeded) {
+		return ierr.WithError(err).
+			WithHint("Query too large; narrow the date range").
+			Mark(ierr.ErrValidation)
+	}
+	return ierr.WithError(err).WithHint(hint).Mark(ierr.ErrDatabase)
+}
+
 func (r *ReportsRepository) Run(ctx context.Context, q *analytics.ReportQuery) ([][]string, error) {
 	if r.conn == nil {
 		return nil, ierr.NewError("financial reports are not enabled").Mark(ierr.ErrPermissionDenied)
@@ -75,7 +92,7 @@ func (r *ReportsRepository) Run(ctx context.Context, q *analytics.ReportQuery) (
 
 	rows, err := r.conn.Query(ctx, q.SQL)
 	if err != nil {
-		return nil, ierr.WithError(err).WithHint("run report query").Mark(ierr.ErrDatabase)
+		return nil, reportError(err, "run report query")
 	}
 	defer rows.Close()
 
@@ -92,7 +109,7 @@ func (r *ReportsRepository) Run(ctx context.Context, q *analytics.ReportQuery) (
 		out = append(out, vals)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, ierr.WithError(err).WithHint("read report rows").Mark(ierr.ErrDatabase)
+		return nil, reportError(err, "read report rows")
 	}
 	return out, nil
 }

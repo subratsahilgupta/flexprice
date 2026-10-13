@@ -115,6 +115,7 @@ type ReportCatalogEntry struct {
 	SupportsCompare bool              `json:"supports_compare"`
 	VariantOf       string            `json:"variant_of,omitempty"`
 	VariantLabel    string            `json:"variant_label,omitempty"`
+	MaxRangeDays    int               `json:"max_range_days,omitempty"`
 }
 
 type ReportCatalogResponse struct {
