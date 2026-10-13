@@ -1,7 +1,10 @@
 package service
 
 import (
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/analytics"
@@ -80,6 +83,25 @@ func TestRunReport_CurrencyBecomesFilter(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, repo.Last.SQL, "currency IN ({f0_0:String})")
 	assert.Equal(t, "usd", repo.Last.Params["f0_0"])
+}
+
+func TestRunReport_OmittedGrainUsesFirstCatalogGrain(t *testing.T) {
+	for key, want := range map[string]string{"arpu": "toStartOfMonth", "days_to_pay": "toMonday"} {
+		repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}
+		_, err := reportsSvc(repo).RunReport(billingCtx(), key, &dto.ReportQueryRequest{Shape: "timeseries", Range: "2026-09-01..2026-10-01"})
+		require.NoError(t, err, key)
+		assert.Contains(t, repo.Last.SQL, want, key)
+	}
+}
+
+func TestRunReport_CurrencyFilterOnCustomReports(t *testing.T) {
+	for _, key := range []string{"net_billing", "active_customers"} {
+		repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}
+		_, err := reportsSvc(repo).RunReport(billingCtx(), key, &dto.ReportQueryRequest{Shape: "scalar", Range: "2026-09-01..2026-10-01", Currency: "usd"})
+		require.NoError(t, err, key)
+		assert.Contains(t, repo.Last.SQL, ".currency IN ({f0_0:String})", key)
+		assert.Equal(t, "usd", repo.Last.Params["f0_0"], key)
+	}
 }
 
 func TestRunReport_NoCompareNoMetaPrev(t *testing.T) {
@@ -164,19 +186,55 @@ func (s *AnalyticsServiceSuite) TestRunReport_EventsVolumeRenamesMetricColumn() 
 	s.insertUsage(ctx, s.sumMeter.ID, s.now, 3, nil)
 	s.insertUsage(ctx, s.sumMeter.ID, s.now, 4, nil)
 
-	for _, req := range []*dto.ReportQueryRequest{
-		{Shape: "timeseries", Grain: "day"},
-		{Shape: "breakdown", Dimensions: []string{"meter_id"}},
-	} {
-		res, err := s.runEventsVolume(req)
-		s.Require().NoError(err, req.Shape)
-		names := []string{}
-		for _, c := range res.Columns {
-			names = append(names, c.Name)
-		}
-		s.Contains(names, "events_volume", req.Shape)
-		s.NotContains(names, "event_count", req.Shape)
+	cases := []struct {
+		req  *dto.ReportQueryRequest
+		cols []string
+	}{
+		{&dto.ReportQueryRequest{Shape: "timeseries", Grain: "day"}, []string{"bucket", "meter_id", "events_volume"}},
+		{&dto.ReportQueryRequest{Shape: "timeseries", Grain: "day", Dimensions: []string{"meter_id"}}, []string{"bucket", "meter_id", "events_volume"}},
+		{&dto.ReportQueryRequest{Shape: "breakdown", Dimensions: []string{"meter_id"}}, []string{"meter_id", "events_volume"}},
 	}
+	for _, c := range cases {
+		res, err := s.runEventsVolume(c.req)
+		s.Require().NoError(err, c.req.Shape)
+		names := []string{}
+		for _, col := range res.Columns {
+			names = append(names, col.Name)
+		}
+		s.Equal(c.cols, names, c.req.Shape)
+		s.Require().NotEmpty(res.Rows, c.req.Shape)
+		total := 0
+		for _, row := range res.Rows {
+			s.Len(row, len(c.cols))
+			n, convErr := strconv.Atoi(strings.TrimSuffix(row[len(row)-1], ".0"))
+			s.Require().NoError(convErr)
+			total += n
+		}
+		s.Equal(2, total, c.req.Shape)
+	}
+}
+
+func (s *AnalyticsServiceSuite) TestRunReport_EventsVolumeRowCap() {
+	ctx := s.GetContext()
+	s.insertUsage(ctx, s.sumMeter.ID, s.now, 3, nil)
+	s.insertUsage(ctx, s.sumMeter.ID, s.now.Add(-24*time.Hour), 4, nil)
+	svc := NewAnalyticsService(ServiceParams{
+		Logger:         s.GetLogger(),
+		Config:         s.GetConfig(),
+		DB:             s.GetDB(),
+		MeterUsageRepo: s.meterUsageRepo,
+		MeterRepo:      s.GetStores().MeterRepo,
+		CustomerRepo:   s.GetStores().CustomerRepo,
+		FeatureRepo:    s.GetStores().FeatureRepo,
+		PriceRepo:      s.GetStores().PriceRepo,
+		ReportsRepo:    &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Max: 1},
+	})
+	_, err := svc.RunReport(s.GetContext(), "events_volume", &dto.ReportQueryRequest{
+		Shape: "timeseries", Grain: "day",
+		Range: s.rangeStart.Format("2006-01-02") + ".." + s.rangeEnd.Format("2006-01-02"),
+	})
+	s.Require().Error(err)
+	s.True(ierr.IsValidation(err))
 }
 
 func (s *AnalyticsServiceSuite) TestRunReport_EventsVolumeRejectsCompareAndCurrency() {

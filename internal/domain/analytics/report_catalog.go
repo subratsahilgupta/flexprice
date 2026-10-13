@@ -53,7 +53,7 @@ var reportCatalog = []ReportCatalogEntry{
 		Category:     "receivables",
 		Kind:         "snapshot",
 		ValueType:    "money",
-		Shapes:       []types.Shape{types.ShapeScalar, types.ShapeBreakdown},
+		Shapes:       []types.Shape{types.ShapeScalar},
 		DefaultShape: types.ShapeScalar,
 	},
 	{
@@ -156,7 +156,7 @@ var reportCatalog = []ReportCatalogEntry{
 	{
 		Key:          types.MetricEventsVolume,
 		Name:         "Events volume",
-		Description:  "Usage events ingested",
+		Description:  "Metered events per meter",
 		Category:     "usage",
 		Kind:         "flow",
 		ValueType:    "count",

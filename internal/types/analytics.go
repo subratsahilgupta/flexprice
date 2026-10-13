@@ -113,8 +113,10 @@ const (
 	MetricCreditTopups      Metric = "credit_topups"
 	MetricNetBilling        Metric = "net_billing"
 	MetricActiveCustomers   Metric = "active_customers"
-	MetricEventsVolume      Metric = "events_volume"
 )
+
+// Usage family metrics.
+const MetricEventsVolume Metric = "events_volume"
 
 func (m Metric) Validate() error {
 	switch m {

@@ -51,6 +51,14 @@ func TestReportCatalog_AgreesWithRegistry(t *testing.T) {
 	}
 }
 
+func TestReportCatalog_BreakdownNeedsDimension(t *testing.T) {
+	for _, e := range ReportCatalog() {
+		if slices.Contains(e.Shapes, types.ShapeBreakdown) {
+			assert.NotEmpty(t, e.Dimensions, "breakdown of %q", e.Key)
+		}
+	}
+}
+
 func TestReportCatalog_InvoiceTotal(t *testing.T) {
 	e, ok := LookupReport("invoice_total")
 	require.True(t, ok)

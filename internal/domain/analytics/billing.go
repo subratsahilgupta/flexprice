@@ -34,7 +34,7 @@ type BuildInput struct {
 	Params map[string]string
 	// Standard row invariants for alias.
 	Scope func(alias string) string
-	// Half-open window predicate on expr.
+	// Half-open window predicate on col.
 	TimeCond func(col string) string
 	MaxRows  int
 }
@@ -162,7 +162,6 @@ var billingMetrics = map[types.Metric]*BillingMetric{
 		Shapes:   []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
 		Currency: true,
 	},
-
 	types.MetricInvoiceTotal: {
 		Metric:  types.MetricInvoiceTotal,
 		Table:   "invoices",
@@ -179,18 +178,19 @@ var billingMetrics = map[types.Metric]*BillingMetric{
 		Shapes:   []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
 		Currency: true,
 	},
-
 	types.MetricNetBilling: {
-		Metric:   types.MetricNetBilling,
-		Shapes:   []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
-		Currency: true,
-		Build:    buildNetBilling,
+		Metric:     types.MetricNetBilling,
+		Dimensions: map[string]string{"currency": "currency"},
+		Shapes:     []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
+		Currency:   true,
+		Build:      buildNetBilling,
 	},
 	types.MetricActiveCustomers: {
-		Metric:   types.MetricActiveCustomers,
-		Shapes:   []types.Shape{types.ShapeScalar},
-		Currency: true,
-		Build:    buildActiveCustomers,
+		Metric:     types.MetricActiveCustomers,
+		Dimensions: map[string]string{"currency": "currency"},
+		Shapes:     []types.Shape{types.ShapeScalar},
+		Currency:   true,
+		Build:      buildActiveCustomers,
 	},
 }
 

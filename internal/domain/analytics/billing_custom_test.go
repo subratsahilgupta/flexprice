@@ -55,12 +55,49 @@ func TestBuildNetBilling_Rejects(t *testing.T) {
 	assert.True(t, ierr.IsValidation(err))
 }
 
+func currencyFilter() []*Filter {
+	return []*Filter{{Field: "currency", Op: types.EQUAL, Value: []string{"usd", "eur"}}}
+}
+
+func TestBuildNetBilling_CurrencyFilter(t *testing.T) {
+	rv := customRV(types.MetricNetBilling, types.ShapeScalar)
+	rv.Filters = currencyFilter()
+	q, err := BuildBillingQuery(rv, "reports_db", "t", "e", 0)
+	require.NoError(t, err)
+	for _, alias := range []string{"i", "n"} {
+		assert.Contains(t, q.SQL, alias+".currency IN ({f0_0:String}, {f0_1:String})")
+	}
+	assert.Equal(t, "usd", q.Params["f0_0"])
+	assert.Equal(t, "eur", q.Params["f0_1"])
+
+	rv.Filters = []*Filter{{Field: "customer_id", Op: types.EQUAL, Value: []string{"c"}}}
+	_, err = BuildBillingQuery(rv, "reports_db", "t", "e", 0)
+	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
+}
+
+func TestBuildActiveCustomers_CurrencyFilter(t *testing.T) {
+	rv := customRV(types.MetricActiveCustomers, types.ShapeScalar)
+	rv.Filters = currencyFilter()
+	q, err := BuildBillingQuery(rv, "reports_db", "t", "e", 0)
+	require.NoError(t, err)
+	assert.Contains(t, q.SQL, "s.currency IN ({f0_0:String}, {f0_1:String})")
+	assert.Equal(t, "usd", q.Params["f0_0"])
+	assert.Equal(t, "eur", q.Params["f0_1"])
+
+	rv.Filters = []*Filter{{Field: "customer_id", Op: types.EQUAL, Value: []string{"c"}}}
+	_, err = BuildBillingQuery(rv, "reports_db", "t", "e", 0)
+	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
+}
+
 func TestBuildActiveCustomers(t *testing.T) {
 	q, err := BuildBillingQuery(customRV(types.MetricActiveCustomers, types.ShapeScalar), "reports_db", "t", "e", 5)
 	require.NoError(t, err)
 	assert.Contains(t, q.SQL, "s.tenant_id = {tenant_id:String} AND s.environment_id = {environment_id:String} AND s._peerdb_is_deleted = 0 AND s.status = 'published'")
 	assert.Contains(t, q.SQL, "reports_db.subscriptions AS s FINAL")
-	assert.Contains(t, q.SQL, "s.subscription_status IN ('active', 'trialing')")
+	assert.Contains(t, q.SQL, "s.subscription_status IN ('active', 'trialing', 'cancelled')")
+	assert.Contains(t, q.SQL, "s.subscription_status != 'cancelled' OR coalesce(nullIf(s.cancelled_at")
 	assert.Contains(t, q.SQL, "s.start_date < toDateTime64({to:String}, 6, 'UTC')")
 	assert.Contains(t, q.SQL, "> toDateTime64({from:String}, 6, 'UTC')")
 	assert.Contains(t, q.SQL, "LIMIT 6")

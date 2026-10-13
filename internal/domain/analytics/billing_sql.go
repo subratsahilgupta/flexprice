@@ -116,7 +116,7 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 			DB:     db,
 			Params: params,
 			Scope: func(alias string) string {
-				return fmt.Sprintf("%[1]s.tenant_id = {tenant_id:String} AND %[1]s.environment_id = {environment_id:String} AND %[1]s._peerdb_is_deleted = 0 AND %[1]s.status = '%s'", alias, types.StatusPublished)
+				return fmt.Sprintf("%[1]s.tenant_id = {tenant_id:String} AND %[1]s.environment_id = {environment_id:String} AND %[1]s._peerdb_is_deleted = 0 AND %[1]s.status = '%[2]s'", alias, types.StatusPublished)
 			},
 			TimeCond: func(col string) string {
 				e := fmt.Sprintf("nullIf(%s, %s)", col, chEpoch)
@@ -170,7 +170,7 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 	var selects, groups []string
 	var cols []ReportColumn
 	if rv.Shape == types.ShapeTimeseries {
-		selects = append(selects, fmt.Sprintf("ifNull(formatDateTime(toDateTime(%s(%s, 'UTC'), 'UTC'), '%%Y-%%m-%%dT%%H:%%i:%%SZ'), '') AS bucket", grainFn, bucketExpr))
+		selects = append(selects, fmt.Sprintf("ifNull(formatDateTime(toDateTime(%s(%s, 'UTC'), 'UTC'), %s), '') AS bucket", grainFn, bucketExpr, bucketFormat))
 		groups = append(groups, "bucket")
 		cols = append(cols, ReportColumn{Name: "bucket", Type: types.ColumnTypeDatetime, Role: types.ColumnRoleDimension})
 	}

@@ -530,6 +530,9 @@ func (s *analyticsService) RunReport(ctx context.Context, key string, req *dto.R
 		return nil, err
 	}
 
+	if req.Shape == string(types.ShapeTimeseries) && req.Grain == "" && len(entry.Grains) > 0 {
+		req.Grain = string(entry.Grains[0])
+	}
 	if entry.Family == types.FamilyUsage {
 		return s.runUsageReport(ctx, entry, req)
 	}
@@ -590,11 +593,33 @@ func (s *analyticsService) runUsageReport(ctx context.Context, entry *analytics.
 	if err != nil {
 		return nil, err
 	}
-	for i := range res.Columns {
-		if res.Columns[i].Name == string(types.MetricEventCount) {
-			res.Columns[i].Name = string(entry.Key)
+	if maxRows := s.ReportsRepo.MaxRows(); maxRows > 0 && len(res.Rows) > maxRows {
+		return nil, ierr.NewErrorf("result exceeds %d rows", maxRows).
+			WithHint("Narrow the time range or remove dimensions").
+			Mark(ierr.ErrValidation)
+	}
+	keep := make([]int, 0, len(res.Columns))
+	cols := make([]*dto.AnalyticsColumn, 0, len(res.Columns))
+	for i, c := range res.Columns {
+		switch c.Name {
+		case "unit", "unit_plural":
+			continue
+		case "window_start":
+			c.Name = "bucket"
+		case string(types.MetricEventCount):
+			c.Name = string(entry.Key)
+		}
+		keep = append(keep, i)
+		cols = append(cols, c)
+	}
+	rows := make([][]string, len(res.Rows))
+	for r, row := range res.Rows {
+		rows[r] = make([]string, len(keep))
+		for k, i := range keep {
+			rows[r][k] = row[i]
 		}
 	}
+	res.Columns, res.Rows = cols, rows
 	return res, nil
 }
 
