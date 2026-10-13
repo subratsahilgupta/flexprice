@@ -55,6 +55,13 @@ func (r *ReportsRepository) Enabled() bool { return r.conn != nil }
 
 func (r *ReportsRepository) Database() string { return r.cfg.Database }
 
+func (r *ReportsRepository) UsageDatabase() string {
+	if r.cfg.UsageDatabase != "" {
+		return r.cfg.UsageDatabase
+	}
+	return r.cfg.Database
+}
+
 func (r *ReportsRepository) MaxRows() int { return r.cfg.MaxResultRows }
 
 const (

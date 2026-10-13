@@ -101,3 +101,17 @@ func TestBuildEventsVolume_Rejects(t *testing.T) {
 	_, err = BuildBillingQuery(rv, "reports_db", "t", "e", 0)
 	require.Error(t, err)
 }
+
+func TestBuildEventsVolume_UsageDatabase(t *testing.T) {
+	rv := eventsVolumeRV(types.ShapeTimeseries)
+	q, err := BuildBillingQueryWithUsage(rv, "reports_db", "usage_db", "t", "e", 0)
+	require.NoError(t, err)
+	assert.Contains(t, q.SQL, " FROM usage_db.meter_usage ")
+
+	q, err = BuildBillingQueryWithUsage(rv, "reports_db", "", "t", "e", 0)
+	require.NoError(t, err)
+	assert.Contains(t, q.SQL, " FROM reports_db.meter_usage ")
+
+	_, err = BuildBillingQueryWithUsage(rv, "reports_db", "bad; DROP", "t", "e", 0)
+	require.Error(t, err)
+}

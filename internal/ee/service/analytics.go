@@ -76,7 +76,7 @@ func (s *analyticsService) executeBilling(ctx context.Context, rv *analytics.Res
 		return nil, err
 	}
 	maxRows := s.ReportsRepo.MaxRows()
-	q, err := analytics.BuildBillingQuery(rv, s.ReportsRepo.Database(), types.GetTenantID(ctx), types.GetEnvironmentID(ctx), maxRows)
+	q, err := analytics.BuildBillingQueryWithUsage(rv, s.ReportsRepo.Database(), s.ReportsRepo.UsageDatabase(), types.GetTenantID(ctx), types.GetEnvironmentID(ctx), maxRows)
 	if err != nil {
 		return nil, err
 	}

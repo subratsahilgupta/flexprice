@@ -11,11 +11,19 @@ var _ domainAnalytics.ReportsRepository = (*InMemoryReportsRepo)(nil)
 // InMemoryReportsRepo returns canned report rows.
 type InMemoryReportsRepo struct {
 	On   bool
-	DB   string
-	Max  int
-	Rows [][]string
-	Err  error
-	Last *domainAnalytics.ReportQuery
+	DB      string
+	UsageDB string
+	Max     int
+	Rows    [][]string
+	Err     error
+	Last    *domainAnalytics.ReportQuery
+}
+
+func (r *InMemoryReportsRepo) UsageDatabase() string {
+	if r.UsageDB != "" {
+		return r.UsageDB
+	}
+	return r.DB
 }
 
 func (r *InMemoryReportsRepo) Enabled() bool { return r.On }

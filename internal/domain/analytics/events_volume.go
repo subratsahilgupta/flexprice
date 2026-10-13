@@ -87,7 +87,7 @@ func buildEventsVolume(in BuildInput) (*ReportQuery, error) {
 
 	var b strings.Builder
 	b.WriteString("SELECT " + strings.Join(selects, ", "))
-	b.WriteString(" FROM " + in.DB + ".meter_usage WHERE " + strings.Join(where, " AND "))
+	b.WriteString(" FROM " + in.UsageDB + ".meter_usage WHERE " + strings.Join(where, " AND "))
 	b.WriteString(" GROUP BY " + strings.Join(groups, ", "))
 	if timeseries {
 		b.WriteString(" ORDER BY " + strings.Join(groups, ", "))

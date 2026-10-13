@@ -81,11 +81,22 @@ func shiftBackClamped(t time.Time, months int) time.Time {
 }
 
 func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, maxRows int) (*ReportQuery, error) {
+	return BuildBillingQueryWithUsage(rv, db, db, tenantID, environmentID, maxRows)
+}
+
+// BuildBillingQueryWithUsage reads meter_usage from usageDB.
+func BuildBillingQueryWithUsage(rv *ResolvedView, db, usageDB, tenantID, environmentID string, maxRows int) (*ReportQuery, error) {
 	if tenantID == "" || environmentID == "" {
 		return nil, ierr.NewError("tenant and environment are required").Mark(ierr.ErrPermissionDenied)
 	}
 	if !chIdentifier.MatchString(db) {
 		return nil, ierr.NewErrorf("invalid reports database %q", db).Mark(ierr.ErrSystem)
+	}
+	if usageDB == "" {
+		usageDB = db
+	}
+	if !chIdentifier.MatchString(usageDB) {
+		return nil, ierr.NewErrorf("invalid usage database %q", usageDB).Mark(ierr.ErrSystem)
 	}
 	if rv == nil || len(rv.Metrics) != 1 {
 		return nil, ierr.NewError("billing views take exactly one metric").Mark(ierr.ErrValidation)
@@ -113,8 +124,9 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 	if bm.Build != nil {
 		return bm.Build(BuildInput{
 			RV:     rv,
-			DB:     db,
-			Params: params,
+			DB:      db,
+			UsageDB: usageDB,
+			Params:  params,
 			Scope: func(alias string) string {
 				return fmt.Sprintf("%[1]s.tenant_id = {tenant_id:String} AND %[1]s.environment_id = {environment_id:String} AND %[1]s._peerdb_is_deleted = 0 AND %[1]s.status = '%[2]s'", alias, types.StatusPublished)
 			},

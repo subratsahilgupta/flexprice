@@ -31,7 +31,9 @@ type BillingMetric struct {
 type BuildInput struct {
 	RV     *ResolvedView
 	DB     string
-	Params map[string]string
+	// Database holding meter_usage.
+	UsageDB string
+	Params  map[string]string
 	// Standard row invariants for alias.
 	Scope func(alias string) string
 	// Half-open window predicate on col.
