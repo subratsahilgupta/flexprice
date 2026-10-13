@@ -41,7 +41,7 @@ func (s *WalletServiceSuite) debit(key string, credits int64, reason types.Trans
 	return tx
 }
 
-func sumConsumed(entries []types.WalletTxConsumption) decimal.Decimal {
+func sumConsumed(entries []*types.WalletTxConsumption) decimal.Decimal {
 	total := decimal.Zero
 	for _, e := range entries {
 		total = total.Add(e.Credits)

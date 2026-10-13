@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestWalletDebitCSVTopUpUsedAmount(t *testing.T) {
+func TestWalletDebitCSVTopUpAmountUsed(t *testing.T) {
 	paid := func(v string) *decimal.Decimal { return lo.ToPtr(decimal.RequireFromString(v)) }
 
 	tests := []struct {
@@ -23,17 +23,17 @@ func TestWalletDebitCSVTopUpUsedAmount(t *testing.T) {
 	}{
 		{
 			name:     "share of a discounted purchase",
-			row:      wallet.WalletDebitsExportData{Credits: decimal.NewFromInt(200), WalletTxnCredits: paid("500"), WalletTxnPaidAmount: paid("450")},
+			row:      wallet.WalletDebitsExportData{Credits: decimal.NewFromInt(200), WalletTxnCredits: paid("500"), WalletTxnAmountPaid: paid("450")},
 			expected: "180",
 		},
 		{
 			name:     "rounded to the currency",
-			row:      wallet.WalletDebitsExportData{Credits: decimal.NewFromInt(1), WalletTxnCredits: paid("3"), WalletTxnPaidAmount: paid("10")},
+			row:      wallet.WalletDebitsExportData{Credits: decimal.NewFromInt(1), WalletTxnCredits: paid("3"), WalletTxnAmountPaid: paid("10")},
 			expected: "3.33",
 		},
 		{
 			name:     "free or bonus credits",
-			row:      wallet.WalletDebitsExportData{Credits: decimal.NewFromInt(20), WalletTxnCredits: paid("100"), WalletTxnPaidAmount: paid("0")},
+			row:      wallet.WalletDebitsExportData{Credits: decimal.NewFromInt(20), WalletTxnCredits: paid("100"), WalletTxnAmountPaid: paid("0")},
 			expected: "0",
 		},
 		{
@@ -53,10 +53,16 @@ func TestWalletDebitCSVTopUpUsedAmount(t *testing.T) {
 			tt.row.Currency = "usd"
 			tt.row.TransactionReason = types.TransactionReasonInvoicePayment
 			tt.row.CreatedAt = time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC)
+			tt.row.CreditBalanceBefore = decimal.NewFromInt(1000)
+			tt.row.CreditBalanceAfter = tt.row.CreditBalanceBefore.Sub(tt.row.Credits)
+			tt.row.WalletBalanceBefore = decimal.NewFromInt(2000)
+			tt.row.WalletBalanceAfter = tt.row.CreditBalanceAfter.Mul(decimal.NewFromInt(2))
+			tt.row.TopUpAmountRemainingBefore = decimal.RequireFromString("500.5049")
+			tt.row.TopUpAmountRemainingAfter = decimal.RequireFromString("320.4951")
 
 			out, err := gocsv.MarshalString([]*WalletDebitCSV{toWalletDebitCSV(&tt.row)})
 			require.NoError(t, err)
-			assert.Contains(t, out, ","+tt.row.Credits.String()+","+tt.expected+",2026-10-09T00:00:00Z")
+			assert.Contains(t, out, ","+tt.row.Credits.String()+",1000,"+tt.row.CreditBalanceAfter.String()+",2000,"+tt.row.WalletBalanceAfter.String()+",500.5,"+tt.expected+",320.5,2026-10-09T00:00:00Z")
 		})
 	}
 }
