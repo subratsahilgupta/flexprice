@@ -41,7 +41,8 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 		`('i6','t1','e1','published','FINALIZED','SUBSCRIPTION','c1','usd',44,'2026-09-07 00:00:00',1,1),`+
 		`('i7','t1','e1','published','FINALIZED','SUBSCRIPTION','c3','usd',70,'2026-08-10 00:00:00',0,1),`+
 		`('i7','t1','e1','published','VOIDED','SUBSCRIPTION','c3','usd',70,'2026-08-10 00:00:00',0,2),`+
-		`('i8','t1','e1','published','FINALIZED','SUBSCRIPTION','c1','usd',2,'2026-08-20 00:00:00',0,1)`))
+		`('i8','t1','e1','published','FINALIZED','SUBSCRIPTION','c1','usd',2,'2026-08-20 00:00:00',0,1),`+
+		`('i9','t1','e1','published','FINALIZED','SUBSCRIPTION','c4','usd',4,'2026-08-15 00:00:00',0,1)`))
 
 	cfg := &config.Configuration{
 		ClickHouse: config.ClickHouseConfig{Address: address, Username: username, Password: password, Database: "default", MaxMemoryUsage: 1},
@@ -73,10 +74,10 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 	}
 
 	// Dedup, status, tenant, epoch filters.
-	assert.Equal(t, [][]string{{"inr", "5"}, {"usd", "12"}}, run(types.ShapeScalar, ""))
+	assert.Equal(t, [][]string{{"inr", "5"}, {"usd", "16"}}, run(types.ShapeScalar, ""))
 
 	assert.Equal(t, [][]string{
-		{"2026-08-01T00:00:00Z", "usd", "2"},
+		{"2026-08-01T00:00:00Z", "usd", "6"},
 		{"2026-09-01T00:00:00Z", "inr", "5"},
 		{"2026-09-01T00:00:00Z", "usd", "10"},
 	}, run(types.ShapeTimeseries, types.GrainMonth))
@@ -84,6 +85,7 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 	assert.Equal(t, [][]string{
 		{"c1", "usd", "12"},
 		{"c2", "inr", "5"},
+		{"c4", "usd", "4"},
 	}, run(types.ShapeBreakdown, "", "customer_id"))
 
 	filters = []*analytics.Filter{{Field: "customer_id", Op: types.IN, Value: []string{"c2"}}}
@@ -112,10 +114,13 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 		return rows
 	}
 
-	assert.Equal(t, [][]string{{"inr", "5", "0"}, {"usd", "10", "2"}}, runCmp(types.ShapeScalar, "", "previous_period"))
+	assert.Equal(t, [][]string{{"inr", "5", "0"}, {"usd", "10", "6"}}, runCmp(types.ShapeScalar, "", "previous_period"))
 	assert.Equal(t, [][]string{
 		{"2026-09-01T00:00:00Z", "inr", "5", "0"},
-		{"2026-09-01T00:00:00Z", "usd", "10", "2"},
+		{"2026-09-01T00:00:00Z", "usd", "10", "6"},
 	}, runCmp(types.ShapeTimeseries, types.GrainMonth, "previous_period"))
-	assert.Contains(t, runCmp(types.ShapeBreakdown, "", "previous_period", "customer_id"), []string{"c1", "usd", "10", "2"})
+	assert.Contains(t, runCmp(types.ShapeTimeseries, types.GrainDay, "previous_period"), []string{"2026-09-20T00:00:00Z", "usd", "0", "2"})
+	byCustomer := runCmp(types.ShapeBreakdown, "", "previous_period", "customer_id")
+	assert.Contains(t, byCustomer, []string{"c1", "usd", "10", "2"})
+	assert.Contains(t, byCustomer, []string{"c4", "usd", "0", "4"})
 }

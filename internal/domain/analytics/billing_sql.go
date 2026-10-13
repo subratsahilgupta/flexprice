@@ -42,15 +42,23 @@ var billingGrainFn = map[types.Grain]string{
 	types.GrainMonth: "toStartOfMonth",
 }
 
-func PreviousWindow(from, to time.Time, compare string) (time.Time, time.Time, error) {
+// PreviousWindow: shiftMonths is 0 for rolling windows.
+func PreviousWindow(from, to time.Time, compare string) (time.Time, time.Time, int, error) {
 	switch compare {
 	case "previous_period":
+		if from.UTC().Day() == 1 && from.Equal(from.Truncate(24*time.Hour)) {
+			n := 1
+			for from.AddDate(0, n, 0).Before(to) {
+				n++
+			}
+			return from.AddDate(0, -n, 0), to.AddDate(0, -n, 0), n, nil
+		}
 		d := to.Sub(from)
-		return from.Add(-d), from, nil
+		return from.Add(-d), from, 0, nil
 	case "previous_year":
-		return from.AddDate(-1, 0, 0), to.AddDate(-1, 0, 0), nil
+		return from.AddDate(-1, 0, 0), to.AddDate(-1, 0, 0), 12, nil
 	}
-	return time.Time{}, time.Time{}, ierr.NewErrorf("unsupported compare %q", compare).
+	return time.Time{}, time.Time{}, 0, ierr.NewErrorf("unsupported compare %q", compare).
 		WithHint("compare must be previous_period or previous_year").
 		Mark(ierr.ErrValidation)
 }
@@ -95,7 +103,7 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 		timeExpr + " < toDateTime64({to:String}, 6, 'UTC')",
 	}
 	if rv.Compare != "" {
-		pf, pt, err := PreviousWindow(rv.Time.From, rv.Time.To, rv.Compare)
+		pf, pt, shiftMonths, err := PreviousWindow(rv.Time.From, rv.Time.To, rv.Compare)
 		if err != nil {
 			return nil, err
 		}
@@ -103,7 +111,11 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 		params["prev_to"] = pt.UTC().Format(chTimeLayout)
 		prevCond := fmt.Sprintf("%s >= toDateTime64({prev_from:String}, 6, 'UTC') AND %s < toDateTime64({prev_to:String}, 6, 'UTC')", timeExpr, timeExpr)
 		shifted := fmt.Sprintf("addYears(%s, 1)", timeExpr)
-		if rv.Compare == "previous_period" {
+		switch {
+		case rv.Compare == "previous_period" && shiftMonths > 0:
+			params["shift_m"] = strconv.Itoa(shiftMonths)
+			shifted = fmt.Sprintf("addMonths(%s, {shift_m:Int32})", timeExpr)
+		case rv.Compare == "previous_period":
 			params["shift_s"] = strconv.FormatInt(int64(rv.Time.To.Sub(rv.Time.From).Seconds()), 10)
 			shifted = fmt.Sprintf("addSeconds(%s, {shift_s:Int64})", timeExpr)
 		}

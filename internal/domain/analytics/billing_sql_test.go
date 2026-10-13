@@ -185,22 +185,31 @@ func columnNames(q *ReportQuery) []string {
 func TestPreviousWindow(t *testing.T) {
 	from := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
-	pf, pt, err := PreviousWindow(from, to, "previous_period")
-	require.NoError(t, err)
-	assert.Equal(t, time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC), pf)
-	assert.Equal(t, from, pt)
+	d := func(y int, m time.Month, day int) time.Time { return time.Date(y, m, day, 0, 0, 0, 0, time.UTC) }
+	cases := []struct {
+		name        string
+		from, to    time.Time
+		compare     string
+		pf, pt      time.Time
+		shiftMonths int
+	}{
+		{"full month", from, to, "previous_period", d(2026, 8, 1), d(2026, 9, 1), 1},
+		{"month to date", d(2026, 10, 1), d(2026, 10, 13), "previous_period", d(2026, 9, 1), d(2026, 9, 13), 1},
+		{"quarter", d(2026, 7, 1), d(2026, 10, 1), "previous_period", d(2026, 4, 1), d(2026, 7, 1), 3},
+		{"year to date", d(2026, 1, 1), d(2026, 10, 13), "previous_period", d(2025, 3, 1), d(2025, 12, 13), 10},
+		{"rolling", d(2026, 9, 5), d(2026, 9, 12), "previous_period", d(2026, 8, 29), d(2026, 9, 5), 0},
+		{"year", from, to, "previous_year", d(2025, 9, 1), d(2025, 10, 1), 12},
+		{"leap", d(2028, 2, 29), d(2028, 3, 1), "previous_year", d(2027, 3, 1), d(2027, 3, 1), 12},
+	}
+	for _, c := range cases {
+		pf, pt, shift, err := PreviousWindow(c.from, c.to, c.compare)
+		require.NoError(t, err, c.name)
+		assert.Equal(t, c.pf, pf, c.name)
+		assert.Equal(t, c.pt, pt, c.name)
+		assert.Equal(t, c.shiftMonths, shift, c.name)
+	}
 
-	pf, pt, err = PreviousWindow(from, to, "previous_year")
-	require.NoError(t, err)
-	assert.Equal(t, time.Date(2025, 9, 1, 0, 0, 0, 0, time.UTC), pf)
-	assert.Equal(t, time.Date(2025, 10, 1, 0, 0, 0, 0, time.UTC), pt)
-
-	leapFrom := time.Date(2028, 2, 29, 0, 0, 0, 0, time.UTC)
-	pf, _, err = PreviousWindow(leapFrom, leapFrom.AddDate(0, 0, 1), "previous_year")
-	require.NoError(t, err)
-	assert.Equal(t, time.Date(2027, 3, 1, 0, 0, 0, 0, time.UTC), pf)
-
-	_, _, err = PreviousWindow(from, to, "bogus")
+	_, _, _, err := PreviousWindow(from, to, "bogus")
 	require.Error(t, err)
 }
 
@@ -211,15 +220,30 @@ func TestBuildBillingQuery_CompareTimeseries(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"bucket", "currency", "invoice_total", "invoice_total_prev"}, columnNames(q))
 	assert.Contains(t, q.SQL, "sumIf(total, ")
-	assert.Contains(t, q.SQL, "addSeconds(nullIf(finalized_at, toDateTime64(0, 6)), {shift_s:Int64})")
+	assert.Contains(t, q.SQL, "addMonths(nullIf(finalized_at, toDateTime64(0, 6)), {shift_m:Int32})")
 	assert.Contains(t, q.SQL, "toDateTime64({prev_from:String}, 6, 'UTC')")
 	tc := "nullIf(finalized_at, toDateTime64(0, 6))"
 	cur := tc + " >= toDateTime64({from:String}, 6, 'UTC') AND " + tc + " < toDateTime64({to:String}, 6, 'UTC')"
 	prev := tc + " >= toDateTime64({prev_from:String}, 6, 'UTC') AND " + tc + " < toDateTime64({prev_to:String}, 6, 'UTC')"
 	assert.Contains(t, q.SQL, " AND (("+cur+") OR ("+prev+"))")
-	assert.Equal(t, "2026-08-02 00:00:00.000000", q.Params["prev_from"])
+	assert.Equal(t, "2026-08-01 00:00:00.000000", q.Params["prev_from"])
 	assert.Equal(t, "2026-09-01 00:00:00.000000", q.Params["prev_to"])
-	assert.Equal(t, "2592000", q.Params["shift_s"])
+	assert.Equal(t, "1", q.Params["shift_m"])
+	_, hasShift := q.Params["shift_s"]
+	assert.False(t, hasShift)
+}
+
+func TestBuildBillingQuery_CompareRollingUsesSeconds(t *testing.T) {
+	rv := billingRV(types.ShapeTimeseries)
+	rv.Time.From = time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	rv.Time.To = time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC)
+	rv.Compare = "previous_period"
+	q, err := BuildBillingQuery(rv, "reports_db", "t", "e", 0)
+	require.NoError(t, err)
+	assert.Contains(t, q.SQL, "addSeconds(nullIf(finalized_at, toDateTime64(0, 6)), {shift_s:Int64})")
+	assert.Equal(t, "604800", q.Params["shift_s"])
+	_, hasShift := q.Params["shift_m"]
+	assert.False(t, hasShift)
 }
 
 func TestBuildBillingQuery_CompareYearUsesAddYears(t *testing.T) {

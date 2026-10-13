@@ -100,7 +100,7 @@ func (s *analyticsService) executeBilling(ctx context.Context, rv *analytics.Res
 	res.Meta.From = rv.Time.From.UTC().Format(time.RFC3339)
 	res.Meta.To = rv.Time.To.UTC().Format(time.RFC3339)
 	if rv.Compare != "" {
-		pf, pt, err := analytics.PreviousWindow(rv.Time.From, rv.Time.To, rv.Compare)
+		pf, pt, _, err := analytics.PreviousWindow(rv.Time.From, rv.Time.To, rv.Compare)
 		if err != nil {
 			return nil, err
 		}
@@ -448,6 +448,11 @@ func validateReportRequest(e *analytics.ReportCatalogEntry, req *dto.ReportQuery
 	if req.Limit < 0 || (maxRows > 0 && req.Limit > maxRows) {
 		return ierr.NewErrorf("limit %d not allowed", req.Limit).
 			WithHint(fmt.Sprintf("limit must be between 0 and %d (0 = no limit)", maxRows)).
+			Mark(ierr.ErrValidation)
+	}
+	if req.Limit > 0 && req.Shape != string(types.ShapeBreakdown) {
+		return ierr.NewError("limit only applies to breakdown").
+			WithHint("omit limit unless shape is breakdown").
 			Mark(ierr.ErrValidation)
 	}
 	bm, _ := analytics.LookupBillingMetric(e.Key)

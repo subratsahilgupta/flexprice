@@ -55,7 +55,7 @@ func TestRunReport_RejectsDisallowed(t *testing.T) {
 }
 
 func TestRunReport_CompareAddsChangeAndMeta(t *testing.T) {
-	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Rows: [][]string{{"usd", "110", "100"}, {"eur", "5", "0"}, {"inr", "x", "1"}}}
+	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Rows: [][]string{{"usd", "110", "100"}, {"eur", "5", "0"}, {"inr", "x", "1"}, {"usd", "0", "4"}}}
 	res, err := reportsSvc(repo).RunReport(billingCtx(), "invoice_total", &dto.ReportQueryRequest{Shape: "scalar", Range: "2026-09-01..2026-10-01", Compare: "previous_period"})
 	require.NoError(t, err)
 	names := []string{}
@@ -66,11 +66,12 @@ func TestRunReport_CompareAddsChangeAndMeta(t *testing.T) {
 	assert.Equal(t, []string{"usd", "110", "100", "10"}, res.Rows[0])
 	assert.Equal(t, "", res.Rows[1][3])
 	assert.Equal(t, "", res.Rows[2][3])
+	assert.Equal(t, "-100", res.Rows[3][3])
 	assert.Equal(t, "2026-09-01T00:00:00Z", res.Meta.From)
 	assert.Equal(t, "2026-10-01T00:00:00Z", res.Meta.To)
-	assert.Equal(t, "2026-08-02T00:00:00Z", res.Meta.PrevFrom)
+	assert.Equal(t, "2026-08-01T00:00:00Z", res.Meta.PrevFrom)
 	assert.Equal(t, "2026-09-01T00:00:00Z", res.Meta.PrevTo)
-	assert.Equal(t, "2026-08-02 00:00:00.000000", repo.Last.Params["prev_from"])
+	assert.Equal(t, "2026-08-01 00:00:00.000000", repo.Last.Params["prev_from"])
 }
 
 func TestRunReport_CurrencyBecomesFilter(t *testing.T) {
@@ -106,7 +107,9 @@ func TestRunReport_ValidationRules(t *testing.T) {
 		"eq no values":        {Shape: "scalar", Range: rng, Filters: []dto.ReportFilter{{Field: "customer_id", Op: "eq"}}},
 		"in no values":        {Shape: "scalar", Range: rng, Filters: []dto.ReportFilter{{Field: "customer_id", Op: "in"}}},
 		"bad op":              {Shape: "scalar", Range: rng, Filters: []dto.ReportFilter{{Field: "customer_id", Op: "gt", Value: []string{"a"}}}},
-		"currency filter bad": {Shape: "scalar", Range: rng, Filters: []dto.ReportFilter{{Field: "tenant_id", Op: "eq", Value: []string{"a"}}}},
+		"limit on scalar":     {Shape: "scalar", Range: rng, Limit: 5},
+		"limit on timeseries": {Shape: "timeseries", Range: rng, Limit: 5},
+		"filter field bad":    {Shape: "scalar", Range: rng, Filters: []dto.ReportFilter{{Field: "tenant_id", Op: "eq", Value: []string{"a"}}}},
 	}
 	for name, req := range cases {
 		_, err := svc.RunReport(billingCtx(), "invoice_total", req)

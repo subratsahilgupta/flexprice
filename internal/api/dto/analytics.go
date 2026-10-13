@@ -104,9 +104,9 @@ type ReportCatalogEntry struct {
 	Key             string            `json:"key"`
 	Name            string            `json:"name"`
 	Description     string            `json:"description"`
-	Category        string            `json:"category" enums:"billing"`
-	Kind            string            `json:"kind" enums:"flow,ratio"`
-	ValueType       string            `json:"value_type" enums:"money,count,percent"`
+	Category        string            `json:"category" enums:"billing,receivables,customers,credits,usage"`
+	Kind            string            `json:"kind" enums:"flow,ratio,snapshot"`
+	ValueType       string            `json:"value_type" enums:"money,count,days"`
 	HigherIsBetter  bool              `json:"higher_is_better"`
 	Shapes          []string          `json:"shapes" enums:"timeseries,breakdown,scalar"`
 	DefaultShape    string            `json:"default_shape" enums:"timeseries,breakdown,scalar"`
