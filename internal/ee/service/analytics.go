@@ -598,12 +598,18 @@ func (s *analyticsService) runUsageReport(ctx context.Context, entry *analytics.
 			WithHint("Narrow the time range or remove dimensions").
 			Mark(ierr.ErrValidation)
 	}
+	// Ungrouped timeseries sums meters per bucket.
+	collapse := req.Shape == string(types.ShapeTimeseries) && len(req.Dimensions) == 0
 	keep := make([]int, 0, len(res.Columns))
 	cols := make([]*dto.AnalyticsColumn, 0, len(res.Columns))
 	for i, c := range res.Columns {
 		switch c.Name {
 		case "unit", "unit_plural":
 			continue
+		case "meter_id":
+			if collapse {
+				continue
+			}
 		case "window_start":
 			c.Name = "bucket"
 		case string(types.MetricEventCount):
@@ -612,12 +618,25 @@ func (s *analyticsService) runUsageReport(ctx context.Context, entry *analytics.
 		keep = append(keep, i)
 		cols = append(cols, c)
 	}
-	rows := make([][]string, len(res.Rows))
-	for r, row := range res.Rows {
-		rows[r] = make([]string, len(keep))
+	rows := make([][]string, 0, len(res.Rows))
+	sums := map[string]int{}
+	for _, row := range res.Rows {
+		out := make([]string, len(keep))
 		for k, i := range keep {
-			rows[r][k] = row[i]
+			out[k] = row[i]
 		}
+		if !collapse {
+			rows = append(rows, out)
+			continue
+		}
+		if at, ok := sums[out[0]]; ok {
+			a, _ := decimal.NewFromString(rows[at][1])
+			b, _ := decimal.NewFromString(out[1])
+			rows[at][1] = a.Add(b).String()
+			continue
+		}
+		sums[out[0]] = len(rows)
+		rows = append(rows, out)
 	}
 	res.Columns, res.Rows = cols, rows
 	return res, nil

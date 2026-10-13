@@ -185,14 +185,16 @@ func (s *AnalyticsServiceSuite) TestRunReport_EventsVolumeRenamesMetricColumn() 
 	ctx := s.GetContext()
 	s.insertUsage(ctx, s.sumMeter.ID, s.now, 3, nil)
 	s.insertUsage(ctx, s.sumMeter.ID, s.now, 4, nil)
+	s.insertUsage(ctx, s.maxMeter.ID, s.now, 5, nil)
 
 	cases := []struct {
 		req  *dto.ReportQueryRequest
 		cols []string
+		rows int
 	}{
-		{&dto.ReportQueryRequest{Shape: "timeseries", Grain: "day"}, []string{"bucket", "meter_id", "events_volume"}},
-		{&dto.ReportQueryRequest{Shape: "timeseries", Grain: "day", Dimensions: []string{"meter_id"}}, []string{"bucket", "meter_id", "events_volume"}},
-		{&dto.ReportQueryRequest{Shape: "breakdown", Dimensions: []string{"meter_id"}}, []string{"meter_id", "events_volume"}},
+		{&dto.ReportQueryRequest{Shape: "timeseries", Grain: "day"}, []string{"bucket", "events_volume"}, 1},
+		{&dto.ReportQueryRequest{Shape: "timeseries", Grain: "day", Dimensions: []string{"meter_id"}}, []string{"bucket", "meter_id", "events_volume"}, 2},
+		{&dto.ReportQueryRequest{Shape: "breakdown", Dimensions: []string{"meter_id"}}, []string{"meter_id", "events_volume"}, 2},
 	}
 	for _, c := range cases {
 		res, err := s.runEventsVolume(c.req)
@@ -202,7 +204,7 @@ func (s *AnalyticsServiceSuite) TestRunReport_EventsVolumeRenamesMetricColumn() 
 			names = append(names, col.Name)
 		}
 		s.Equal(c.cols, names, c.req.Shape)
-		s.Require().NotEmpty(res.Rows, c.req.Shape)
+		s.Require().Len(res.Rows, c.rows, c.req.Shape)
 		total := 0
 		for _, row := range res.Rows {
 			s.Len(row, len(c.cols))
@@ -210,7 +212,7 @@ func (s *AnalyticsServiceSuite) TestRunReport_EventsVolumeRenamesMetricColumn() 
 			s.Require().NoError(convErr)
 			total += n
 		}
-		s.Equal(2, total, c.req.Shape)
+		s.Equal(3, total, c.req.Shape)
 	}
 }
 
