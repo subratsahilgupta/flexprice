@@ -25,7 +25,6 @@ type ReportCatalogEntry struct {
 	Dimensions      []ReportDimension
 	Grains          []types.Grain
 	SupportsCompare bool
-	Family          types.Family
 	VariantOf       types.Metric
 	VariantLabel    string
 }
@@ -218,7 +217,6 @@ var reportCatalog = []ReportCatalogEntry{
 			{Key: "meter_id", Label: "Meter"},
 		},
 		Grains: []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
-		Family: types.FamilyUsage,
 	},
 }
 

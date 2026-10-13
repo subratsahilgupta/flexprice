@@ -223,6 +223,7 @@ var billingMetrics = map[types.Metric]*BillingMetric{
 		Currency:   true,
 		Build:      buildActiveCustomers,
 	},
+	types.MetricEventsVolume: eventsVolumeMetric,
 }
 
 func LookupBillingMetric(m types.Metric) (*BillingMetric, bool) {

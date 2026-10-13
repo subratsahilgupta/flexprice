@@ -2,10 +2,8 @@ package service
 
 import (
 	"encoding/json"
-	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/analytics"
@@ -190,88 +188,91 @@ func TestValidateReportRequest_UnsupportedCompareAndNoCurrency(t *testing.T) {
 	assert.True(t, ierr.IsValidation(err))
 }
 
-func (s *AnalyticsServiceSuite) runEventsVolume(req *dto.ReportQueryRequest) (*dto.AnalyticsQueryResult, error) {
-	svc := NewAnalyticsService(ServiceParams{
-		Logger:         s.GetLogger(),
-		Config:         s.GetConfig(),
-		DB:             s.GetDB(),
-		MeterUsageRepo: s.meterUsageRepo,
-		MeterRepo:      s.GetStores().MeterRepo,
-		CustomerRepo:   s.GetStores().CustomerRepo,
-		FeatureRepo:    s.GetStores().FeatureRepo,
-		PriceRepo:      s.GetStores().PriceRepo,
-		ReportsRepo:    &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Max: 500},
-	})
-	req.Range = s.rangeStart.Format("2006-01-02") + ".." + s.rangeEnd.Format("2006-01-02")
-	return svc.RunReport(s.GetContext(), "events_volume", req)
+func runEventsVolume(t *testing.T, repo *testutil.InMemoryReportsRepo, req *dto.ReportQueryRequest) (*dto.AnalyticsQueryResult, error) {
+	req.Range = "2026-09-01..2026-09-08"
+	return reportsSvc(repo).RunReport(billingCtx(), "events_volume", req)
 }
 
-func (s *AnalyticsServiceSuite) TestRunReport_EventsVolumeRenamesMetricColumn() {
-	ctx := s.GetContext()
-	s.insertUsage(ctx, s.sumMeter.ID, s.now, 3, nil)
-	s.insertUsage(ctx, s.sumMeter.ID, s.now, 4, nil)
-	s.insertUsage(ctx, s.maxMeter.ID, s.now, 5, nil)
-
+func TestRunReport_EventsVolumeColumnsAndSQL(t *testing.T) {
 	cases := []struct {
 		req  *dto.ReportQueryRequest
 		cols []string
-		rows int
+		row  []string
+		want []string
+		not  []string
 	}{
-		{&dto.ReportQueryRequest{Shape: "timeseries", Grain: "day"}, []string{"bucket", "events_volume"}, 1},
-		{&dto.ReportQueryRequest{Shape: "timeseries", Grain: "day", Dimensions: []string{"meter_id"}}, []string{"bucket", "meter_id", "events_volume"}, 2},
-		{&dto.ReportQueryRequest{Shape: "breakdown", Dimensions: []string{"meter_id"}}, []string{"meter_id", "events_volume"}, 2},
+		{
+			&dto.ReportQueryRequest{Shape: "timeseries", Grain: "day"},
+			[]string{"bucket", "events_volume"}, []string{"2026-09-01T00:00:00Z", "7"},
+			[]string{"GROUP BY bucket ORDER BY bucket"}, []string{"meter_id"},
+		},
+		{
+			&dto.ReportQueryRequest{Shape: "timeseries", Grain: "day", Dimensions: []string{"meter_id"}},
+			[]string{"bucket", "meter_id", "events_volume"}, []string{"2026-09-01T00:00:00Z", "m1", "7"},
+			[]string{"GROUP BY bucket, meter_id ORDER BY bucket, meter_id"}, nil,
+		},
+		{
+			&dto.ReportQueryRequest{Shape: "breakdown", Dimensions: []string{"meter_id"}},
+			[]string{"meter_id", "events_volume"}, []string{"m1", "7"},
+			[]string{"GROUP BY meter_id ORDER BY count() DESC, meter_id"}, nil,
+		},
+		{
+			&dto.ReportQueryRequest{Shape: "breakdown"},
+			[]string{"meter_id", "events_volume"}, []string{"m1", "7"},
+			[]string{"GROUP BY meter_id"}, nil,
+		},
 	}
 	for _, c := range cases {
-		res, err := s.runEventsVolume(c.req)
-		s.Require().NoError(err, c.req.Shape)
+		repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Rows: [][]string{c.row}}
+		res, err := runEventsVolume(t, repo, c.req)
+		require.NoError(t, err, c.req.Shape)
 		names := []string{}
 		for _, col := range res.Columns {
 			names = append(names, col.Name)
 		}
-		s.Equal(c.cols, names, c.req.Shape)
-		s.Require().Len(res.Rows, c.rows, c.req.Shape)
-		total := 0
-		for _, row := range res.Rows {
-			s.Len(row, len(c.cols))
-			n, convErr := strconv.Atoi(strings.TrimSuffix(row[len(row)-1], ".0"))
-			s.Require().NoError(convErr)
-			total += n
+		assert.Equal(t, c.cols, names, c.req.Shape)
+		assert.Equal(t, [][]string{c.row}, res.Rows)
+		assert.Contains(t, repo.Last.SQL, "FROM reports_db.meter_usage WHERE")
+		assert.NotContains(t, repo.Last.SQL, "FINAL")
+		assert.NotContains(t, repo.Last.SQL, "_peerdb_is_deleted")
+		for _, f := range c.want {
+			assert.Contains(t, repo.Last.SQL, f)
 		}
-		s.Equal(3, total, c.req.Shape)
+		for _, f := range c.not {
+			assert.NotContains(t, repo.Last.SQL[:strings.Index(repo.Last.SQL, " FROM")], f)
+		}
 	}
 }
 
-func (s *AnalyticsServiceSuite) TestRunReport_EventsVolumeRowCap() {
-	ctx := s.GetContext()
-	s.insertUsage(ctx, s.sumMeter.ID, s.now, 3, nil)
-	s.insertUsage(ctx, s.sumMeter.ID, s.now.Add(-24*time.Hour), 4, nil)
-	svc := NewAnalyticsService(ServiceParams{
-		Logger:         s.GetLogger(),
-		Config:         s.GetConfig(),
-		DB:             s.GetDB(),
-		MeterUsageRepo: s.meterUsageRepo,
-		MeterRepo:      s.GetStores().MeterRepo,
-		CustomerRepo:   s.GetStores().CustomerRepo,
-		FeatureRepo:    s.GetStores().FeatureRepo,
-		PriceRepo:      s.GetStores().PriceRepo,
-		ReportsRepo:    &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Max: 1},
-	})
-	_, err := svc.RunReport(s.GetContext(), "events_volume", &dto.ReportQueryRequest{
-		Shape: "timeseries", Grain: "day",
-		Range: s.rangeStart.Format("2006-01-02") + ".." + s.rangeEnd.Format("2006-01-02"),
-	})
-	s.Require().Error(err)
-	s.True(ierr.IsValidation(err))
+func TestRunReport_EventsVolumeRowCap(t *testing.T) {
+	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Max: 1, Rows: [][]string{{"a", "1"}, {"b", "2"}}}
+	_, err := runEventsVolume(t, repo, &dto.ReportQueryRequest{Shape: "breakdown", Dimensions: []string{"meter_id"}})
+	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
+	assert.Contains(t, repo.Last.SQL, "LIMIT 2")
 }
 
-func (s *AnalyticsServiceSuite) TestRunReport_EventsVolumeRejectsCompareAndCurrency() {
+func TestRunReport_EventsVolumeRejectsCompareAndCurrency(t *testing.T) {
 	for _, req := range []*dto.ReportQueryRequest{
 		{Shape: "timeseries", Grain: "day", Compare: "previous_period"},
 		{Shape: "timeseries", Grain: "day", Currency: "usd"},
+		{Shape: "timeseries", Grain: "day", Filters: []dto.ReportFilter{{Field: "currency", Op: "eq", Value: []string{"usd"}}}},
 		{Shape: "scalar"},
 	} {
-		_, err := s.runEventsVolume(req)
-		s.Require().Error(err)
-		s.True(ierr.IsValidation(err), "%+v", req)
+		_, err := runEventsVolume(t, &testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}, req)
+		require.Error(t, err)
+		assert.True(t, ierr.IsValidation(err), "%+v", req)
 	}
+}
+
+func TestRunReport_EventsVolumeMeterFilterIsParams(t *testing.T) {
+	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}
+	_, err := runEventsVolume(t, repo, &dto.ReportQueryRequest{
+		Shape: "timeseries", Grain: "day",
+		Filters: []dto.ReportFilter{{Field: "meter_id", Op: "in", Value: []string{"m1", "m2' OR 1=1"}}},
+	})
+	require.NoError(t, err)
+	assert.Contains(t, repo.Last.SQL, "meter_id IN ({f0_0:String}, {f0_1:String})")
+	assert.NotContains(t, repo.Last.SQL, "OR 1=1")
+	assert.Equal(t, "m2' OR 1=1", repo.Last.Params["f0_1"])
 }

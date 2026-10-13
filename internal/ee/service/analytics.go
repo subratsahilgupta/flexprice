@@ -535,8 +535,8 @@ func (s *analyticsService) RunReport(ctx context.Context, key string, req *dto.R
 	if req.Shape == string(types.ShapeTimeseries) && req.Grain == "" && len(entry.Grains) > 0 {
 		req.Grain = string(entry.Grains[0])
 	}
-	if entry.Family == types.FamilyUsage {
-		return s.runUsageReport(ctx, entry, req)
+	if entry.Key == types.MetricEventsVolume && req.Shape == string(types.ShapeBreakdown) && len(req.Dimensions) == 0 {
+		req.Dimensions = []string{"meter_id"}
 	}
 
 	def := analytics.ViewDefinition{
@@ -569,78 +569,6 @@ func (s *analyticsService) RunReport(ctx context.Context, key string, req *dto.R
 	if req.Compare != "" {
 		addChangePct(res, string(entry.Key))
 	}
-	return res, nil
-}
-
-func (s *analyticsService) runUsageReport(ctx context.Context, entry *analytics.ReportCatalogEntry, req *dto.ReportQueryRequest) (*dto.AnalyticsQueryResult, error) {
-	def := analytics.ViewDefinition{
-		Family:     types.FamilyUsage,
-		Shape:      types.Shape(req.Shape),
-		Metrics:    []types.Metric{types.MetricEventCount},
-		Dimensions: req.Dimensions,
-		Time:       analytics.TimeSpecRaw{Range: req.Range, Grain: types.Grain(req.Grain)},
-		Limit:      req.Limit,
-	}
-	for _, f := range req.Filters {
-		def.Filters = append(def.Filters, &analytics.Filter{Field: f.Field, Op: types.FilterOperatorType(f.Op), Value: f.Value})
-	}
-	for _, so := range req.Sort {
-		field := so.Field
-		if field == string(entry.Key) {
-			field = string(types.MetricEventCount)
-		}
-		def.Sort = append(def.Sort, &analytics.SortSpec{Field: field, Dir: types.SortDirection(so.Dir)})
-	}
-	res, err := s.ExecuteView(ctx, &def, nil)
-	if err != nil {
-		return nil, err
-	}
-	if maxRows := s.ReportsRepo.MaxRows(); maxRows > 0 && len(res.Rows) > maxRows {
-		return nil, ierr.NewErrorf("result exceeds %d rows", maxRows).
-			WithHint("Narrow the time range or remove dimensions").
-			Mark(ierr.ErrValidation)
-	}
-	// Ungrouped timeseries sums meters per bucket.
-	collapse := req.Shape == string(types.ShapeTimeseries) && len(req.Dimensions) == 0
-	keep := make([]int, 0, len(res.Columns))
-	cols := make([]*dto.AnalyticsColumn, 0, len(res.Columns))
-	for i, c := range res.Columns {
-		switch c.Name {
-		case "unit", "unit_plural":
-			continue
-		case "meter_id":
-			if collapse {
-				continue
-			}
-		case "window_start":
-			c.Name = "bucket"
-		case string(types.MetricEventCount):
-			c.Name = string(entry.Key)
-		}
-		keep = append(keep, i)
-		cols = append(cols, c)
-	}
-	rows := make([][]string, 0, len(res.Rows))
-	sums := map[string]int{}
-	for _, row := range res.Rows {
-		out := make([]string, len(keep))
-		for k, i := range keep {
-			out[k] = row[i]
-		}
-		if !collapse {
-			rows = append(rows, out)
-			continue
-		}
-		if at, ok := sums[out[0]]; ok {
-			a, _ := decimal.NewFromString(rows[at][1])
-			b, _ := decimal.NewFromString(out[1])
-			rows[at][1] = a.Add(b).String()
-			continue
-		}
-		sums[out[0]] = len(rows)
-		rows = append(rows, out)
-	}
-	res.Columns, res.Rows = cols, rows
 	return res, nil
 }
 

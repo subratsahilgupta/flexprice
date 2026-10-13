@@ -369,3 +369,90 @@ func TestReportsRepository_CustomReports(t *testing.T) {
 	// Both bounded intervals ended before window.
 	assert.Equal(t, [][]string{{"usd", "2"}}, run(types.MetricActiveCustomers, types.ShapeScalar, late, oct))
 }
+
+func TestReportsRepository_EventsVolume(t *testing.T) {
+	address := chEnvOrDefault("FLEXPRICE_TEST_CLICKHOUSE_ADDRESS", "localhost:9000")
+	username := chEnvOrDefault("FLEXPRICE_TEST_CLICKHOUSE_USERNAME", "flexprice")
+	password := chEnvOrDefault("FLEXPRICE_TEST_CLICKHOUSE_PASSWORD", "flexprice123")
+	db := fmt.Sprintf("reports_evt_%d", time.Now().UnixNano())
+
+	admin := newRealClickHouseTestStore(t)
+	ctx := context.Background()
+	require.NoError(t, admin.GetConn().Exec(ctx, "CREATE DATABASE "+db))
+	t.Cleanup(func() { _ = admin.GetConn().Exec(context.Background(), "DROP DATABASE IF EXISTS "+db) })
+	require.NoError(t, admin.GetConn().Exec(ctx, `CREATE TABLE `+db+`.meter_usage (
+		id String, tenant_id String, environment_id String, external_customer_id String,
+		meter_id String, event_name String, timestamp DateTime, qty_total Decimal(18, 8)
+	) ENGINE = MergeTree PARTITION BY toYYYYMMDD(timestamp)
+	ORDER BY (tenant_id, environment_id, external_customer_id, meter_id, timestamp, id)`))
+
+	n := 0
+	row := func(tenant, env, meter, ts string) string {
+		n++
+		return fmt.Sprintf("('e%d','%s','%s','c1','%s','evt','%s',1)", n, tenant, env, meter, ts)
+	}
+	require.NoError(t, admin.GetConn().Exec(ctx, `INSERT INTO `+db+`.meter_usage VALUES `+strings.Join([]string{
+		row("t1", "e1", "m1", "2026-09-01 00:00:00"),
+		row("t1", "e1", "m1", "2026-09-01 12:00:00"),
+		row("t1", "e1", "m2", "2026-09-01 23:59:59"),
+		row("t1", "e1", "m1", "2026-09-02 08:00:00"),
+		row("t1", "e1", "m1", "2026-09-08 00:00:00"),
+		row("t1", "e1", "m2", "2026-09-30 23:59:59"),
+		row("t1", "e1", "m1", "2026-10-01 00:00:00"),
+		row("t1", "e1", "m1", "2026-08-31 23:59:59"),
+		row("t1", "e2", "m1", "2026-09-01 10:00:00"),
+		row("t2", "e1", "m1", "2026-09-01 10:00:00"),
+	}, ",")))
+
+	cfg := &config.Configuration{
+		ClickHouse: config.ClickHouseConfig{Address: address, Username: username, Password: password, Database: "default", MaxMemoryUsage: 1},
+		Reports:    config.ReportsConfig{Database: db, Username: username, Password: password},
+	}
+	repo, err := NewReportsRepository(cfg, nil)
+	require.NoError(t, err)
+
+	run := func(tenant string, shape types.Shape, grain types.Grain, limit int, filters []*analytics.Filter, dims ...string) [][]string {
+		rv := &analytics.ResolvedView{
+			Family: types.FamilyBilling, Shape: shape, Metrics: []types.Metric{types.MetricEventsVolume},
+			Dimensions: dims, Filters: filters, Limit: limit,
+			Time: analytics.TimeSpec{
+				From:  time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+				To:    time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
+				Grain: grain,
+			},
+		}
+		q, err := analytics.BuildBillingQuery(rv, repo.Database(), tenant, "e1", 100)
+		require.NoError(t, err)
+		rows, err := repo.Run(ctx, q)
+		require.NoError(t, err)
+		return rows
+	}
+
+	assert.Equal(t, [][]string{
+		{"2026-09-01T00:00:00Z", "3"},
+		{"2026-09-02T00:00:00Z", "1"},
+		{"2026-09-08T00:00:00Z", "1"},
+		{"2026-09-30T00:00:00Z", "1"},
+	}, run("t1", types.ShapeTimeseries, types.GrainDay, 0, nil))
+	assert.Equal(t, [][]string{
+		{"2026-08-31T00:00:00Z", "4"},
+		{"2026-09-07T00:00:00Z", "1"},
+		{"2026-09-28T00:00:00Z", "1"},
+	}, run("t1", types.ShapeTimeseries, types.GrainWeek, 0, nil))
+	assert.Equal(t, [][]string{{"2026-09-01T00:00:00Z", "6"}}, run("t1", types.ShapeTimeseries, types.GrainMonth, 0, nil))
+	assert.Equal(t, [][]string{
+		{"2026-09-01T00:00:00Z", "m1", "2"},
+		{"2026-09-01T00:00:00Z", "m2", "1"},
+		{"2026-09-02T00:00:00Z", "m1", "1"},
+		{"2026-09-08T00:00:00Z", "m1", "1"},
+		{"2026-09-30T00:00:00Z", "m2", "1"},
+	}, run("t1", types.ShapeTimeseries, types.GrainDay, 0, nil, "meter_id"))
+
+	assert.Equal(t, [][]string{{"m1", "4"}, {"m2", "2"}}, run("t1", types.ShapeBreakdown, "", 0, nil, "meter_id"))
+	assert.Equal(t, [][]string{{"m1", "4"}}, run("t1", types.ShapeBreakdown, "", 1, nil, "meter_id"))
+	only2 := []*analytics.Filter{{Field: "meter_id", Op: types.IN, Value: []string{"m2", "nope"}}}
+	assert.Equal(t, [][]string{{"m2", "2"}}, run("t1", types.ShapeBreakdown, "", 0, only2, "meter_id"))
+
+	assert.Equal(t, [][]string{{"m1", "1"}}, run("t2", types.ShapeBreakdown, "", 0, nil, "meter_id"))
+	assert.Empty(t, run("t3", types.ShapeBreakdown, "", 0, nil, "meter_id"))
+}
