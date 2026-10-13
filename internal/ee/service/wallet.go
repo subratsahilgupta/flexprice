@@ -2385,7 +2385,7 @@ func (s *walletService) validateWalletOperation(w *wallet.Wallet, req *wallet.Wa
 }
 
 // processDebitOperation handles the debit operation with credit selection and consumption
-func (s *walletService) processDebitOperation(ctx context.Context, req *wallet.WalletOperation) ([]types.WalletTxConsumption, error) {
+func (s *walletService) processDebitOperation(ctx context.Context, req *wallet.WalletOperation) ([]*types.WalletTxConsumption, error) {
 	// Find eligible credits with pagination
 	credits := []*wallet.Transaction{}
 	var err error
@@ -2449,8 +2449,8 @@ func (s *walletService) processDebitOperation(ctx context.Context, req *wallet.W
 		return nil, err
 	}
 
-	return lo.Map(consumedCredits, func(c *wallet.Transaction, _ int) types.WalletTxConsumption {
-		return types.WalletTxConsumption{CreditTransactionID: c.ID, Credits: availableBefore[c.ID].Sub(c.CreditsAvailable)}
+	return lo.Map(consumedCredits, func(c *wallet.Transaction, _ int) *types.WalletTxConsumption {
+		return &types.WalletTxConsumption{CreditTransactionID: c.ID, Credits: availableBefore[c.ID].Sub(c.CreditsAvailable)}
 	}), nil
 }
 
@@ -2491,7 +2491,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 		}
 
 		// Step 4: Process operation-specific logic
-		var consumedCredits []types.WalletTxConsumption
+		var consumedCredits []*types.WalletTxConsumption
 		if req.Type == types.TransactionTypeDebit {
 			newCreditBalance = w.CreditBalance.Sub(req.CreditAmount)
 			// Process debit operation (credit selection and consumption)
