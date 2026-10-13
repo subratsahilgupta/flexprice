@@ -326,6 +326,20 @@ func addonPriceSyncLockKey(addonID string) string {
 	return cache.PrefixAddonPriceSyncLock + addonID
 }
 
+// @Summary Synchronize addon prices
+// @ID syncAddonPrices
+// @Description Use when you have changed an addon's usage charges and need to push them to all active subscriptions holding the addon. Returns workflow ID.
+// @Tags Addons
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Addon ID"
+// @Success 200 {object} models.TemporalWorkflowResult
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 422 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /addons/{id}/sync/subscriptions [post]
 func (h *AddonHandler) SyncAddonPrices(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
