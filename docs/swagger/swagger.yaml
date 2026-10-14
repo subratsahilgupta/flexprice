@@ -1230,6 +1230,8 @@ definitions:
         type: string
       start_date:
         type: string
+      subscription_id:
+        type: string
     type: object
   ChangedAddonAssociationAction:
     description: created | ended
@@ -1312,6 +1314,8 @@ definitions:
       quantity:
         type: string
       start_date:
+        type: string
+      subscription_id:
         type: string
     type: object
   ChangedLineItemAction:
@@ -4769,10 +4773,19 @@ definitions:
     enum:
     - add
     - remove
+    - modify
     type: string
     x-enum-varnames:
     - GroupedInvoicingActionAdd
     - GroupedInvoicingActionRemove
+    - GroupedInvoicingActionModify
+  GroupedInvoicingChange:
+    properties:
+      addon_bulk_params:
+        $ref: '#/definitions/SubModifyBulkAddonParams'
+      subscription_id:
+        type: string
+    type: object
   GroupedInvoicingChildRequest:
     properties:
       addons:
@@ -6744,8 +6757,14 @@ definitions:
       action:
         allOf:
         - $ref: '#/definitions/GroupedInvoicingAction'
-        description: Action specifies whether to add or remove the child subscriptions
-          from grouped invoicing.
+        description: Action adds or removes child subscriptions, or modifies addons
+          across the group ('modify').
+      changes:
+        description: Changes is required for action 'modify'; the path subscription
+          is the parent.
+        items:
+          $ref: '#/definitions/GroupedInvoicingChange'
+        type: array
       child_subscription_ids:
         items:
           type: string
@@ -10917,6 +10936,10 @@ definitions:
     - CheckoutActionPayInvoice
   types.CheckoutConfiguration:
     properties:
+      add_addon_batch_params:
+        items:
+          $ref: '#/definitions/types.AddAddonParams'
+        type: array
       add_addon_params:
         $ref: '#/definitions/types.AddAddonParams'
       create_subscription_params:
