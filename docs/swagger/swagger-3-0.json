@@ -645,6 +645,84 @@
         ]
       }
     },
+    "/addons/{id}/sync/subscriptions": {
+      "post": {
+        "tags": [
+          "Addons"
+        ],
+        "summary": "Synchronize addon prices",
+        "description": "Use when you have changed an addon's usage charges and need to push them to all active subscriptions holding the addon. Returns workflow ID.",
+        "operationId": "syncAddonPrices",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Addon ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/models.TemporalWorkflowResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
     "/alerts/search": {
       "post": {
         "tags": [
@@ -3605,6 +3683,75 @@
           }
         ],
         "x-scope": "read"
+      }
+    },
+    "/customers/portal/{external_id}": {
+      "get": {
+        "tags": [
+          "Customers"
+        ],
+        "summary": "Create customer portal session",
+        "description": "Use when sending a customer to their self-serve billing portal (invoices, usage, payment methods). Returns a short-lived URL and token scoped to that customer.",
+        "operationId": "createCustomerPortalSession",
+        "parameters": [
+          {
+            "name": "external_id",
+            "in": "path",
+            "description": "Customer external ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Customer not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "write"
       }
     },
     "/customers/search": {
@@ -17616,6 +17763,10 @@
           "status": {
             "$ref": "#/components/schemas/types.Status"
           },
+          "synced_price_sequence": {
+            "type": "integer",
+            "description": "SyncedPriceSequence is the addon price sequence this association's line items\nhave been reconciled up to. Written only by the addon usage-price sync."
+          },
           "tenant_id": {
             "type": "string"
           },
@@ -17714,6 +17865,10 @@
           "subscription": {
             "$ref": "#/components/schemas/SubscriptionResponse"
           },
+          "synced_price_sequence": {
+            "type": "integer",
+            "description": "SyncedPriceSequence is the addon price sequence this association's line items\nhave been reconciled up to. Written only by the addon usage-price sync."
+          },
           "tenant_id": {
             "type": "string"
           },
@@ -17723,6 +17878,20 @@
           },
           "updated_by": {
             "type": "string"
+          }
+        }
+      },
+      "AddonPriceSyncStatusResponse": {
+        "type": "object",
+        "properties": {
+          "current_sequence": {
+            "type": "integer"
+          },
+          "synced": {
+            "type": "boolean"
+          },
+          "unsynced_association_count": {
+            "type": "integer"
           }
         }
       },
@@ -17766,6 +17935,9 @@
           },
           "name": {
             "type": "string"
+          },
+          "price_sync_status": {
+            "$ref": "#/components/schemas/AddonPriceSyncStatusResponse"
           },
           "prices": {
             "type": "array",
@@ -19231,6 +19403,9 @@
           },
           "name": {
             "type": "string"
+          },
+          "price_sync_status": {
+            "$ref": "#/components/schemas/AddonPriceSyncStatusResponse"
           },
           "prices": {
             "type": "array",
@@ -24581,6 +24756,21 @@
             "type": "string"
           },
           "price_id": {
+            "type": "string"
+          }
+        }
+      },
+      "PortalSessionResponse": {
+        "type": "object",
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "token": {
+            "type": "string"
+          },
+          "url": {
             "type": "string"
           }
         }
@@ -32873,11 +33063,13 @@
         "type": "string",
         "enum": [
           "quantity_change",
-          "line_item_change"
+          "line_item_change",
+          "trial_end"
         ],
         "x-enum-varnames": [
           "ModifySubscriptionTypeQuantityChange",
-          "ModifySubscriptionTypeLineItemChange"
+          "ModifySubscriptionTypeLineItemChange",
+          "ModifySubscriptionTypeTrialEnd"
         ],
         "x-speakeasy-name-override": "ModifySubscriptionType"
       },
