@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/activity"
 	"github.com/flexprice/flexprice/internal/api"
 	adminapi "github.com/flexprice/flexprice/internal/api/admin"
 	adminv1 "github.com/flexprice/flexprice/internal/api/admin/v1"
@@ -146,6 +147,7 @@ func main() {
 			repository.NewEventRepository,
 			repository.NewProcessedEventRepository,
 			repository.NewMeterUsageRepository,
+			repository.NewActivityRepository,
 			repository.NewMeterRepository,
 			repository.NewUserRepository,
 			repository.NewAuthRepository,
@@ -223,6 +225,17 @@ func main() {
 		),
 	)
 
+	// Activity log capture (hook, publisher); inert unless activity.enabled
+	opts = append(opts,
+		fx.Provide(
+			provideActivityPubSub,
+			activity.Registrations,
+			activity.NewPublisher,
+			activity.NewLinkedCustomers,
+			activity.NewConsumer,
+		),
+	)
+
 	// Service layer
 	opts = append(opts,
 		fx.Provide(
@@ -270,6 +283,7 @@ func main() {
 			service.NewWalletService,
 			service.NewInvoiceService,
 			service.NewFeatureService,
+			service.NewActivityService,
 			service.NewEntitlementService,
 			service.NewEntitlementGrantService,
 			service.NewPaymentService,
@@ -332,6 +346,7 @@ func main() {
 			tracing.RegisterHooks,
 			repository.InitTracing,
 			pyroscope.RegisterHooks,
+			activity.Install,
 			initIntegrationFactory,
 			startServer,
 		),
@@ -362,6 +377,7 @@ func provideHandlers(
 	invoiceService service.InvoiceService,
 	temporalService temporalservice.TemporalService,
 	featureService service.FeatureService,
+	activityService service.ActivityService,
 	entitlementService service.EntitlementService,
 	paymentService service.PaymentService,
 	paymentProcessorService service.PaymentProcessorService,
@@ -430,6 +446,7 @@ func provideHandlers(
 		Tenant:                   v1.NewTenantHandler(tenantService, logger),
 		Invoice:                  v1.NewInvoiceHandler(invoiceService, cfg, logger),
 		Feature:                  v1.NewFeatureHandler(featureService, logger),
+		Activity:                 v1.NewActivityHandler(activityService, logger),
 		Entitlement:              v1.NewEntitlementHandler(entitlementService, logger),
 		Payment:                  v1.NewPaymentHandler(paymentService, paymentProcessorService, logger),
 		Task:                     v1.NewTaskHandler(taskService, temporalService, logger),
@@ -601,6 +618,7 @@ func startServer(
 	walletBalanceAlertSvc service.WalletBalanceAlertService,
 	rawEventConsumptionSvc service.RawEventConsumptionService,
 	meterUsageTrackingSvc service.MeterUsageTrackingService,
+	activityConsumer *activity.Consumer,
 	params service.ServiceParams,
 ) {
 	mode := cfg.Deployment.Mode
@@ -614,7 +632,7 @@ func startServer(
 			log.Fatal(context.Background(), "Kafka consumer required for local mode")
 		}
 		// Register all handlers and start router once
-		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, cfg, true)
+		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, activityConsumer, cfg, true)
 		startRouter(lc, router, log)
 		startTemporalWorker(lc, log, temporalClient, temporalService, params, webhookService)
 
@@ -622,7 +640,7 @@ func startServer(
 		startAPIServer(lc, r, cfg, log)
 	case types.ModeAPI:
 		// Register all handlers and start router once (no event consumption)
-		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, cfg, false)
+		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, activityConsumer, cfg, false)
 		startRouter(lc, router, log)
 
 		// Registered last so fx's reverse-order stop drains HTTP before deps close.
@@ -632,7 +650,7 @@ func startServer(
 		// Register webhook handler and start router so that webhook events
 		// published by temporal activities (e.g. invoice finalization) are
 		// consumed and delivered via Svix/native in the same process.
-		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, cfg, false)
+		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, activityConsumer, cfg, false)
 		startRouter(lc, router, log)
 		startTemporalWorker(lc, log, temporalClient, temporalService, params, webhookService)
 	case types.ModeConsumer:
@@ -641,7 +659,7 @@ func startServer(
 		}
 
 		// Register all handlers and start router once
-		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, cfg, true)
+		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, activityConsumer, cfg, true)
 		startRouter(lc, router, log)
 	case types.ModeAdmin:
 		startAPIServer(lc, adminRouter, cfg, log)
@@ -752,6 +770,7 @@ func registerRouterHandlers(
 	walletBalanceAlertSvc service.WalletBalanceAlertService,
 	rawEventConsumptionSvc service.RawEventConsumptionService,
 	meterUsageTrackingSvc service.MeterUsageTrackingService,
+	activityConsumer *activity.Consumer,
 	cfg *config.Configuration,
 	includeProcessingHandlers bool,
 ) {
@@ -768,6 +787,7 @@ func registerRouterHandlers(
 		meterUsageTrackingSvc.RegisterHandler(router, cfg)
 		meterUsageTrackingSvc.RegisterHandlerLazy(router, cfg)
 		meterUsageTrackingSvc.RegisterBulkHandler(router, cfg)
+		activityConsumer.RegisterHandler(router, cfg)
 	}
 }
 
@@ -807,6 +827,21 @@ func provideWalletBalanceAlertPubSub(
 		return types.WalletBalanceAlertPubSub{}
 	}
 	return types.WalletBalanceAlertPubSub{PubSub: pubSub}
+}
+
+func provideActivityPubSub(
+	cfg *config.Configuration,
+	logger *logger.Logger,
+) types.ActivityPubSub {
+	if !cfg.Activity.Enabled {
+		return types.ActivityPubSub{}
+	}
+	pubSub, err := kafkaPubsub.NewPubSubFromConfig(cfg, logger, cfg.Activity.ConsumerGroup)
+	if err != nil {
+		logger.Fatalw("failed to create pubsub for activity log", "error", err)
+		return types.ActivityPubSub{}
+	}
+	return types.ActivityPubSub{PubSub: pubSub}
 }
 
 // enrichServiceParams returns the ServiceParams the rest of the app consumes:

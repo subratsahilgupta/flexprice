@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/activity"
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/payment"
@@ -174,6 +175,7 @@ func (p *paymentProcessor) ProcessPayment(ctx context.Context, id string) (*paym
 	}
 
 	paymentObj.UpdatedAt = time.Now().UTC()
+	ctx = withPaymentStatusAction(ctx, paymentObj.ID, statusBeforeOutcome, paymentObj.PaymentStatus)
 	if err := p.PaymentRepo.Update(ctx, paymentObj); err != nil {
 		return paymentObj, err
 	}
@@ -788,12 +790,22 @@ func (p *paymentProcessor) handleInvoicePostProcessing(ctx context.Context, paym
 			finalizedAt := time.Now().UTC()
 			invoice.FinalizedAt = &finalizedAt
 			finalizedNow = true
+			// Best effort: a failed lookup must not leave a paid invoice unfinalized, so it keeps its draft dates.
+			if err := issueSubscriptionInvoice(ctx, p.ServiceParams, invoice, finalizedAt); err != nil {
+				p.Logger.Error(ctx, "failed to date invoice at finalization, keeping its draft dates",
+					"error", err,
+					"invoice_id", invoice.ID)
+			}
 		}
 	} else if invoice.AmountRemaining.LessThan(invoice.AmountDue) {
 		invoice.PaymentStatus = types.PaymentStatusPending // Partial payment still keeps it pending
 	}
 
 	// Update the invoice
+	ctx = withInvoicePaid(ctx, invoice.ID, invoice.PaymentStatus)
+	if finalizedNow {
+		ctx = activity.WithAction(ctx, invoice.ID, activity.InvoiceFinalized)
+	}
 	if err := p.InvoiceRepo.Update(ctx, invoice); err != nil {
 		return err
 	}

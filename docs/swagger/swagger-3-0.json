@@ -23,6 +23,134 @@
     }
   ],
   "paths": {
+    "/activity": {
+      "post": {
+        "tags": [
+          "Activity"
+        ],
+        "summary": "List activity",
+        "description": "Use when you need the audit trail of changes to billing entities: who changed what, when, from where. Filter by entity, customer, actor, action or request; pages are newest first.",
+        "operationId": "listActivity",
+        "requestBody": {
+          "description": "Filters",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListActivityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListActivityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "read",
+        "x-codegen-request-body-name": "filter"
+      }
+    },
+    "/activity/{id}": {
+      "get": {
+        "tags": [
+          "Activity"
+        ],
+        "summary": "Get activity",
+        "description": "Use when you need one activity entry with the state of the entity right after the change.",
+        "operationId": "getActivity",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Activity ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid activity id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Activity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
     "/addons": {
       "post": {
         "tags": [
@@ -17245,6 +17373,88 @@
           }
         }
       },
+      "ActivityActor": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "ActivityEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "ActivityPagination": {
+        "type": "object",
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "next_cursor": {
+            "type": "string"
+          }
+        }
+      },
+      "ActivityResponse": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/ActivityActor"
+          },
+          "customer_id": {
+            "type": "string"
+          },
+          "entity": {
+            "$ref": "#/components/schemas/ActivityEntity"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "state": {
+            "type": "object",
+            "properties": {}
+          },
+          "user_agent": {
+            "type": "string"
+          }
+        }
+      },
       "AddAddonRequest": {
         "required": [
           "addon_id",
@@ -18099,7 +18309,7 @@
             "description": "CancelAt is the exact date/time when the subscription should be cancelled.\nRequired for cancellation_type \"scheduled_date\"; optional for \"immediate\" (past dates only \u2014 backdated cancellation).\nFor \"scheduled_date\", accepts both future dates (deferred cancellation) and past dates (backdated cancellation).\nFor \"immediate\", accepts past/current dates only; use \"scheduled_date\" for future dates.",
             "format": "date-time"
           },
-          "cancel_immediately_inovice_policy": {
+          "cancel_immediately_invoice_policy": {
             "$ref": "#/components/schemas/types.CancelImmediatelyInvoicePolicy"
           },
           "cancellation_type": {
@@ -23608,6 +23818,72 @@
           }
         }
       },
+      "ListActivityRequest": {
+        "type": "object",
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "actor_id": {
+            "type": "string"
+          },
+          "actor_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "customer_id": {
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "entity_id": {
+            "type": "string"
+          },
+          "entity_type": {
+            "type": "string"
+          },
+          "expand": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ListActivityResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityResponse"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/ActivityPagination"
+          }
+        }
+      },
       "ListAlertLogsResponse": {
         "type": "object",
         "properties": {
@@ -26921,6 +27197,9 @@
           "environment_id": {
             "type": "string"
           },
+          "external_tax_details": {
+            "$ref": "#/components/schemas/types.ExternalTaxDetails"
+          },
           "id": {
             "type": "string"
           },
@@ -26932,6 +27211,9 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "provider": {
+            "$ref": "#/components/schemas/types.TaxProvider"
           },
           "status": {
             "$ref": "#/components/schemas/types.Status"
@@ -26949,7 +27231,15 @@
             "$ref": "#/components/schemas/TaxRateResponse"
           },
           "tax_rate_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Null when an external engine calculated the tax: there is no Flexprice rate to point at."
+          },
+          "tax_transaction_id": {
+            "type": "string",
+            "description": "TaxTransactionID is the provider transaction recording the filed tax, stamped at commit."
+          },
+          "tax_transaction_type": {
+            "$ref": "#/components/schemas/types.TaxTransactionType"
           },
           "taxable_amount": {
             "type": "string"
@@ -27989,7 +28279,8 @@
             "format": "date-time"
           },
           "cancel_at_period_end": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Pointer so omitting the field leaves the stored value unchanged; sending it sets the flag."
           },
           "parent_subscription_id": {
             "type": "string",
@@ -31659,6 +31950,55 @@
         },
         "x-speakeasy-name-override": "ExportMetadataField"
       },
+      "types.ExternalTaxDetails": {
+        "type": "object",
+        "properties": {
+          "calculation_expires_at": {
+            "type": "string",
+            "description": "CalculationExpiresAt is when the calculation can no longer be filed, RFC3339.",
+            "format": "date-time"
+          },
+          "calculation_id": {
+            "type": "string",
+            "description": "CalculationID is the provider calculation this row was written from. Commit files it."
+          },
+          "display_name": {
+            "type": "string",
+            "description": "DisplayName is the engine's own name for the tax, such as\n\"Integrated goods and services tax (IGST)\"."
+          },
+          "jurisdiction": {
+            "$ref": "#/components/schemas/types.TaxJurisdiction"
+          },
+          "percentage": {
+            "type": "string",
+            "description": "Percentage is the resolved rate, such as \"18.0\". This is what was charged, not the\nrate that would apply if the tax were imposed."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Reference is what this row's provider transaction was filed under. It is unique across\nevery transaction on the account, so it is also the only way back to a transaction whose\nid failed to land here."
+          },
+          "reversal": {
+            "$ref": "#/components/schemas/types.TaxReversal"
+          },
+          "sourcing": {
+            "type": "string",
+            "description": "Sourcing is whether the jurisdiction followed the seller's address or the buyer's."
+          },
+          "tax_code": {
+            "type": "string",
+            "description": "TaxCode is the product tax category the engine priced against, such as txcd_10000000.\nIt belongs to the line rather than the rate, so today every row on an invoice carries\nthe account default. It only varies once tax is calculated per line item."
+          },
+          "tax_type": {
+            "type": "string",
+            "description": "TaxType is the tax family, such as vat, igst or sales_tax."
+          },
+          "taxability_reason": {
+            "type": "string",
+            "description": "TaxabilityReason is why the engine charged what it did, such as standard_rated or\nreverse_charge. Recorded, not yet rendered."
+          }
+        },
+        "x-speakeasy-name-override": "ExternalTaxDetails"
+      },
       "types.FXRateFilter": {
         "type": "object",
         "properties": {
@@ -32734,7 +33074,9 @@
           "45 NET",
           "60 NET",
           "75 NET",
-          "90 NET"
+          "90 NET",
+          "END_OF_MONTH",
+          "END_OF_NEXT_MONTH"
         ],
         "x-enum-varnames": [
           "PaymentTerms15Net",
@@ -32742,7 +33084,9 @@
           "PaymentTerms45Net",
           "PaymentTerms60Net",
           "PaymentTerms75Net",
-          "PaymentTerms90Net"
+          "PaymentTerms90Net",
+          "PaymentTermsEndOfMonth",
+          "PaymentTermsEndOfNextMonth"
         ],
         "x-speakeasy-name-override": "PaymentTerms"
       },
@@ -33973,13 +34317,51 @@
         "type": "string",
         "enum": [
           "customer_exempt",
-          "no_tax_configured"
+          "no_tax_configured",
+          "reverse_charge",
+          "not_collecting",
+          "not_subject_to_tax",
+          "not_supported"
         ],
         "x-enum-varnames": [
           "TaxExemptionReasonCustomerExempt",
-          "TaxExemptionReasonNoTaxConfigured"
+          "TaxExemptionReasonNoTaxConfigured",
+          "TaxExemptionReasonReverseCharge",
+          "TaxExemptionReasonNotCollecting",
+          "TaxExemptionReasonNotSubjectToTax",
+          "TaxExemptionReasonNotSupported"
         ],
         "x-speakeasy-name-override": "TaxExemptionReasonCode"
+      },
+      "types.TaxJurisdiction": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "x-speakeasy-name-override": "TaxJurisdiction"
+      },
+      "types.TaxProvider": {
+        "type": "string",
+        "enum": [
+          "flexprice",
+          "stripe"
+        ],
+        "x-enum-varnames": [
+          "TaxProviderFlexprice",
+          "TaxProviderStripe"
+        ],
+        "x-speakeasy-name-override": "TaxProvider"
       },
       "types.TaxRateEntityType": {
         "type": "string",
@@ -33987,13 +34369,15 @@
           "customer",
           "subscription",
           "invoice",
-          "tenant"
+          "tenant",
+          "credit_note"
         ],
         "x-enum-varnames": [
           "TaxRateEntityTypeCustomer",
           "TaxRateEntityTypeSubscription",
           "TaxRateEntityTypeInvoice",
-          "TaxRateEntityTypeTenant"
+          "TaxRateEntityTypeTenant",
+          "TaxRateEntityTypeCreditNote"
         ],
         "x-speakeasy-name-override": "TaxRateEntityType"
       },
@@ -34032,6 +34416,42 @@
           "TaxRateTypePercentage"
         ],
         "x-speakeasy-name-override": "TaxRateType"
+      },
+      "types.TaxReversal": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/types.TaxReversalMode"
+          },
+          "original_transaction": {
+            "type": "string"
+          }
+        },
+        "x-speakeasy-name-override": "TaxReversal"
+      },
+      "types.TaxReversalMode": {
+        "type": "string",
+        "enum": [
+          "full",
+          "partial"
+        ],
+        "x-enum-varnames": [
+          "TaxReversalModeFull",
+          "TaxReversalModePartial"
+        ],
+        "x-speakeasy-name-override": "TaxReversalMode"
+      },
+      "types.TaxTransactionType": {
+        "type": "string",
+        "enum": [
+          "filing",
+          "reversal"
+        ],
+        "x-enum-varnames": [
+          "TaxTransactionTypeFiling",
+          "TaxTransactionTypeReversal"
+        ],
+        "x-speakeasy-name-override": "TaxTransactionType"
       },
       "types.TaxTreatment": {
         "type": "string",
@@ -36006,6 +36426,9 @@
           "currency": {
             "type": "string"
           },
+          "external_tax_details": {
+            "$ref": "#/components/schemas/types.ExternalTaxDetails"
+          },
           "id": {
             "type": "string"
           },
@@ -36014,6 +36437,9 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "provider": {
+            "$ref": "#/components/schemas/types.TaxProvider"
           },
           "tax_amount": {
             "type": "string"
@@ -36026,6 +36452,9 @@
           },
           "tax_rate_id": {
             "type": "string"
+          },
+          "tax_transaction_type": {
+            "$ref": "#/components/schemas/types.TaxTransactionType"
           },
           "taxable_amount": {
             "type": "string"

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/activity"
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
@@ -1234,6 +1235,32 @@ func (s *invoiceService) FinalizeInvoice(ctx context.Context, id string, req dto
 	return nil
 }
 
+// issueSubscriptionInvoice dates a subscription invoice as it is finalized: the issue date is the finalization
+// time unless the caller set one, and the due date counts from it. Manually edited copies keep their dates.
+func issueSubscriptionInvoice(ctx context.Context, params ServiceParams, inv *invoice.Invoice, finalizedAt time.Time) error {
+	if inv.InvoiceType != types.InvoiceTypeSubscription || inv.SubscriptionID == nil || inv.IsManuallyEdited {
+		return nil
+	}
+	// A defaulted issue date equals created_at; anything else was set by the caller.
+	issueDate := finalizedAt
+	if inv.IssueDate != nil && !inv.IssueDate.Equal(inv.CreatedAt) {
+		issueDate = *inv.IssueDate
+	}
+
+	sub, err := params.SubRepo.Get(ctx, *inv.SubscriptionID)
+	if err != nil {
+		return err
+	}
+	settingsSvc := NewSettingsService(params).(*settingsService)
+	invoiceConfig, err := GetSetting[types.InvoiceConfig](settingsSvc, ctx, types.SettingKeyInvoiceConfig)
+	if err != nil {
+		return ierr.WithError(err).WithHint("Failed to get invoice configuration").Mark(ierr.ErrValidation)
+	}
+	inv.IssueDate = &issueDate
+	inv.DueDate = lo.ToPtr(subscriptionInvoiceDueDate(sub, invoiceConfig, issueDate))
+	return nil
+}
+
 func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv *invoice.Invoice, callerSessionID string) error {
 	if inv.InvoiceStatus == types.InvoiceStatusSkipped {
 		// No-op: skipped invoices are not finalized
@@ -1244,6 +1271,7 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 	}
 
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		txCtx = activity.WithAction(txCtx, inv.ID, activity.InvoiceFinalized)
 		// Lock invoice to prevent concurrent finalization
 		lockedInv, err := s.InvoiceRepo.GetForUpdate(txCtx, inv.ID)
 		if err != nil {
@@ -1390,6 +1418,9 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 		now := time.Now().UTC()
 		lockedInv.InvoiceStatus = types.InvoiceStatusFinalized
 		lockedInv.FinalizedAt = &now
+		if err := issueSubscriptionInvoice(txCtx, s.ServiceParams, lockedInv, now); err != nil {
+			return err
+		}
 
 		if err := s.InvoiceRepo.Update(txCtx, lockedInv); err != nil {
 			return err
@@ -1621,6 +1652,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 
 	var inv *invoice.Invoice
 	err := s.DB.WithTx(ctx, func(tx context.Context) error {
+		tx = activity.WithAction(tx, id, activity.InvoiceVoided)
 		// Re-read under a row lock so a concurrent refund cannot make RefundedAmount
 		// stale between the pre-check and the refund calculation below.
 		var err error
@@ -1681,6 +1713,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 		// terminally REFUNDED — including the case where prior refunds already
 		// covered it and this void issued no additional credit.
 		if fundedAmount.IsPositive() && inv.RefundedAmount.GreaterThanOrEqual(fundedAmount) {
+			tx = activity.WithAction(tx, id, activity.InvoiceRefunded)
 			inv.PaymentStatus = types.PaymentStatusRefunded
 		}
 
@@ -2179,6 +2212,14 @@ func (s *invoiceService) SyncInvoiceToMoyasarIfEnabled(ctx context.Context, inv 
 	return nil
 }
 
+// withInvoicePaid declares invoice.paid for id when status settles the invoice.
+func withInvoicePaid(ctx context.Context, id string, status types.PaymentStatus) context.Context {
+	if status == types.PaymentStatusSucceeded || status == types.PaymentStatusOverpaid {
+		return activity.WithAction(ctx, id, activity.InvoicePaid)
+	}
+	return ctx
+}
+
 func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, status types.PaymentStatus, amount *decimal.Decimal) error {
 	var inv *invoice.Invoice
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
@@ -2265,6 +2306,7 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 			return err
 		}
 
+		txCtx = withInvoicePaid(txCtx, id, status)
 		if err := s.InvoiceRepo.Update(txCtx, inv); err != nil {
 			return err
 		}
@@ -2399,6 +2441,7 @@ func (s *invoiceService) ReconcilePaymentStatus(ctx context.Context, id string, 
 		return err
 	}
 
+	ctx = withInvoicePaid(ctx, id, inv.PaymentStatus)
 	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
 		return err
 	}
@@ -5475,7 +5518,7 @@ func (s *invoiceService) SyncInvoiceToExternalVendors(ctx context.Context, invoi
 		Payload:       payload,
 	}
 	return integrationevents.DispatchInvoiceVendorSync(
-		ctx, s.Config, s.ConnectionRepo, s.EntityIntegrationMappingRepo, s.Logger, event, "",
+		ctx, s.Config, s.ConnectionRepo, s.EntityIntegrationMappingRepo, s.Logger, event, "", false,
 	)
 }
 
