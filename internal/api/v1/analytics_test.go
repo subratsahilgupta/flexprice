@@ -199,9 +199,7 @@ func TestAnalyticsQuery_MalformedBody_ReturnsBadRequest(t *testing.T) {
 	}
 }
 
-// TestAnalyticsCreateView_ResponseIsDTONotDomainModel proves CreateView returns
-// the ViewResponse DTO rather than the raw *analytics.View, so
-// tenant_id/status (from the embedded types.BaseModel) are never exposed to the client.
+// Response must be the DTO.
 func TestAnalyticsCreateView_ResponseIsDTONotDomainModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

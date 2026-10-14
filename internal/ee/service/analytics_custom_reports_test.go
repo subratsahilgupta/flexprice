@@ -62,9 +62,13 @@ func TestCreateView_CustomReportValidation(t *testing.T) {
 		assert.True(t, ierr.IsValidation(err), name)
 	}
 
+	err := svc.CreateView(ctx, &analytics.View{Name: "  ", Definition: reportDef(types.MetricInvoiceTotal, types.ShapeScalar, "this_month")})
+	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
+
 	ev, _ := analytics.LookupReport(string(types.MetricEventsVolume))
 	tooLong := reportDef(types.MetricEventsVolume, ev.DefaultShape, "last_30_days")
-	err := svc.CreateView(ctx, &analytics.View{Name: "events", Definition: tooLong})
+	err = svc.CreateView(ctx, &analytics.View{Name: "events", Definition: tooLong})
 	require.Error(t, err)
 	assert.True(t, ierr.IsValidation(err))
 	require.NoError(t, svc.CreateView(ctx, &analytics.View{Name: "events", Definition: reportDef(types.MetricEventsVolume, ev.DefaultShape, "last_7_days")}))

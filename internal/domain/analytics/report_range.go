@@ -18,7 +18,7 @@ var reportPresetDays = map[string]int{
 	"this_year":    366,
 }
 
-// ReportRangeMaxDays returns the longest span a saved range can cover.
+// ReportRangeMaxDays is the preset's worst-case span.
 func ReportRangeMaxDays(rng string) (int, error) {
 	if d, ok := reportPresetDays[rng]; ok {
 		return d, nil

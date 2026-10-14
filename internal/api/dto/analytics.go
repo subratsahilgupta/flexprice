@@ -39,8 +39,7 @@ func (r *ViewQueryRequest) Validate() error {
 	return validator.ValidateRequest(r)
 }
 
-// ViewResponse is the response for the analytics view endpoints. It omits
-// tenant_id and other internal fields of the domain analytics.View.
+// ViewResponse omits internal fields.
 type ViewResponse struct {
 	ID         string                    `json:"id"`
 	Name       string                    `json:"name"`
@@ -51,7 +50,7 @@ type ViewResponse struct {
 	UpdatedAt  time.Time                 `json:"updated_at"`
 }
 
-// ListViewsResponse is the response for GET /v1/analytics/views.
+// ListViewsResponse wraps saved views.
 type ListViewsResponse struct {
 	Items []*ViewResponse `json:"items"`
 }

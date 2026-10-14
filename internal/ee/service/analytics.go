@@ -164,12 +164,23 @@ func (s *analyticsService) executeTimeseries(ctx context.Context, rv *analytics.
 	return &res, nil
 }
 
+func trimViewName(v *analytics.View) error {
+	v.Name = strings.TrimSpace(v.Name)
+	if v.Name == "" {
+		return ierr.NewError("name is required").Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
 func (s *analyticsService) CreateView(ctx context.Context, v *analytics.View) error {
 	if v == nil {
 		return ierr.NewError("view is required").Mark(ierr.ErrValidation)
 	}
 	if v.Definition == nil {
 		return ierr.NewError("view definition is required").Mark(ierr.ErrValidation)
+	}
+	if err := trimViewName(v); err != nil {
+		return err
 	}
 	if err := s.validateDefinition(v.Definition); err != nil {
 		return err
@@ -270,6 +281,9 @@ func (s *analyticsService) GetView(ctx context.Context, id string) (*analytics.V
 func (s *analyticsService) UpdateView(ctx context.Context, v *analytics.View) error {
 	if v == nil || v.Definition == nil {
 		return ierr.NewError("view definition is required").Mark(ierr.ErrValidation)
+	}
+	if err := trimViewName(v); err != nil {
+		return err
 	}
 	cur, err := s.views.Get(ctx, v.ID)
 	if err != nil {

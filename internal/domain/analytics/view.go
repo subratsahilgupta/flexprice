@@ -128,7 +128,6 @@ func (v ViewDefinition) Validate() error {
 	return v.validateUsage()
 }
 
-// Catalog rules live in the service.
 func (v ViewDefinition) validateReport() error {
 	if len(v.Metrics) != 1 {
 		return ierr.NewError("custom reports take exactly one report").Mark(ierr.ErrValidation)
