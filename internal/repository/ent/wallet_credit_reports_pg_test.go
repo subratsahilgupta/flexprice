@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 )
@@ -111,13 +112,16 @@ func TestWalletCreditReports(t *testing.T) {
 	debit := newTx("wtx_d_"+runID, types.TransactionTypeDebit, types.TransactionReasonInvoicePayment, 230)
 	debit.CreditsAvailable = decimal.Zero
 	debit.SourceType, debit.SourceID = types.WalletTxSourceTypeInvoice, "inv_usage_"+runID
-	debit.ConsumptionBreakdown = []types.WalletTxConsumption{
+	debit.CreditBalanceBefore, debit.CreditBalanceAfter = decimal.NewFromInt(640), decimal.NewFromInt(410)
+	debit.Amount = decimal.NewFromInt(460) // a conversion rate of 2
+	debit.ConsumptionBreakdown = []*types.WalletTxConsumption{
 		{CreditTransactionID: purchase.ID, Credits: decimal.NewFromInt(200)},
 		{CreditTransactionID: bonus.ID, Credits: decimal.NewFromInt(20)},
 		{CreditTransactionID: adjustment.ID, Credits: decimal.NewFromInt(10)},
 	}
 	require.NoError(t, repo.CreateTransaction(ctx, debit))
 	legacyDebit := newTx("wtx_l_"+runID, types.TransactionTypeDebit, types.TransactionReasonInvoicePayment, 5)
+	legacyDebit.CreditBalanceBefore, legacyDebit.CreditBalanceAfter = decimal.NewFromInt(410), decimal.NewFromInt(405)
 	// Same timestamp as the debit above, so paging has to break the tie on id.
 	legacyDebit.CreatedAt = debit.CreatedAt
 	require.NoError(t, repo.CreateTransaction(ctx, legacyDebit))
@@ -133,16 +137,16 @@ func TestWalletCreditReports(t *testing.T) {
 		}
 
 		require.Equal(t, inv.ID, byID[purchase.ID].InvoiceID)
-		require.NotNil(t, byID[purchase.ID].PaidAmount)
-		require.True(t, decimal.NewFromInt(450).Equal(*byID[purchase.ID].PaidAmount), "after discount, before tax")
+		require.NotNil(t, byID[purchase.ID].AmountPaid)
+		require.True(t, decimal.NewFromInt(450).Equal(*byID[purchase.ID].AmountPaid), "after discount, before tax")
 		require.True(t, decimal.NewFromInt(500).Equal(byID[purchase.ID].Credits))
 
 		require.Equal(t, inv.ID, byID[bonus.ID].InvoiceID)
-		require.NotNil(t, byID[bonus.ID].PaidAmount)
-		require.True(t, byID[bonus.ID].PaidAmount.IsZero(), "the bonus does not count the invoice again")
+		require.NotNil(t, byID[bonus.ID].AmountPaid)
+		require.True(t, byID[bonus.ID].AmountPaid.IsZero(), "the bonus does not count the invoice again")
 
 		require.Empty(t, byID[adjustment.ID].InvoiceID)
-		require.Nil(t, byID[adjustment.ID].PaidAmount)
+		require.Nil(t, byID[adjustment.ID].AmountPaid)
 	})
 
 	t.Run("debits split by the batches they drew from", func(t *testing.T) {
@@ -158,20 +162,39 @@ func TestWalletCreditReports(t *testing.T) {
 		require.Equal(t, purchase.ID, rows[0].CreditTransactionID)
 		require.True(t, decimal.NewFromInt(200).Equal(rows[0].Credits))
 		require.True(t, decimal.NewFromInt(500).Equal(*rows[0].WalletTxnCredits))
-		require.True(t, decimal.NewFromInt(450).Equal(*rows[0].WalletTxnPaidAmount))
+		require.True(t, decimal.NewFromInt(450).Equal(*rows[0].WalletTxnAmountPaid))
 
 		require.Equal(t, bonus.ID, rows[1].CreditTransactionID)
 		require.True(t, decimal.NewFromInt(100).Equal(*rows[1].WalletTxnCredits))
-		require.NotNil(t, rows[1].WalletTxnPaidAmount)
-		require.True(t, rows[1].WalletTxnPaidAmount.IsZero())
+		require.NotNil(t, rows[1].WalletTxnAmountPaid)
+		require.True(t, rows[1].WalletTxnAmountPaid.IsZero())
 
 		require.Equal(t, adjustment.ID, rows[2].CreditTransactionID)
 		require.True(t, decimal.NewFromInt(40).Equal(*rows[2].WalletTxnCredits))
-		require.Nil(t, rows[2].WalletTxnPaidAmount)
+		require.Nil(t, rows[2].WalletTxnAmountPaid)
 
 		require.Equal(t, legacyDebit.ID, rows[3].DebitID)
 		require.Empty(t, rows[3].CreditTransactionID)
 		require.True(t, decimal.NewFromInt(5).Equal(rows[3].Credits))
+
+		// The balance steps down through the batches of a debit.
+		balances := lo.Map(rows, func(r *walletdomain.WalletDebitsExportData, _ int) string {
+			return r.CreditBalanceBefore.String() + ">" + r.CreditBalanceAfter.String()
+		})
+		require.Equal(t, []string{"640>440", "440>420", "420>410", "410>405"}, balances)
+
+		// In money the wallet holds the 450 paid; the purchased credits take their share of it and
+		// the bonus and adjustment take nothing.
+		values := lo.Map(rows, func(r *walletdomain.WalletDebitsExportData, _ int) string {
+			return r.TopUpAmountRemainingBefore.String() + ">" + r.TopUpAmountRemainingAfter.String()
+		})
+		require.Equal(t, []string{"450>270", "270>270", "270>270", "270>270"}, values)
+
+		// The wallet balance is the credit balance at the conversion rate each debit used.
+		walletBalances := lo.Map(rows, func(r *walletdomain.WalletDebitsExportData, _ int) string {
+			return r.WalletBalanceBefore.String() + ">" + r.WalletBalanceAfter.String()
+		})
+		require.Equal(t, []string{"1280>880", "880>840", "840>820", "410>405"}, walletBalances)
 	})
 
 	t.Run("a page holds whole debits and the next starts after the last", func(t *testing.T) {

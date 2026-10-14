@@ -41,7 +41,7 @@ type Transaction struct {
 	SourceID   string                   `db:"source_id" json:"source_id,omitempty"`
 
 	// ConsumptionBreakdown is set on debits: the credits drawn from each credit batch.
-	ConsumptionBreakdown []types.WalletTxConsumption `db:"consumption_breakdown" json:"consumption_breakdown,omitempty"`
+	ConsumptionBreakdown []*types.WalletTxConsumption `db:"consumption_breakdown" json:"consumption_breakdown,omitempty"`
 
 	// conversion_rate is the conversion rate for the transaction to the currency
 	ConversionRate *decimal.Decimal `db:"conversion_rate" json:"conversion_rate,omitempty" swaggertype:"string"`
@@ -198,9 +198,9 @@ type CreditTopupsExportData struct {
 	Credits             decimal.Decimal
 	Currency            string
 	InvoiceID           string
-	// PaidAmount is what the credits were bought for: the invoice after discount, before tax, for
+	// AmountPaid is what the credits were bought for: the invoice after discount, before tax, for
 	// an invoiced purchase, and zero for free and bonus grants. Not set for other credits.
-	PaidAmount *decimal.Decimal
+	AmountPaid *decimal.Decimal
 	CreatedAt  time.Time
 }
 
@@ -216,10 +216,21 @@ type WalletDebitsExportData struct {
 	InvoiceID           string
 	CreditTransactionID string
 	Credits             decimal.Decimal
+	// The wallet balance around this row. A debit drawing from several credits steps down row by row.
+	CreditBalanceBefore decimal.Decimal
+	CreditBalanceAfter  decimal.Decimal
+	// The credit balance in the wallet currency, at the conversion rate the debit used.
+	WalletBalanceBefore decimal.Decimal
+	WalletBalanceAfter  decimal.Decimal
+	// What is left of what was paid for the wallet's credits around this row. Credits with no
+	// paid amount, such as refunds and adjustments, add nothing. Unrounded, so rounding for
+	// display never builds up from row to row.
+	TopUpAmountRemainingBefore decimal.Decimal
+	TopUpAmountRemainingAfter  decimal.Decimal
 	// The size and paid amount of the credit drawn from, for spreading the paid amount over the
 	// credits drawn.
 	WalletTxnCredits    *decimal.Decimal
-	WalletTxnPaidAmount *decimal.Decimal
+	WalletTxnAmountPaid *decimal.Decimal
 	CreatedAt           time.Time
 }
 

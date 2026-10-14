@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/activity"
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/customer"
@@ -881,6 +882,9 @@ func (s *subscriptionService) ActivateDraftSubscription(ctx context.Context, sub
 
 		if sub.SubscriptionStatus != targetStatus {
 			sub.SubscriptionStatus = targetStatus
+			if targetStatus == types.SubscriptionStatusActive || targetStatus == types.SubscriptionStatusTrialing {
+				ctx = activity.WithAction(ctx, sub.ID, activity.SubscriptionActivated)
+			}
 			err = s.SubRepo.Update(ctx, sub)
 			if err != nil {
 				return err
@@ -1888,6 +1892,18 @@ func (s *subscriptionService) GetSubscriptionV2(ctx context.Context, id string, 
 	return response, nil
 }
 
+// naturalPeriodEnd returns the current period's end at the regular billing boundary, ignoring cancellation.
+func (s *subscriptionService) naturalPeriodEnd(sub *subscription.Subscription) (time.Time, error) {
+	return types.NextBillingDate(&types.NextBillingDateParams{
+		CurrentPeriodStart:  sub.CurrentPeriodStart,
+		BillingAnchor:       sub.BillingAnchor,
+		Unit:                sub.BillingPeriodCount,
+		Period:              sub.BillingPeriod,
+		SubscriptionEndDate: nil,
+		Timezone:            sub.Timezone,
+	})
+}
+
 // UpdateSubscription updates a subscription with the provided request
 func (s *subscriptionService) UpdateSubscription(ctx context.Context, subscriptionID string, req dto.UpdateSubscriptionRequest) (*dto.SubscriptionResponse, error) {
 	logger := s.Logger.With(
@@ -1951,11 +1967,45 @@ func (s *subscriptionService) UpdateSubscription(ctx context.Context, subscripti
 	}
 
 	if req.CancelAt != nil {
+		// Reject cancel_at at/before period start: it would invert the stored period.
+		if !req.CancelAt.After(subscription.CurrentPeriodStart) {
+			return nil, ierr.NewError("cancel_at must be after current period start").
+				WithHint("cancel_at cannot be at or before the current period start; it would leave the subscription with an inverted billing period").
+				WithReportableDetails(map[string]interface{}{
+					"cancel_at":            req.CancelAt.UTC().Format(time.RFC3339),
+					"current_period_start": subscription.CurrentPeriodStart.UTC().Format(time.RFC3339),
+				}).
+				Mark(ierr.ErrValidation)
+		}
 		subscription.CancelAt = req.CancelAt
 		subscription.EndDate = req.CancelAt
+		// End the period at the earlier of the natural boundary and cancel_at (recomputed, not
+		// just shortened, so a later cancel_at isn't left at a stale earlier value).
+		naturalEnd, err := s.naturalPeriodEnd(subscription)
+		if err != nil {
+			return nil, err
+		}
+		if req.CancelAt.Before(naturalEnd) {
+			subscription.CurrentPeriodEnd = *req.CancelAt
+		} else {
+			subscription.CurrentPeriodEnd = naturalEnd
+		}
 	}
 
-	subscription.CancelAtPeriodEnd = req.CancelAtPeriodEnd
+	if req.CancelAtPeriodEnd != nil {
+		subscription.CancelAtPeriodEnd = *req.CancelAtPeriodEnd
+		// Explicit false with no cancel_at clears a pending cancellation; gated on an existing
+		// CancelAt so an unrelated fixed-term end_date is left untouched.
+		if !*req.CancelAtPeriodEnd && req.CancelAt == nil && subscription.CancelAt != nil {
+			subscription.CancelAt = nil
+			subscription.EndDate = nil
+			naturalEnd, err := s.naturalPeriodEnd(subscription)
+			if err != nil {
+				return nil, err
+			}
+			subscription.CurrentPeriodEnd = naturalEnd
+		}
+	}
 
 	// Update the subscription in the database
 	err = s.SubRepo.Update(ctx, subscription)
@@ -2024,8 +2074,9 @@ func (s *subscriptionService) CancelSubscription(
 			Mark(ierr.ErrValidation)
 	}
 
-	// Backdated immediate cancellation: cancel_at must be after current period start
-	if req.CancellationType == types.CancellationTypeImmediate && req.CancelAt != nil {
+	// cancel_at must be after period start (covers scheduled_date too, which shortens the period to it).
+	if (req.CancellationType == types.CancellationTypeImmediate ||
+		req.CancellationType == types.CancellationTypeScheduledDate) && req.CancelAt != nil {
 		if !req.CancelAt.After(subscription.CurrentPeriodStart) {
 			return nil, ierr.NewError("cancel_at must be after current period start").
 				WithHint("Backdated cancellation is not allowed at or before the current period start").
@@ -2072,6 +2123,10 @@ func (s *subscriptionService) CancelSubscription(
 	// non-zero invoice on cancellation is incorrect — skip invoice creation.
 	isTrialing := subscription.SubscriptionStatus == types.SubscriptionStatusTrialing
 
+	// Scheduled cancellations stay active until the period ends; the rollover declares cancelled then.
+	if req.CancellationType == types.CancellationTypeImmediate {
+		ctx = activity.WithAction(ctx, subscriptionID, activity.SubscriptionCancelled)
+	}
 	// Step 5: Execute in transaction
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 
@@ -3578,6 +3633,9 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 		}
 
 		// Update the subscription
+		if sub.SubscriptionStatus == types.SubscriptionStatusCancelled {
+			ctx = activity.WithAction(ctx, sub.ID, activity.SubscriptionCancelled)
+		}
 		if err := s.SubRepo.Update(ctx, sub); err != nil {
 			return err
 		}
@@ -3844,7 +3902,11 @@ func (s *subscriptionService) CascadeCancelToInheritedSubscriptions(ctx context.
 		child.CancelAt = parentSub.CancelAt
 		child.CancelAtPeriodEnd = parentSub.CancelAtPeriodEnd
 		child.EndDate = parentSub.EndDate
-		if err := s.SubRepo.Update(ctx, child); err != nil {
+		childCtx := ctx
+		if child.SubscriptionStatus == types.SubscriptionStatusCancelled {
+			childCtx = activity.WithAction(ctx, child.ID, activity.SubscriptionCancelled)
+		}
+		if err := s.SubRepo.Update(childCtx, child); err != nil {
 			return ierr.WithError(err).
 				WithHintf("Failed to cascade cancel to inherited subscription %s", child.ID).
 				Mark(ierr.ErrInternal)
@@ -3869,7 +3931,7 @@ func (s *subscriptionService) cancelInheritedSubscriptionAtPeriodEnd(ctx context
 			"subscription_id", sub.ID,
 			"error", err)
 	}
-	return s.SubRepo.Update(ctx, sub)
+	return s.SubRepo.Update(activity.WithAction(ctx, sub.ID, activity.SubscriptionCancelled), sub)
 }
 
 func createChargeResponse(priceObj *price.Price, quantity decimal.Decimal, cost decimal.Decimal, meterDisplayName string) *dto.SubscriptionUsageByMetersResponse {
@@ -5628,7 +5690,7 @@ func (s *subscriptionService) activateIncompleteSubscription(ctx context.Context
 	sub.SubscriptionStatus = types.SubscriptionStatusActive
 
 	// Update the subscription in database
-	err := s.SubRepo.Update(ctx, sub)
+	err := s.SubRepo.Update(activity.WithAction(ctx, sub.ID, activity.SubscriptionActivated), sub)
 	if err != nil {
 		return ierr.WithError(err).
 			WithHint("Failed to update subscription status").
@@ -5808,6 +5870,7 @@ func (s *subscriptionService) completeTrialConversionToActive(ctx context.Contex
 	}
 	sub.SubscriptionStatus = types.SubscriptionStatusActive
 	if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		txCtx = activity.WithAction(txCtx, sub.ID, activity.SubscriptionActivated)
 		if err := s.SubRepo.Update(txCtx, sub); err != nil {
 			return err
 		}
@@ -7476,6 +7539,33 @@ func (s *subscriptionService) CalculateBillingPeriods(ctx context.Context, subsc
 	currentStart := sub.CurrentPeriodStart
 	currentEnd := sub.CurrentPeriodEnd
 
+	// Inverted stored period can't be billed; fail loudly. Zero-width is allowed (terminal sentinel).
+	if currentEnd.Before(currentStart) {
+		return nil, ierr.NewError("subscription has an inverted current billing period").
+			WithHint("current_period_end is at or before current_period_start; repair the subscription's stored period before billing").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id":      sub.ID,
+				"current_period_start": currentStart.UTC().Format(time.RFC3339Nano),
+				"current_period_end":   currentEnd.UTC().Format(time.RFC3339Nano),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Close the period at end_date when it falls inside; an end_date at/before the start is unrepairable.
+	if sub.EndDate != nil && sub.EndDate.Before(currentEnd) {
+		if !sub.EndDate.After(currentStart) {
+			return nil, ierr.NewError("subscription end date precedes its current billing period").
+				WithHint("end_date is at or before current_period_start; repair the subscription before billing").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id":      sub.ID,
+					"current_period_start": currentStart.UTC().Format(time.RFC3339Nano),
+					"end_date":             sub.EndDate.UTC().Format(time.RFC3339Nano),
+				}).
+				Mark(ierr.ErrValidation)
+		}
+		currentEnd = *sub.EndDate
+	}
+
 	periods := make([]dto.Period, 0)
 
 	periods = append(periods, dto.Period{
@@ -7498,6 +7588,7 @@ func (s *subscriptionService) CalculateBillingPeriods(ctx context.Context, subsc
 		if err != nil {
 			return nil, err
 		}
+
 		periods = append(periods, dto.Period{
 			Start: nextStart,
 			End:   nextEnd,

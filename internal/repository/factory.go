@@ -4,6 +4,7 @@ import (
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/config"
+	domainActivity "github.com/flexprice/flexprice/internal/domain/activity"
 	"github.com/flexprice/flexprice/internal/domain/addon"
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/alert"
@@ -293,6 +294,10 @@ func NewScheduledTaskRepository(p RepositoryParams) scheduledtask.Repository {
 
 func NewMeterUsageRepository(p RepositoryParams) events.MeterUsageRepository {
 	return clickhouseRepo.NewMeterUsageRepository(p.ClickHouseDB, p.Logger)
+}
+
+func NewActivityRepository(p RepositoryParams) domainActivity.Repository {
+	return clickhouseRepo.NewActivityRepository(p.ClickHouseDB, p.Logger)
 }
 
 func NewWorkflowExecutionRepository(p RepositoryParams) workflowexecution.Repository {

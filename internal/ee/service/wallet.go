@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/activity"
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/domain/checkout"
@@ -671,6 +672,7 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 			Mark(ierr.ErrNotFound)
 	}
 
+	ctx = activity.WithAction(ctx, walletID, activity.WalletToppedUp)
 	// If Credits to Add is not provided then convert the currency amount to credits
 	// If both provided we give priority to Credits to add
 	if req.CreditsToAdd.IsZero() && !req.Amount.IsZero() {
@@ -1247,10 +1249,12 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 
 		var inv *dto.InvoiceResponse
 		var skipped bool
+		// The invoice is platform billing work on the user's behalf, so its entry is attributed to the system.
+		invCtx := types.SetDerivedSystemActor(ctx, types.ActorIDCreditPurchaseBilling)
 		if isPayFirst {
 			// Pay-first: leave DRAFT until checkout complete finalizes + reconciles.
 			invReq.SourceType = types.InvoiceSourceTypeCheckout
-			inv, skipped, err = invoiceService.CreateComputedDraftInvoice(ctx, invReq)
+			inv, skipped, err = invoiceService.CreateComputedDraftInvoice(invCtx, invReq)
 			if err != nil {
 				return ierr.WithError(err).
 					WithHint("Failed to create draft invoice for purchased credits").
@@ -1265,7 +1269,7 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 					Mark(ierr.ErrValidation)
 			}
 		} else {
-			inv, err = invoiceService.CreateOneOffInvoice(ctx, invReq)
+			inv, err = invoiceService.CreateOneOffInvoice(invCtx, invReq)
 			if err != nil {
 				return ierr.WithError(err).
 					WithHint("Failed to create invoice for purchased credits").
@@ -1463,6 +1467,7 @@ func (s *walletService) completePurchasedCreditTransaction(ctx context.Context, 
 
 	// Execute completion in a transaction
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
+		ctx = activity.WithAction(ctx, tx.WalletID, activity.WalletToppedUp)
 		// Serialize with processWalletOperation and other completion paths so a
 		// concurrent debit/credit cannot overwrite the absolute-value balance write
 		// below with a stale-snapshot value. Released on tx commit/rollback.
@@ -1971,6 +1976,7 @@ func (s *walletService) TerminateWallet(ctx context.Context, walletID string) er
 
 	// Use client's WithTx for atomic operations
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
+		ctx = activity.WithAction(ctx, walletID, activity.WalletTerminated)
 		// Debit remaining balance if any
 		if w.CreditBalance.GreaterThan(decimal.Zero) {
 			debitReq := &wallet.WalletOperation{
@@ -2385,7 +2391,7 @@ func (s *walletService) validateWalletOperation(w *wallet.Wallet, req *wallet.Wa
 }
 
 // processDebitOperation handles the debit operation with credit selection and consumption
-func (s *walletService) processDebitOperation(ctx context.Context, req *wallet.WalletOperation) ([]types.WalletTxConsumption, error) {
+func (s *walletService) processDebitOperation(ctx context.Context, req *wallet.WalletOperation) ([]*types.WalletTxConsumption, error) {
 	// Find eligible credits with pagination
 	credits := []*wallet.Transaction{}
 	var err error
@@ -2449,8 +2455,8 @@ func (s *walletService) processDebitOperation(ctx context.Context, req *wallet.W
 		return nil, err
 	}
 
-	return lo.Map(consumedCredits, func(c *wallet.Transaction, _ int) types.WalletTxConsumption {
-		return types.WalletTxConsumption{CreditTransactionID: c.ID, Credits: availableBefore[c.ID].Sub(c.CreditsAvailable)}
+	return lo.Map(consumedCredits, func(c *wallet.Transaction, _ int) *types.WalletTxConsumption {
+		return &types.WalletTxConsumption{CreditTransactionID: c.ID, Credits: availableBefore[c.ID].Sub(c.CreditsAvailable)}
 	}), nil
 }
 
@@ -2491,7 +2497,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 		}
 
 		// Step 4: Process operation-specific logic
-		var consumedCredits []types.WalletTxConsumption
+		var consumedCredits []*types.WalletTxConsumption
 		if req.Type == types.TransactionTypeDebit {
 			newCreditBalance = w.CreditBalance.Sub(req.CreditAmount)
 			// Process debit operation (credit selection and consumption)

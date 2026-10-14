@@ -379,7 +379,7 @@ func (_c *WalletTransactionCreate) SetNillableSourceID(v *string) *WalletTransac
 }
 
 // SetConsumptionBreakdown sets the "consumption_breakdown" field.
-func (_c *WalletTransactionCreate) SetConsumptionBreakdown(v []types.WalletTxConsumption) *WalletTransactionCreate {
+func (_c *WalletTransactionCreate) SetConsumptionBreakdown(v []*types.WalletTxConsumption) *WalletTransactionCreate {
 	_c.mutation.SetConsumptionBreakdown(v)
 	return _c
 }
