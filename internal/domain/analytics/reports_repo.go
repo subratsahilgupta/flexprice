@@ -13,7 +13,7 @@ type ReportColumn struct {
 	Role types.ColumnRole
 }
 
-// ReportResult holds a report's columns and rows.
+// ReportResult is report columns and rows.
 type ReportResult struct {
 	Columns []ReportColumn
 	Rows    [][]string
