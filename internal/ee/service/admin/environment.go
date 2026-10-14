@@ -4,15 +4,18 @@ import (
 	"context"
 
 	admindto "github.com/flexprice/flexprice/internal/api/dto/admin"
+	"github.com/flexprice/flexprice/internal/domain/environment"
 	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-// EnvironmentService creates environments for the admin portal.
-// It does not apply the self-serve environment quota used by the public API.
+// EnvironmentService creates and lists environments for the admin portal.
+// Creating does not apply the self-serve environment quota used by the public API.
 type EnvironmentService interface {
 	CreateEnvironment(ctx context.Context, req admindto.CreateEnvironmentRequest) (*admindto.EnvironmentResponse, error)
+	// ListEnvironments returns every published environment of a tenant, newest first.
+	ListEnvironments(ctx context.Context, tenantID string) (*admindto.ListEnvironmentsResponse, error)
 }
 
 type environmentService struct {
@@ -78,4 +81,27 @@ func (s *environmentService) resolveTenant(ctx context.Context, tenantID, email 
 		return "", "", err
 	}
 	return tenantID, userID, nil
+}
+
+// environmentPageSize is the limit for each environment read. The repository returns nothing for a limit of 0.
+const environmentPageSize = 50
+
+func (s *environmentService) ListEnvironments(ctx context.Context, tenantID string) (*admindto.ListEnvironmentsResponse, error) {
+	if _, err := s.TenantRepo.GetByID(ctx, tenantID); err != nil {
+		return nil, err
+	}
+
+	ctx = types.SetTenantID(ctx, tenantID)
+	var envs []*environment.Environment
+	for offset := 0; ; offset += environmentPageSize {
+		page, err := s.EnvironmentRepo.List(ctx, types.Filter{Limit: environmentPageSize, Offset: offset})
+		if err != nil {
+			return nil, err
+		}
+		envs = append(envs, page...)
+		if len(page) < environmentPageSize {
+			break
+		}
+	}
+	return admindto.NewListEnvironmentsResponse(envs), nil
 }

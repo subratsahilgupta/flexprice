@@ -207,7 +207,7 @@ func (r *walletRepository) UpdateWalletStatus(ctx context.Context, id string, st
 		SetWalletStatus(status).
 		SetUpdatedBy(types.GetUserID(ctx)).
 		SetUpdatedAt(time.Now().UTC()).
-		Save(ctx)
+		SaveReturning(ctx)
 
 	if err != nil {
 		SetSpanError(span, err)
@@ -220,7 +220,7 @@ func (r *walletRepository) UpdateWalletStatus(ctx context.Context, id string, st
 			Mark(ierr.ErrDatabase)
 	}
 
-	if count == 0 {
+	if len(count) == 0 {
 		// Create an error to pass to SetSpanError instead of using ErrorBuilder directly
 		notFoundErr := fmt.Errorf("wallet not found or already updated")
 		SetSpanError(span, notFoundErr)
@@ -460,13 +460,13 @@ func (r *walletRepository) UpdateWalletBalance(ctx context.Context, walletID str
 	})
 	defer FinishSpan(span)
 
-	err := r.client.Writer(ctx).Wallet.Update().
+	_, err := r.client.Writer(ctx).Wallet.Update().
 		Where(wallet.ID(walletID)).
 		SetBalance(finalBalance).
 		SetCreditBalance(newCreditBalance).
 		SetUpdatedBy(types.GetUserID(ctx)).
 		SetUpdatedAt(time.Now().UTC()).
-		Exec(ctx)
+		SaveReturning(ctx)
 
 	if err != nil {
 		return ierr.WithError(err).
@@ -1062,7 +1062,7 @@ func (r *walletRepository) UpdateWallet(ctx context.Context, id string, w *walle
 	update.SetUpdatedAt(time.Now().UTC())
 	update.SetUpdatedBy(types.GetUserID(ctx))
 
-	count, err := update.Save(ctx)
+	count, err := update.SaveReturning(ctx)
 	if err != nil {
 		return ierr.WithError(err).
 			WithHint("Failed to update wallet").
@@ -1072,7 +1072,7 @@ func (r *walletRepository) UpdateWallet(ctx context.Context, id string, w *walle
 			Mark(ierr.ErrDatabase)
 	}
 
-	if count == 0 {
+	if len(count) == 0 {
 		return ierr.NewError("wallet not found or already updated").
 			WithHint("The wallet may not exist or has already been updated").
 			Mark(ierr.ErrNotFound)
@@ -1179,7 +1179,7 @@ func (r *walletRepository) GetCreditTopupsForExport(ctx context.Context, tenantI
 			wt.credit_amount,
 			wt.currency,
 			CASE WHEN wt.source_type = 'INVOICE' THEN wt.source_id END,
-			` + paidAmountSQL("wt", "i") + `,
+			` + amountPaidSQL("wt", "i") + `,
 			wt.created_at
 		FROM
 			wallet_transactions wt
@@ -1240,7 +1240,7 @@ func (r *walletRepository) GetCreditTopupsForExport(ctx context.Context, tenantI
 			&exportData.Credits,
 			&exportData.Currency,
 			&invoiceID,
-			&exportData.PaidAmount,
+			&exportData.AmountPaid,
 			&exportData.CreatedAt,
 		)
 		if err != nil {
@@ -1264,9 +1264,9 @@ func (r *walletRepository) GetCreditTopupsForExport(ctx context.Context, tenantI
 	return result, nil
 }
 
-// paidAmountSQL is what a credit batch was bought for: the invoice after discount and before tax
+// amountPaidSQL is what a credit batch was bought for: the invoice after discount and before tax
 // for an invoiced purchase, zero for free and bonus grants, and NULL for any other credit.
-func paidAmountSQL(tx, inv string) string {
+func amountPaidSQL(tx, inv string) string {
 	return fmt.Sprintf(`CASE
 				WHEN %[1]s.transaction_reason = '%[3]s' THEN %[2]s.total - %[2]s.total_tax
 				WHEN %[1]s.transaction_reason IN ('%[4]s', '%[5]s') THEN 0
@@ -1274,6 +1274,23 @@ func paidAmountSQL(tx, inv string) string {
 		types.TransactionReasonPurchasedCreditInvoiced,
 		types.TransactionReasonFreeCredit,
 		types.TransactionReasonPurchasedCreditBonus)
+}
+
+// drawnSQL expands a debit's consumption_breakdown into one row per credit drawn from, with the
+// credit and its invoice. A debit with no breakdown keeps a single row with no credit.
+func drawnSQL(debit string) string {
+	return fmt.Sprintf(`LEFT JOIN LATERAL ROWS FROM (
+				jsonb_to_recordset(CASE WHEN jsonb_typeof(%[1]s.consumption_breakdown) = 'array' THEN %[1]s.consumption_breakdown END)
+					AS (credit_transaction_id text, credits numeric)
+			) WITH ORDINALITY AS drawn(credit_transaction_id, credits, ord) ON true
+			LEFT JOIN wallet_transactions batch ON batch.id = drawn.credit_transaction_id
+			LEFT JOIN invoices invoice ON invoice.id = batch.source_id AND batch.source_type = 'INVOICE'`, debit)
+}
+
+// drawnValueSQL is the share of what was paid for the credit drawn from that the drawn credits
+// take, or 0 when the credit has no paid amount.
+func drawnValueSQL() string {
+	return `COALESCE(drawn.credits * ` + amountPaidSQL("batch", "invoice") + ` / NULLIF(batch.credit_amount, 0), 0)`
 }
 
 func (r *walletRepository) GetWalletDebitsForExport(ctx context.Context, tenantID, envID string, after walletdomain.WalletDebitsExportCursor, endTime time.Time, limit int) ([]*walletdomain.WalletDebitsExportData, error) {
@@ -1308,6 +1325,56 @@ func (r *walletRepository) GetWalletDebitsForExport(ctx context.Context, tenantI
 				AND debit.created_at < $8
 			ORDER BY debit.created_at ASC, debit.id ASC
 			LIMIT $9
+		),
+		-- The wallet's value after each step of its history up to the page: a credit adds what was
+		-- paid for it, and each credit a debit draws from takes away its share. Credits come before
+		-- debits made at the same time.
+		wallet_value AS (
+			SELECT
+				step.debit_id,
+				step.ord,
+				SUM(step.change) OVER (PARTITION BY step.wallet_id ORDER BY step.created_at, step.kind, step.tx_id, step.ord) AS value_after
+			FROM (
+				SELECT
+					credit.wallet_id,
+					credit.created_at,
+					0 AS kind,
+					credit.id AS tx_id,
+					0::bigint AS ord,
+					NULL::text AS debit_id,
+					COALESCE(` + amountPaidSQL("credit", "credit_invoice") + `, 0) AS change
+				FROM
+					wallet_transactions credit
+					LEFT JOIN invoices credit_invoice ON credit_invoice.id = credit.source_id AND credit.source_type = 'INVOICE'
+				WHERE
+					credit.tenant_id = $1
+					AND credit.environment_id = $2
+					AND credit.wallet_id IN (SELECT wallet_id FROM page)
+					AND credit.type = $10
+					AND credit.transaction_status = $4
+					AND credit.status = $5
+					AND credit.created_at <= (SELECT MAX(created_at) FROM page)
+				UNION ALL
+				SELECT
+					debit.wallet_id,
+					debit.created_at,
+					1,
+					debit.id,
+					COALESCE(drawn.ord, 0),
+					debit.id,
+					-` + drawnValueSQL() + `
+				FROM
+					wallet_transactions debit
+					` + drawnSQL("debit") + `
+				WHERE
+					debit.tenant_id = $1
+					AND debit.environment_id = $2
+					AND debit.wallet_id IN (SELECT wallet_id FROM page)
+					AND debit.type = $3
+					AND debit.transaction_status = $4
+					AND debit.status = $5
+					AND debit.created_at <= (SELECT MAX(created_at) FROM page)
+			) step
 		)
 		SELECT
 			debit.id,
@@ -1319,19 +1386,21 @@ func (r *walletRepository) GetWalletDebitsForExport(ctx context.Context, tenantI
 			CASE WHEN debit.source_type = 'INVOICE' THEN debit.source_id END,
 			drawn.credit_transaction_id,
 			COALESCE(drawn.credits, debit.credit_amount),
+			debit.credit_balance_before - COALESCE(SUM(drawn.credits) OVER drawn_so_far - drawn.credits, 0),
+			debit.credit_balance_before - COALESCE(SUM(drawn.credits) OVER drawn_so_far, debit.credit_amount),
+			debit.amount / NULLIF(debit.credit_amount, 0),
+			value.value_after + ` + drawnValueSQL() + `,
+			value.value_after,
 			batch.credit_amount,
-			` + paidAmountSQL("batch", "invoice") + `,
+			` + amountPaidSQL("batch", "invoice") + `,
 			debit.created_at
 		FROM
 			page debit
 			INNER JOIN wallets wallet ON wallet.id = debit.wallet_id
 			INNER JOIN customers customer ON customer.id = wallet.customer_id
-			LEFT JOIN LATERAL ROWS FROM (
-				jsonb_to_recordset(CASE WHEN jsonb_typeof(debit.consumption_breakdown) = 'array' THEN debit.consumption_breakdown END)
-					AS (credit_transaction_id text, credits numeric)
-			) WITH ORDINALITY AS drawn(credit_transaction_id, credits, ord) ON true
-			LEFT JOIN wallet_transactions batch ON batch.id = drawn.credit_transaction_id
-			LEFT JOIN invoices invoice ON invoice.id = batch.source_id AND batch.source_type = 'INVOICE'
+			` + drawnSQL("debit") + `
+			LEFT JOIN wallet_value value ON value.debit_id = debit.id AND value.ord = COALESCE(drawn.ord, 0)
+		WINDOW drawn_so_far AS (PARTITION BY debit.id ORDER BY drawn.ord)
 		ORDER BY debit.created_at ASC, debit.id ASC, drawn.ord ASC
 	`
 
@@ -1345,6 +1414,7 @@ func (r *walletRepository) GetWalletDebitsForExport(ctx context.Context, tenantI
 		after.DebitID,
 		endTime,
 		limit,
+		string(types.TransactionTypeCredit),
 	)
 	if err != nil {
 		SetSpanError(span, err)
@@ -1364,6 +1434,7 @@ func (r *walletRepository) GetWalletDebitsForExport(ctx context.Context, tenantI
 	for rows.Next() {
 		exportData := &walletdomain.WalletDebitsExportData{}
 		var invoiceID, creditTransactionID *string
+		var conversionRate *decimal.Decimal
 		err := rows.Scan(
 			&exportData.DebitID,
 			&exportData.ExternalID,
@@ -1374,8 +1445,13 @@ func (r *walletRepository) GetWalletDebitsForExport(ctx context.Context, tenantI
 			&invoiceID,
 			&creditTransactionID,
 			&exportData.Credits,
+			&exportData.CreditBalanceBefore,
+			&exportData.CreditBalanceAfter,
+			&conversionRate,
+			&exportData.TopUpAmountRemainingBefore,
+			&exportData.TopUpAmountRemainingAfter,
 			&exportData.WalletTxnCredits,
-			&exportData.WalletTxnPaidAmount,
+			&exportData.WalletTxnAmountPaid,
 			&exportData.CreatedAt,
 		)
 		if err != nil {
@@ -1386,6 +1462,10 @@ func (r *walletRepository) GetWalletDebitsForExport(ctx context.Context, tenantI
 		}
 		exportData.InvoiceID = lo.FromPtr(invoiceID)
 		exportData.CreditTransactionID = lo.FromPtr(creditTransactionID)
+		if conversionRate != nil {
+			exportData.WalletBalanceBefore = exportData.CreditBalanceBefore.Mul(*conversionRate)
+			exportData.WalletBalanceAfter = exportData.CreditBalanceAfter.Mul(*conversionRate)
+		}
 
 		result = append(result, exportData)
 	}
