@@ -5202,6 +5202,17 @@ func (s *subscriptionService) createAddonAttachParams(
 			sub.ID,
 			types.AddonAssociationEntityTypeSubscription,
 		)
+		// Stamp the association at the addon's current usage-price sequence so a
+		// freshly attached addon is considered already-synced and the sync status
+		// does not report it as behind (mirrors subscription creation for plans).
+		currentAddonSeq, seqErr := s.AddonPriceSyncRepo.CurrentAddonSequence(ctx, req.AddonID)
+		if seqErr != nil {
+			return nil, ierr.WithError(seqErr).
+				WithHint("Failed to read current addon price sequence").
+				WithReportableDetails(map[string]any{"addon_id": req.AddonID}).
+				Mark(ierr.ErrDatabase)
+		}
+		addonAssociation.SyncedPriceSequence = currentAddonSeq
 	}
 
 	addonRequestedStart := lo.Ternary(req.StartDate != nil, lo.FromPtr(req.StartDate), time.Now())
