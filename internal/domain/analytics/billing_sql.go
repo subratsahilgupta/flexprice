@@ -123,7 +123,7 @@ func BuildBillingQueryWithUsage(rv *ResolvedView, db, usageDB, tenantID, environ
 	}
 	if bm.Build != nil {
 		return bm.Build(BuildInput{
-			RV:     rv,
+			RV:      rv,
 			DB:      db,
 			UsageDB: usageDB,
 			Params:  params,

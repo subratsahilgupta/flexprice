@@ -10,7 +10,7 @@ var _ domainAnalytics.ReportsRepository = (*InMemoryReportsRepo)(nil)
 
 // InMemoryReportsRepo returns canned report rows.
 type InMemoryReportsRepo struct {
-	On   bool
+	On      bool
 	DB      string
 	UsageDB string
 	Max     int

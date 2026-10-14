@@ -29,8 +29,8 @@ type BillingMetric struct {
 
 // BuildInput is handed to custom builders.
 type BuildInput struct {
-	RV     *ResolvedView
-	DB     string
+	RV *ResolvedView
+	DB string
 	// Database holding meter_usage.
 	UsageDB string
 	Params  map[string]string
