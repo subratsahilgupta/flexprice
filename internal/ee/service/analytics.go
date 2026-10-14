@@ -211,6 +211,7 @@ func validateCustomReport(def *analytics.ViewDefinition, maxRows int) error {
 		Dimensions: def.Dimensions,
 		Grain:      string(def.Time.Grain),
 		Compare:    def.Compare,
+		Currency:   def.Currency,
 		Limit:      def.Limit,
 	}
 	for _, f := range def.Filters {

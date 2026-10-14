@@ -68,6 +68,16 @@ func TestCreateView_CustomReportValidation(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, ierr.IsValidation(err))
 	require.NoError(t, svc.CreateView(ctx, &analytics.View{Name: "events", Definition: reportDef(types.MetricEventsVolume, ev.DefaultShape, "last_7_days")}))
+
+	noCur := reportDef(types.MetricEventsVolume, ev.DefaultShape, "last_7_days")
+	noCur.Currency = "USD"
+	err = svc.CreateView(ctx, &analytics.View{Name: "events cur", Definition: noCur})
+	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
+
+	withCur := reportDef(types.MetricInvoiceTotal, types.ShapeScalar, "this_month")
+	withCur.Currency = "USD"
+	require.NoError(t, svc.CreateView(ctx, &analytics.View{Name: "inv cur", Definition: withCur}))
 }
 
 func TestCustomReport_CRUDScopedAndVersioned(t *testing.T) {
