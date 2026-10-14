@@ -72,14 +72,6 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{AddonAssociationsColumns[1], AddonAssociationsColumns[7], AddonAssociationsColumns[8], AddonAssociationsColumns[9], AddonAssociationsColumns[10]},
 			},
-			{
-				Name:    "addonassociation_tenant_id_environment_id_addon_id_synced_price_sequence_id",
-				Unique:  false,
-				Columns: []*schema.Column{AddonAssociationsColumns[1], AddonAssociationsColumns[7], AddonAssociationsColumns[10], AddonAssociationsColumns[17], AddonAssociationsColumns[0]},
-				Annotation: &entsql.IndexAnnotation{
-					Where: "(((status)::text = 'published'::text) AND ((addon_status)::text = 'active'::text) AND (end_date IS NULL))",
-				},
-			},
 		},
 	}
 	// AlertLogsColumns holds the columns for the "alert_logs" table.

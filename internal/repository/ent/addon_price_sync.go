@@ -2,6 +2,7 @@ package ent
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/flexprice/flexprice/internal/domain/addonpricesync"
@@ -65,11 +66,12 @@ func (r *addonPriceSyncRepository) CurrentAddonSequence(ctx context.Context, add
 	return seq, rows.Err()
 }
 
-// ListBehindAssociations returns active, recurring associations of the addon on
+// ListBehindAssociations returns still-billing associations of the addon on
 // active/trialing subscriptions whose synced_price_sequence is below TargetSeq.
-// Ordered by (synced_price_sequence, id) to match the partial index and bound
-// the LIMIT scan. Stamping advances the page — stamped associations fall out of
-// the synced_price_sequence < TargetSeq filter on the next call.
+// Still-billing means active, or cancelled with a future end date (cancel at
+// period end). Ordered by (synced_price_sequence, id) to bound the LIMIT scan.
+// Stamping advances the page — stamped associations fall out of the
+// synced_price_sequence < TargetSeq filter on the next call.
 func (r *addonPriceSyncRepository) ListBehindAssociations(
 	ctx context.Context,
 	p addonpricesync.ListBehindAssociationsParams,
@@ -93,7 +95,7 @@ func (r *addonPriceSyncRepository) ListBehindAssociations(
 	defer FinishSpan(span)
 
 	query := fmt.Sprintf(`
-		SELECT aa.id, aa.entity_id
+		SELECT aa.id, aa.entity_id, aa.end_date
 		FROM addon_associations aa
 		JOIN subscriptions s ON s.id = aa.entity_id
 		  AND s.tenant_id = $1 AND s.environment_id = $2
@@ -102,8 +104,10 @@ func (r *addonPriceSyncRepository) ListBehindAssociations(
 		  AND aa.status = '%s'
 		  AND aa.addon_id = $3
 		  AND aa.entity_type = '%s'
-		  AND aa.addon_status = '%s'
-		  AND aa.end_date IS NULL
+		  AND (
+		    (aa.addon_status = '%s' AND (aa.end_date IS NULL OR aa.end_date > NOW()))
+		    OR (aa.addon_status = '%s' AND aa.end_date > NOW())
+		  )
 		  AND aa.synced_price_sequence < $4
 		  AND s.status = '%s'
 		  AND s.subscription_status IN ('%s', '%s')
@@ -113,6 +117,7 @@ func (r *addonPriceSyncRepository) ListBehindAssociations(
 		string(types.StatusPublished),
 		string(types.AddonAssociationEntityTypeSubscription),
 		string(types.AddonStatusActive),
+		string(types.AddonStatusCancelled),
 		string(types.StatusPublished),
 		string(types.SubscriptionStatusActive),
 		string(types.SubscriptionStatusTrialing),
@@ -130,11 +135,15 @@ func (r *addonPriceSyncRepository) ListBehindAssociations(
 	var refs []addonpricesync.AddonAssociationRef
 	for rows.Next() {
 		var ref addonpricesync.AddonAssociationRef
-		if scanErr := rows.Scan(&ref.AssociationID, &ref.SubscriptionID); scanErr != nil {
+		var endDate sql.NullTime
+		if scanErr := rows.Scan(&ref.AssociationID, &ref.SubscriptionID, &endDate); scanErr != nil {
 			SetSpanError(span, scanErr)
 			return nil, ierr.WithError(scanErr).
 				WithHint("Failed to scan behind addon association row").
 				Mark(ierr.ErrDatabase)
+		}
+		if endDate.Valid {
+			ref.EndDate = &endDate.Time
 		}
 		refs = append(refs, ref)
 	}
@@ -147,9 +156,10 @@ func (r *addonPriceSyncRepository) ListBehindAssociations(
 	return refs, nil
 }
 
-// TerminateEndedAddonLineItems end-dates live addon usage line items for the
-// given associations whose catalog price has been ended. Idempotent via the
-// li.end_date IS NULL guard.
+// TerminateEndedAddonLineItems caps addon usage line items for the given
+// associations to their catalog price's end date, shortening any line whose end
+// date is null or later than the ended price (the latter covers a cancel-at-period-end
+// line that still points at a now-superseded price). Idempotent.
 func (r *addonPriceSyncRepository) TerminateEndedAddonLineItems(
 	ctx context.Context,
 	p addonpricesync.TerminateEndedAddonLineItemsParams,
@@ -176,12 +186,11 @@ func (r *addonPriceSyncRepository) TerminateEndedAddonLineItems(
 		SET end_date   = GREATEST(COALESCE(li.start_date, p.end_date), p.end_date),
 		    updated_at = NOW(),
 		    updated_by = $4
-		FROM prices p
+		FROM prices p, addon_associations aa
 		WHERE li.tenant_id          = $1
 		  AND li.environment_id     = $2
 		  AND li.status             = '%s'
 		  AND li.entity_type        = '%s'
-		  AND li.end_date IS NULL
 		  AND li.addon_association_id = ANY($5)
 		  AND li.price_id           = p.id
 		  AND p.tenant_id           = $1
@@ -190,6 +199,13 @@ func (r *addonPriceSyncRepository) TerminateEndedAddonLineItems(
 		  AND p.entity_type         = '%s'
 		  AND p.type                = '%s'
 		  AND p.end_date IS NOT NULL
+		  AND aa.id                 = li.addon_association_id
+		  AND aa.tenant_id          = $1
+		  AND aa.environment_id     = $2
+		  -- Open lines always close at the price's end. A line that outlives the ended
+		  -- price is only shortened when its association is cancelled at period end,
+		  -- so an override timeline on an active association is left untouched.
+		  AND (li.end_date IS NULL OR (aa.end_date IS NOT NULL AND li.end_date > p.end_date))
 	`,
 		string(types.StatusPublished),
 		string(types.SubscriptionLineItemEntityTypeAddon),
@@ -287,8 +303,10 @@ func (r *addonPriceSyncRepository) CountUnsyncedAssociations(ctx context.Context
 		  AND aa.status = '%s'
 		  AND aa.addon_id = $3
 		  AND aa.entity_type = '%s'
-		  AND aa.addon_status = '%s'
-		  AND aa.end_date IS NULL
+		  AND (
+		    (aa.addon_status = '%s' AND (aa.end_date IS NULL OR aa.end_date > NOW()))
+		    OR (aa.addon_status = '%s' AND aa.end_date > NOW())
+		  )
 		  AND aa.synced_price_sequence < $4
 		  AND s.status = '%s'
 		  AND s.subscription_status IN ('%s', '%s')
@@ -296,6 +314,7 @@ func (r *addonPriceSyncRepository) CountUnsyncedAssociations(ctx context.Context
 		string(types.StatusPublished),
 		string(types.AddonAssociationEntityTypeSubscription),
 		string(types.AddonStatusActive),
+		string(types.AddonStatusCancelled),
 		string(types.StatusPublished),
 		string(types.SubscriptionStatusActive),
 		string(types.SubscriptionStatusTrialing),

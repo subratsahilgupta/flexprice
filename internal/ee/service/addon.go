@@ -644,6 +644,7 @@ func (s *addonService) SyncAddonPrices(ctx context.Context, addonID string) (*dt
 
 	addonResp := &dto.AddonResponse{Addon: addonModel}
 
+	lineItemsFound := 0
 	lineItemsCreated := 0
 	lineItemsTerminated := 0
 	associationsProcessed := 0
@@ -665,10 +666,11 @@ func (s *addonService) SyncAddonPrices(ctx context.Context, addonID string) (*dt
 
 		associationIDs := lo.Map(refs, func(r addonpricesync.AddonAssociationRef, _ int) string { return r.AssociationID })
 
-		created, createErr := s.createAddonSyncLineItems(ctx, addonResp, activeUsagePrices, refs)
+		found, created, createErr := s.createAddonSyncLineItems(ctx, addonResp, activeUsagePrices, refs)
 		if createErr != nil {
 			return nil, createErr
 		}
+		lineItemsFound += found
 		lineItemsCreated += created
 
 		terminated, termErr := s.AddonPriceSyncRepo.TerminateEndedAddonLineItems(ctx, addonpricesync.TerminateEndedAddonLineItemsParams{
@@ -702,7 +704,7 @@ func (s *addonService) SyncAddonPrices(ctx context.Context, addonID string) (*dt
 		AddonID: addonID,
 		Message: "Addon usage prices synchronized to subscription line items successfully",
 		Summary: dto.SyncAddonPricesSummary{
-			LineItemsFoundForCreation: lineItemsCreated,
+			LineItemsFoundForCreation: lineItemsFound,
 			LineItemsCreated:          lineItemsCreated,
 			LineItemsTerminated:       lineItemsTerminated,
 		},
@@ -781,9 +783,9 @@ func (s *addonService) createAddonSyncLineItems(
 	addonResp *dto.AddonResponse,
 	activeUsagePrices []*domainPrice.Price,
 	refs []addonpricesync.AddonAssociationRef,
-) (int, error) {
+) (found int, created int, err error) {
 	if len(activeUsagePrices) == 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
 
 	associationIDs := lo.Map(refs, func(r addonpricesync.AddonAssociationRef, _ int) string { return r.AssociationID })
@@ -799,7 +801,7 @@ func (s *addonService) createAddonSyncLineItems(
 	}
 	subs, err := s.SubRepo.List(ctx, subFilter)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	subMap := lo.KeyBy(subs, func(sub *subscription.Subscription) string { return sub.ID })
 
@@ -812,7 +814,7 @@ func (s *addonService) createAddonSyncLineItems(
 	liFilter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
 	existingItems, err := s.SubscriptionLineItemRepo.List(ctx, liFilter)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	existing := make(map[addonLineItemKey]struct{}, len(existingItems))
 	for _, li := range existingItems {
@@ -830,7 +832,7 @@ func (s *addonService) createAddonSyncLineItems(
 		WithAllowExpiredPrices(true)
 	overridePrices, err := s.PriceRepo.List(ctx, overrideFilter)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	overridden := make(map[addonOverrideKey]struct{}, len(overridePrices))
 	for _, op := range overridePrices {
@@ -858,12 +860,13 @@ func (s *addonService) createAddonSyncLineItems(
 			if _, isOverridden := overridden[addonOverrideKey{subscriptionID: ref.SubscriptionID, rootPriceID: price.GetRootPriceID()}]; isOverridden {
 				continue
 			}
-			toCreate = append(toCreate, s.buildAddonSyncLineItem(ctx, sub, price, addonResp, ref.AssociationID))
+			toCreate = append(toCreate, s.buildAddonSyncLineItem(ctx, sub, price, addonResp, ref.AssociationID, ref.EndDate))
 		}
 	}
 
-	if len(toCreate) == 0 {
-		return 0, nil
+	found = len(toCreate)
+	if found == 0 {
+		return 0, 0, nil
 	}
 
 	const bulkInsertBatchSize = 1500
@@ -875,10 +878,11 @@ func (s *addonService) createAddonSyncLineItems(
 				"batch_start", i,
 				"batch_end", end,
 				"error", err)
-			return 0, err
+			return found, created, err
 		}
+		created += end - i
 	}
-	return len(toCreate), nil
+	return found, created, nil
 }
 
 // buildAddonSyncLineItem builds an addon usage line item for the association,
@@ -889,6 +893,7 @@ func (s *addonService) buildAddonSyncLineItem(
 	price *domainPrice.Price,
 	addonResp *dto.AddonResponse,
 	associationID string,
+	associationEndDate *time.Time,
 ) *subscription.SubscriptionLineItem {
 	metadata := make(map[string]string, len(price.Metadata)+1)
 	for k, v := range price.Metadata {
@@ -896,13 +901,20 @@ func (s *addonService) buildAddonSyncLineItem(
 	}
 	metadata["added_by"] = "addon_sync_api"
 
+	// Cap the line item at the association's end date (set when the addon is cancelled
+	// at period end) so a synced line never bills past the association.
+	endDate := price.EndDate
+	if associationEndDate != nil && (endDate == nil || associationEndDate.Before(*endDate)) {
+		endDate = associationEndDate
+	}
+
 	req := dto.CreateSubscriptionLineItemRequest{
 		PriceID:     price.ID,
 		Quantity:    decimal.Zero,
 		Metadata:    metadata,
 		DisplayName: price.DisplayName,
 		StartDate:   price.StartDate,
-		EndDate:     price.EndDate,
+		EndDate:     endDate,
 	}
 
 	lineItem := req.ToSubscriptionLineItem(ctx, dto.LineItemParams{

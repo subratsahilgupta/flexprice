@@ -384,6 +384,11 @@ func (h *AddonHandler) SyncAddonPrices(c *gin.Context) {
 	// Start the addon price sync workflow (the activity releases the lock when done)
 	workflowRun, err := h.temporalService.ExecuteWorkflow(c.Request.Context(), types.TemporalAddonPriceSyncWorkflow, id)
 	if err != nil {
+		// The workflow never started, so the activity that frees the lock never runs.
+		// Release it here, or the next sync for this addon is blocked for the lock's full TTL.
+		if releaseErr := lock.Release(c.Request.Context()); releaseErr != nil {
+			h.log.Error(c.Request.Context(), "addon_price_sync_lock_release_failed", "addon_id", id, "lock_key", lockKey, "error", releaseErr)
+		}
 		c.Error(err)
 		return
 	}

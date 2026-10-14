@@ -79,13 +79,15 @@ func (r *InMemoryAddonPriceSyncStore) subByID() map[string]*subscription.Subscri
 	return out
 }
 
-// activeRecurringAssociations returns active, recurring, published associations
-// to addonID on active/trialing published subscriptions, scoped by ctx.
-func (r *InMemoryAddonPriceSyncStore) activeRecurringAssociations(ctx context.Context, addonID string) []*addonassociation.AddonAssociation {
+// stillBillingAssociations returns published associations to addonID on
+// active/trialing published subscriptions that are still billing: active, or
+// cancelled with a future end date (cancel at period end), scoped by ctx.
+func (r *InMemoryAddonPriceSyncStore) stillBillingAssociations(ctx context.Context, addonID string) []*addonassociation.AddonAssociation {
 	if r.assocStore == nil {
 		return nil
 	}
 	subs := r.subByID()
+	now := time.Now().UTC()
 
 	r.assocStore.mu.RLock()
 	defer r.assocStore.mu.RUnlock()
@@ -98,10 +100,17 @@ func (r *InMemoryAddonPriceSyncStore) activeRecurringAssociations(ctx context.Co
 		if aa.EntityType != types.AddonAssociationEntityTypeSubscription {
 			continue
 		}
-		if aa.AddonID != addonID || aa.AddonStatus != types.AddonStatusActive {
+		if aa.AddonID != addonID {
 			continue
 		}
-		if aa.EndDate != nil {
+		billing := false
+		switch aa.AddonStatus {
+		case types.AddonStatusActive:
+			billing = aa.EndDate == nil || aa.EndDate.After(now)
+		case types.AddonStatusCancelled:
+			billing = aa.EndDate != nil && aa.EndDate.After(now)
+		}
+		if !billing {
 			continue
 		}
 		if !scopedByCtx(ctx, aa.TenantID, aa.EnvironmentID) {
@@ -148,7 +157,7 @@ func (r *InMemoryAddonPriceSyncStore) ListBehindAssociations(
 	}
 
 	var behind []*addonassociation.AddonAssociation
-	for _, aa := range r.activeRecurringAssociations(ctx, p.AddonID) {
+	for _, aa := range r.stillBillingAssociations(ctx, p.AddonID) {
 		if aa.SyncedPriceSequence < p.TargetSeq {
 			behind = append(behind, aa)
 		}
@@ -168,13 +177,15 @@ func (r *InMemoryAddonPriceSyncStore) ListBehindAssociations(
 		refs = append(refs, addonpricesync.AddonAssociationRef{
 			AssociationID:  aa.ID,
 			SubscriptionID: aa.EntityID,
+			EndDate:        aa.EndDate,
 		})
 	}
 	return refs, nil
 }
 
-// TerminateEndedAddonLineItems end-dates live addon usage line items belonging to
-// the given associations whose catalog price has been ended. Idempotent.
+// TerminateEndedAddonLineItems caps addon usage line items belonging to the given
+// associations to their catalog price's end date, shortening any line that is open
+// or outlives the ended price. Idempotent.
 func (r *InMemoryAddonPriceSyncStore) TerminateEndedAddonLineItems(
 	ctx context.Context,
 	p addonpricesync.TerminateEndedAddonLineItemsParams,
@@ -201,6 +212,19 @@ func (r *InMemoryAddonPriceSyncStore) TerminateEndedAddonLineItems(
 		assocSet[id] = struct{}{}
 	}
 
+	// Associations in this page that are cancelled at period end; their lines that
+	// outlive the ended price must be shortened, not just the open ones.
+	cancelledAssoc := make(map[string]bool, len(p.AssociationIDs))
+	if r.assocStore != nil {
+		r.assocStore.mu.RLock()
+		for _, id := range p.AssociationIDs {
+			if aa := r.assocStore.items[id]; aa != nil && aa.EndDate != nil {
+				cancelledAssoc[id] = true
+			}
+		}
+		r.assocStore.mu.RUnlock()
+	}
+
 	r.lineItemStore.mu.Lock()
 	defer r.lineItemStore.mu.Unlock()
 
@@ -209,10 +233,7 @@ func (r *InMemoryAddonPriceSyncStore) TerminateEndedAddonLineItems(
 		if li == nil || li.Status != types.StatusPublished {
 			continue
 		}
-		if li.EntityType != types.SubscriptionLineItemEntityTypeAddon {
-			continue
-		}
-		if !li.EndDate.IsZero() || li.AddonAssociationID == nil {
+		if li.EntityType != types.SubscriptionLineItemEntityTypeAddon || li.AddonAssociationID == nil {
 			continue
 		}
 		if _, ok := assocSet[*li.AddonAssociationID]; !ok {
@@ -224,6 +245,13 @@ func (r *InMemoryAddonPriceSyncStore) TerminateEndedAddonLineItems(
 		}
 		if !scopedByCtx(ctx, li.TenantID, li.EnvironmentID) {
 			continue
+		}
+		// Open lines always close at the price's end; a line that outlives the price is
+		// only shortened when its association is cancelled at period end.
+		if !li.EndDate.IsZero() {
+			if !cancelledAssoc[*li.AddonAssociationID] || !li.EndDate.After(*pp.EndDate) {
+				continue
+			}
 		}
 		endDate := *pp.EndDate
 		if !li.StartDate.IsZero() && li.StartDate.After(endDate) {
@@ -274,14 +302,14 @@ func (r *InMemoryAddonPriceSyncStore) StampAssociations(
 	return updated, nil
 }
 
-// CountUnsyncedAssociations returns how many active recurring associations are
+// CountUnsyncedAssociations returns how many still-billing associations are
 // behind targetSeq.
 func (r *InMemoryAddonPriceSyncStore) CountUnsyncedAssociations(ctx context.Context, addonID string, targetSeq int64) (int64, error) {
 	if addonID == "" {
 		return 0, ierr.NewError("addon_id is required").Mark(ierr.ErrValidation)
 	}
 	var count int64
-	for _, aa := range r.activeRecurringAssociations(ctx, addonID) {
+	for _, aa := range r.stillBillingAssociations(ctx, addonID) {
 		if aa.SyncedPriceSequence < targetSeq {
 			count++
 		}

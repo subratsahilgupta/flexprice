@@ -106,10 +106,5 @@ func (AddonAssociation) Edges() []ent.Edge {
 func (AddonAssociation) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("tenant_id", "environment_id", "entity_id", "entity_type", "addon_id"),
-		// Drives the addon usage-price sync's "which associations are behind?"
-		// lookup, keyed to active/recurring/published rows.
-		index.Fields("tenant_id", "environment_id", "addon_id", "synced_price_sequence", "id").
-			Annotations(entsql.IndexWhere(
-				"(((status)::text = 'published'::text) AND ((addon_status)::text = 'active'::text) AND (end_date IS NULL))")),
 	}
 }

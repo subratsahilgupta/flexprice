@@ -204,6 +204,139 @@ func (s *AddonPriceSyncSuite) TestOverrideUsageCharge_SyncsAllHolders() {
 	s.EqualValues(3, s.watermark("aa-b"))
 }
 
+// Variant 1: a charge already has a future-dated timeline on the subscription (an
+// item ending in the future for the old price, a live item for the current price).
+// A later update plus re-sync must extend the timeline, not duplicate it: the new
+// price gets one item, the already-ended item is untouched, and the live item is
+// end-dated at its price's end date.
+func (s *AddonPriceSyncSuite) TestFutureDatedTimeline_ExtendedNotDuplicated() {
+	tFut1 := time.Now().UTC().AddDate(0, 0, 10)
+	tFut2 := time.Now().UTC().AddDate(0, 0, 20)
+
+	s.mkAddon("addon-a")
+	s.mkPrice("a-p1", "addon-a", 1, types.PRICE_TYPE_USAGE, lo.ToPtr(tFut1), "")     // root, ends in the future
+	s.mkPrice("a-p2", "addon-a", 2, types.PRICE_TYPE_USAGE, lo.ToPtr(tFut2), "a-p1") // successor, now also ended (future)
+	s.mkPrice("a-p3", "addon-a", 3, types.PRICE_TYPE_USAGE, nil, "a-p1")             // current, open-ended
+	s.mkSub("sub-a", types.SubscriptionStatusActive)
+	s.mkAssoc("aa-a", "addon-a", "sub-a", 1, types.AddonStatusActive, nil)
+	// Pre-existing timeline: p1 item already ended at tFut1, p2 item still live.
+	s.mkLineItem("li-p1", "addon-a", "sub-a", "aa-a", "a-p1", tPast30, tFut1)
+	s.mkLineItem("li-p2", "addon-a", "sub-a", "aa-a", "a-p2", tFut1, time.Time{})
+
+	_, err := s.svc.SyncAddonPrices(s.GetContext(), "addon-a")
+	s.NoError(err)
+
+	// Exactly one line item per price: the timeline is extended, never duplicated.
+	counts := map[string]int{}
+	var p2Item *subscription.SubscriptionLineItem
+	for _, li := range s.lineItems("sub-a") {
+		counts[li.PriceID]++
+		if li.PriceID == "a-p2" {
+			p2Item = li
+		}
+	}
+	s.Equal(1, counts["a-p1"], "already-ended item not duplicated")
+	s.Equal(1, counts["a-p2"], "live item not duplicated")
+	s.Equal(1, counts["a-p3"], "current price gets exactly one new item")
+
+	// p1 was already ended at tFut1 and must be left untouched; p3 is the new active item.
+	s.True(s.endedPriceIDs("sub-a")["a-p1"])
+	s.True(s.activePriceIDs("sub-a")["a-p3"])
+
+	// The live p2 item is end-dated at GREATEST(item.start = tFut1, price.end = tFut2) = tFut2.
+	s.Require().NotNil(p2Item)
+	s.True(p2Item.EndDate.Equal(tFut2), "live item end-dated at its price's end date, got %s", p2Item.EndDate)
+
+	s.EqualValues(3, s.watermark("aa-a"))
+}
+
+// The subscription has its own future-dated override of the charge ($1 now, $5 from day 5,
+// a subscription-scoped price). The addon's root is then changed ($1 -> $10) and synced.
+// Because the subscription overrode this charge, the addon's new price is NOT pushed: no new
+// line item is created, and the existing override timeline is left untouched.
+func (s *AddonPriceSyncSuite) TestFutureDatedSubscriptionOverride_AddonChangeSkipped() {
+	tFut := time.Now().UTC().AddDate(0, 0, 5)
+
+	s.mkAddon("addon-a")
+	s.mkPrice("a-p1", "addon-a", 1, types.PRICE_TYPE_USAGE, lo.ToPtr(tPast1), "") // root, ended by the addon change
+	s.mkPrice("a-p2", "addon-a", 2, types.PRICE_TYPE_USAGE, nil, "a-p1")          // addon's new price ($10)
+	s.mkSubOverridePrice("sub-ovr", "sub-a", "a-p1", 3)                           // subscription override ($5), traces to root
+	s.mkSub("sub-a", types.SubscriptionStatusActive)
+	s.mkAssoc("aa-a", "addon-a", "sub-a", 1, types.AddonStatusActive, nil)
+	// Existing timeline from the manual edit: original item ends at day 5, override item starts then.
+	s.mkLineItem("li-root", "addon-a", "sub-a", "aa-a", "a-p1", tPast30, tFut)
+	s.mkLineItem("li-ovr", "addon-a", "sub-a", "aa-a", "sub-ovr", tFut, time.Time{})
+
+	resp, err := s.svc.SyncAddonPrices(s.GetContext(), "addon-a")
+	s.NoError(err)
+
+	// The addon's new price is skipped because the subscription overrode this charge.
+	s.Equal(0, resp.Summary.LineItemsCreated, "override preserved: no new line item")
+	s.Equal(0, resp.Summary.LineItemsTerminated, "nothing terminated")
+	s.False(s.activePriceIDs("sub-a")["a-p2"], "the addon's $10 price must not be pushed onto an overridden subscription")
+
+	// The existing timeline is untouched.
+	s.True(s.endedPriceIDs("sub-a")["a-p1"], "original item keeps its day-5 end date")
+	s.True(s.activePriceIDs("sub-a")["sub-ovr"], "the override item is left live")
+
+	// The association is still stamped so it is not rediscovered as behind.
+	s.EqualValues(2, s.watermark("aa-a"))
+}
+
+// An addon cancelled at period end (cancelled status, future end date) is still billing,
+// so a price change must reach it: the old line is shortened to the ended price and a new
+// line is created capped at the cancellation date, with no overlap.
+func (s *AddonPriceSyncSuite) TestCancelAtPeriodEnd_ShortensOldAndCapsNew() {
+	tEnd := time.Now().UTC().AddDate(0, 0, 16) // cancellation date, in the future
+
+	s.mkAddon("addon-a")
+	s.mkPrice("a-p1", "addon-a", 1, types.PRICE_TYPE_USAGE, lo.ToPtr(tPast1), "") // root, ended by the addon change
+	s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), &price.Price{
+		ID:                 "a-p2",
+		Amount:             decimal.NewFromInt(1),
+		Currency:           "usd",
+		EntityType:         types.PRICE_ENTITY_TYPE_ADDON,
+		EntityID:           "addon-a",
+		Type:               types.PRICE_TYPE_USAGE,
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+		Sequence:           2,
+		ParentPriceID:      "a-p1",
+		StartDate:          lo.ToPtr(tPast1), // successor starts where the root ended
+		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+	}))
+
+	s.mkSub("sub-c", types.SubscriptionStatusActive)
+	// Cancel at period end: cancelled status, future end date, still billing until then.
+	s.mkAssoc("aa-c", "addon-a", "sub-c", 0, types.AddonStatusCancelled, lo.ToPtr(tEnd))
+	// Old line already end-dated at the cancellation date (set when the cancel was scheduled).
+	s.mkLineItem("li-old", "addon-a", "sub-c", "aa-c", "a-p1", tPast30, tEnd)
+
+	resp, err := s.svc.SyncAddonPrices(s.GetContext(), "addon-a")
+	s.NoError(err)
+	s.Equal(1, resp.Summary.LineItemsCreated, "new price line created for the still-billing cancelled addon")
+	s.Equal(1, resp.Summary.LineItemsTerminated, "old line shortened to the ended price")
+
+	var oldItem, newItem *subscription.SubscriptionLineItem
+	for _, li := range s.lineItems("sub-c") {
+		switch li.PriceID {
+		case "a-p1":
+			oldItem = li
+		case "a-p2":
+			newItem = li
+		}
+	}
+	s.Require().NotNil(oldItem)
+	s.Require().NotNil(newItem)
+	// Old line shortened from the cancellation date back to the price's end, so it does
+	// not overlap the new line.
+	s.True(oldItem.EndDate.Equal(tPast1), "old line ends at the ended price, got %s", oldItem.EndDate)
+	// New line capped at the cancellation date so it never bills past the cancellation.
+	s.True(newItem.EndDate.Equal(tEnd), "new line capped at the association end, got %s", newItem.EndDate)
+	s.EqualValues(2, s.watermark("aa-c"))
+}
+
 // TC-2: add a new usage charge on add-on A → a line item is created on every holder.
 func (s *AddonPriceSyncSuite) TestNewUsageCharge_CreatedOnAllHolders() {
 	s.mkAddon("addon-a")
