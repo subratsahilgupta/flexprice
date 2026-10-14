@@ -46,7 +46,7 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 
 	cfg := &config.Configuration{
 		ClickHouse: config.ClickHouseConfig{Address: address, Username: username, Password: password, Database: "default", MaxMemoryUsage: 1},
-		Reports:    config.ReportsConfig{Database: db, Username: username, Password: password},
+		Reports:    config.ReportsConfig{Database: db, Username: username, Password: password, MaxResultRows: 100},
 	}
 	repo, err := NewReportsRepository(cfg, nil)
 	require.NoError(t, err)
@@ -66,11 +66,9 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 				Grain: grain,
 			},
 		}
-		q, err := analytics.BuildBillingQuery(rv, repo.Database(), "t1", "e1", 100)
+		res, err := repo.RunReport(ctx, rv, "t1", "e1")
 		require.NoError(t, err)
-		rows, err := repo.Run(ctx, q)
-		require.NoError(t, err)
-		return rows
+		return res.Rows
 	}
 
 	// Dedup, status, tenant, epoch filters.
@@ -107,11 +105,9 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 			Time:    analytics.TimeSpec{From: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Grain: grain},
 			Compare: compare,
 		}
-		q, err := analytics.BuildBillingQuery(rv, repo.Database(), "t1", "e1", 100)
+		res, err := repo.RunReport(ctx, rv, "t1", "e1")
 		require.NoError(t, err)
-		rows, err := repo.Run(ctx, q)
-		require.NoError(t, err)
-		return rows
+		return res.Rows
 	}
 
 	assert.Equal(t, [][]string{{"inr", "5", "0"}, {"usd", "10", "6"}}, runCmp(types.ShapeScalar, "", "previous_period"))

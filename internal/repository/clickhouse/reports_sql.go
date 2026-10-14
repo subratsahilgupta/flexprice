@@ -1,4 +1,4 @@
-package analytics
+package clickhouse
 
 import (
 	"fmt"
@@ -6,24 +6,17 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
+	"github.com/flexprice/flexprice/internal/domain/analytics"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-// ReportColumn describes one output column.
-type ReportColumn struct {
-	Name string
-	Type types.ColumnType
-	Role types.ColumnRole
-}
-
-// ReportQuery is compiled SQL plus parameters.
-type ReportQuery struct {
+// reportQuery is compiled SQL plus parameters.
+type reportQuery struct {
 	SQL     string
 	Params  map[string]string
-	Columns []ReportColumn
+	Columns []analytics.ReportColumn
 	// TopN: LIMIT is the view limit.
 	TopN bool
 }
@@ -42,45 +35,16 @@ var billingGrainFn = map[types.Grain]string{
 	types.GrainMonth: "toStartOfMonth",
 }
 
-// PreviousWindow: shiftMonths is 0 for rolling windows.
-func PreviousWindow(from, to time.Time, compare string) (time.Time, time.Time, int, error) {
-	var pf, pt time.Time
-	var shift int
-	switch compare {
-	case "previous_period":
-		if from.UTC().Day() == 1 && from.Equal(from.Truncate(24*time.Hour)) {
-			n := 1
-			for from.AddDate(0, n, 0).Before(to) {
-				n++
-			}
-			pf, pt, shift = from.AddDate(0, -n, 0), shiftBackClamped(to, n), n
-		} else {
-			pf, pt = from.Add(-to.Sub(from)), from
-		}
-	case "previous_year":
-		pf, pt, shift = from.AddDate(-1, 0, 0), to.AddDate(-1, 0, 0), 12
-	default:
-		return time.Time{}, time.Time{}, 0, ierr.NewErrorf("unsupported compare %q", compare).
-			WithHint("compare must be previous_period or previous_year").
-			Mark(ierr.ErrValidation)
+func lookupBillingMetric(m types.Metric) (*analytics.BillingMetric, *billingSQL, bool) {
+	bm, ok := analytics.LookupBillingMetric(m)
+	if !ok {
+		return nil, nil, false
 	}
-	if pt.After(from) {
-		pt = from
-	}
-	return pf, pt, shift, nil
+	sq, ok := billingSQLs[m]
+	return bm, sq, ok
 }
 
-// shiftBackClamped overflows to the next month's first day.
-func shiftBackClamped(t time.Time, months int) time.Time {
-	t = t.UTC()
-	first := time.Date(t.Year(), t.Month()-time.Month(months), 1, 0, 0, 0, 0, time.UTC)
-	if t.Day() > first.AddDate(0, 1, -1).Day() {
-		return first.AddDate(0, 1, 0)
-	}
-	return time.Date(first.Year(), first.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.UTC)
-}
-
-func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, maxRows int) (*ReportQuery, error) {
+func buildBillingQuery(rv *analytics.ResolvedView, db, tenantID, environmentID string, maxRows int) (*reportQuery, error) {
 	if tenantID == "" || environmentID == "" {
 		return nil, ierr.NewError("tenant and environment are required").Mark(ierr.ErrPermissionDenied)
 	}
@@ -90,7 +54,7 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 	if rv == nil || len(rv.Metrics) != 1 {
 		return nil, ierr.NewError("billing views take exactly one metric").Mark(ierr.ErrValidation)
 	}
-	bm, ok := LookupBillingMetric(rv.Metrics[0])
+	bm, sq, ok := lookupBillingMetric(rv.Metrics[0])
 	if !ok {
 		return nil, ierr.NewErrorf("unknown billing metric %q", rv.Metrics[0]).Mark(ierr.ErrValidation)
 	}
@@ -110,17 +74,17 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 		"from":           rv.Time.From.UTC().Format(chTimeLayout),
 		"to":             rv.Time.To.UTC().Format(chTimeLayout),
 	}
-	timeExpr := fmt.Sprintf("nullIf(%s, %s)", bm.TimeCol, chEpoch)
+	timeExpr := fmt.Sprintf("nullIf(%s, %s)", sq.TimeCol, chEpoch)
 	curCond := fmt.Sprintf("%s >= toDateTime64({from:String}, 6, 'UTC') AND %s < toDateTime64({to:String}, 6, 'UTC')", timeExpr, timeExpr)
 	bucketExpr := timeExpr
-	measure := bm.Measure
+	measure := sq.Measure
 	prevMeasure := ""
 	timeWhere := []string{
 		timeExpr + " >= toDateTime64({from:String}, 6, 'UTC')",
 		timeExpr + " < toDateTime64({to:String}, 6, 'UTC')",
 	}
 	if rv.Compare != "" {
-		pf, pt, shiftMonths, err := PreviousWindow(rv.Time.From, rv.Time.To, rv.Compare)
+		pf, pt, shiftMonths, err := analytics.PreviousWindow(rv.Time.From, rv.Time.To, rv.Compare)
 		if err != nil {
 			return nil, err
 		}
@@ -137,32 +101,31 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 			shifted = fmt.Sprintf("addSeconds(%s, {shift_s:Int64})", timeExpr)
 		}
 		bucketExpr = fmt.Sprintf("if(%s, %s, %s)", curCond, timeExpr, shifted)
-		measure = fmt.Sprintf("%sIf(%s, %s)", bm.Agg, bm.Arg, curCond)
-		prevMeasure = fmt.Sprintf("%sIf(%s, %s)", bm.Agg, bm.Arg, prevCond)
+		measure = fmt.Sprintf("%sIf(%s, %s)", sq.Agg, sq.Arg, curCond)
+		prevMeasure = fmt.Sprintf("%sIf(%s, %s)", sq.Agg, sq.Arg, prevCond)
 		timeWhere = []string{fmt.Sprintf("((%s) OR (%s))", curCond, prevCond)}
 	}
 
 	var selects, groups []string
-	var cols []ReportColumn
+	var cols []analytics.ReportColumn
 	if rv.Shape == types.ShapeTimeseries {
 		selects = append(selects, fmt.Sprintf("ifNull(formatDateTime(toDateTime(%s(%s, 'UTC'), 'UTC'), '%%Y-%%m-%%dT%%H:%%i:%%SZ'), '') AS bucket", grainFn, bucketExpr))
 		groups = append(groups, "bucket")
-		cols = append(cols, ReportColumn{Name: "bucket", Type: types.ColumnTypeDatetime, Role: types.ColumnRoleDimension})
+		cols = append(cols, analytics.ReportColumn{Name: "bucket", Type: types.ColumnTypeDatetime, Role: types.ColumnRoleDimension})
 	}
 	for _, d := range dims {
-		col, ok := bm.Dimensions[d]
-		if !ok {
+		if !slices.Contains(bm.Dimensions, d) {
 			return nil, ierr.NewErrorf("illegal dimension %q for metric %q", d, bm.Metric).Mark(ierr.ErrValidation)
 		}
-		selects = append(selects, fmt.Sprintf("ifNull(toString(%s), '') AS d_%s", col, d))
+		selects = append(selects, fmt.Sprintf("ifNull(toString(%s), '') AS d_%s", sq.dimExpr(d), d))
 		groups = append(groups, "d_"+d)
-		cols = append(cols, ReportColumn{Name: d, Type: types.ColumnTypeString, Role: types.ColumnRoleDimension})
+		cols = append(cols, analytics.ReportColumn{Name: d, Type: types.ColumnTypeString, Role: types.ColumnRoleDimension})
 	}
 	selects = append(selects, fmt.Sprintf("ifNull(toString(%s), '') AS m_value", measure))
-	cols = append(cols, ReportColumn{Name: string(bm.Metric), Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric})
+	cols = append(cols, analytics.ReportColumn{Name: string(bm.Metric), Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric})
 	if prevMeasure != "" {
 		selects = append(selects, fmt.Sprintf("ifNull(toString(%s), '') AS m_prev", prevMeasure))
-		cols = append(cols, ReportColumn{Name: string(bm.Metric) + "_prev", Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric})
+		cols = append(cols, analytics.ReportColumn{Name: string(bm.Metric) + "_prev", Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric})
 	}
 
 	where := []string{
@@ -171,14 +134,13 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 		"_peerdb_is_deleted = 0",
 		"status = '" + string(types.StatusPublished) + "'",
 	}
-	where = append(where, bm.Where...)
+	where = append(where, sq.Where...)
 	where = append(where, timeWhere...)
 	for i, f := range rv.Filters {
 		if f == nil {
 			continue
 		}
-		col, ok := bm.Dimensions[f.Field]
-		if !ok {
+		if !slices.Contains(bm.Dimensions, f.Field) {
 			return nil, ierr.NewErrorf("illegal filter field %q for metric %q", f.Field, bm.Metric).Mark(ierr.ErrValidation)
 		}
 		if len(f.Value) == 0 {
@@ -191,12 +153,12 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 			params[name] = v
 			placeholders[j] = "{" + name + ":String}"
 		}
-		where = append(where, fmt.Sprintf("%s IN (%s)", col, strings.Join(placeholders, ", ")))
+		where = append(where, fmt.Sprintf("%s IN (%s)", sq.dimExpr(f.Field), strings.Join(placeholders, ", ")))
 	}
 
 	var b strings.Builder
 	b.WriteString("SELECT " + strings.Join(selects, ", "))
-	b.WriteString(" FROM " + db + "." + bm.Table + " FINAL")
+	b.WriteString(" FROM " + db + "." + sq.Table + " FINAL")
 	b.WriteString(" WHERE " + strings.Join(where, " AND "))
 	if len(groups) > 0 {
 		b.WriteString(" GROUP BY " + strings.Join(groups, ", "))
@@ -217,11 +179,11 @@ func BuildBillingQuery(rv *ResolvedView, db, tenantID, environmentID string, max
 		b.WriteString(" LIMIT " + strconv.Itoa(maxRows+1))
 	}
 
-	return &ReportQuery{SQL: b.String(), Params: params, Columns: cols, TopN: topN}, nil
+	return &reportQuery{SQL: b.String(), Params: params, Columns: cols, TopN: topN}, nil
 }
 
 // billingTopN: SQL order equals view order.
-func billingTopN(rv *ResolvedView, metric types.Metric) bool {
+func billingTopN(rv *analytics.ResolvedView, metric types.Metric) bool {
 	if rv.Shape != types.ShapeBreakdown || rv.Limit <= 0 {
 		return false
 	}

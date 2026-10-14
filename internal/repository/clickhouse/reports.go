@@ -51,14 +51,33 @@ func NewReportsRepository(cfg *config.Configuration, log *logger.Logger) (*Repor
 
 func (r *ReportsRepository) Enabled() bool { return r.conn != nil }
 
-func (r *ReportsRepository) Database() string { return r.cfg.Database }
-
 func (r *ReportsRepository) MaxRows() int { return r.cfg.MaxResultRows }
 
-func (r *ReportsRepository) Run(ctx context.Context, q *analytics.ReportQuery) ([][]string, error) {
+func (r *ReportsRepository) RunReport(ctx context.Context, rv *analytics.ResolvedView, tenantID, environmentID string) (*analytics.ReportResult, error) {
 	if r.conn == nil {
 		return nil, ierr.NewError("financial reports are not enabled").Mark(ierr.ErrPermissionDenied)
 	}
+	q, err := buildBillingQuery(rv, r.cfg.Database, tenantID, environmentID, r.cfg.MaxResultRows)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.run(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	return reportResult(q, rows, r.cfg.MaxResultRows)
+}
+
+func reportResult(q *reportQuery, rows [][]string, maxRows int) (*analytics.ReportResult, error) {
+	if !q.TopN && maxRows > 0 && len(rows) > maxRows {
+		return nil, ierr.NewErrorf("result exceeds %d rows", maxRows).
+			WithHint("Narrow the time range or remove dimensions").
+			Mark(ierr.ErrValidation)
+	}
+	return &analytics.ReportResult{Columns: q.Columns, Rows: rows}, nil
+}
+
+func (r *ReportsRepository) run(ctx context.Context, q *reportQuery) ([][]string, error) {
 	settings := clickhouse_go.Settings{
 		"max_execution_time":   r.cfg.MaxExecutionSeconds,
 		"max_result_rows":      r.cfg.MaxResultRows + 1,

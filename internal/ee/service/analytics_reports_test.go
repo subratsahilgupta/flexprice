@@ -20,7 +20,7 @@ func reportsSvc(repo *testutil.InMemoryReportsRepo) AnalyticsService {
 }
 
 func TestListReports(t *testing.T) {
-	res, err := reportsSvc(&testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}).ListReports(billingCtx())
+	res, err := reportsSvc(&testutil.InMemoryReportsRepo{On: true}).ListReports(billingCtx())
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Items)
 	assert.Equal(t, "invoice_total", res.Items[0].Key)
@@ -34,13 +34,13 @@ func TestListReports_DisabledIs403(t *testing.T) {
 }
 
 func TestRunReport_UnknownIs404(t *testing.T) {
-	_, err := reportsSvc(&testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}).RunReport(billingCtx(), "nope", &dto.ReportQueryRequest{Shape: "scalar", Range: "2026-09-01..2026-10-01"})
+	_, err := reportsSvc(&testutil.InMemoryReportsRepo{On: true}).RunReport(billingCtx(), "nope", &dto.ReportQueryRequest{Shape: "scalar", Range: "2026-09-01..2026-10-01"})
 	require.Error(t, err)
 	assert.True(t, ierr.IsNotFound(err))
 }
 
 func TestRunReport_RejectsDisallowed(t *testing.T) {
-	svc := reportsSvc(&testutil.InMemoryReportsRepo{On: true, DB: "reports_db"})
+	svc := reportsSvc(&testutil.InMemoryReportsRepo{On: true})
 	for _, req := range []*dto.ReportQueryRequest{
 		{Shape: "histogram", Range: "2026-09-01..2026-10-01"},
 		{Shape: "breakdown", Dimensions: []string{"meter_id"}, Range: "2026-09-01..2026-10-01"},
@@ -55,7 +55,7 @@ func TestRunReport_RejectsDisallowed(t *testing.T) {
 }
 
 func TestRunReport_CompareAddsChangeAndMeta(t *testing.T) {
-	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Rows: [][]string{{"usd", "110", "100"}, {"eur", "5", "0"}, {"inr", "x", "1"}, {"usd", "0", "4"}}}
+	repo := &testutil.InMemoryReportsRepo{On: true, Columns: reportCols("currency", "invoice_total", "invoice_total_prev"), Rows: [][]string{{"usd", "110", "100"}, {"eur", "5", "0"}, {"inr", "x", "1"}, {"usd", "0", "4"}}}
 	res, err := reportsSvc(repo).RunReport(billingCtx(), "invoice_total", &dto.ReportQueryRequest{Shape: "scalar", Range: "2026-09-01..2026-10-01", Compare: "previous_period"})
 	require.NoError(t, err)
 	names := []string{}
@@ -71,19 +71,20 @@ func TestRunReport_CompareAddsChangeAndMeta(t *testing.T) {
 	assert.Equal(t, "2026-10-01T00:00:00Z", res.Meta.To)
 	assert.Equal(t, "2026-08-01T00:00:00Z", res.Meta.PrevFrom)
 	assert.Equal(t, "2026-09-01T00:00:00Z", res.Meta.PrevTo)
-	assert.Equal(t, "2026-08-01 00:00:00.000000", repo.Last.Params["prev_from"])
+	assert.Equal(t, "previous_period", repo.Last.Compare)
 }
 
 func TestRunReport_CurrencyBecomesFilter(t *testing.T) {
-	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}
+	repo := &testutil.InMemoryReportsRepo{On: true}
 	_, err := reportsSvc(repo).RunReport(billingCtx(), "invoice_total", &dto.ReportQueryRequest{Shape: "scalar", Range: "2026-09-01..2026-10-01", Currency: "usd"})
 	require.NoError(t, err)
-	assert.Contains(t, repo.Last.SQL, "currency IN ({f0_0:String})")
-	assert.Equal(t, "usd", repo.Last.Params["f0_0"])
+	require.Len(t, repo.Last.Filters, 1)
+	assert.Equal(t, "currency", repo.Last.Filters[0].Field)
+	assert.Equal(t, []string{"usd"}, repo.Last.Filters[0].Value)
 }
 
 func TestRunReport_NoCompareNoMetaPrev(t *testing.T) {
-	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Rows: [][]string{{"usd", "1"}}}
+	repo := &testutil.InMemoryReportsRepo{On: true, Columns: reportCols("currency", "invoice_total"), Rows: [][]string{{"usd", "1"}}}
 	res, err := reportsSvc(repo).RunReport(billingCtx(), "invoice_total", &dto.ReportQueryRequest{Shape: "scalar", Range: "2026-09-01..2026-10-01"})
 	require.NoError(t, err)
 	assert.Empty(t, res.Meta.PrevFrom)
@@ -92,7 +93,8 @@ func TestRunReport_NoCompareNoMetaPrev(t *testing.T) {
 
 func TestRunReport_ValidationRules(t *testing.T) {
 	const rng = "2026-09-01..2026-10-01"
-	svc := reportsSvc(&testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Max: 100})
+	cols := append(reportCols("customer_id", "currency", "invoice_total"), analytics.ReportColumn{Name: "invoice_total_prev", Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric})
+	svc := reportsSvc(&testutil.InMemoryReportsRepo{On: true, Max: 100, Columns: cols})
 	cases := map[string]*dto.ReportQueryRequest{
 		"negative limit":      {Shape: "breakdown", Range: rng, Limit: -1},
 		"limit over max":      {Shape: "breakdown", Range: rng, Limit: 101},

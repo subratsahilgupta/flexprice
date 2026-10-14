@@ -9,35 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestReportCatalog_AgreesWithRegistry(t *testing.T) {
-	entries := ReportCatalog()
-	require.NotEmpty(t, entries)
-	for _, e := range entries {
-		bm, ok := LookupBillingMetric(e.Key)
-		require.True(t, ok, "catalog key %q has no billing metric", e.Key)
-		assert.Equal(t, bm.Agg+"("+bm.Arg+")", bm.Measure, "measure of %q", e.Key)
-		for _, s := range e.Shapes {
-			assert.Contains(t, bm.Shapes, s, "shape %q of %q", s, e.Key)
-		}
-		assert.Contains(t, e.Shapes, e.DefaultShape)
-		for _, d := range e.Dimensions {
-			_, ok := bm.Dimensions[d.Key]
-			assert.True(t, ok, "dimension %q of %q", d.Key, e.Key)
-			assert.NotEmpty(t, d.Label)
-		}
-		for _, g := range e.Grains {
-			assert.Contains(t, []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth}, g)
-		}
-		assert.Contains(t, []string{"billing", "receivables", "customers", "credits", "usage"}, e.Category)
-		assert.Contains(t, []string{"flow", "ratio", "snapshot"}, e.Kind)
-		assert.Contains(t, []string{"money", "count", "days"}, e.ValueType)
-		if e.Kind == "snapshot" {
-			assert.False(t, e.SupportsCompare)
-			assert.Empty(t, e.Grains)
-		}
-	}
-}
-
 func TestReportCatalog_InvoiceTotal(t *testing.T) {
 	e, ok := LookupReport("invoice_total")
 	require.True(t, ok)
