@@ -335,6 +335,9 @@ func (s *checkoutSessionService) completeModifySubscriptionCheckout(
 	modSvc := &subscriptionModificationService{serviceParams: s.ServiceParams}
 	if params.ModifyType == types.ModifySubscriptionTypeTrialEnd {
 		if err := modSvc.applyTrialEndConversion(ctx, params.SubscriptionID, invoiceID); err != nil {
+			if ierr.IsInvalidOperation(err) {
+				s.failCheckoutKeepingResources(ctx, session, err)
+			}
 			return err
 		}
 	} else if err := modSvc.applyModifySubscriptionParams(ctx, params); err != nil {

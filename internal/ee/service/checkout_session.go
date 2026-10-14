@@ -470,6 +470,31 @@ func (s *checkoutSessionService) terminateCheckoutSession(ctx context.Context, s
 	return true, nil
 }
 
+// failCheckoutKeepingResources fails a session whose payment may be captured but cannot be applied.
+// Payment and invoice are kept, and expiry cleanup skips terminal sessions, so ops can refund by hand.
+func (s *checkoutSessionService) failCheckoutKeepingResources(ctx context.Context, session *domainCheckout.CheckoutSession, reason error) {
+	s.Logger.Error(ctx, "checkout paid but could not be applied, manual refund required",
+		"error", reason,
+		"session_id", session.ID,
+		"payment_id", lo.FromPtr(session.CheckoutPaymentID),
+		"invoice_id", lo.FromPtr(session.CheckoutInvoiceID),
+		"subscription_id", lo.FromPtr(session.Configuration.ToCheckoutConfiguration().ModifySubscriptionParams).SubscriptionID)
+
+	msg := reason.Error()
+	claimed, err := s.CheckoutSessionRepo.MarkTerminal(activity.WithAction(ctx, session.ID, activity.CheckoutSessionFailed), session.ID, types.CheckoutStatusFailed, &msg)
+	if err != nil {
+		s.Logger.Error(ctx, "failed to mark unappliable checkout session failed", "error", err, "session_id", session.ID)
+		return
+	}
+	if !claimed {
+		return
+	}
+	session.CheckoutStatus = types.CheckoutStatusFailed
+	session.FailureReason = &msg
+	metrics.RecordCounter(ctx, metrics.CheckoutSessions, 1, checkoutMetricLabels(session, types.CheckoutStatusFailed)...)
+	s.publishCheckoutEvent(ctx, dto.ToCheckoutSessionResponse(session), types.WebhookEventCheckoutSessionFailed)
+}
+
 func (s *checkoutSessionService) cleanupCheckoutResources(ctx context.Context, session *domainCheckout.CheckoutSession, reason error) error {
 	cfg := session.Configuration.ToCheckoutConfiguration()
 

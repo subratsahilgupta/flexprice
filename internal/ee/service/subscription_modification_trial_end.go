@@ -204,6 +204,7 @@ func (s *subscriptionModificationService) settleTrialEndPayFirst(
 }
 
 // applyTrialEndConversion ends the trial at the paid invoice's period start. Safe to replay.
+// Returns ErrInvalidOperation when the subscription can no longer take the conversion.
 func (s *subscriptionModificationService) applyTrialEndConversion(ctx context.Context, subscriptionID, invoiceID string) error {
 	sp := s.serviceParams
 	inv, err := sp.InvoiceRepo.Get(ctx, invoiceID)
@@ -215,31 +216,32 @@ func (s *subscriptionModificationService) applyTrialEndConversion(ctx context.Co
 	}
 	start, end := inv.PeriodStart.UTC(), inv.PeriodEnd.UTC()
 
-	sub, err := sp.SubRepo.Get(ctx, subscriptionID)
-	if err != nil {
-		return err
-	}
-	if sub.SubscriptionStatus != types.SubscriptionStatusTrialing {
-		if sub.SubscriptionStatus != types.SubscriptionStatusCancelled && sub.TrialEnd != nil && sub.TrialEnd.Equal(start) {
-			return nil // already applied by an earlier delivery
-		}
-		return ierr.NewError("subscription is no longer trialing").
-			WithReportableDetails(map[string]any{"subscription_id": subscriptionID, "status": sub.SubscriptionStatus}).
-			Mark(ierr.ErrInvalidOperation)
-	}
-
-	anchor, _, err := trialConversionPeriod(sub, start)
-	if err != nil {
-		return err
-	}
-	sub.TrialEnd = lo.ToPtr(start)
-	sub.BillingAnchor = anchor
-	sub.CurrentPeriodStart = start
-	sub.CurrentPeriodEnd = end
-	sub.SubscriptionStatus = types.SubscriptionStatusIncomplete
-
 	subSvc := &subscriptionService{ServiceParams: sp}
 	return sp.DB.WithTx(ctx, func(txCtx context.Context) error {
+		// Locked re-read: a concurrent delivery may have converted and activated the row already.
+		sub, err := sp.SubRepo.GetForUpdate(txCtx, subscriptionID)
+		if err != nil {
+			return err
+		}
+		if sub.SubscriptionStatus != types.SubscriptionStatusTrialing {
+			if sub.SubscriptionStatus != types.SubscriptionStatusCancelled && sub.TrialEnd != nil && sub.TrialEnd.Equal(start) {
+				return nil // already applied by an earlier delivery
+			}
+			return ierr.NewError("subscription is no longer trialing").
+				WithReportableDetails(map[string]any{"subscription_id": subscriptionID, "status": sub.SubscriptionStatus}).
+				Mark(ierr.ErrInvalidOperation)
+		}
+
+		anchor, _, err := trialConversionPeriod(sub, start)
+		if err != nil {
+			return err
+		}
+		sub.TrialEnd = lo.ToPtr(start)
+		sub.BillingAnchor = anchor
+		sub.CurrentPeriodStart = start
+		sub.CurrentPeriodEnd = end
+		sub.SubscriptionStatus = types.SubscriptionStatusIncomplete
+
 		if err := sp.SubRepo.Update(txCtx, sub); err != nil {
 			return err
 		}

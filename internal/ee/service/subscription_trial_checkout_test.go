@@ -265,14 +265,17 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_DoubleCompleteIdempotent
 	params := s.service.(*subscriptionService).ServiceParams
 	checkoutSvc := &checkoutSessionService{ServiceParams: params}
 	s.Require().NoError(checkoutSvc.CompleteCheckoutSession(ctx, sessionID, &types.CheckoutProviderResult{ProviderPaymentIntentID: "pi_trial_2"}))
-	first, _ := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	first, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
 
-	// A replay may stop at the session layer or reach apply again; neither may move the period.
-	_ = checkoutSvc.CompleteCheckoutSession(ctx, sessionID, &types.CheckoutProviderResult{ProviderPaymentIntentID: "pi_trial_2"})
+	// A replay stops at the session layer; a delivery that reaches apply again must not move the period.
+	err = checkoutSvc.CompleteCheckoutSession(ctx, sessionID, &types.CheckoutProviderResult{ProviderPaymentIntentID: "pi_trial_2"})
+	s.True(ierr.IsAlreadyExists(err), "replayed completion is rejected at the session layer")
 	modSvc := &subscriptionModificationService{serviceParams: params}
 	s.Require().NoError(modSvc.applyTrialEndConversion(ctx, sub.ID, invoiceID))
 
-	again, _ := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	again, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
 	s.Equal(types.SubscriptionStatusActive, again.SubscriptionStatus)
 	s.True(again.CurrentPeriodStart.Equal(first.CurrentPeriodStart))
 	s.True(again.CurrentPeriodEnd.Equal(first.CurrentPeriodEnd))
@@ -291,17 +294,19 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_AbandonedLeavesTrial() {
 
 	s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, session, nil))
 
-	got, _ := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
 	s.Equal(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
 	s.True(got.TrialEnd.Equal(*sub.TrialEnd), "trial end unchanged")
-	if inv, err := s.GetStores().InvoiceRepo.Get(ctx, invoiceID); err == nil {
-		s.NotEqual(types.InvoiceStatusFinalized, inv.InvoiceStatus, "unpaid draft never finalized")
-	}
+	inv, err := s.GetStores().InvoiceRepo.Get(ctx, invoiceID)
+	s.Require().NoError(err)
+	s.Equal(types.StatusDeleted, inv.Status, "abandoned draft is archived")
+	s.Equal(types.InvoiceStatusDraft, inv.InvoiceStatus, "unpaid draft never finalized")
 
 	// The cron owns the trial again once the session is gone.
-	inv, err := s.service.(*subscriptionService).ProcessSingleSubscriptionTrialEnd(ctx, got, got.TrialEnd.Add(time.Hour))
+	cronInv, err := s.service.(*subscriptionService).ProcessSingleSubscriptionTrialEnd(ctx, got, got.TrialEnd.Add(time.Hour))
 	s.Require().NoError(err)
-	s.NotNil(inv)
+	s.NotNil(cronInv)
 }
 
 func (s *SubscriptionServiceSuite) TestTrialEndCheckout_FailedPaymentLeavesTrial() {
@@ -313,7 +318,8 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_FailedPaymentLeavesTrial
 
 	s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, session, errors.New("card_declined")))
 
-	got, _ := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
 	s.Equal(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
 }
 
@@ -324,4 +330,43 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_CompleteAfterCancelledRe
 	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
 	modSvc := &subscriptionModificationService{serviceParams: s.service.(*subscriptionService).ServiceParams}
 	s.True(ierr.IsInvalidOperation(modSvc.applyTrialEndConversion(ctx, sub.ID, invoiceID)))
+}
+
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_PaidAfterCancelledKeepsPaymentForRefund() {
+	ctx := s.GetContext()
+	sub, sessionID, invoiceID := s.startTrialEndCheckout()
+	cancelled, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
+	cancelled.SubscriptionStatus = types.SubscriptionStatusCancelled
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, cancelled))
+	session, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
+	s.Require().NoError(err)
+	paymentID := lo.FromPtr(session.CheckoutPaymentID)
+	s.Require().NotEmpty(paymentID)
+	checkoutSvc := &checkoutSessionService{ServiceParams: s.service.(*subscriptionService).ServiceParams}
+
+	err = checkoutSvc.CompleteCheckoutSession(ctx, sessionID, &types.CheckoutProviderResult{ProviderPaymentIntentID: "pi_trial_late"})
+	s.True(ierr.IsInvalidOperation(err))
+
+	failed, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
+	s.Require().NoError(err)
+	s.Equal(types.CheckoutStatusFailed, failed.CheckoutStatus, "failed, so expiry cleanup never deletes the payment")
+	s.NotEmpty(lo.FromPtr(failed.FailureReason))
+
+	// Expiry cleanup must leave the captured payment and its invoice for a manual refund.
+	_, err = checkoutSvc.CleanupAllExpiredSessions(ctx, lo.ToPtr(time.Now().UTC().Add(time.Hour)))
+	s.Require().NoError(err)
+	pay, err := s.GetStores().PaymentRepo.Get(ctx, paymentID)
+	s.Require().NoError(err)
+	s.Equal(types.StatusPublished, pay.Status)
+	inv, err := s.GetStores().InvoiceRepo.Get(ctx, invoiceID)
+	s.Require().NoError(err)
+	s.Equal(types.StatusPublished, inv.Status)
+	s.Equal(types.InvoiceStatusDraft, inv.InvoiceStatus)
+
+	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.SubscriptionStatusCancelled, got.SubscriptionStatus)
+	s.True(got.TrialEnd.Equal(*sub.TrialEnd), "trial end unchanged")
+	s.True(got.CurrentPeriodEnd.Equal(sub.CurrentPeriodEnd), "period unchanged")
 }
