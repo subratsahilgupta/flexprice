@@ -67,7 +67,7 @@ func (s *subscriptionModificationService) Execute(ctx context.Context, subscript
 		}
 		return s.executeGroupedInvoicingMembership(ctx, req.GroupedInvoicingParams)
 	case dto.SubscriptionModifyTypeTrialEnd:
-		return s.executeTrialEnd(ctx, subscriptionID, req.TrialEndParams)
+		return s.executeTrialEnd(ctx, subscriptionID, req.TrialEndParams, req.Checkout)
 	case dto.SubscriptionModifyTypeCoupon:
 		return s.executeCouponModification(ctx, subscriptionID, req.CouponParams)
 	case dto.SubscriptionModifyTypeTax:

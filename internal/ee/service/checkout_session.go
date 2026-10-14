@@ -47,6 +47,37 @@ func pendingCheckoutSessions(ctx context.Context, sp ServiceParams, subscription
 	})
 }
 
+// pendingTrialEndCheckout returns the subscription's open pay-first trial-end session, or nil when none is open.
+func pendingTrialEndCheckout(ctx context.Context, sp ServiceParams, subscriptionID string) (*domainCheckout.CheckoutSession, error) {
+	sessions, err := pendingCheckoutSessions(ctx, sp, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+	session, _ := lo.Find(sessions, func(sess *domainCheckout.CheckoutSession) bool {
+		params := sess.Configuration.ModifySubscriptionParams
+		return params != nil && params.ModifyType == types.ModifySubscriptionTypeTrialEnd
+	})
+	return session, nil
+}
+
+// ensureNoPendingTrialEndCheckout rejects ending the trial directly while a pay-first trial end awaits payment.
+func ensureNoPendingTrialEndCheckout(ctx context.Context, sp ServiceParams, subscriptionID string) error {
+	session, err := pendingTrialEndCheckout(ctx, sp, subscriptionID)
+	if err != nil {
+		return err
+	}
+	if session == nil {
+		return nil
+	}
+	return ierr.NewError("a pending trial end checkout already exists for this subscription").
+		WithHint("Complete or cancel the existing checkout before ending the trial").
+		WithReportableDetails(map[string]any{
+			"subscription_id":     subscriptionID,
+			"checkout_session_id": session.ID,
+		}).
+		Mark(ierr.ErrAlreadyExists)
+}
+
 // ensureNoPendingCheckoutSession rejects a second payment-gated change while one is still open.
 func ensureNoPendingCheckoutSession(ctx context.Context, sp ServiceParams, subscriptionID string) error {
 	existing, err := pendingCheckoutSessions(ctx, sp, subscriptionID)

@@ -141,6 +141,7 @@ type ModifySubscriptionType string
 const (
 	ModifySubscriptionTypeQuantityChange ModifySubscriptionType = "quantity_change"
 	ModifySubscriptionTypeLineItemChange ModifySubscriptionType = "line_item_change"
+	ModifySubscriptionTypeTrialEnd       ModifySubscriptionType = "trial_end"
 )
 
 // ModifySubscriptionParams is persisted on checkout sessions for payment-gated
@@ -178,6 +179,10 @@ func (p *ModifySubscriptionParams) Validate() error {
 		return ierr.NewError("subscription_id is required").
 			WithHint("Provide subscription_id in modify_subscription_params").
 			Mark(ierr.ErrValidation)
+	}
+	// A trial end changes no line items; the subscription id is all it needs.
+	if p.ModifyType == ModifySubscriptionTypeTrialEnd {
+		return nil
 	}
 	if len(p.LineItemModifications) == 0 {
 		return ierr.NewError("line_item_modifications is required").

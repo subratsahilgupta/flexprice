@@ -67,6 +67,7 @@ func (s *subscriptionModificationService) executeTrialEnd(
 	ctx context.Context,
 	subscriptionID string,
 	params *dto.SubModifyTrialEndRequest,
+	checkout *dto.CheckoutParams,
 ) (*dto.SubscriptionModifyResponse, error) {
 	sp := s.serviceParams
 
@@ -81,6 +82,12 @@ func (s *subscriptionModificationService) executeTrialEnd(
 
 	switch params.Action {
 	case dto.TrialEndActionImmediate:
+		if checkout != nil {
+			return s.settleTrialEndPayFirst(ctx, sub, checkout)
+		}
+		if err := ensureNoPendingTrialEndCheckout(ctx, sp, sub.ID); err != nil {
+			return nil, err
+		}
 		return s.executeTrialEndNow(ctx, sub)
 	case dto.TrialEndActionScheduledDate:
 		return s.executeTrialEndModifyDate(ctx, sub, params.NewTrialEnd.UTC())
@@ -131,6 +138,68 @@ func (s *subscriptionModificationService) executeTrialEndNow(
 			Subscriptions: changedSubs,
 			Invoices:      changedInvoice,
 		},
+	}, nil
+}
+
+// settleTrialEndPayFirst gates the first paid period behind a checkout; the trial ends only when payment lands.
+func (s *subscriptionModificationService) settleTrialEndPayFirst(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	checkout *dto.CheckoutParams,
+) (*dto.SubscriptionModifyResponse, error) {
+	sp := s.serviceParams
+	if err := checkout.Validate(); err != nil {
+		return nil, err
+	}
+	if err := ensureNoPendingCheckoutSession(ctx, sp, sub.ID); err != nil {
+		return nil, err
+	}
+
+	start := time.Now().UTC()
+	_, end, err := trialConversionPeriod(sub, start)
+	if err != nil {
+		return nil, err
+	}
+
+	draft, err := NewInvoiceService(sp).CreateSubscriptionDraftInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
+		SubscriptionID: sub.ID,
+		PeriodStart:    start,
+		PeriodEnd:      end,
+		ReferencePoint: types.ReferencePointPeriodStart,
+		BillingReason:  types.InvoiceBillingReasonSubscriptionTrialEnd,
+	}, types.InvoiceFlowRenewal)
+	if err != nil {
+		return nil, err
+	}
+	if draft == nil {
+		return s.executeTrialEndNow(ctx, sub)
+	}
+
+	sessionResp, err := NewCheckoutSessionService(sp).StartPayFirstCheckoutSession(ctx, &dto.PayFirstCheckoutRequest{
+		CustomerID: sub.CustomerID,
+		Action:     types.CheckoutActionModifySubscription,
+		Configuration: types.CheckoutConfiguration{
+			ModifySubscriptionParams: &types.ModifySubscriptionParams{
+				SubscriptionID: sub.ID,
+				ModifyType:     types.ModifySubscriptionTypeTrialEnd,
+			},
+		},
+		DraftInvoice: &draft.Invoice,
+		Checkout:     checkout,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	subResp, err := NewSubscriptionService(sp).GetSubscription(ctx, sub.ID)
+	if err != nil {
+		return nil, err
+	}
+	sp.Logger.Info(ctx, "trial end gated behind checkout", "subscription_id", sub.ID, "invoice_id", draft.ID, "checkout_session_id", sessionResp.ID)
+	return &dto.SubscriptionModifyResponse{
+		Subscription:     subResp,
+		CheckoutSession:  sessionResp,
+		ChangedResources: dto.ChangedResources{Invoices: []dto.ChangedInvoice{{ID: draft.ID, Action: dto.ChangedInvoiceActionCreated, Invoice: draft}}},
 	}, nil
 }
 
