@@ -102,7 +102,7 @@ func TestWalletLedgerFacts(t *testing.T) {
 		debit := newTx("wtx_debit_"+runID, types.TransactionTypeDebit, types.TransactionStatusCompleted, 0)
 		debit.CreditAmount = decimal.RequireFromString("70.5")
 		debit.CreditsAvailable = decimal.Zero
-		debit.ConsumptionBreakdown = []types.WalletTxConsumption{
+		debit.ConsumptionBreakdown = []*types.WalletTxConsumption{
 			{CreditTransactionID: first.ID, Credits: decimal.NewFromInt(50)},
 			{CreditTransactionID: second.ID, Credits: decimal.RequireFromString("20.5")},
 		}

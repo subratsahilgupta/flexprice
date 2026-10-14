@@ -81,7 +81,7 @@ type WalletTransaction struct {
 	// SourceID holds the value of the "source_id" field.
 	SourceID *string `json:"source_id,omitempty"`
 	// ConsumptionBreakdown holds the value of the "consumption_breakdown" field.
-	ConsumptionBreakdown []types.WalletTxConsumption `json:"consumption_breakdown,omitempty"`
+	ConsumptionBreakdown []*types.WalletTxConsumption `json:"consumption_breakdown,omitempty"`
 	selectValues         sql.SelectValues
 }
 

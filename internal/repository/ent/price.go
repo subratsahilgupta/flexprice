@@ -322,7 +322,7 @@ func (r *priceRepository) Update(ctx context.Context, p *domainPrice.Price, bump
 		update = update.SetNillableGroupID(lo.ToPtr(p.GroupID))
 	}
 
-	_, err := update.Save(ctx)
+	_, err := update.SaveReturning(ctx)
 
 	if err != nil {
 		SetSpanError(span, err)
@@ -408,7 +408,7 @@ func (r *priceRepository) Delete(ctx context.Context, id string) error {
 		SetStatus(string(types.StatusArchived)).
 		SetUpdatedAt(time.Now().UTC()).
 		SetUpdatedBy(types.GetUserID(ctx)).
-		Save(ctx)
+		SaveReturning(ctx)
 
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -861,7 +861,7 @@ func (r *priceRepository) ClearByGroupID(ctx context.Context, groupID string) er
 		ClearGroupID().
 		SetUpdatedAt(time.Now().UTC()).
 		SetUpdatedBy(types.GetUserID(ctx)).
-		Save(ctx)
+		SaveReturning(ctx)
 	if err != nil {
 		return ierr.WithError(err).
 			WithHint("Failed to clear group ID").
@@ -901,4 +901,22 @@ func (r *priceRepository) GetByLookupKey(ctx context.Context, lookupKey string) 
 			Mark(ierr.ErrDatabase)
 	}
 	return domainPrice.FromEnt(price), nil
+}
+
+// GetLinkedCustomerID returns the subscription's customer for a subscription price; "" for any other price.
+func (r *priceRepository) GetLinkedCustomerID(ctx context.Context, id string) (string, error) {
+	return linkedCustomerID(ctx, "price", id, func() (string, error) {
+		client := r.client.Reader(ctx)
+		p, err := client.Price.Query().
+			Where(price.ID(id), price.TenantID(types.GetTenantID(ctx)), price.EnvironmentID(types.GetEnvironmentID(ctx))).
+			Select(price.FieldEntityType, price.FieldEntityID).
+			Only(ctx)
+		if err != nil {
+			return "", err
+		}
+		if p.EntityType != types.PRICE_ENTITY_TYPE_SUBSCRIPTION {
+			return "", nil
+		}
+		return subscriptionCustomerID(ctx, client, p.EntityID)
+	})
 }

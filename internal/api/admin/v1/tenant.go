@@ -34,3 +34,31 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, resp)
 }
+
+func (h *TenantHandler) ListTenants(c *gin.Context) {
+	var req admin.ListTenantsRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.Error(ierr.WithError(err).
+			WithHint("limit and offset must be whole numbers").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	resp, err := h.service.ListTenants(c.Request.Context(), req)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+func (h *TenantHandler) GetTenant(c *gin.Context) {
+	resp, err := h.service.GetTenant(c.Request.Context(), c.Param("tenant_id"))
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
