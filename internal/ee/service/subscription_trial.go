@@ -167,26 +167,14 @@ func (s *subscriptionService) processSubscriptionTrialEnd(ctx context.Context, s
 		return nil, nil
 	}
 
-	// Billing starts at trial end. Calendar subs keep calendar boundaries (short first paid period);
-	// anniversary subs re-anchor at trial end so the first paid period is full.
-	// e.g. trial Jan 15 → Jan 29: calendar bills [Jan 29, Feb 1) for 3/31; anniversary bills [Jan 29, Feb 28) in full.
+	// Calendar subs bill a short first paid period; anniversary subs re-anchor at trial end for a full one.
+	// e.g. trial ends Jan 29: calendar bills [Jan 29, Feb 1), anniversary [Jan 29, Feb 28).
 	firstPeriodStart := lo.FromPtr(sub.TrialEnd)
-	if sub.BillingCycle == types.BillingCycleCalendar {
-		sub.BillingAnchor = types.CalculateCalendarBillingAnchor(firstPeriodStart, sub.BillingPeriod, sub.Timezone)
-	} else {
-		sub.BillingAnchor = firstPeriodStart
-	}
-	firstPeriodEnd, err := types.NextBillingDate(&types.NextBillingDateParams{
-		CurrentPeriodStart:  firstPeriodStart,
-		BillingAnchor:       sub.BillingAnchor,
-		Unit:                sub.BillingPeriodCount,
-		Period:              sub.BillingPeriod,
-		SubscriptionEndDate: sub.EndDate,
-		Timezone:            sub.Timezone,
-	})
+	anchor, firstPeriodEnd, err := trialConversionPeriod(sub, firstPeriodStart)
 	if err != nil {
 		return nil, err
 	}
+	sub.BillingAnchor = anchor
 
 	// Out of trialing, first real period on the books. If this job double-fires, we bail earlier because
 	// we aren't "trialing" anymore.
@@ -278,4 +266,21 @@ func (s *subscriptionService) cascadeTrialActivationToInherited(ctx context.Cont
 		}
 	}
 	return nil
+}
+
+// trialConversionPeriod returns the billing anchor and first paid period end for a trial that ends at start.
+func trialConversionPeriod(sub *subscription.Subscription, start time.Time) (time.Time, time.Time, error) {
+	anchor := start
+	if sub.BillingCycle == types.BillingCycleCalendar {
+		anchor = types.CalculateCalendarBillingAnchor(start, sub.BillingPeriod, sub.Timezone)
+	}
+	end, err := types.NextBillingDate(&types.NextBillingDateParams{
+		CurrentPeriodStart:  start,
+		BillingAnchor:       anchor,
+		Unit:                sub.BillingPeriodCount,
+		Period:              sub.BillingPeriod,
+		SubscriptionEndDate: sub.EndDate,
+		Timezone:            sub.Timezone,
+	})
+	return anchor, end, err
 }

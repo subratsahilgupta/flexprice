@@ -47,6 +47,8 @@ type InvoiceService interface {
 	FinalizeInvoice(ctx context.Context, id string, req dto.FinalizeInvoiceRequest) error
 	ProcessDraftInvoice(ctx context.Context, id string, paymentParams *dto.PaymentParameters, sub *subscription.Subscription, flowType types.InvoiceFlowType) error
 	UpdatePaymentStatus(ctx context.Context, id string, status types.PaymentStatus, amount *decimal.Decimal) error
+	// CreateSubscriptionDraftInvoice computes a subscription invoice and leaves it DRAFT; nil when it computes to zero.
+	CreateSubscriptionDraftInvoice(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest, flowType types.InvoiceFlowType) (*dto.InvoiceResponse, error)
 	CreateSubscriptionInvoice(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest, paymentParams *dto.PaymentParameters, flowType types.InvoiceFlowType, isDraftSubscription bool) (*dto.InvoiceResponse, *subscription.Subscription, error)
 	CreateDraftInvoiceForSubscription(ctx context.Context, req dto.CreateSubscriptionDraftInvoiceRequest) (*dto.InvoiceResponse, error)
 	ComputeInvoice(ctx context.Context, invoiceID string, req *dto.InvoiceComputeRequest) (*invoice.Invoice, bool, error)
@@ -2500,23 +2502,54 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 		"period_end", req.PeriodEnd,
 		"reference_point", req.ReferencePoint)
 
-	if err := req.Validate(); err != nil {
-		return nil, nil, err
-	}
-
-	// Get subscription with line items
-	subscription, _, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
+	draftID, sub, skipped, err := s.computedSubscriptionDraft(ctx, req, flowType, isDraftSubscription)
 	if err != nil {
 		return nil, nil, err
 	}
+	if skipped {
+		return nil, sub, nil
+	}
+	if err := s.ProcessDraftInvoice(ctx, draftID, paymentParams, sub, flowType); err != nil {
+		return nil, nil, err
+	}
+	inv, err := s.InvoiceRepo.Get(ctx, draftID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return dto.NewInvoiceResponse(inv), sub, nil
+}
+
+func (s *invoiceService) CreateSubscriptionDraftInvoice(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest, flowType types.InvoiceFlowType) (*dto.InvoiceResponse, error) {
+	draftID, _, skipped, err := s.computedSubscriptionDraft(ctx, req, flowType, false)
+	if err != nil || skipped {
+		return nil, err
+	}
+	inv, err := s.InvoiceRepo.Get(ctx, draftID)
+	if err != nil {
+		return nil, err
+	}
+	return dto.NewInvoiceResponse(inv), nil
+}
+
+// computedSubscriptionDraft creates and computes the draft; skipped is true when it computed to zero.
+func (s *invoiceService) computedSubscriptionDraft(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest, flowType types.InvoiceFlowType, isDraftSubscription bool) (draftID string, sub *subscription.Subscription, skipped bool, err error) {
+	if err := req.Validate(); err != nil {
+		return "", nil, false, err
+	}
+
+	// Get subscription with line items
+	sub, _, err = s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
+	if err != nil {
+		return "", nil, false, err
+	}
 
 	// Reject invoice creation for draft subscriptions (unless isDraftSubscription is true)
-	if !isDraftSubscription && subscription.SubscriptionStatus == types.SubscriptionStatusDraft {
-		return nil, nil, ierr.NewError("cannot create invoice for draft subscription").
+	if !isDraftSubscription && sub.SubscriptionStatus == types.SubscriptionStatusDraft {
+		return "", nil, false, ierr.NewError("cannot create invoice for draft subscription").
 			WithHint("Draft subscriptions must be activated before invoice creation").
 			WithReportableDetails(map[string]interface{}{
 				"subscription_id":     req.SubscriptionID,
-				"subscription_status": subscription.SubscriptionStatus,
+				"subscription_status": sub.SubscriptionStatus,
 			}).
 			Mark(ierr.ErrValidation)
 	}
@@ -2526,19 +2559,19 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 	// never blocks invoicing — worst case billing folds the last materialized
 	// values. Dep guard keeps partially-wired test services on the old path.
 	if s.EntitlementGrantRepo != nil && s.CustomerRepo != nil && s.SubRepo != nil && s.MeterUsageRepo != nil {
-		if err := NewAlertService(s.ServiceParams).RefreshEntitlementGrantsForCustomer(ctx, subscription.CustomerID); err != nil {
+		if err := NewAlertService(s.ServiceParams).RefreshEntitlementGrantsForCustomer(ctx, sub.CustomerID); err != nil {
 			s.Logger.Error(ctx, "entitlement grant refresh before invoicing failed; using last materialized overage",
-				"subscription_id", subscription.ID, "error", err)
+				"subscription_id", sub.ID, "error", err)
 		}
 	}
 
 	// Draft-first: create zero-dollar draft (idempotent; returns existing if same period)
 	// Use ToDraftRequest to build from pre-fetched subscription, avoiding redundant DB fetch
 	draftReq := req.ToDraftRequest(
-		subscription.GetInvoicingCustomerID(),
-		subscription.ID,
-		subscription.Currency,
-		string(subscription.BillingPeriod),
+		sub.GetInvoicingCustomerID(),
+		sub.ID,
+		sub.Currency,
+		string(sub.BillingPeriod),
 	)
 
 	// If the flow type is subscription creation, set the billing reason to the request billing reason
@@ -2551,10 +2584,10 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 		}
 	}
 
-	draftReq.SubscriptionCustomerID = &subscription.CustomerID
+	draftReq.SubscriptionCustomerID = &sub.CustomerID
 	draft, err := s.CreateEmptyDraftInvoice(ctx, draftReq)
 	if err != nil {
-		return nil, nil, err
+		return "", nil, false, err
 	}
 
 	// Populate draft with usage and line items; if zero-dollar, marked SKIPPED
@@ -2562,25 +2595,14 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 	if req.OpeningInvoiceAdjustmentAmount != nil && req.OpeningInvoiceAdjustmentAmount.GreaterThan(decimal.Zero) {
 		computeOverride = &dto.InvoiceComputeRequest{OpeningInvoiceAdjustmentAmount: req.OpeningInvoiceAdjustmentAmount}
 	}
-	_, skipped, err := s.ComputeInvoice(ctx, draft.ID, computeOverride)
+	_, skipped, err = s.ComputeInvoice(ctx, draft.ID, computeOverride)
 	if err != nil {
-		return nil, nil, err
+		return "", nil, false, err
 	}
 	if skipped {
-		return nil, subscription, nil
+		return draft.ID, sub, true, nil
 	}
-
-	// Process: finalize, sync, attempt payment
-	if err := s.ProcessDraftInvoice(ctx, draft.ID, paymentParams, subscription, flowType); err != nil {
-		return nil, nil, err
-	}
-
-	// Return populated invoice (re-fetch for final state)
-	inv, err := s.InvoiceRepo.Get(ctx, draft.ID)
-	if err != nil {
-		return nil, nil, err
-	}
-	return dto.NewInvoiceResponse(inv), subscription, nil
+	return draft.ID, sub, false, nil
 }
 
 // CreatePreviewInvoice builds the invoice a CreateInvoice request would produce —
