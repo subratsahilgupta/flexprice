@@ -1,25 +1,19 @@
-package analytics
+package clickhouse
 
 import (
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/flexprice/flexprice/internal/domain/analytics"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
 const chSecondLayout = "2006-01-02 15:04:05"
 
-var eventsVolumeMetric = &BillingMetric{
-	Metric:     types.MetricEventsVolume,
-	Dimensions: map[string]string{"meter_id": "meter_id"},
-	Shapes:     []types.Shape{types.ShapeTimeseries, types.ShapeBreakdown},
-	Build:      buildEventsVolume,
-}
-
 // buildEventsVolume reads raw meter_usage; no FINAL.
-func buildEventsVolume(in BuildInput) (*ReportQuery, error) {
+func buildEventsVolume(in buildInput) (*reportQuery, error) {
 	rv := in.RV
 	if rv.Compare != "" {
 		return nil, ierr.NewError("events_volume does not support compare").
@@ -71,19 +65,19 @@ func buildEventsVolume(in BuildInput) (*ReportQuery, error) {
 	}
 
 	var selects, groups []string
-	var cols []ReportColumn
+	var cols []analytics.ReportColumn
 	if timeseries {
 		selects = append(selects, "formatDateTime("+grainFn+"(timestamp, 'UTC'), "+bucketFormat+", 'UTC') AS bucket")
 		groups = append(groups, "bucket")
-		cols = append(cols, ReportColumn{Name: "bucket", Type: types.ColumnTypeDatetime, Role: types.ColumnRoleDimension})
+		cols = append(cols, analytics.ReportColumn{Name: "bucket", Type: types.ColumnTypeDatetime, Role: types.ColumnRoleDimension})
 	}
 	if byMeter {
 		selects = append(selects, "meter_id")
 		groups = append(groups, "meter_id")
-		cols = append(cols, ReportColumn{Name: "meter_id", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension})
+		cols = append(cols, analytics.ReportColumn{Name: "meter_id", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension})
 	}
 	selects = append(selects, "toString(count()) AS events_volume")
-	cols = append(cols, ReportColumn{Name: string(types.MetricEventsVolume), Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric})
+	cols = append(cols, analytics.ReportColumn{Name: string(types.MetricEventsVolume), Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric})
 
 	var b strings.Builder
 	b.WriteString("SELECT " + strings.Join(selects, ", "))
@@ -103,5 +97,5 @@ func buildEventsVolume(in BuildInput) (*ReportQuery, error) {
 	default:
 		b.WriteString(limitClause(in.MaxRows))
 	}
-	return &ReportQuery{SQL: b.String(), Params: in.Params, Columns: cols, TopN: topN}, nil
+	return &reportQuery{SQL: b.String(), Params: in.Params, Columns: cols, TopN: topN}, nil
 }

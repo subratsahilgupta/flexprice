@@ -2,7 +2,6 @@ package service
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -22,7 +21,7 @@ func reportsSvc(repo *testutil.InMemoryReportsRepo) AnalyticsService {
 }
 
 func TestListReports(t *testing.T) {
-	res, err := reportsSvc(&testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}).ListReports(billingCtx())
+	res, err := reportsSvc(&testutil.InMemoryReportsRepo{On: true}).ListReports(billingCtx())
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Items)
 	assert.Equal(t, "invoice_total", res.Items[0].Key)
@@ -30,7 +29,7 @@ func TestListReports(t *testing.T) {
 }
 
 func TestListReports_VariantFieldsOnlyWhereSet(t *testing.T) {
-	res, err := reportsSvc(&testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}).ListReports(billingCtx())
+	res, err := reportsSvc(&testutil.InMemoryReportsRepo{On: true}).ListReports(billingCtx())
 	require.NoError(t, err)
 	raw := map[string]map[string]any{}
 	for _, it := range res.Items {
@@ -60,13 +59,13 @@ func TestListReports_DisabledIs403(t *testing.T) {
 }
 
 func TestRunReport_UnknownIs404(t *testing.T) {
-	_, err := reportsSvc(&testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}).RunReport(billingCtx(), "nope", &dto.ReportQueryRequest{Shape: "scalar", Range: "2026-09-01..2026-10-01"})
+	_, err := reportsSvc(&testutil.InMemoryReportsRepo{On: true}).RunReport(billingCtx(), "nope", &dto.ReportQueryRequest{Shape: "scalar", Range: "2026-09-01..2026-10-01"})
 	require.Error(t, err)
 	assert.True(t, ierr.IsNotFound(err))
 }
 
 func TestRunReport_RejectsDisallowed(t *testing.T) {
-	svc := reportsSvc(&testutil.InMemoryReportsRepo{On: true, DB: "reports_db"})
+	svc := reportsSvc(&testutil.InMemoryReportsRepo{On: true})
 	for _, req := range []*dto.ReportQueryRequest{
 		{Shape: "histogram", Range: "2026-09-01..2026-10-01"},
 		{Shape: "breakdown", Dimensions: []string{"meter_id"}, Range: "2026-09-01..2026-10-01"},
@@ -81,7 +80,7 @@ func TestRunReport_RejectsDisallowed(t *testing.T) {
 }
 
 func TestRunReport_CompareAddsChangeAndMeta(t *testing.T) {
-	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Rows: [][]string{{"usd", "110", "100"}, {"eur", "5", "0"}, {"inr", "x", "1"}, {"usd", "0", "4"}}}
+	repo := &testutil.InMemoryReportsRepo{On: true, Columns: reportCols("currency", "invoice_total", "invoice_total_prev"), Rows: [][]string{{"usd", "110", "100"}, {"eur", "5", "0"}, {"inr", "x", "1"}, {"usd", "0", "4"}}}
 	res, err := reportsSvc(repo).RunReport(billingCtx(), "invoice_total", &dto.ReportQueryRequest{Shape: "scalar", Range: "2026-09-01..2026-10-01", Compare: "previous_period"})
 	require.NoError(t, err)
 	names := []string{}
@@ -97,38 +96,40 @@ func TestRunReport_CompareAddsChangeAndMeta(t *testing.T) {
 	assert.Equal(t, "2026-10-01T00:00:00Z", res.Meta.To)
 	assert.Equal(t, "2026-08-01T00:00:00Z", res.Meta.PrevFrom)
 	assert.Equal(t, "2026-09-01T00:00:00Z", res.Meta.PrevTo)
-	assert.Equal(t, "2026-08-01 00:00:00.000000", repo.Last.Params["prev_from"])
+	assert.Equal(t, "previous_period", repo.Last.Compare)
 }
 
 func TestRunReport_CurrencyBecomesFilter(t *testing.T) {
-	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}
+	repo := &testutil.InMemoryReportsRepo{On: true}
 	_, err := reportsSvc(repo).RunReport(billingCtx(), "invoice_total", &dto.ReportQueryRequest{Shape: "scalar", Range: "2026-09-01..2026-10-01", Currency: "usd"})
 	require.NoError(t, err)
-	assert.Contains(t, repo.Last.SQL, "currency IN ({f0_0:String})")
-	assert.Equal(t, "usd", repo.Last.Params["f0_0"])
+	require.Len(t, repo.Last.Filters, 1)
+	assert.Equal(t, "currency", repo.Last.Filters[0].Field)
+	assert.Equal(t, []string{"usd"}, repo.Last.Filters[0].Value)
 }
 
 func TestRunReport_OmittedGrainUsesFirstCatalogGrain(t *testing.T) {
-	for key, want := range map[string]string{"arpu": "toStartOfMonth", "days_to_pay": "toMonday"} {
-		repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}
+	for key, want := range map[string]types.Grain{"arpu": types.GrainMonth, "days_to_pay": types.GrainWeek} {
+		repo := &testutil.InMemoryReportsRepo{On: true}
 		_, err := reportsSvc(repo).RunReport(billingCtx(), key, &dto.ReportQueryRequest{Shape: "timeseries", Range: "2026-09-01..2026-10-01"})
 		require.NoError(t, err, key)
-		assert.Contains(t, repo.Last.SQL, want, key)
+		assert.Equal(t, want, repo.Last.Time.Grain, key)
 	}
 }
 
 func TestRunReport_CurrencyFilterOnCustomReports(t *testing.T) {
 	for _, key := range []string{"net_billing", "active_customers"} {
-		repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}
+		repo := &testutil.InMemoryReportsRepo{On: true}
 		_, err := reportsSvc(repo).RunReport(billingCtx(), key, &dto.ReportQueryRequest{Shape: "scalar", Range: "2026-09-01..2026-10-01", Currency: "usd"})
 		require.NoError(t, err, key)
-		assert.Contains(t, repo.Last.SQL, ".currency IN ({f0_0:String})", key)
-		assert.Equal(t, "usd", repo.Last.Params["f0_0"], key)
+		require.Len(t, repo.Last.Filters, 1, key)
+		assert.Equal(t, "currency", repo.Last.Filters[0].Field, key)
+		assert.Equal(t, []string{"usd"}, repo.Last.Filters[0].Value, key)
 	}
 }
 
 func TestRunReport_NoCompareNoMetaPrev(t *testing.T) {
-	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Rows: [][]string{{"usd", "1"}}}
+	repo := &testutil.InMemoryReportsRepo{On: true, Columns: reportCols("currency", "invoice_total"), Rows: [][]string{{"usd", "1"}}}
 	res, err := reportsSvc(repo).RunReport(billingCtx(), "invoice_total", &dto.ReportQueryRequest{Shape: "scalar", Range: "2026-09-01..2026-10-01"})
 	require.NoError(t, err)
 	assert.Empty(t, res.Meta.PrevFrom)
@@ -137,7 +138,8 @@ func TestRunReport_NoCompareNoMetaPrev(t *testing.T) {
 
 func TestRunReport_ValidationRules(t *testing.T) {
 	const rng = "2026-09-01..2026-10-01"
-	svc := reportsSvc(&testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Max: 100})
+	cols := append(reportCols("customer_id", "currency", "invoice_total"), analytics.ReportColumn{Name: "invoice_total_prev", Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric})
+	svc := reportsSvc(&testutil.InMemoryReportsRepo{On: true, Max: 100, Columns: cols})
 	cases := map[string]*dto.ReportQueryRequest{
 		"negative limit":      {Shape: "breakdown", Range: rng, Limit: -1},
 		"limit over max":      {Shape: "breakdown", Range: rng, Limit: 101},
@@ -193,37 +195,20 @@ func runEventsVolume(t *testing.T, repo *testutil.InMemoryReportsRepo, req *dto.
 	return reportsSvc(repo).RunReport(billingCtx(), "events_volume", req)
 }
 
-func TestRunReport_EventsVolumeColumnsAndSQL(t *testing.T) {
+func TestRunReport_EventsVolumeResolvedView(t *testing.T) {
 	cases := []struct {
 		req  *dto.ReportQueryRequest
+		dims []string
 		cols []string
 		row  []string
-		want []string
-		not  []string
 	}{
-		{
-			&dto.ReportQueryRequest{Shape: "timeseries", Grain: "day"},
-			[]string{"bucket", "events_volume"}, []string{"2026-09-01T00:00:00Z", "7"},
-			[]string{"GROUP BY bucket ORDER BY bucket"}, []string{"meter_id"},
-		},
-		{
-			&dto.ReportQueryRequest{Shape: "timeseries", Grain: "day", Dimensions: []string{"meter_id"}},
-			[]string{"bucket", "meter_id", "events_volume"}, []string{"2026-09-01T00:00:00Z", "m1", "7"},
-			[]string{"GROUP BY bucket, meter_id ORDER BY bucket, meter_id"}, nil,
-		},
-		{
-			&dto.ReportQueryRequest{Shape: "breakdown", Dimensions: []string{"meter_id"}},
-			[]string{"meter_id", "events_volume"}, []string{"m1", "7"},
-			[]string{"GROUP BY meter_id ORDER BY count() DESC, meter_id"}, nil,
-		},
-		{
-			&dto.ReportQueryRequest{Shape: "breakdown"},
-			[]string{"meter_id", "events_volume"}, []string{"m1", "7"},
-			[]string{"GROUP BY meter_id"}, nil,
-		},
+		{&dto.ReportQueryRequest{Shape: "timeseries", Grain: "day"}, nil, []string{"bucket", "events_volume"}, []string{"2026-09-01T00:00:00Z", "7"}},
+		{&dto.ReportQueryRequest{Shape: "timeseries", Grain: "day", Dimensions: []string{"meter_id"}}, []string{"meter_id"}, []string{"bucket", "meter_id", "events_volume"}, []string{"2026-09-01T00:00:00Z", "m1", "7"}},
+		{&dto.ReportQueryRequest{Shape: "breakdown", Dimensions: []string{"meter_id"}}, []string{"meter_id"}, []string{"meter_id", "events_volume"}, []string{"m1", "7"}},
+		{&dto.ReportQueryRequest{Shape: "breakdown"}, []string{"meter_id"}, []string{"meter_id", "events_volume"}, []string{"m1", "7"}},
 	}
 	for _, c := range cases {
-		repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Rows: [][]string{c.row}}
+		repo := &testutil.InMemoryReportsRepo{On: true, Columns: reportCols(c.cols...), Rows: [][]string{c.row}}
 		res, err := runEventsVolume(t, repo, c.req)
 		require.NoError(t, err, c.req.Shape)
 		names := []string{}
@@ -232,24 +217,10 @@ func TestRunReport_EventsVolumeColumnsAndSQL(t *testing.T) {
 		}
 		assert.Equal(t, c.cols, names, c.req.Shape)
 		assert.Equal(t, [][]string{c.row}, res.Rows)
-		assert.Contains(t, repo.Last.SQL, "FROM reports_db.meter_usage WHERE")
-		assert.NotContains(t, repo.Last.SQL, "FINAL")
-		assert.NotContains(t, repo.Last.SQL, "_peerdb_is_deleted")
-		for _, f := range c.want {
-			assert.Contains(t, repo.Last.SQL, f)
-		}
-		for _, f := range c.not {
-			assert.NotContains(t, repo.Last.SQL[:strings.Index(repo.Last.SQL, " FROM")], f)
-		}
+		assert.Equal(t, []types.Metric{types.MetricEventsVolume}, repo.Last.Metrics)
+		assert.Equal(t, types.Shape(c.req.Shape), repo.Last.Shape)
+		assert.Equal(t, c.dims, repo.Last.Dimensions, c.req.Shape)
 	}
-}
-
-func TestRunReport_EventsVolumeRowCap(t *testing.T) {
-	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Max: 1, Rows: [][]string{{"a", "1"}, {"b", "2"}}}
-	_, err := runEventsVolume(t, repo, &dto.ReportQueryRequest{Shape: "breakdown", Dimensions: []string{"meter_id"}})
-	require.Error(t, err)
-	assert.True(t, ierr.IsValidation(err))
-	assert.Contains(t, repo.Last.SQL, "LIMIT 2")
 }
 
 func TestRunReport_EventsVolumeRejectsCompareAndCurrency(t *testing.T) {
@@ -259,20 +230,20 @@ func TestRunReport_EventsVolumeRejectsCompareAndCurrency(t *testing.T) {
 		{Shape: "timeseries", Grain: "day", Filters: []dto.ReportFilter{{Field: "currency", Op: "eq", Value: []string{"usd"}}}},
 		{Shape: "scalar"},
 	} {
-		_, err := runEventsVolume(t, &testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}, req)
+		_, err := runEventsVolume(t, &testutil.InMemoryReportsRepo{On: true}, req)
 		require.Error(t, err)
 		assert.True(t, ierr.IsValidation(err), "%+v", req)
 	}
 }
 
 func TestRunReport_EventsVolumeMeterFilterIsParams(t *testing.T) {
-	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}
+	repo := &testutil.InMemoryReportsRepo{On: true}
 	_, err := runEventsVolume(t, repo, &dto.ReportQueryRequest{
 		Shape: "timeseries", Grain: "day",
 		Filters: []dto.ReportFilter{{Field: "meter_id", Op: "in", Value: []string{"m1", "m2' OR 1=1"}}},
 	})
 	require.NoError(t, err)
-	assert.Contains(t, repo.Last.SQL, "meter_id IN ({f0_0:String}, {f0_1:String})")
-	assert.NotContains(t, repo.Last.SQL, "OR 1=1")
-	assert.Equal(t, "m2' OR 1=1", repo.Last.Params["f0_1"])
+	require.Len(t, repo.Last.Filters, 1)
+	assert.Equal(t, "meter_id", repo.Last.Filters[0].Field)
+	assert.Equal(t, []string{"m1", "m2' OR 1=1"}, repo.Last.Filters[0].Value)
 }

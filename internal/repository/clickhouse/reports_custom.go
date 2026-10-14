@@ -1,17 +1,18 @@
-package analytics
+package clickhouse
 
 import (
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/flexprice/flexprice/internal/domain/analytics"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
 const bucketFormat = "'%Y-%m-%dT%H:%i:%SZ'"
 
-func rejectCustom(in BuildInput, metric types.Metric, shapes ...types.Shape) error {
+func rejectCustom(in buildInput, metric types.Metric, shapes ...types.Shape) error {
 	rv := in.RV
 	if rv.Compare != "" {
 		return ierr.NewErrorf("metric %q does not support compare", metric).
@@ -36,7 +37,7 @@ func rejectCustom(in BuildInput, metric types.Metric, shapes ...types.Shape) err
 }
 
 // currencyCond binds currency filters as params.
-func currencyCond(in BuildInput, alias string) string {
+func currencyCond(in buildInput, alias string) string {
 	var conds []string
 	for i, f := range in.RV.Filters {
 		if f == nil {
@@ -68,7 +69,7 @@ func limitClause(maxRows int) string {
 }
 
 // Invoices plus negative finalized credit notes.
-func buildNetBilling(m types.Metric, invoiceTime func(prefix string) string, in BuildInput) (*ReportQuery, error) {
+func buildNetBilling(m types.Metric, invoiceTime func(prefix string) string, in buildInput) (*reportQuery, error) {
 	if err := rejectCustom(in, m, types.ShapeScalar, types.ShapeTimeseries); err != nil {
 		return nil, err
 	}
@@ -79,13 +80,13 @@ func buildNetBilling(m types.Metric, invoiceTime func(prefix string) string, in 
 	timeseries := in.RV.Shape == types.ShapeTimeseries
 
 	var b strings.Builder
-	var cols []ReportColumn
+	var cols []analytics.ReportColumn
 	b.WriteString("SELECT ")
 	groups := "d_currency"
 	if timeseries {
 		b.WriteString("ifNull(formatDateTime(toDateTime(" + grainFn + "(b, 'UTC'), 'UTC'), " + bucketFormat + "), '') AS bucket, ")
 		groups = "bucket, d_currency"
-		cols = append(cols, ReportColumn{Name: "bucket", Type: types.ColumnTypeDatetime, Role: types.ColumnRoleDimension})
+		cols = append(cols, analytics.ReportColumn{Name: "bucket", Type: types.ColumnTypeDatetime, Role: types.ColumnRoleDimension})
 	}
 	b.WriteString("ifNull(toString(c), '') AS d_currency, ifNull(toString(sum(v)), '') AS m_value FROM (")
 	b.WriteString("SELECT nullIf(" + invoiceTime("") + ", " + chEpoch + ") AS b, currency AS c, toDecimal128(total, 9) AS v")
@@ -100,14 +101,14 @@ func buildNetBilling(m types.Metric, invoiceTime func(prefix string) string, in 
 	b.WriteString(") GROUP BY " + groups + " ORDER BY " + groups + limitClause(in.MaxRows))
 
 	cols = append(cols,
-		ReportColumn{Name: "currency", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension},
-		ReportColumn{Name: string(m), Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric},
+		analytics.ReportColumn{Name: "currency", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension},
+		analytics.ReportColumn{Name: string(m), Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric},
 	)
-	return &ReportQuery{SQL: b.String(), Params: in.Params, Columns: cols}, nil
+	return &reportQuery{SQL: b.String(), Params: in.Params, Columns: cols}, nil
 }
 
 // Customers with subscriptions overlapping window.
-func buildActiveCustomers(in BuildInput) (*ReportQuery, error) {
+func buildActiveCustomers(in buildInput) (*reportQuery, error) {
 	if err := rejectCustom(in, types.MetricActiveCustomers, types.ShapeScalar); err != nil {
 		return nil, err
 	}
@@ -123,7 +124,7 @@ func buildActiveCustomers(in BuildInput) (*ReportQuery, error) {
 	b.WriteString(currencyCond(in, "s"))
 	b.WriteString(" GROUP BY d_currency ORDER BY d_currency" + limitClause(in.MaxRows))
 
-	return &ReportQuery{SQL: b.String(), Params: in.Params, Columns: []ReportColumn{
+	return &reportQuery{SQL: b.String(), Params: in.Params, Columns: []analytics.ReportColumn{
 		{Name: "currency", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension},
 		{Name: string(types.MetricActiveCustomers), Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric},
 	}}, nil

@@ -99,18 +99,16 @@ func TestResolveVariables_CarriesFamily(t *testing.T) {
 	assert.Equal(t, types.FamilyBilling, rv.Family)
 }
 
-func TestLookupBillingMetric_InvoiceTotalUsesConstants(t *testing.T) {
+func TestLookupBillingMetric_InvoiceTotalForcesCurrency(t *testing.T) {
 	bm, ok := LookupBillingMetric(types.MetricInvoiceTotal)
 	require.True(t, ok)
-	assert.Equal(t, "invoices", bm.Table)
-	assert.Contains(t, bm.Where, "invoice_status = '"+string(types.InvoiceStatusFinalized)+"'")
 	assert.True(t, bm.Currency)
 }
 
 func TestBillingValidate_SnapshotRejectsTimeseries(t *testing.T) {
 	withMetric(t, &BillingMetric{
-		Metric: "test_snap_v", Table: "invoices", TimeCol: "finalized_at", Measure: "sum(total)", Agg: "sum", Arg: "total",
-		Dimensions: map[string]string{"currency": "currency"},
+		Metric:     "test_snap_v",
+		Dimensions: []string{"currency"},
 		Shapes:     []types.Shape{types.ShapeScalar, types.ShapeTimeseries}, Snapshot: true,
 	})
 	d := billingDef(types.ShapeTimeseries)

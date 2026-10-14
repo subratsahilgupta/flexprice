@@ -54,7 +54,7 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 
 	cfg := &config.Configuration{
 		ClickHouse: config.ClickHouseConfig{Address: address, Username: username, Password: password, Database: "default", MaxMemoryUsage: 1},
-		Reports:    config.ReportsConfig{Database: db, Username: username, Password: password},
+		Reports:    config.ReportsConfig{Database: db, Username: username, Password: password, MaxResultRows: 100},
 	}
 	repo, err := NewReportsRepository(cfg, nil)
 	require.NoError(t, err)
@@ -74,11 +74,9 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 				Grain: grain,
 			},
 		}
-		q, err := analytics.BuildBillingQuery(rv, repo.Database(), "t1", "e1", 100)
+		res, err := repo.RunReport(ctx, rv, "t1", "e1")
 		require.NoError(t, err)
-		rows, err := repo.Run(ctx, q)
-		require.NoError(t, err)
-		return rows
+		return res.Rows
 	}
 
 	// Dedup, status, tenant, epoch filters; period_start attribution.
@@ -118,11 +116,9 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 			Time:    analytics.TimeSpec{From: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Grain: grain},
 			Compare: compare,
 		}
-		q, err := analytics.BuildBillingQuery(rv, repo.Database(), "t1", "e1", 100)
+		res, err := repo.RunReport(ctx, rv, "t1", "e1")
 		require.NoError(t, err)
-		rows, err := repo.Run(ctx, q)
-		require.NoError(t, err)
-		return rows
+		return res.Rows
 	}
 
 	assert.Equal(t, [][]string{{"inr", "5", "0"}, {"usd", "110", "13"}}, runCmp(types.ShapeScalar, "", "previous_period"))
@@ -203,7 +199,7 @@ func TestReportsRepository_GenericReports(t *testing.T) {
 
 	cfg := &config.Configuration{
 		ClickHouse: config.ClickHouseConfig{Address: address, Username: username, Password: password, Database: "default", MaxMemoryUsage: 1},
-		Reports:    config.ReportsConfig{Database: db, Username: username, Password: password},
+		Reports:    config.ReportsConfig{Database: db, Username: username, Password: password, MaxResultRows: 100},
 	}
 	repo, err := NewReportsRepository(cfg, nil)
 	require.NoError(t, err)
@@ -216,11 +212,9 @@ func TestReportsRepository_GenericReports(t *testing.T) {
 				To:   time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
 			},
 		}
-		q, err := analytics.BuildBillingQuery(rv, repo.Database(), "t1", "e1", 100)
+		res, err := repo.RunReport(ctx, rv, "t1", "e1")
 		require.NoError(t, err)
-		rows, err := repo.Run(ctx, q)
-		require.NoError(t, err)
-		return rows
+		return res.Rows
 	}
 
 	// Snapshot ignores the window.
@@ -253,11 +247,9 @@ func TestReportsRepository_GenericReports(t *testing.T) {
 			Grain: types.GrainMonth,
 		},
 	}
-	mq, err := analytics.BuildBillingQuery(monthly, repo.Database(), "t1", "e1", 100)
+	mres, err := repo.RunReport(ctx, monthly, "t1", "e1")
 	require.NoError(t, err)
-	mrows, err := repo.Run(ctx, mq)
-	require.NoError(t, err)
-	assert.Equal(t, [][]string{{"2026-09-01T00:00:00Z", "usd", "170"}}, mrows)
+	assert.Equal(t, [][]string{{"2026-09-01T00:00:00Z", "usd", "170"}}, mres.Rows)
 }
 
 func TestReportsRepository_CustomReports(t *testing.T) {
@@ -317,7 +309,7 @@ func TestReportsRepository_CustomReports(t *testing.T) {
 
 	cfg := &config.Configuration{
 		ClickHouse: config.ClickHouseConfig{Address: address, Username: username, Password: password, Database: "default", MaxMemoryUsage: 1},
-		Reports:    config.ReportsConfig{Database: db, Username: username, Password: password},
+		Reports:    config.ReportsConfig{Database: db, Username: username, Password: password, MaxResultRows: 100},
 	}
 	repo, err := NewReportsRepository(cfg, nil)
 	require.NoError(t, err)
@@ -330,11 +322,9 @@ func TestReportsRepository_CustomReports(t *testing.T) {
 		if len(compare) > 0 {
 			rv.Compare = compare[0]
 		}
-		q, err := analytics.BuildBillingQuery(rv, repo.Database(), "t1", "e1", 100)
+		res, err := repo.RunReport(ctx, rv, "t1", "e1")
 		require.NoError(t, err)
-		rows, err := repo.Run(ctx, q)
-		require.NoError(t, err)
-		return rows
+		return res.Rows
 	}
 	sep := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	oct := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
@@ -406,7 +396,7 @@ func TestReportsRepository_EventsVolume(t *testing.T) {
 
 	cfg := &config.Configuration{
 		ClickHouse: config.ClickHouseConfig{Address: address, Username: username, Password: password, Database: "default", MaxMemoryUsage: 1},
-		Reports:    config.ReportsConfig{Database: db, Username: username, Password: password},
+		Reports:    config.ReportsConfig{Database: db, Username: username, Password: password, MaxResultRows: 100},
 	}
 	repo, err := NewReportsRepository(cfg, nil)
 	require.NoError(t, err)
@@ -421,11 +411,9 @@ func TestReportsRepository_EventsVolume(t *testing.T) {
 				Grain: grain,
 			},
 		}
-		q, err := analytics.BuildBillingQuery(rv, repo.Database(), tenant, "e1", 100)
+		res, err := repo.RunReport(ctx, rv, tenant, "e1")
 		require.NoError(t, err)
-		rows, err := repo.Run(ctx, q)
-		require.NoError(t, err)
-		return rows
+		return res.Rows
 	}
 
 	assert.Equal(t, [][]string{

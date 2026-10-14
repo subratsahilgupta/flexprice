@@ -13,7 +13,7 @@ import (
 )
 
 func TestListReports_MaxRangeDaysOnlyEventsVolume(t *testing.T) {
-	res, err := reportsSvc(&testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}).ListReports(billingCtx())
+	res, err := reportsSvc(&testutil.InMemoryReportsRepo{On: true}).ListReports(billingCtx())
 	require.NoError(t, err)
 	for _, it := range res.Items {
 		b, err := json.Marshal(it)
@@ -29,7 +29,7 @@ func TestListReports_MaxRangeDaysOnlyEventsVolume(t *testing.T) {
 }
 
 func TestRunReport_EventsVolumeMaxRange(t *testing.T) {
-	svc := reportsSvc(&testutil.InMemoryReportsRepo{On: true, DB: "reports_db"})
+	svc := reportsSvc(&testutil.InMemoryReportsRepo{On: true})
 
 	_, err := svc.RunReport(billingCtx(), "events_volume", &dto.ReportQueryRequest{Shape: "timeseries", Range: "2026-09-01..2026-09-09"})
 	require.Error(t, err)
