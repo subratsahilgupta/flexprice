@@ -1,11 +1,13 @@
 package service
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	domainCheckout "github.com/flexprice/flexprice/internal/domain/checkout"
+	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -221,4 +223,105 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_CronSkipsWhilePending() 
 	s.Nil(inv, "cron must not raise a second trial-end invoice while checkout is pending")
 	got, _ := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
 	s.Equal(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
+}
+
+func (s *SubscriptionServiceSuite) invoicesFor(subscriptionID string) []*invoice.Invoice {
+	filter := types.NewNoLimitInvoiceFilter()
+	filter.SubscriptionID = subscriptionID
+	invoices, err := s.GetStores().InvoiceRepo.List(s.GetContext(), filter)
+	s.Require().NoError(err)
+	return invoices
+}
+
+func (s *SubscriptionServiceSuite) startTrialEndCheckout() (*subscription.Subscription, string, string) {
+	sub := s.seedTrialingFixedFeeSubscription(decimal.NewFromInt(200))
+	modSvc := NewSubscriptionModificationService(s.service.(*subscriptionService).ServiceParams)
+	resp, err := modSvc.Execute(s.GetContext(), sub.ID, s.trialEndCheckoutRequest())
+	s.Require().NoError(err)
+	return sub, resp.CheckoutSession.ID, lo.FromPtr(resp.CheckoutSession.CheckoutInvoiceID)
+}
+
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_PaidEndsTrialAndActivates() {
+	ctx := s.GetContext()
+	sub, sessionID, invoiceID := s.startTrialEndCheckout()
+	checkoutSvc := &checkoutSessionService{ServiceParams: s.service.(*subscriptionService).ServiceParams}
+
+	s.Require().NoError(checkoutSvc.CompleteCheckoutSession(ctx, sessionID, &types.CheckoutProviderResult{ProviderPaymentIntentID: "pi_trial_1"}))
+
+	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.SubscriptionStatusActive, got.SubscriptionStatus)
+	inv, err := s.GetStores().InvoiceRepo.Get(ctx, invoiceID)
+	s.Require().NoError(err)
+	s.Equal(types.InvoiceStatusFinalized, inv.InvoiceStatus)
+	s.Equal(types.PaymentStatusSucceeded, inv.PaymentStatus)
+	s.True(got.TrialEnd.Equal(lo.FromPtr(inv.PeriodStart)), "trial ends where the paid period starts")
+	s.True(got.CurrentPeriodEnd.Equal(lo.FromPtr(inv.PeriodEnd)))
+}
+
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_DoubleCompleteIdempotent() {
+	ctx := s.GetContext()
+	sub, sessionID, invoiceID := s.startTrialEndCheckout()
+	params := s.service.(*subscriptionService).ServiceParams
+	checkoutSvc := &checkoutSessionService{ServiceParams: params}
+	s.Require().NoError(checkoutSvc.CompleteCheckoutSession(ctx, sessionID, &types.CheckoutProviderResult{ProviderPaymentIntentID: "pi_trial_2"}))
+	first, _ := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+
+	// A replay may stop at the session layer or reach apply again; neither may move the period.
+	_ = checkoutSvc.CompleteCheckoutSession(ctx, sessionID, &types.CheckoutProviderResult{ProviderPaymentIntentID: "pi_trial_2"})
+	modSvc := &subscriptionModificationService{serviceParams: params}
+	s.Require().NoError(modSvc.applyTrialEndConversion(ctx, sub.ID, invoiceID))
+
+	again, _ := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Equal(types.SubscriptionStatusActive, again.SubscriptionStatus)
+	s.True(again.CurrentPeriodStart.Equal(first.CurrentPeriodStart))
+	s.True(again.CurrentPeriodEnd.Equal(first.CurrentPeriodEnd))
+	finalizedTrialEnd := lo.Filter(s.invoicesFor(sub.ID), func(i *invoice.Invoice, _ int) bool {
+		return i.BillingReason == string(types.InvoiceBillingReasonSubscriptionTrialEnd) && i.InvoiceStatus == types.InvoiceStatusFinalized
+	})
+	s.Len(finalizedTrialEnd, 1, "exactly one finalized trial-end invoice")
+}
+
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_AbandonedLeavesTrial() {
+	ctx := s.GetContext()
+	sub, sessionID, invoiceID := s.startTrialEndCheckout()
+	checkoutSvc := &checkoutSessionService{ServiceParams: s.service.(*subscriptionService).ServiceParams}
+	session, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
+	s.Require().NoError(err)
+
+	s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, session, nil))
+
+	got, _ := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Equal(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
+	s.True(got.TrialEnd.Equal(*sub.TrialEnd), "trial end unchanged")
+	if inv, err := s.GetStores().InvoiceRepo.Get(ctx, invoiceID); err == nil {
+		s.NotEqual(types.InvoiceStatusFinalized, inv.InvoiceStatus, "unpaid draft never finalized")
+	}
+
+	// The cron owns the trial again once the session is gone.
+	inv, err := s.service.(*subscriptionService).ProcessSingleSubscriptionTrialEnd(ctx, got, got.TrialEnd.Add(time.Hour))
+	s.Require().NoError(err)
+	s.NotNil(inv)
+}
+
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_FailedPaymentLeavesTrial() {
+	ctx := s.GetContext()
+	sub, sessionID, _ := s.startTrialEndCheckout()
+	checkoutSvc := &checkoutSessionService{ServiceParams: s.service.(*subscriptionService).ServiceParams}
+	session, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
+	s.Require().NoError(err)
+
+	s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, session, errors.New("card_declined")))
+
+	got, _ := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Equal(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
+}
+
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_CompleteAfterCancelledRejected() {
+	ctx := s.GetContext()
+	sub, _, invoiceID := s.startTrialEndCheckout()
+	sub.SubscriptionStatus = types.SubscriptionStatusCancelled
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
+	modSvc := &subscriptionModificationService{serviceParams: s.service.(*subscriptionService).ServiceParams}
+	s.True(ierr.IsInvalidOperation(modSvc.applyTrialEndConversion(ctx, sub.ID, invoiceID)))
 }

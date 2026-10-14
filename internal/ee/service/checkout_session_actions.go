@@ -333,7 +333,11 @@ func (s *checkoutSessionService) completeModifySubscriptionCheckout(
 	paymentID := *session.CheckoutPaymentID
 
 	modSvc := &subscriptionModificationService{serviceParams: s.ServiceParams}
-	if err := modSvc.applyModifySubscriptionParams(ctx, params); err != nil {
+	if params.ModifyType == types.ModifySubscriptionTypeTrialEnd {
+		if err := modSvc.applyTrialEndConversion(ctx, params.SubscriptionID, invoiceID); err != nil {
+			return err
+		}
+	} else if err := modSvc.applyModifySubscriptionParams(ctx, params); err != nil {
 		return err
 	}
 
