@@ -31,6 +31,31 @@ type stubAnalyticsService struct {
 	catalog *dto.ReportCatalogResponse
 	lastKey string
 	lastReq *dto.ReportQueryRequest
+
+	views    []*analytics.View
+	lastView *analytics.View
+	lastID   string
+}
+
+func (s *stubAnalyticsService) ListViews(_ context.Context, _ types.Family) ([]*analytics.View, error) {
+	return s.views, s.err
+}
+
+func (s *stubAnalyticsService) GetView(_ context.Context, _ string) (*analytics.View, error) {
+	if len(s.views) == 0 {
+		return nil, s.err
+	}
+	return s.views[0], s.err
+}
+
+func (s *stubAnalyticsService) UpdateView(_ context.Context, v *analytics.View) error {
+	s.lastView = v
+	return s.err
+}
+
+func (s *stubAnalyticsService) DeleteView(_ context.Context, id string) error {
+	s.lastID = id
+	return s.err
 }
 
 func (s *stubAnalyticsService) ListReports(_ context.Context) (*dto.ReportCatalogResponse, error) {
