@@ -73,29 +73,20 @@ func (s *analyticsService) executeBilling(ctx context.Context, rv *analytics.Res
 			WithHint("Financial reports are not configured for this deployment").
 			Mark(ierr.ErrPermissionDenied)
 	}
-	maxRows := s.ReportsRepo.MaxRows()
-	q, err := analytics.BuildBillingQuery(rv, s.ReportsRepo.Database(), types.GetTenantID(ctx), types.GetEnvironmentID(ctx), maxRows)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := s.ReportsRepo.Run(ctx, q)
+	out, err := s.ReportsRepo.RunReport(ctx, rv, types.GetTenantID(ctx), types.GetEnvironmentID(ctx))
 	if err != nil {
 		if s.Logger != nil {
 			s.Logger.Error(ctx, "billing analytics execution failed", "error", err)
 		}
 		return nil, err
 	}
-	if !q.TopN && maxRows > 0 && len(rows) > maxRows {
-		return nil, ierr.NewErrorf("result exceeds %d rows", maxRows).
-			WithHint("Narrow the time range or remove dimensions").
-			Mark(ierr.ErrValidation)
-	}
+	rows := out.Rows
 	if rows == nil {
 		rows = [][]string{}
 	}
 
 	res := dto.AnalyticsQueryResult{Rows: rows, Meta: dto.AnalyticsQueryMeta{QuerySource: "billing"}}
-	for _, c := range q.Columns {
+	for _, c := range out.Columns {
 		res.Columns = append(res.Columns, dto.NewAnalyticsColumn(c.Name, c.Type, c.Role, ""))
 	}
 	if rv.Shape == types.ShapeBreakdown {

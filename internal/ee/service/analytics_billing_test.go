@@ -34,6 +34,17 @@ func billingView(shape types.Shape, dims ...string) *analytics.ViewDefinition {
 	}
 }
 
+func reportCols(names ...string) []analytics.ReportColumn {
+	cols := make([]analytics.ReportColumn, len(names))
+	for i, n := range names {
+		cols[i] = analytics.ReportColumn{Name: n, Type: types.ColumnTypeString, Role: types.ColumnRoleDimension}
+	}
+	if len(cols) > 0 {
+		cols[len(cols)-1].Type, cols[len(cols)-1].Role = types.ColumnTypeDecimal, types.ColumnRoleMetric
+	}
+	return cols
+}
+
 func TestExecuteView_BillingDisabledIs403(t *testing.T) {
 	repo := &testutil.InMemoryReportsRepo{On: false}
 	_, err := newBillingSvc(repo).ExecuteView(billingCtx(), billingView(types.ShapeScalar), nil)
@@ -43,13 +54,14 @@ func TestExecuteView_BillingDisabledIs403(t *testing.T) {
 }
 
 func TestExecuteView_BillingScopesFromContext(t *testing.T) {
-	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Rows: [][]string{{"usd", "10"}}}
+	repo := &testutil.InMemoryReportsRepo{On: true, Columns: reportCols("currency", "invoice_total"), Rows: [][]string{{"usd", "10"}}}
 	res, err := newBillingSvc(repo).ExecuteView(billingCtx(), billingView(types.ShapeScalar), nil)
 	require.NoError(t, err)
 	require.NotNil(t, repo.Last)
-	assert.Equal(t, "tenant_1", repo.Last.Params["tenant_id"])
-	assert.Equal(t, "env_1", repo.Last.Params["environment_id"])
-	assert.Contains(t, repo.Last.SQL, "LIMIT 501")
+	assert.Equal(t, "tenant_1", repo.LastTenantID)
+	assert.Equal(t, "env_1", repo.LastEnvironmentID)
+	assert.Equal(t, types.ShapeScalar, repo.Last.Shape)
+	assert.Equal(t, []types.Metric{types.MetricInvoiceTotal}, repo.Last.Metrics)
 	assert.Equal(t, "billing", res.Meta.QuerySource)
 	require.Len(t, res.Columns, 2)
 	assert.Equal(t, "currency", res.Columns[0].Name)
@@ -57,16 +69,16 @@ func TestExecuteView_BillingScopesFromContext(t *testing.T) {
 	assert.Equal(t, [][]string{{"usd", "10"}}, res.Rows)
 }
 
-func TestExecuteView_BillingMissingTenantIs403(t *testing.T) {
-	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}
+func TestExecuteView_BillingRepoErrorPassesThrough(t *testing.T) {
+	repo := &testutil.InMemoryReportsRepo{On: true, Err: ierr.NewError("denied").Mark(ierr.ErrPermissionDenied)}
 	_, err := newBillingSvc(repo).ExecuteView(context.Background(), billingView(types.ShapeScalar), nil)
 	require.Error(t, err)
 	assert.True(t, ierr.IsPermissionDenied(err))
-	assert.Nil(t, repo.Last)
+	assert.Equal(t, "", repo.LastTenantID)
 }
 
 func TestExecuteView_BillingBreakdownSortAndLimit(t *testing.T) {
-	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Rows: [][]string{
+	repo := &testutil.InMemoryReportsRepo{On: true, Columns: reportCols("customer_id", "currency", "invoice_total"), Rows: [][]string{
 		{"c1", "usd", "5"}, {"c2", "usd", "50"}, {"c3", "usd", "20"},
 	}}
 	v := billingView(types.ShapeBreakdown, "customer_id")
@@ -78,31 +90,20 @@ func TestExecuteView_BillingBreakdownSortAndLimit(t *testing.T) {
 }
 
 func TestExecuteView_BillingOverflowIsValidationError(t *testing.T) {
-	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Max: 2, Rows: [][]string{{"usd", "1"}, {"inr", "2"}, {"eur", "3"}}}
+	repo := &testutil.InMemoryReportsRepo{On: true, Err: ierr.NewErrorf("result exceeds %d rows", 2).Mark(ierr.ErrValidation)}
 	_, err := newBillingSvc(repo).ExecuteView(billingCtx(), billingView(types.ShapeScalar), nil)
 	require.Error(t, err)
 	assert.True(t, ierr.IsValidation(err))
 }
 
-func TestExecuteView_BillingTopNSkipsOverflow(t *testing.T) {
-	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Max: 2, Rows: [][]string{
-		{"c1", "usd", "50"}, {"c2", "usd", "20"}, {"c3", "usd", "5"},
-	}}
-	v := billingView(types.ShapeBreakdown, "customer_id")
-	v.Limit = 2
-	res, err := newBillingSvc(repo).ExecuteView(billingCtx(), v, nil)
-	require.NoError(t, err)
-	assert.Len(t, res.Rows, 2)
-}
-
 func TestExecuteView_BillingRunErrorWithNilLogger(t *testing.T) {
-	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db", Err: ierr.NewError("boom").Mark(ierr.ErrDatabase)}
+	repo := &testutil.InMemoryReportsRepo{On: true, Err: ierr.NewError("boom").Mark(ierr.ErrDatabase)}
 	_, err := newBillingSvc(repo).ExecuteView(billingCtx(), billingView(types.ShapeScalar), nil)
 	require.Error(t, err)
 }
 
 func TestExecuteView_BillingEmptyRowsNotNil(t *testing.T) {
-	repo := &testutil.InMemoryReportsRepo{On: true, DB: "reports_db"}
+	repo := &testutil.InMemoryReportsRepo{On: true}
 	res, err := newBillingSvc(repo).ExecuteView(billingCtx(), billingView(types.ShapeScalar), nil)
 	require.NoError(t, err)
 	assert.NotNil(t, res.Rows)

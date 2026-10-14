@@ -99,10 +99,8 @@ func TestResolveVariables_CarriesFamily(t *testing.T) {
 	assert.Equal(t, types.FamilyBilling, rv.Family)
 }
 
-func TestLookupBillingMetric_InvoiceTotalUsesConstants(t *testing.T) {
+func TestLookupBillingMetric_InvoiceTotalForcesCurrency(t *testing.T) {
 	bm, ok := LookupBillingMetric(types.MetricInvoiceTotal)
 	require.True(t, ok)
-	assert.Equal(t, "invoices", bm.Table)
-	assert.Contains(t, bm.Where, "invoice_status = '"+string(types.InvoiceStatusFinalized)+"'")
 	assert.True(t, bm.Currency)
 }

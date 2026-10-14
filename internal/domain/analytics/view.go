@@ -159,7 +159,7 @@ func (v ViewDefinition) validateBilling() error {
 		return ierr.NewErrorf("shape %q not supported by metric %q", v.Shape, bm.Metric).Mark(ierr.ErrValidation)
 	}
 	for i, d := range v.Dimensions {
-		if _, ok := bm.Dimensions[d]; !ok {
+		if !slices.Contains(bm.Dimensions, d) {
 			return ierr.NewErrorf("illegal dimension %q for metric %q", d, bm.Metric).Mark(ierr.ErrValidation)
 		}
 		if slices.Contains(v.Dimensions[:i], d) {
@@ -180,7 +180,7 @@ func (v ViewDefinition) validateBilling() error {
 		if f == nil {
 			continue
 		}
-		if _, ok := bm.Dimensions[f.Field]; !ok {
+		if !slices.Contains(bm.Dimensions, f.Field) {
 			return ierr.NewErrorf("illegal filter field %q for metric %q", f.Field, bm.Metric).Mark(ierr.ErrValidation)
 		}
 	}
