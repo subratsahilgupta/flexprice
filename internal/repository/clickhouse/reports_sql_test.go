@@ -331,7 +331,6 @@ func TestBuildBillingQuery_CustomBuildHook(t *testing.T) {
 }
 
 func TestBuildBillingQuery_InvoiceTotalIssued(t *testing.T) {
-	const issueTime = "nullIf(issue_date, toDateTime64(0, 6))"
 	rv := billingRV(types.ShapeTimeseries)
 	rv.Metrics = []types.Metric{types.MetricInvoiceTotalIssued}
 	rv.Compare = "previous_period"
