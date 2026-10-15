@@ -33055,6 +33055,11 @@
           },
           "subscription_id": {
             "type": "string"
+          },
+          "trial_end_at": {
+            "type": "string",
+            "description": "TrialEndAt is where a trial_end checkout starts the first paid period.",
+            "format": "date-time"
           }
         },
         "x-speakeasy-name-override": "ModifySubscriptionParams"

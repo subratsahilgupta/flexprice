@@ -31199,6 +31199,10 @@ const docTemplate = `{
                 },
                 "subscription_id": {
                     "type": "string"
+                },
+                "trial_end_at": {
+                    "description": "TrialEndAt is where a trial_end checkout starts the first paid period.",
+                    "type": "string"
                 }
             }
         },
