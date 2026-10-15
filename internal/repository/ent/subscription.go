@@ -264,6 +264,17 @@ func (r *subscriptionRepository) Update(ctx context.Context, sub *domainSub.Subs
 	}
 
 	// Handle nullable date fields - explicitly clear if nil
+	if sub.TrialStart != nil {
+		query.SetTrialStart(*sub.TrialStart)
+	} else {
+		query.ClearTrialStart()
+	}
+	if sub.TrialEnd != nil {
+		query.SetTrialEnd(*sub.TrialEnd)
+	} else {
+		query.ClearTrialEnd()
+	}
+
 	if sub.CancelledAt != nil {
 		query.SetCancelledAt(*sub.CancelledAt)
 	} else {
