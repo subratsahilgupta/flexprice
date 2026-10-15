@@ -302,6 +302,14 @@ const (
 	// InvoiceBillingReasonWalletAutoTopup is generated when a wallet balance drops
 	// below the auto-topup threshold and invoiced top-up is enabled.
 	InvoiceBillingReasonWalletAutoTopup InvoiceBillingReason = "WALLET_AUTO_TOPUP"
+
+	// InvoiceBillingReasonSubscriptionPaused records a period, or part of one, during which the
+	// subscription was paused. It has no line items, is never computed and is always SKIPPED.
+	InvoiceBillingReasonSubscriptionPaused InvoiceBillingReason = "SUBSCRIPTION_PAUSED"
+
+	// InvoiceBillingReasonSubscriptionResume is the first invoice after a paused subscription resumes.
+	// Compute: advance charges from the resume time to the next billing date (ReferencePointPeriodStart).
+	InvoiceBillingReasonSubscriptionResume InvoiceBillingReason = "SUBSCRIPTION_RESUME"
 )
 
 func (r InvoiceBillingReason) String() string {
@@ -319,6 +327,8 @@ func (r InvoiceBillingReason) Validate() error {
 		InvoiceBillingReasonManual,
 		InvoiceBillingReasonAutoInvoiceThreshold,
 		InvoiceBillingReasonWalletAutoTopup,
+		InvoiceBillingReasonSubscriptionPaused,
+		InvoiceBillingReasonSubscriptionResume,
 	}
 
 	if r != "" && !lo.Contains(allowed, r) {

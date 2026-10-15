@@ -220,6 +220,14 @@ func (s *addonChangeService) Resolve(ctx context.Context, req AddonChangeRequest
 	}
 
 	sub := req.Subscription
+	if sub.SubscriptionStatus == types.SubscriptionStatusPaused {
+		return nil, ierr.NewError("cannot change addons on a paused subscription").
+			WithHint("Resume the subscription before changing its addons").
+			WithReportableDetails(map[string]any{
+				"subscription_id": sub.ID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
 	config := &addonChangeConfig{sub: sub}
 
 	// One `now` for the whole change: resolving per entry would give each immediate entry a

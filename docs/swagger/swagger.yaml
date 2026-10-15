@@ -694,6 +694,11 @@ definitions:
         type: string
       status:
         $ref: '#/definitions/types.Status'
+      synced_price_sequence:
+        description: |-
+          SyncedPriceSequence is the addon price sequence this association's line items
+          have been reconciled up to. Written only by the addon usage-price sync.
+        type: integer
       tenant_id:
         type: string
       updated_at:
@@ -755,12 +760,26 @@ definitions:
         $ref: '#/definitions/types.Status'
       subscription:
         $ref: '#/definitions/SubscriptionResponse'
+      synced_price_sequence:
+        description: |-
+          SyncedPriceSequence is the addon price sequence this association's line items
+          have been reconciled up to. Written only by the addon usage-price sync.
+        type: integer
       tenant_id:
         type: string
       updated_at:
         type: string
       updated_by:
         type: string
+    type: object
+  AddonPriceSyncStatusResponse:
+    properties:
+      current_sequence:
+        type: integer
+      synced:
+        type: boolean
+      unsynced_association_count:
+        type: integer
     type: object
   AddonResponse:
     properties:
@@ -789,6 +808,13 @@ definitions:
         type: object
       name:
         type: string
+      price_sync_status:
+        allOf:
+        - $ref: '#/definitions/AddonPriceSyncStatusResponse'
+        description: |-
+          PriceSyncStatus reports how many associations are still behind this addon's
+          current usage-price sequence. Only populated on GetAddons when
+          `expand=price_sync_status` is requested.
       prices:
         description: Optional expanded fields
         items:
@@ -1842,6 +1868,13 @@ definitions:
         type: object
       name:
         type: string
+      price_sync_status:
+        allOf:
+        - $ref: '#/definitions/AddonPriceSyncStatusResponse'
+        description: |-
+          PriceSyncStatus reports how many associations are still behind this addon's
+          current usage-price sequence. Only populated on GetAddons when
+          `expand=price_sync_status` is requested.
       prices:
         description: Optional expanded fields
         items:
@@ -5786,6 +5819,39 @@ definitions:
     required:
     - price_id
     type: object
+  PauseSubscriptionRequest:
+    description: Pauses an active subscription now. Usage and arrear fixed charges
+      up to the pause are billed on a closing invoice.
+    properties:
+      metadata:
+        additionalProperties:
+          type: string
+        description: |-
+          Metadata stored on the pause
+          @Example {"requested_by": "customer", "channel": "support_ticket"}
+        type: object
+      proration_behavior:
+        allOf:
+        - $ref: '#/definitions/types.ProrationBehavior'
+        description: |-
+          ProrationBehavior controls proration on the closing invoice. Defaults to none.
+          @Description none bills arrear fixed charges for the full period and gives no credit. create_prorations bills arrear fixed charges for the used part of the period and credits the unused part of advance fixed charges to the wallet.
+      reason:
+        description: |-
+          Reason for pausing the subscription
+          @Description Optional reason for the pause. Maximum 255 characters
+          @Example "Customer requested temporary suspension"
+        maxLength: 255
+        type: string
+    type: object
+  PauseSubscriptionResponse:
+    description: The paused subscription and its pause
+    properties:
+      pause:
+        $ref: '#/definitions/SubscriptionPauseResponse'
+      subscription:
+        $ref: '#/definitions/SubscriptionResponse'
+    type: object
   PaymentAttemptResponse:
     properties:
       attempt_number:
@@ -6399,6 +6465,32 @@ definitions:
         type: string
     required:
     - addon_association_id
+    type: object
+  ResumeSubscriptionRequest:
+    description: Resumes a paused subscription now. The billing anchor is kept, so
+      the first period runs from the resume time to the next billing date.
+    properties:
+      metadata:
+        additionalProperties:
+          type: string
+        description: |-
+          Metadata merged into the pause
+          @Example {"resumed_by": "admin"}
+        type: object
+      proration_behavior:
+        allOf:
+        - $ref: '#/definitions/types.ProrationBehavior'
+        description: |-
+          ProrationBehavior, when sent, is saved on the subscription and prices the period that starts at the resume.
+          @Description none bills fixed charges of the first period at the full price. create_prorations bills them for the remaining part of the period. When omitted, the subscription's current proration_behavior is used.
+    type: object
+  ResumeSubscriptionResponse:
+    description: The resumed subscription and the pause it ended
+    properties:
+      pause:
+        $ref: '#/definitions/SubscriptionPauseResponse'
+      subscription:
+        $ref: '#/definitions/SubscriptionResponse'
     type: object
   RevenueAnalyticsRequest:
     properties:
@@ -7309,6 +7401,59 @@ definitions:
     - SubscriptionModifyTypeTax
     - SubscriptionModifyTypeAddon
     - SubscriptionModifyTypeLineItemChange
+  SubscriptionPauseResponse:
+    description: Response object containing subscription pause information
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      environment_id:
+        description: EnvironmentID is the environment identifier for the pause
+        type: string
+      id:
+        description: ID is the unique identifier for the subscription pause
+        type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+      original_period_end:
+        description: OriginalPeriodEnd is the end of the billing period when the pause
+          was created
+        type: string
+      original_period_start:
+        description: OriginalPeriodStart is the start of the billing period when the
+          pause was created
+        type: string
+      pause_end:
+        description: PauseEnd is when the pause will end (null for indefinite)
+        type: string
+      pause_mode:
+        $ref: '#/definitions/types.PauseMode'
+      pause_start:
+        description: PauseStart is when the pause actually started
+        type: string
+      pause_status:
+        $ref: '#/definitions/types.PauseStatus'
+      reason:
+        description: Reason is the reason for pausing
+        type: string
+      resume_mode:
+        $ref: '#/definitions/types.ResumeMode'
+      resumed_at:
+        description: ResumedAt is when the pause was actually ended (if manually resumed)
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      subscription_id:
+        description: SubscriptionID is the identifier for the subscription
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
   SubscriptionPhaseCreateRequest:
     properties:
       coupons:
@@ -11970,6 +12115,8 @@ definitions:
     - MANUAL
     - AUTO_INVOICE_THRESHOLD
     - WALLET_AUTO_TOPUP
+    - SUBSCRIPTION_PAUSED
+    - SUBSCRIPTION_RESUME
     type: string
     x-enum-varnames:
     - InvoiceBillingReasonSubscriptionCreate
@@ -11981,6 +12128,8 @@ definitions:
     - InvoiceBillingReasonManual
     - InvoiceBillingReasonAutoInvoiceThreshold
     - InvoiceBillingReasonWalletAutoTopup
+    - InvoiceBillingReasonSubscriptionPaused
+    - InvoiceBillingReasonSubscriptionResume
   types.InvoiceCadence:
     enum:
     - ARREAR
@@ -15235,6 +15384,48 @@ paths:
       summary: Get addon entitlements
       tags:
       - Entitlements
+  /addons/{id}/sync/subscriptions:
+    post:
+      consumes:
+      - application/json
+      description: Use when you have changed an addon's usage charges and need to
+        push them to all active subscriptions holding the addon. Returns workflow
+        ID.
+      operationId: syncAddonPrices
+      parameters:
+      - description: Addon ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.TemporalWorkflowResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Synchronize addon prices
+      tags:
+      - Addons
   /addons/lookup/{lookup_key}:
     get:
       description: Use when resolving an addon by external id (e.g. from your product
@@ -21081,6 +21272,94 @@ paths:
       tags:
       - Subscriptions
       x-scope: read
+  /subscriptions/{id}/pause:
+    post:
+      consumes:
+      - application/json
+      description: 'Use when a customer stops temporarily. Pauses an active subscription
+        now: usage and arrear fixed charges up to the pause are billed on a closing
+        invoice, and every paused period after it gets a $0 skipped invoice.'
+      operationId: pauseSubscription
+      parameters:
+      - description: Subscription ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Pause subscription request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/PauseSubscriptionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/PauseSubscriptionResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Resource not found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Pause subscription
+      tags:
+      - Subscriptions
+  /subscriptions/{id}/resume:
+    post:
+      consumes:
+      - application/json
+      description: 'Use when a paused customer comes back. Resumes a paused subscription
+        now on its existing billing anchor: the first period runs from the resume
+        to the next billing date and its advance charges are invoiced at once.'
+      operationId: resumeSubscription
+      parameters:
+      - description: Subscription ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Resume subscription request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/ResumeSubscriptionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ResumeSubscriptionResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Resource not found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Resume subscription
+      tags:
+      - Subscriptions
   /subscriptions/{id}/schedules:
     get:
       consumes:
