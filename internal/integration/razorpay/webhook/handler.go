@@ -146,6 +146,14 @@ func (h *Handler) handlePaymentCaptured(ctx context.Context, event *RazorpayWebh
 		"razorpay_payment_id", payment.ID,
 		"flexprice_payment_id", flexpricePaymentID)
 
+	handled, err := h.handleCheckoutSessionForPayment(ctx, flexpricePaymentID, payment.ID, services)
+	if err != nil {
+		return err
+	}
+	if handled {
+		return nil
+	}
+
 	// Get payment record
 	paymentRecord, err := services.PaymentService.GetPayment(ctx, flexpricePaymentID)
 	if err != nil {
@@ -160,14 +168,6 @@ func (h *Handler) handlePaymentCaptured(ctx context.Context, event *RazorpayWebh
 		h.logger.Info(ctx, "no payment record found",
 			"flexprice_payment_id", flexpricePaymentID,
 			"razorpay_payment_id", payment.ID)
-		return nil
-	}
-
-	handled, err := h.handleCheckoutSessionForPayment(ctx, flexpricePaymentID, payment.ID, services)
-	if err != nil {
-		return err
-	}
-	if handled {
 		return nil
 	}
 

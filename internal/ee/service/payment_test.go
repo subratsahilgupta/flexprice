@@ -305,6 +305,34 @@ func (s *PaymentServiceSuite) TestSyncPaymentStatusFromGateway_GuardConditions()
 	}
 }
 
+func (s *PaymentServiceSuite) TestSyncPaymentStatusFromGateway_CheckoutOwnsSettlement() {
+	for _, status := range []types.PaymentStatus{types.PaymentStatusPending, types.PaymentStatusProcessing} {
+		s.Run(string(status), func() {
+			ctx := s.GetContext()
+			p := &payment.Payment{
+				ID:                "pay_checkout_" + string(status),
+				DestinationType:   types.PaymentDestinationTypeInvoice,
+				DestinationID:     s.testData.invoice.ID,
+				PaymentStatus:     status,
+				PaymentGateway:    lo.ToPtr(string(types.PaymentGatewayTypeRazorpay)),
+				GatewayTrackingID: lo.ToPtr("plink_checkout"),
+				GatewayMetadata:   types.Metadata{paymentCheckoutMarker: "true"},
+				BaseModel:         types.GetDefaultBaseModel(ctx),
+			}
+			svc := s.service.(*paymentService)
+			svc.IntegrationFactory = s.GetIntegrationFactory()
+			before, err := s.GetStores().InvoiceRepo.Get(ctx, p.DestinationID)
+			s.Require().NoError(err)
+			result, err := svc.syncPaymentStatusFromGateway(ctx, p)
+			s.Require().NoError(err, "checkout payment reads must not fetch or settle through the standalone gateway sync")
+			s.Equal(p, result)
+			after, err := s.GetStores().InvoiceRepo.Get(ctx, p.DestinationID)
+			s.Require().NoError(err)
+			s.Equal(before, after)
+		})
+	}
+}
+
 // TestCreatePayment_CustomerDestination_ValidatesCustomer covers the VAPT fix:
 // CUSTOMER destination must now verify the customer exists in this tenant/env,
 // so bogus/foreign customer_ids fail-fast at CreatePayment rather than producing

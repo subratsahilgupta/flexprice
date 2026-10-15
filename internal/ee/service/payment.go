@@ -823,6 +823,10 @@ func (s *paymentService) PaymentExistsByGatewayPaymentID(ctx context.Context, ga
 
 // TODO: extract into a GatewayStatusSyncer when supporting more gateways or throttling
 func (s *paymentService) syncPaymentStatusFromGateway(ctx context.Context, p *payment.Payment) (*payment.Payment, error) {
+	// Checkout completion owns fulfillment before invoice reconciliation and activation.
+	if p.GatewayMetadata[paymentCheckoutMarker] == "true" {
+		return p, nil
+	}
 	if p.PaymentStatus != types.PaymentStatusPending && p.PaymentStatus != types.PaymentStatusProcessing {
 		return p, nil
 	}
