@@ -80,11 +80,13 @@ func (s *subscriptionModificationService) executeTrialEnd(
 		return nil, err
 	}
 
+	// A pending checkout freezes trial fields for every action.
+	if err := ensureNoPendingCheckoutSession(ctx, sp, sub.ID); err != nil {
+		return nil, err
+	}
+
 	switch params.Action {
 	case dto.TrialEndActionImmediate:
-		if err := ensureNoPendingCheckoutSession(ctx, sp, sub.ID); err != nil {
-			return nil, err
-		}
 		if checkout != nil {
 			return s.settleTrialEndPayFirst(ctx, sub, checkout)
 		}

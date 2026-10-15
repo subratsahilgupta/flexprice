@@ -132,6 +132,26 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_PendingCheckoutBlocksImm
 	}
 }
 
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_PendingCheckoutBlocksScheduledDate() {
+	ctx := s.GetContext()
+	sub, _, _ := s.startTrialEndCheckout()
+	before, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
+
+	_, err = NewSubscriptionModificationService(s.service.(*subscriptionService).ServiceParams).Execute(ctx, sub.ID, dto.ExecuteSubscriptionModifyRequest{
+		Type: dto.SubscriptionModifyTypeTrialEnd,
+		TrialEndParams: &dto.SubModifyTrialEndRequest{
+			Action:      dto.TrialEndActionScheduledDate,
+			NewTrialEnd: lo.ToPtr(before.TrialEnd.Add(48 * time.Hour)),
+		},
+	})
+	s.True(ierr.IsAlreadyExists(err), "a pending checkout freezes trial fields, got %v", err)
+
+	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
+	s.True(got.TrialEnd.Equal(*before.TrialEnd), "trial end must not move")
+}
+
 func (s *SubscriptionServiceSuite) TestTrialEndCheckout_Validation() {
 	future := time.Now().UTC().Add(48 * time.Hour)
 	tests := []struct {
