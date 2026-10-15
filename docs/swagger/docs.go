@@ -534,6 +534,68 @@ const docTemplate = `{
                 }
             }
         },
+        "/addons/{id}/sync/subscriptions": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use when you have changed an addon's usage charges and need to push them to all active subscriptions holding the addon. Returns workflow ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Addons"
+                ],
+                "summary": "Synchronize addon prices",
+                "operationId": "syncAddonPrices",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Addon ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.TemporalWorkflowResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/alerts/search": {
             "post": {
                 "security": [
@@ -9763,6 +9825,136 @@ const docTemplate = `{
                 "x-scope": "read"
             }
         },
+        "/subscriptions/{id}/pause": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use when a customer stops temporarily. Pauses an active subscription now: usage and arrear fixed charges up to the pause are billed on a closing invoice, and every paused period after it gets a $0 skipped invoice.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Pause subscription",
+                "operationId": "pauseSubscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Subscription ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Pause subscription request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/PauseSubscriptionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/PauseSubscriptionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/subscriptions/{id}/resume": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use when a paused customer comes back. Resumes a paused subscription now on its existing billing anchor: the first period runs from the resume to the next billing date and its advance charges are invoiced at once.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Resume subscription",
+                "operationId": "resumeSubscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Subscription ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Resume subscription request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ResumeSubscriptionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ResumeSubscriptionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/subscriptions/{id}/schedules": {
             "get": {
                 "description": "Use when listing scheduled changes for a subscription (e.g. upcoming plan change or renewal). Returns all schedules for that subscription.",
@@ -15167,6 +15359,10 @@ const docTemplate = `{
                 "status": {
                     "$ref": "#/definitions/types.Status"
                 },
+                "synced_price_sequence": {
+                    "description": "SyncedPriceSequence is the addon price sequence this association's line items\nhave been reconciled up to. Written only by the addon usage-price sync.",
+                    "type": "integer"
+                },
                 "tenant_id": {
                     "type": "string"
                 },
@@ -15258,6 +15454,10 @@ const docTemplate = `{
                 "subscription": {
                     "$ref": "#/definitions/SubscriptionResponse"
                 },
+                "synced_price_sequence": {
+                    "description": "SyncedPriceSequence is the addon price sequence this association's line items\nhave been reconciled up to. Written only by the addon usage-price sync.",
+                    "type": "integer"
+                },
                 "tenant_id": {
                     "type": "string"
                 },
@@ -15266,6 +15466,20 @@ const docTemplate = `{
                 },
                 "updated_by": {
                     "type": "string"
+                }
+            }
+        },
+        "AddonPriceSyncStatusResponse": {
+            "type": "object",
+            "properties": {
+                "current_sequence": {
+                    "type": "integer"
+                },
+                "synced": {
+                    "type": "boolean"
+                },
+                "unsynced_association_count": {
+                    "type": "integer"
                 }
             }
         },
@@ -15308,6 +15522,14 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "price_sync_status": {
+                    "description": "PriceSyncStatus reports how many associations are still behind this addon's\ncurrent usage-price sequence. Only populated on GetAddons when\n` + "`" + `expand=price_sync_status` + "`" + ` is requested.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/AddonPriceSyncStatusResponse"
+                        }
+                    ]
                 },
                 "prices": {
                     "description": "Optional expanded fields",
@@ -16859,6 +17081,14 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "price_sync_status": {
+                    "description": "PriceSyncStatus reports how many associations are still behind this addon's\ncurrent usage-price sequence. Only populated on GetAddons when\n` + "`" + `expand=price_sync_status` + "`" + ` is requested.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/AddonPriceSyncStatusResponse"
+                        }
+                    ]
                 },
                 "prices": {
                     "description": "Optional expanded fields",
@@ -22168,6 +22398,44 @@ const docTemplate = `{
                 }
             }
         },
+        "PauseSubscriptionRequest": {
+            "description": "Pauses an active subscription now. Usage and arrear fixed charges up to the pause are billed on a closing invoice.",
+            "type": "object",
+            "properties": {
+                "metadata": {
+                    "description": "Metadata stored on the pause\n@Example {\"requested_by\": \"customer\", \"channel\": \"support_ticket\"}",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "proration_behavior": {
+                    "description": "ProrationBehavior controls proration on the closing invoice. Defaults to none.\n@Description none bills arrear fixed charges for the full period and gives no credit. create_prorations bills arrear fixed charges for the used part of the period and credits the unused part of advance fixed charges to the wallet.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ProrationBehavior"
+                        }
+                    ]
+                },
+                "reason": {
+                    "description": "Reason for pausing the subscription\n@Description Optional reason for the pause. Maximum 255 characters\n@Example \"Customer requested temporary suspension\"",
+                    "type": "string",
+                    "maxLength": 255
+                }
+            }
+        },
+        "PauseSubscriptionResponse": {
+            "description": "The paused subscription and its pause",
+            "type": "object",
+            "properties": {
+                "pause": {
+                    "$ref": "#/definitions/SubscriptionPauseResponse"
+                },
+                "subscription": {
+                    "$ref": "#/definitions/SubscriptionResponse"
+                }
+            }
+        },
         "PaymentAttemptResponse": {
             "type": "object",
             "properties": {
@@ -23049,6 +23317,39 @@ const docTemplate = `{
                 },
                 "reason": {
                     "type": "string"
+                }
+            }
+        },
+        "ResumeSubscriptionRequest": {
+            "description": "Resumes a paused subscription now. The billing anchor is kept, so the first period runs from the resume time to the next billing date.",
+            "type": "object",
+            "properties": {
+                "metadata": {
+                    "description": "Metadata merged into the pause\n@Example {\"resumed_by\": \"admin\"}",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "proration_behavior": {
+                    "description": "ProrationBehavior, when sent, is saved on the subscription and prices the period that starts at the resume.\n@Description none bills fixed charges of the first period at the full price. create_prorations bills them for the remaining part of the period. When omitted, the subscription's current proration_behavior is used.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ProrationBehavior"
+                        }
+                    ]
+                }
+            }
+        },
+        "ResumeSubscriptionResponse": {
+            "description": "The resumed subscription and the pause it ended",
+            "type": "object",
+            "properties": {
+                "pause": {
+                    "$ref": "#/definitions/SubscriptionPauseResponse"
+                },
+                "subscription": {
+                    "$ref": "#/definitions/SubscriptionResponse"
                 }
             }
         },
@@ -24327,6 +24628,78 @@ const docTemplate = `{
                 "SubscriptionModifyTypeAddon",
                 "SubscriptionModifyTypeLineItemChange"
             ]
+        },
+        "SubscriptionPauseResponse": {
+            "description": "Response object containing subscription pause information",
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "description": "EnvironmentID is the environment identifier for the pause",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID is the unique identifier for the subscription pause",
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "original_period_end": {
+                    "description": "OriginalPeriodEnd is the end of the billing period when the pause was created",
+                    "type": "string"
+                },
+                "original_period_start": {
+                    "description": "OriginalPeriodStart is the start of the billing period when the pause was created",
+                    "type": "string"
+                },
+                "pause_end": {
+                    "description": "PauseEnd is when the pause will end (null for indefinite)",
+                    "type": "string"
+                },
+                "pause_mode": {
+                    "$ref": "#/definitions/types.PauseMode"
+                },
+                "pause_start": {
+                    "description": "PauseStart is when the pause actually started",
+                    "type": "string"
+                },
+                "pause_status": {
+                    "$ref": "#/definitions/types.PauseStatus"
+                },
+                "reason": {
+                    "description": "Reason is the reason for pausing",
+                    "type": "string"
+                },
+                "resume_mode": {
+                    "$ref": "#/definitions/types.ResumeMode"
+                },
+                "resumed_at": {
+                    "description": "ResumedAt is when the pause was actually ended (if manually resumed)",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "description": "SubscriptionID is the identifier for the subscription",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
         },
         "SubscriptionPhaseCreateRequest": {
             "type": "object",
@@ -30677,7 +31050,9 @@ const docTemplate = `{
                 "PRORATION",
                 "MANUAL",
                 "AUTO_INVOICE_THRESHOLD",
-                "WALLET_AUTO_TOPUP"
+                "WALLET_AUTO_TOPUP",
+                "SUBSCRIPTION_PAUSED",
+                "SUBSCRIPTION_RESUME"
             ],
             "x-enum-varnames": [
                 "InvoiceBillingReasonSubscriptionCreate",
@@ -30688,7 +31063,9 @@ const docTemplate = `{
                 "InvoiceBillingReasonProration",
                 "InvoiceBillingReasonManual",
                 "InvoiceBillingReasonAutoInvoiceThreshold",
-                "InvoiceBillingReasonWalletAutoTopup"
+                "InvoiceBillingReasonWalletAutoTopup",
+                "InvoiceBillingReasonSubscriptionPaused",
+                "InvoiceBillingReasonSubscriptionResume"
             ]
         },
         "types.InvoiceCadence": {
