@@ -181,7 +181,7 @@ reports:
   usage_database: ""
   username: ""
   password: ""
-  max_execution_seconds: 30
+  max_execution_seconds: 10
   max_result_rows: 10000
   max_rows_to_read: 0
 

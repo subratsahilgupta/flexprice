@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	defaultReportsMaxExecutionSeconds = 30
+	defaultReportsMaxExecutionSeconds = 10
 	defaultReportsMaxResultRows       = 10000
 )
 
