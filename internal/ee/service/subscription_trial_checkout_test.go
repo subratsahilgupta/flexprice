@@ -280,7 +280,7 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_ReplayAfterTimestampPers
 			ctx := s.GetContext()
 			sub := s.seedTrialingFixedFeeSubscription(decimal.NewFromInt(200))
 			subSvc := s.service.(*subscriptionService)
-			start := time.Date(2026, 10, 15, 18, 27, 24, tt.nanos, time.UTC)
+			start := time.Date(2026, 10, 15, 18, 27, 24, tt.nanos, time.UTC).Truncate(time.Microsecond)
 			// Model the timestamp returned by PostgreSQL after the first conversion commits.
 			persistedStart := start.Round(time.Microsecond).Add(tt.offset)
 			_, err := subSvc.convertTrialToFirstPaidPeriod(ctx, sub, persistedStart)

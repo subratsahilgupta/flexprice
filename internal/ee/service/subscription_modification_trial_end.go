@@ -210,8 +210,7 @@ func (s *subscriptionModificationService) applyTrialEndConversion(ctx context.Co
 			return err
 		}
 		if sub.SubscriptionStatus != types.SubscriptionStatusTrialing {
-			// JSON retains nanoseconds; PostgreSQL rounds timestamps to microseconds.
-			if sub.TrialEnd != nil && sub.TrialEnd.Round(time.Microsecond).Equal(start.Round(time.Microsecond)) {
+			if sub.TrialEnd != nil && sub.TrialEnd.Equal(start) {
 				return nil // already applied by an earlier delivery
 			}
 			return ierr.NewError("subscription is no longer trialing").
