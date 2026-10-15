@@ -5880,7 +5880,8 @@ func (s *subscriptionService) voidOverdueInvoices(ctx context.Context, invoiceSe
 // skipped (zero-amount). By the time this is called, processSubscriptionTrialEnd has already
 // advanced CurrentPeriodStart/End to the first real billing window, so only the status changes.
 func (s *subscriptionService) completeTrialConversionToActive(ctx context.Context, sub *subscription.Subscription) error {
-	if sub.SubscriptionStatus == types.SubscriptionStatusActive || sub.SubscriptionStatus == types.SubscriptionStatusCancelled {
+	// Only the post-conversion incomplete state activates; a still-trialing sub waits for its conversion.
+	if sub.SubscriptionStatus != types.SubscriptionStatusIncomplete {
 		return nil
 	}
 	sub.SubscriptionStatus = types.SubscriptionStatusActive

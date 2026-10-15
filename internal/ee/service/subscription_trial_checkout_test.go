@@ -405,3 +405,55 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_CompletionUsesStoredStar
 	s.Require().NoError(err)
 	s.True(got.CurrentPeriodEnd.Equal(wantEnd))
 }
+
+func (s *SubscriptionServiceSuite) TestTrialConversionActivatesOnlyFromIncomplete() {
+	tests := []struct {
+		name   string
+		status types.SubscriptionStatus
+		want   types.SubscriptionStatus
+	}{
+		{"trialing waits for conversion", types.SubscriptionStatusTrialing, types.SubscriptionStatusTrialing},
+		{"incomplete activates", types.SubscriptionStatusIncomplete, types.SubscriptionStatusActive},
+		{"active is a no-op", types.SubscriptionStatusActive, types.SubscriptionStatusActive},
+		{"cancelled is a no-op", types.SubscriptionStatusCancelled, types.SubscriptionStatusCancelled},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			ctx := s.GetContext()
+			sub := s.seedTrialingFixedFeeSubscription(decimal.NewFromInt(200))
+			sub.SubscriptionStatus = tt.status
+			s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
+
+			s.Require().NoError(s.service.(*subscriptionService).completeTrialConversionToActive(ctx, sub))
+
+			got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+			s.Require().NoError(err)
+			s.Equal(tt.want, got.SubscriptionStatus)
+		})
+	}
+}
+
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_InvoicePaidWhileTrialingThenCheckoutCompletes() {
+	ctx := s.GetContext()
+	sub, sessionID, invoiceID := s.startTrialEndCheckout()
+	subSvc := s.service.(*subscriptionService)
+	session, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
+	s.Require().NoError(err)
+	trialEndAt := lo.FromPtr(session.Configuration.ModifySubscriptionParams.TrialEndAt)
+
+	// The paid hook firing before checkout converts the trial must not activate it.
+	inv, err := s.GetStores().InvoiceRepo.Get(ctx, invoiceID)
+	s.Require().NoError(err)
+	s.Require().NoError(subSvc.HandleSubscriptionActivatingInvoicePaid(ctx, inv))
+	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subSvc.ServiceParams}
+	s.Require().NoError(checkoutSvc.CompleteCheckoutSession(ctx, sessionID, &types.CheckoutProviderResult{ProviderPaymentIntentID: "pi_trial_race"}))
+
+	got, err = s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.SubscriptionStatusActive, got.SubscriptionStatus)
+	s.True(got.CurrentPeriodStart.Equal(trialEndAt), "first paid period starts at the stored trial end, got %s", got.CurrentPeriodStart)
+}
