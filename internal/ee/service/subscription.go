@@ -643,7 +643,11 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	}
 
 	if req.Checkout != nil && result.Sub.SubscriptionStatus == types.SubscriptionStatusDraft {
-		invResp, skipped, err := buildCheckoutDraftInvoice(ctx, s.ServiceParams, response)
+		invResp, skipped, err := buildCheckoutDraftInvoice(ctx, s.ServiceParams, dto.CreateSubscriptionDraftInvoiceRequest{
+			SubscriptionID: response.ID,
+			PeriodStart:    response.CurrentPeriodStart,
+			PeriodEnd:      response.CurrentPeriodEnd,
+		})
 		if err != nil {
 			if archErr := s.archiveDraftCheckoutSubscription(ctx, response.ID); archErr != nil {
 				s.Logger.Error(ctx, "failed to archive draft checkout subscription", "error", archErr, "subscription_id", response.ID)

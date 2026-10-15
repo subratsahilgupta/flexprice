@@ -47,37 +47,6 @@ func pendingCheckoutSessions(ctx context.Context, sp ServiceParams, subscription
 	})
 }
 
-// pendingTrialEndCheckout returns the subscription's open pay-first trial-end session, or nil when none is open.
-func pendingTrialEndCheckout(ctx context.Context, sp ServiceParams, subscriptionID string) (*domainCheckout.CheckoutSession, error) {
-	sessions, err := pendingCheckoutSessions(ctx, sp, subscriptionID)
-	if err != nil {
-		return nil, err
-	}
-	session, _ := lo.Find(sessions, func(sess *domainCheckout.CheckoutSession) bool {
-		params := sess.Configuration.ModifySubscriptionParams
-		return params != nil && params.ModifyType == types.ModifySubscriptionTypeTrialEnd
-	})
-	return session, nil
-}
-
-// ensureNoPendingTrialEndCheckout rejects ending the trial directly while a pay-first trial end awaits payment.
-func ensureNoPendingTrialEndCheckout(ctx context.Context, sp ServiceParams, subscriptionID string) error {
-	session, err := pendingTrialEndCheckout(ctx, sp, subscriptionID)
-	if err != nil {
-		return err
-	}
-	if session == nil {
-		return nil
-	}
-	return ierr.NewError("a pending trial end checkout already exists for this subscription").
-		WithHint("Complete or cancel the existing checkout before ending the trial").
-		WithReportableDetails(map[string]any{
-			"subscription_id":     subscriptionID,
-			"checkout_session_id": session.ID,
-		}).
-		Mark(ierr.ErrAlreadyExists)
-}
-
 // ensureNoPendingCheckoutSession rejects a second payment-gated change while one is still open.
 func ensureNoPendingCheckoutSession(ctx context.Context, sp ServiceParams, subscriptionID string) error {
 	existing, err := pendingCheckoutSessions(ctx, sp, subscriptionID)
@@ -407,16 +376,6 @@ func (s *checkoutSessionService) voidCheckoutInvoiceIfPartiallyPaid(ctx context.
 // cleanupCheckoutSession terminates the session and publishes checkout.session.failed
 // (reason set) or checkout.session.expired (no reason).
 func (s *checkoutSessionService) cleanupCheckoutSession(ctx context.Context, session *domainCheckout.CheckoutSession, reason error) error {
-	converted, err := s.trialEndAlreadyConverted(ctx, session)
-	if err != nil {
-		return err
-	}
-	if converted {
-		return s.failCheckoutKeepingResources(ctx, session, ierr.NewError("trial-end conversion applied but checkout never completed").
-			WithHintf("subscription converted on session %s; payment and invoice kept for manual reconciliation", session.ID).
-			Mark(ierr.ErrInvalidOperation))
-	}
-
 	terminated, err := s.terminateCheckoutSession(ctx, session, reason)
 	if err != nil || !terminated {
 		return err
@@ -429,30 +388,6 @@ func (s *checkoutSessionService) cleanupCheckoutSession(ctx context.Context, ses
 		s.publishCheckoutEvent(ctx, resp, types.WebhookEventCheckoutSessionExpired)
 	}
 	return nil
-}
-
-// trialEndAlreadyConverted reports whether an open trial-end session's subscription already converted,
-// meaning payment was captured and cleanup must not discard the payment or invoice.
-func (s *checkoutSessionService) trialEndAlreadyConverted(ctx context.Context, session *domainCheckout.CheckoutSession) (bool, error) {
-	params := session.Configuration.ModifySubscriptionParams
-	if session.CheckoutStatus.IsTerminal() || params == nil || params.ModifyType != types.ModifySubscriptionTypeTrialEnd || lo.FromPtr(session.CheckoutInvoiceID) == "" {
-		return false, nil
-	}
-	inv, err := s.InvoiceRepo.Get(ctx, *session.CheckoutInvoiceID)
-	if ierr.IsNotFound(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	if inv.PeriodStart == nil {
-		return false, nil
-	}
-	sub, err := s.SubRepo.Get(ctx, params.SubscriptionID)
-	if err != nil {
-		return false, err
-	}
-	return trialEndConversionApplied(sub, inv.PeriodStart.UTC()), nil
 }
 
 // terminate cleans up a checkout session without webhook publishing.
@@ -502,33 +437,6 @@ func (s *checkoutSessionService) terminateCheckoutSession(ctx context.Context, s
 	session.FailureReason = failureReason
 	metrics.RecordCounter(ctx, metrics.CheckoutSessions, 1, checkoutMetricLabels(session, status)...)
 	return true, nil
-}
-
-// failCheckoutKeepingResources fails a session whose payment may be captured but cannot be applied.
-// Payment and invoice are kept, and expiry cleanup skips terminal sessions, so ops can refund by hand.
-// Returns the MarkTerminal error so callers do not treat a still-open session as terminated.
-func (s *checkoutSessionService) failCheckoutKeepingResources(ctx context.Context, session *domainCheckout.CheckoutSession, reason error) error {
-	s.Logger.Error(ctx, "checkout paid but could not be applied, manual refund required",
-		"error", reason,
-		"session_id", session.ID,
-		"payment_id", lo.FromPtr(session.CheckoutPaymentID),
-		"invoice_id", lo.FromPtr(session.CheckoutInvoiceID),
-		"subscription_id", lo.FromPtr(session.Configuration.ToCheckoutConfiguration().ModifySubscriptionParams).SubscriptionID)
-
-	msg := reason.Error()
-	claimed, err := s.CheckoutSessionRepo.MarkTerminal(activity.WithAction(ctx, session.ID, activity.CheckoutSessionFailed), session.ID, types.CheckoutStatusFailed, &msg)
-	if err != nil {
-		s.Logger.Error(ctx, "failed to mark unappliable checkout session failed", "error", err, "session_id", session.ID)
-		return err
-	}
-	if !claimed {
-		return nil
-	}
-	session.CheckoutStatus = types.CheckoutStatusFailed
-	session.FailureReason = &msg
-	metrics.RecordCounter(ctx, metrics.CheckoutSessions, 1, checkoutMetricLabels(session, types.CheckoutStatusFailed)...)
-	s.publishCheckoutEvent(ctx, dto.ToCheckoutSessionResponse(session), types.WebhookEventCheckoutSessionFailed)
-	return nil
 }
 
 func (s *checkoutSessionService) cleanupCheckoutResources(ctx context.Context, session *domainCheckout.CheckoutSession, reason error) error {
@@ -813,7 +721,11 @@ func (s *checkoutSessionService) createDraftSubscription(ctx context.Context, se
 		return nil, nil, err
 	}
 
-	invResp, skipped, err := buildCheckoutDraftInvoice(ctx, s.ServiceParams, subResp)
+	invResp, skipped, err := buildCheckoutDraftInvoice(ctx, s.ServiceParams, dto.CreateSubscriptionDraftInvoiceRequest{
+		SubscriptionID: subResp.ID,
+		PeriodStart:    subResp.CurrentPeriodStart,
+		PeriodEnd:      subResp.CurrentPeriodEnd,
+	})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -825,19 +737,16 @@ func (s *checkoutSessionService) createDraftSubscription(ctx context.Context, se
 	return subResp, invResp, nil
 }
 
+// buildCheckoutDraftInvoice creates, computes and taxes an in-advance checkout draft for req's period.
 func buildCheckoutDraftInvoice(
 	ctx context.Context,
 	params ServiceParams,
-	subResp *dto.SubscriptionResponse,
+	req dto.CreateSubscriptionDraftInvoiceRequest,
 ) (*dto.InvoiceResponse, bool, error) {
 	invSvc := NewInvoiceService(params)
-	invResp, err := invSvc.CreateDraftInvoiceForSubscription(ctx, dto.CreateSubscriptionDraftInvoiceRequest{
-		SubscriptionID: subResp.ID,
-		PeriodStart:    subResp.CurrentPeriodStart,
-		PeriodEnd:      subResp.CurrentPeriodEnd,
-		ReferencePoint: types.ReferencePointPeriodStart,
-		SourceType:     types.InvoiceSourceTypeCheckout,
-	})
+	req.ReferencePoint = types.ReferencePointPeriodStart
+	req.SourceType = types.InvoiceSourceTypeCheckout
+	invResp, err := invSvc.CreateDraftInvoiceForSubscription(ctx, req)
 	if err != nil {
 		return nil, false, err
 	}

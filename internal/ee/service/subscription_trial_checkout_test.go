@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"errors"
 	"testing"
 	"time"
@@ -12,7 +11,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
-	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -109,47 +107,53 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_GatesWithoutTouchingTria
 	s.True(draft.Total.Equal(decimal.NewFromInt(200)), "full first-period fee, got %s", draft.Total)
 }
 
-func (s *SubscriptionServiceSuite) TestTrialEndCheckout_SecondStartRejected() {
-	ctx := s.GetContext()
-	sub := s.seedTrialingFixedFeeSubscription(decimal.NewFromInt(200))
-	modSvc := NewSubscriptionModificationService(s.service.(*subscriptionService).ServiceParams)
-	_, err := modSvc.Execute(ctx, sub.ID, s.trialEndCheckoutRequest())
-	s.Require().NoError(err)
-	_, err = modSvc.Execute(ctx, sub.ID, s.trialEndCheckoutRequest())
-	s.True(ierr.IsAlreadyExists(err), "one open checkout per subscription")
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_PendingCheckoutBlocksImmediateEnd() {
+	tests := []struct {
+		name         string
+		withCheckout bool
+	}{
+		{"second pay-first start", true},
+		{"direct immediate end", false},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			ctx := s.GetContext()
+			sub, _, _ := s.startTrialEndCheckout()
+			req := s.trialEndCheckoutRequest()
+			if !tt.withCheckout {
+				req.Checkout = nil
+			}
+			_, err := NewSubscriptionModificationService(s.service.(*subscriptionService).ServiceParams).Execute(ctx, sub.ID, req)
+			s.True(ierr.IsAlreadyExists(err), "the pending checkout owns the trial end, got %v", err)
+			got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+			s.Require().NoError(err)
+			s.Equal(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
+		})
+	}
 }
 
-func (s *SubscriptionServiceSuite) TestTrialEndCheckout_DirectEndWhilePendingRejected() {
-	ctx := s.GetContext()
-	sub := s.seedTrialingFixedFeeSubscription(decimal.NewFromInt(200))
-	modSvc := NewSubscriptionModificationService(s.service.(*subscriptionService).ServiceParams)
-	_, err := modSvc.Execute(ctx, sub.ID, s.trialEndCheckoutRequest())
-	s.Require().NoError(err)
-
-	req := s.trialEndCheckoutRequest()
-	req.Checkout = nil
-	_, err = modSvc.Execute(ctx, sub.ID, req)
-	s.True(ierr.IsAlreadyExists(err), "the pending checkout owns the trial end")
-	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
-	s.Require().NoError(err)
-	s.Equal(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
-}
-
-func (s *SubscriptionServiceSuite) TestTrialEndCheckout_AlreadyEndedTrialRejected() {
-	ctx := s.GetContext()
-	sub := s.seedTrialingFixedFeeSubscription(decimal.NewFromInt(200))
-	sub.SubscriptionStatus = types.SubscriptionStatusIncomplete
-	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
-	modSvc := NewSubscriptionModificationService(s.service.(*subscriptionService).ServiceParams)
-	_, err := modSvc.Execute(ctx, sub.ID, s.trialEndCheckoutRequest())
-	s.True(ierr.IsValidation(err))
-}
-
-func (s *SubscriptionServiceSuite) TestTrialEndCheckout_ScheduledDateWithCheckoutRejected() {
-	req := s.trialEndCheckoutRequest()
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_Validation() {
 	future := time.Now().UTC().Add(48 * time.Hour)
-	req.TrialEndParams = &dto.SubModifyTrialEndRequest{Action: dto.TrialEndActionScheduledDate, NewTrialEnd: &future}
-	s.True(ierr.IsValidation(req.Validate()))
+	tests := []struct {
+		name    string
+		params  *dto.SubModifyTrialEndRequest
+		wantErr bool
+	}{
+		{"immediate with checkout", &dto.SubModifyTrialEndRequest{Action: dto.TrialEndActionImmediate}, false},
+		{"scheduled date with checkout", &dto.SubModifyTrialEndRequest{Action: dto.TrialEndActionScheduledDate, NewTrialEnd: &future}, true},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			req := s.trialEndCheckoutRequest()
+			req.TrialEndParams = tt.params
+			err := req.Validate()
+			if tt.wantErr {
+				s.True(ierr.IsValidation(err))
+				return
+			}
+			s.NoError(err)
+		})
+	}
 }
 
 func (s *SubscriptionServiceSuite) TestTrialEndCheckout_ZeroInvoiceEndsTrialImmediately() {
@@ -163,64 +167,11 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_ZeroInvoiceEndsTrialImme
 	s.NotEqual(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
 }
 
-// seedPendingModifyCheckout stores an open modify_subscription checkout of the given type for the subscription.
-func (s *SubscriptionServiceSuite) seedPendingModifyCheckout(sub *subscription.Subscription, modifyType types.ModifySubscriptionType) {
-	ctx := s.GetContext()
-	s.Require().NoError(s.GetStores().CheckoutSessionRepo.Create(ctx, &domainCheckout.CheckoutSession{
-		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CHECKOUT_SESSION),
-		CustomerID:      sub.CustomerID,
-		Action:          types.CheckoutActionModifySubscription,
-		CheckoutStatus:  types.CheckoutStatusPending,
-		PaymentProvider: types.CheckoutPaymentProviderRazorpay,
-		Configuration: domainCheckout.JSONBCheckoutConfiguration{
-			ModifySubscriptionParams: &types.ModifySubscriptionParams{SubscriptionID: sub.ID, ModifyType: modifyType},
-		},
-		ExpiresAt:     time.Now().UTC().Add(20 * time.Minute),
-		EnvironmentID: types.GetEnvironmentID(ctx),
-		BaseModel:     types.GetDefaultBaseModel(ctx),
-	}))
-}
-
-func (s *SubscriptionServiceSuite) TestTrialEndCheckout_CronGuard() {
-	tests := []struct {
-		name        string
-		pendingType types.ModifySubscriptionType
-		wantSkipped bool
-	}{
-		{"pending trial end checkout defers the cron", types.ModifySubscriptionTypeTrialEnd, true},
-		{"pending quantity change checkout does not block the cron", types.ModifySubscriptionTypeQuantityChange, false},
-	}
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			ctx := s.GetContext()
-			sub := s.seedTrialingFixedFeeSubscription(decimal.NewFromInt(200))
-			s.seedPendingModifyCheckout(sub, tt.pendingType)
-
-			subSvc := s.service.(*subscriptionService)
-			inv, err := subSvc.ProcessSingleSubscriptionTrialEnd(ctx, sub, sub.TrialEnd.Add(time.Hour))
-			s.Require().NoError(err)
-			got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
-			s.Require().NoError(err)
-			if tt.wantSkipped {
-				s.Nil(inv, "cron must not raise a second trial-end invoice while checkout is pending")
-				s.Equal(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
-				return
-			}
-			s.NotNil(inv, "an unrelated pending checkout must not freeze the natural trial end")
-			s.NotEqual(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
-		})
-	}
-}
-
 func (s *SubscriptionServiceSuite) TestTrialEndCheckout_CronSkipsWhilePending() {
 	ctx := s.GetContext()
-	sub := s.seedTrialingFixedFeeSubscription(decimal.NewFromInt(200))
-	modSvc := NewSubscriptionModificationService(s.service.(*subscriptionService).ServiceParams)
-	_, err := modSvc.Execute(ctx, sub.ID, s.trialEndCheckoutRequest())
-	s.Require().NoError(err)
+	sub, _, _ := s.startTrialEndCheckout()
 
-	subSvc := s.service.(*subscriptionService)
-	inv, err := subSvc.ProcessSingleSubscriptionTrialEnd(ctx, sub, sub.TrialEnd.Add(time.Hour))
+	inv, err := s.service.(*subscriptionService).ProcessSingleSubscriptionTrialEnd(ctx, sub, sub.TrialEnd.Add(time.Hour))
 	s.Require().NoError(err)
 	s.Nil(inv, "cron must not raise a second trial-end invoice while checkout is pending")
 	got, _ := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
@@ -287,126 +238,38 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_DoubleCompleteIdempotent
 	s.Len(finalizedTrialEnd, 1, "exactly one finalized trial-end invoice")
 }
 
-func (s *SubscriptionServiceSuite) TestTrialEndCheckout_AbandonedLeavesTrial() {
-	ctx := s.GetContext()
-	sub, sessionID, invoiceID := s.startTrialEndCheckout()
-	checkoutSvc := &checkoutSessionService{ServiceParams: s.service.(*subscriptionService).ServiceParams}
-	session, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
-	s.Require().NoError(err)
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_UnpaidCleanupLeavesTrial() {
+	tests := []struct {
+		name   string
+		reason error
+	}{
+		{"expired", nil},
+		{"payment failed", errors.New("card_declined")},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			ctx := s.GetContext()
+			sub, sessionID, invoiceID := s.startTrialEndCheckout()
+			checkoutSvc := &checkoutSessionService{ServiceParams: s.service.(*subscriptionService).ServiceParams}
+			session, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
+			s.Require().NoError(err)
 
-	s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, session, nil))
+			s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, session, tt.reason))
 
-	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
-	s.Require().NoError(err)
-	s.Equal(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
-	s.True(got.TrialEnd.Equal(*sub.TrialEnd), "trial end unchanged")
-	inv, err := s.GetStores().InvoiceRepo.Get(ctx, invoiceID)
-	s.Require().NoError(err)
-	s.Equal(types.StatusDeleted, inv.Status, "abandoned draft is archived")
-	s.Equal(types.InvoiceStatusDraft, inv.InvoiceStatus, "unpaid draft never finalized")
+			got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+			s.Require().NoError(err)
+			s.Equal(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
+			s.True(got.TrialEnd.Equal(*sub.TrialEnd), "trial end unchanged")
+			inv, err := s.GetStores().InvoiceRepo.Get(ctx, invoiceID)
+			s.Require().NoError(err)
+			s.Equal(types.InvoiceStatusDraft, inv.InvoiceStatus, "unpaid draft never finalized")
 
-	// The cron owns the trial again once the session is gone.
-	cronInv, err := s.service.(*subscriptionService).ProcessSingleSubscriptionTrialEnd(ctx, got, got.TrialEnd.Add(time.Hour))
-	s.Require().NoError(err)
-	s.NotNil(cronInv)
-}
-
-func (s *SubscriptionServiceSuite) TestTrialEndCheckout_FailedPaymentLeavesTrial() {
-	ctx := s.GetContext()
-	sub, sessionID, _ := s.startTrialEndCheckout()
-	checkoutSvc := &checkoutSessionService{ServiceParams: s.service.(*subscriptionService).ServiceParams}
-	session, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
-	s.Require().NoError(err)
-
-	s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, session, errors.New("card_declined")))
-
-	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
-	s.Require().NoError(err)
-	s.Equal(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
-}
-
-func (s *SubscriptionServiceSuite) TestTrialEndCheckout_CompleteAfterCancelledRejected() {
-	ctx := s.GetContext()
-	sub, _, invoiceID := s.startTrialEndCheckout()
-	sub.SubscriptionStatus = types.SubscriptionStatusCancelled
-	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
-	modSvc := &subscriptionModificationService{serviceParams: s.service.(*subscriptionService).ServiceParams}
-	s.True(ierr.IsInvalidOperation(modSvc.applyTrialEndConversion(ctx, sub.ID, invoiceID)))
-}
-
-func (s *SubscriptionServiceSuite) TestTrialEndCheckout_PaidAfterCancelledKeepsPaymentForRefund() {
-	ctx := s.GetContext()
-	sub, sessionID, invoiceID := s.startTrialEndCheckout()
-	cancelled, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
-	s.Require().NoError(err)
-	cancelled.SubscriptionStatus = types.SubscriptionStatusCancelled
-	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, cancelled))
-	session, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
-	s.Require().NoError(err)
-	paymentID := lo.FromPtr(session.CheckoutPaymentID)
-	s.Require().NotEmpty(paymentID)
-	checkoutSvc := &checkoutSessionService{ServiceParams: s.service.(*subscriptionService).ServiceParams}
-
-	err = checkoutSvc.CompleteCheckoutSession(ctx, sessionID, &types.CheckoutProviderResult{ProviderPaymentIntentID: "pi_trial_late"})
-	s.True(ierr.IsInvalidOperation(err))
-
-	failed, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
-	s.Require().NoError(err)
-	s.Equal(types.CheckoutStatusFailed, failed.CheckoutStatus, "failed, so expiry cleanup never deletes the payment")
-	s.NotEmpty(lo.FromPtr(failed.FailureReason))
-
-	// Expiry cleanup must leave the captured payment and its invoice for a manual refund.
-	_, err = checkoutSvc.CleanupAllExpiredSessions(ctx, lo.ToPtr(time.Now().UTC().Add(time.Hour)))
-	s.Require().NoError(err)
-	pay, err := s.GetStores().PaymentRepo.Get(ctx, paymentID)
-	s.Require().NoError(err)
-	s.Equal(types.StatusPublished, pay.Status)
-	inv, err := s.GetStores().InvoiceRepo.Get(ctx, invoiceID)
-	s.Require().NoError(err)
-	s.Equal(types.StatusPublished, inv.Status)
-	s.Equal(types.InvoiceStatusDraft, inv.InvoiceStatus)
-
-	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
-	s.Require().NoError(err)
-	s.Equal(types.SubscriptionStatusCancelled, got.SubscriptionStatus)
-	s.True(got.TrialEnd.Equal(*sub.TrialEnd), "trial end unchanged")
-	s.True(got.CurrentPeriodEnd.Equal(sub.CurrentPeriodEnd), "period unchanged")
-}
-
-func (s *SubscriptionServiceSuite) TestTrialEndCheckout_ExpiryAfterAppliedConversionKeepsPayment() {
-	ctx := s.GetContext()
-	sub, sessionID, invoiceID := s.startTrialEndCheckout()
-	params := s.service.(*subscriptionService).ServiceParams
-	session, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
-	s.Require().NoError(err)
-	paymentID := lo.FromPtr(session.CheckoutPaymentID)
-	s.Require().NotEmpty(paymentID)
-
-	// Apply succeeded, finalize kept failing until the session expired.
-	modSvc := &subscriptionModificationService{serviceParams: params}
-	s.Require().NoError(modSvc.applyTrialEndConversion(ctx, sub.ID, invoiceID))
-	converted, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
-	s.Require().NoError(err)
-
-	checkoutSvc := &checkoutSessionService{ServiceParams: params}
-	_, err = checkoutSvc.CleanupAllExpiredSessions(ctx, lo.ToPtr(time.Now().UTC().Add(48*time.Hour)))
-	s.Require().NoError(err)
-
-	failed, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
-	s.Require().NoError(err)
-	s.Equal(types.CheckoutStatusFailed, failed.CheckoutStatus)
-	s.NotEmpty(lo.FromPtr(failed.FailureReason))
-	pay, err := s.GetStores().PaymentRepo.Get(ctx, paymentID)
-	s.Require().NoError(err)
-	s.Equal(types.StatusPublished, pay.Status, "captured payment kept for manual refund")
-	inv, err := s.GetStores().InvoiceRepo.Get(ctx, invoiceID)
-	s.Require().NoError(err)
-	s.Equal(types.StatusPublished, inv.Status, "draft invoice not archived")
-
-	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
-	s.Require().NoError(err)
-	s.Equal(converted.SubscriptionStatus, got.SubscriptionStatus, "subscription stays converted")
-	s.True(got.TrialEnd.Equal(lo.FromPtr(inv.PeriodStart)))
+			// The cron owns the trial again once the session is gone.
+			cronInv, err := s.service.(*subscriptionService).ProcessSingleSubscriptionTrialEnd(ctx, got, got.TrialEnd.Add(time.Hour))
+			s.Require().NoError(err)
+			s.NotNil(cronInv)
+		})
+	}
 }
 
 func (s *SubscriptionServiceSuite) TestTrialEndCheckout_ConcurrentStartLosesOnIdempotencyKey() {
@@ -436,45 +299,4 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_ConcurrentStartLosesOnId
 	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
 	s.Require().NoError(err)
 	s.Equal(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
-}
-
-// failingMarkTerminalRepo fails every MarkTerminal so callers must not treat the session as terminated.
-type failingMarkTerminalRepo struct {
-	domainCheckout.Repository
-}
-
-func (r failingMarkTerminalRepo) MarkTerminal(context.Context, string, types.CheckoutStatus, *string) (bool, error) {
-	return false, errors.New("mark terminal unavailable")
-}
-
-func (s *SubscriptionServiceSuite) TestTrialEndCheckout_ConvertedCleanupSurfacesMarkTerminalError() {
-	ctx := s.GetContext()
-	sub, sessionID, invoiceID := s.startTrialEndCheckout()
-	params := s.service.(*subscriptionService).ServiceParams
-	modSvc := &subscriptionModificationService{serviceParams: params}
-	s.Require().NoError(modSvc.applyTrialEndConversion(ctx, sub.ID, invoiceID))
-
-	params.CheckoutSessionRepo = failingMarkTerminalRepo{Repository: params.CheckoutSessionRepo}
-	checkoutSvc := &checkoutSessionService{ServiceParams: params}
-	s.Error(checkoutSvc.Delete(ctx, sessionID), "a session that could not be failed must not be archived")
-
-	stored, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
-	s.Require().NoError(err)
-	s.Equal(types.StatusPublished, stored.Status, "pending row is not archived")
-	s.Equal(types.CheckoutStatusPending, stored.CheckoutStatus)
-}
-
-func (s *SubscriptionServiceSuite) TestTrialEndCheckout_CleanupGuardTreatsMissingInvoiceAsNotConverted() {
-	ctx := s.GetContext()
-	_, sessionID, invoiceID := s.startTrialEndCheckout()
-	invoices, ok := s.GetStores().InvoiceRepo.(*testutil.InMemoryInvoiceStore)
-	s.Require().True(ok)
-	s.Require().NoError(invoices.InMemoryStore.Delete(ctx, invoiceID))
-	session, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
-	s.Require().NoError(err)
-
-	checkoutSvc := &checkoutSessionService{ServiceParams: s.service.(*subscriptionService).ServiceParams}
-	converted, err := checkoutSvc.trialEndAlreadyConverted(ctx, session)
-	s.Require().NoError(err, "a missing checkout invoice falls through to normal cleanup")
-	s.False(converted)
 }

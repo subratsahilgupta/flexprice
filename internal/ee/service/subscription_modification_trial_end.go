@@ -82,11 +82,11 @@ func (s *subscriptionModificationService) executeTrialEnd(
 
 	switch params.Action {
 	case dto.TrialEndActionImmediate:
+		if err := ensureNoPendingCheckoutSession(ctx, sp, sub.ID); err != nil {
+			return nil, err
+		}
 		if checkout != nil {
 			return s.settleTrialEndPayFirst(ctx, sub, checkout)
-		}
-		if err := ensureNoPendingTrialEndCheckout(ctx, sp, sub.ID); err != nil {
-			return nil, err
 		}
 		return s.executeTrialEndNow(ctx, sub)
 	case dto.TrialEndActionScheduledDate:
@@ -148,34 +148,25 @@ func (s *subscriptionModificationService) settleTrialEndPayFirst(
 	checkout *dto.CheckoutParams,
 ) (*dto.SubscriptionModifyResponse, error) {
 	sp := s.serviceParams
-	if err := checkout.Validate(); err != nil {
-		return nil, err
-	}
-	if err := ensureNoPendingCheckoutSession(ctx, sp, sub.ID); err != nil {
-		return nil, err
-	}
-
 	start := time.Now().UTC()
 	_, end, err := trialConversionPeriod(sub, start)
 	if err != nil {
 		return nil, err
 	}
-
-	draft, err := NewInvoiceService(sp).CreateSubscriptionDraftInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
+	draft, skipped, err := buildCheckoutDraftInvoice(ctx, sp, dto.CreateSubscriptionDraftInvoiceRequest{
 		SubscriptionID: sub.ID,
 		PeriodStart:    start,
 		PeriodEnd:      end,
-		ReferencePoint: types.ReferencePointPeriodStart,
 		BillingReason:  types.InvoiceBillingReasonSubscriptionTrialEnd,
-	}, types.InvoiceFlowRenewal)
+	})
 	if err != nil {
 		return nil, err
 	}
-	if draft == nil {
+	if skipped {
 		return s.executeTrialEndNow(ctx, sub)
 	}
 
-	// One trial-end checkout per subscription: the active-session idempotency index rejects a racing second start.
+	// Deterministic key: the active-session idempotency index rejects a racing second trial-end start.
 	keyed := *checkout
 	keyed.IdempotencyKey = lo.ToPtr("trial_end:" + sub.ID)
 	sessionResp, err := NewCheckoutSessionService(sp).StartPayFirstCheckoutSession(ctx, &dto.PayFirstCheckoutRequest{
@@ -193,12 +184,10 @@ func (s *subscriptionModificationService) settleTrialEndPayFirst(
 	if err != nil {
 		return nil, err
 	}
-
 	subResp, err := NewSubscriptionService(sp).GetSubscription(ctx, sub.ID)
 	if err != nil {
 		return nil, err
 	}
-	sp.Logger.Info(ctx, "trial end gated behind checkout", "subscription_id", sub.ID, "invoice_id", draft.ID, "checkout_session_id", sessionResp.ID)
 	return &dto.SubscriptionModifyResponse{
 		Subscription:     subResp,
 		CheckoutSession:  sessionResp,
@@ -207,7 +196,6 @@ func (s *subscriptionModificationService) settleTrialEndPayFirst(
 }
 
 // applyTrialEndConversion ends the trial at the paid invoice's period start. Safe to replay.
-// Returns ErrInvalidOperation when the subscription can no longer take the conversion.
 func (s *subscriptionModificationService) applyTrialEndConversion(ctx context.Context, subscriptionID, invoiceID string) error {
 	sp := s.serviceParams
 	inv, err := sp.InvoiceRepo.Get(ctx, invoiceID)
@@ -219,15 +207,14 @@ func (s *subscriptionModificationService) applyTrialEndConversion(ctx context.Co
 	}
 	start, end := inv.PeriodStart.UTC(), inv.PeriodEnd.UTC()
 
-	subSvc := &subscriptionService{ServiceParams: sp}
 	return sp.DB.WithTx(ctx, func(txCtx context.Context) error {
-		// Locked re-read: a concurrent delivery may have converted and activated the row already.
+		// Locked re-read: a concurrent delivery may have converted the row already.
 		sub, err := sp.SubRepo.GetForUpdate(txCtx, subscriptionID)
 		if err != nil {
 			return err
 		}
 		if sub.SubscriptionStatus != types.SubscriptionStatusTrialing {
-			if sub.SubscriptionStatus != types.SubscriptionStatusCancelled && trialEndConversionApplied(sub, start) {
+			if sub.TrialEnd != nil && sub.TrialEnd.Equal(start) {
 				return nil // already applied by an earlier delivery
 			}
 			return ierr.NewError("subscription is no longer trialing").
@@ -244,17 +231,11 @@ func (s *subscriptionModificationService) applyTrialEndConversion(ctx context.Co
 		sub.CurrentPeriodStart = start
 		sub.CurrentPeriodEnd = end
 		sub.SubscriptionStatus = types.SubscriptionStatusIncomplete
-
 		if err := sp.SubRepo.Update(txCtx, sub); err != nil {
 			return err
 		}
-		return subSvc.cascadeTrialEndToInherited(txCtx, sub)
+		return (&subscriptionService{ServiceParams: sp}).cascadeTrialEndToInherited(txCtx, sub)
 	})
-}
-
-// trialEndConversionApplied reports whether the trial was already ended at the paid period's start.
-func trialEndConversionApplied(sub *subscription.Subscription, periodStart time.Time) bool {
-	return sub.SubscriptionStatus != types.SubscriptionStatusTrialing && sub.TrialEnd != nil && sub.TrialEnd.Equal(periodStart)
 }
 
 // executeTrialEndModifyDate extends or reduces the trial end date.

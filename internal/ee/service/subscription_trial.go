@@ -167,14 +167,10 @@ func (s *subscriptionService) processSubscriptionTrialEnd(ctx context.Context, s
 		return nil, nil
 	}
 
-	// A pending pay-first trial end owns the conversion; the cron retries once that session closes.
-	pendingTrialEnd, err := pendingTrialEndCheckout(ctx, s.ServiceParams, sub.ID)
-	if err != nil {
+	// TODO: any pending checkout defers the trial end, not only a trial-end one; narrow if that bites.
+	pending, err := pendingCheckoutSessions(ctx, s.ServiceParams, sub.ID)
+	if err != nil || len(pending) > 0 {
 		return nil, err
-	}
-	if pendingTrialEnd != nil {
-		s.Logger.Info(ctx, "trial end deferred to pending checkout", "subscription_id", sub.ID, "checkout_session_id", pendingTrialEnd.ID)
-		return nil, nil
 	}
 
 	// Calendar subs bill a short first paid period; anniversary subs re-anchor at trial end for a full one.
