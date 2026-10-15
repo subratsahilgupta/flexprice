@@ -141,7 +141,7 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 		require.NoError(t, err)
 		return res.Rows
 	}
-	// Sep usd: c1,c5 = 110/2; Aug usd: c1,c4,c6 = 13/3; inr has no prior.
+	// Sep 110/2, Aug 13/3; inr no prior.
 	rows := arpuCmp(types.ShapeScalar)
 	require.Len(t, rows, 2)
 	assert.Equal(t, []string{"inr", "5", ""}, rows[0])
