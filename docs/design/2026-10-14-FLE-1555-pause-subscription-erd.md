@@ -19,9 +19,10 @@ pause, is not billed while paused, and starts billing again from the moment it i
 ## 2. How it works today
 
 Pause is not supported. There is no pause or resume endpoint. Some pause code is still in the codebase (the
-`subscription_pause` table, the `paused` status, and old pause and resume service methods), but none of it
+`subscription_pauses` table, the `paused` status, and old pause and resume service methods), but none of it
 is reachable and its behavior is wrong. It is removed as part of this work, except for the table, the
-status values and the webhooks, which the new flow reuses.
+status values and the webhooks, which the new flow reuses. The table exists in the database and
+get-subscription already returns its rows as `pauses`, but nothing writes to it today.
 
 Two existing flows are the closest references:
 
@@ -29,8 +30,10 @@ Two existing flows are the closest references:
 cancel time and bills usage and arrear fixed charges up to that point on a finalized invoice. Its request
 takes a `proration_behavior`, and under `create_prorations` the unused part of advance fixed charges is
 credited to the customer's wallet.
-- **Trial end** already restarts billing from a given moment. It resets the billing anchor to the trial
-end, starts a fresh full period and invoices its advance charges.
+- **Subscription create with a short first period** already bills a period that starts between two anchor
+dates. The first period runs from the start date to the next anchor date, and its fixed charges are priced
+by the subscription's `proration_behavior`: the full price under `none`, the used fraction under
+`create_prorations`.
 
 
 
@@ -38,7 +41,7 @@ end, starts a fresh full period and invoices its advance charges.
 
 Two endpoints, `POST /subscriptions/{id}/pause` and `POST /subscriptions/{id}/resume`. Both act immediately.
 Scheduled pause, scheduled resume and automatic resume are phase 2. The MVP is about closing the period
-with the right proration, skipping the paused periods, and restarting billing on the right anchor.
+with the right proration, skipping the paused periods, and restarting billing on the same billing anchor.
 
 **API contracts**
 
@@ -62,12 +65,14 @@ with the right proration, skipping the paused periods, and restarting billing on
 
 ```json
 {
+  "proration_behavior": "create_prorations",
   "metadata": { "requested_by": "support" }
 }
 ```
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
+| `proration_behavior` | enum | no | `none` or `create_prorations`. When sent, it is saved onto the subscription's `proration_behavior`. When omitted, the subscription's current value is used |
 | `metadata` | map | no | Stored on the pause |
 
 Both endpoints return the subscription and its pause (id, `pause_status`, `pause_start`, `resumed_at`). A
@@ -90,7 +95,8 @@ charges, because those were billed when the period started. It is finalized and 
 
    The request value drives both. This differs from cancel, where the arrear part still reads the
    subscription's own `proration_behavior`.
-4. A pause row is created with `pause_status = active` and `pause_start` set to the pause time.
+4. A row is written to `subscription_pauses` with `pause_status = active` and `pause_start` set to the
+pause time.
 5. The subscription becomes `paused`. Its current period becomes the pause time up to the original period
 end.
 
@@ -107,16 +113,27 @@ items, is $0 and is always `SKIPPED`. It is never recomputed.
 
 The resume time is the moment of the request.
 
-1. The paused period in progress is closed at the resume time with a `SUBSCRIPTION_PAUSED` invoice, $0 and
+1. If the request has `proration_behavior`, it is saved onto the subscription.
+2. The paused period in progress is closed at the resume time with a `SUBSCRIPTION_PAUSED` invoice, $0 and
 `SKIPPED`.
-2. The billing anchor is reset to the resume time. A fresh full period starts at the resume time.
-3. An invoice with a new billing reason, `SUBSCRIPTION_RESUME`, bills the advance fixed charges of the new
-period, the same way trial end bills them. It is finalized and payable. Arrear fixed charges and usage of
-the new period are billed by the normal cycle invoice at its end.
-4. The pause row becomes `completed` with `resumed_at` set to the resume time.
-5. The subscription becomes `active`.
+3. The billing anchor is not changed. The current period becomes the resume time up to the next anchor
+date, the same way a subscription created between two anchor dates gets a short first period.
+4. An invoice with a new billing reason, `SUBSCRIPTION_RESUME`, bills the advance fixed charges for that
+short period. It is finalized and payable.
+5. Arrear fixed charges and usage for the short period are billed by the normal cycle invoice at the next
+anchor date, together with the next period's advance charges. Usage counts from the resume time, so
+nothing from the paused stretch is billed.
+6. The `subscription_pauses` row becomes `completed` with `resumed_at` set to the resume time.
+7. The subscription becomes `active`.
 
-There is no proration at resume in the MVP.
+Proration of the short period follows the subscription's `proration_behavior`:
+
+- `none`: advance and arrear fixed charges are billed at the full period price.
+- `create_prorations`: advance fixed charges are prorated on the resume invoice, and arrear fixed charges
+are prorated on the next cycle invoice.
+
+If the resume lands exactly on an anchor date there is no short period, and the resume invoice bills a
+full period of advance charges.
 
 **Business rules**
 
@@ -138,11 +155,10 @@ Pause is refused when:
 Resume is refused when:
 
 - V4. The subscription is not paused.
-- V5. The subscription is calendar billed and the resume time is not on a period boundary (open question 1).
 
 While paused:
 
-- V6. A scheduled cancellation or a plan change is refused.
+- V5. A scheduled cancellation or a plan change is refused.
 
 **Old code removal**
 
@@ -165,9 +181,17 @@ webhooks.
    With `none` the arrear fee is $62 and nothing is credited.
 2. **Paused periods.** Jan 11 to Feb 1 and Feb 1 to Mar 1 each get a $0 `SKIPPED` invoice with reason
    `SUBSCRIPTION_PAUSED`.
-3. **Resume.** The customer resumes on Mar 18. Mar 1 to Mar 18 gets a $0 `SKIPPED` invoice. The new period
-   is Mar 18 to Apr 18, and the resume invoice bills the $310 advance fee.
-4. **Cancel while paused.** The customer cancels on Feb 10 instead of resuming. Nothing is billed and the
+3. **Resume.** The customer resumes on Mar 18. Mar 1 to Mar 18 gets a $0 `SKIPPED` invoice. The anchor stays
+   on the 1st, so the current period is Mar 18 to Apr 1 and the next one is Apr 1 to May 1. With
+   `create_prorations` the resume invoice bills $140 (14/31 of $310), and the Apr 1 invoice bills $28
+   (14/31 of $62) plus usage from Mar 18 plus April's $310. With `none` the resume invoice bills $310 and
+   the Apr 1 invoice bills $62 plus usage plus April's $310.
+4. **Anchor on the 22nd.** Paused on Feb 5, resumed on Mar 18. Jan 22 to Feb 5 is the closing invoice.
+   Feb 5 to Feb 22 and Feb 22 to Mar 18 are $0 `SKIPPED`. The current period is Mar 18 to Mar 22 (4 of 28
+   days). With `create_prorations` the resume invoice bills $44.29 and the Mar 22 invoice bills $8.86 plus
+   usage plus $310 for Mar 22 to Apr 22. With `none` the customer pays $310 on Mar 18 for 4 days and $310
+   again on Mar 22, which is how `none` already behaves for a short first period at create.
+5. **Cancel while paused.** The customer cancels on Feb 10 instead of resuming. Nothing is billed and the
    subscription is cancelled.
 
 
@@ -178,8 +202,9 @@ webhooks.
 
 ### 5.1 ERD
 
-No schema change. The new billing reasons go into the existing `invoices.billing_reason` string column. The
-tables below are shown only for the fields the pause flow uses.
+No schema change. The new billing reasons go into the existing `invoices.billing_reason` string column, and
+each pause is one row in the existing `subscription_pauses` table. The tables below are shown only for the
+fields the pause flow uses.
 
 ```mermaid
 erDiagram
@@ -192,7 +217,8 @@ erDiagram
         string subscription_status "active, paused"
         string pause_status "none, active"
         string active_pause_id FK
-        timestamp billing_anchor "reset on resume"
+        timestamp billing_anchor "unchanged by pause and resume"
+        string proration_behavior "set by the resume request when sent"
         timestamp current_period_start
         timestamp current_period_end
     }
@@ -232,14 +258,16 @@ sequenceDiagram
     C->>Svc: pause (proration_behavior)
     Svc->>Inv: shorten open draft, closing invoice up to pause time
     Svc->>DB: wallet credit for unused advance (create_prorations only)
-    Svc->>DB: pause row active, subscription paused
+    Svc->>DB: subscription_pauses row active, subscription paused
     loop each paused period that ends
         Roll->>Inv: SUBSCRIPTION_PAUSED invoice, $0, SKIPPED
     end
-    C->>Svc: resume
+    C->>Svc: resume (proration_behavior)
+    Svc->>DB: save proration_behavior on subscription (when sent)
     Svc->>Inv: SUBSCRIPTION_PAUSED invoice up to resume time
-    Svc->>DB: anchor = resume time, new period, subscription active
-    Svc->>Inv: SUBSCRIPTION_RESUME invoice with advance charges
+    Svc->>DB: period = resume time to next anchor date, subscription active
+    Svc->>Inv: SUBSCRIPTION_RESUME invoice, advance charges for the short period
+    Roll->>Inv: next anchor date, cycle invoice with arrear and usage from resume time
 ```
 
 
@@ -257,13 +285,10 @@ so MVP callers are unaffected.
 - **Running scheduled pauses and resumes.** Extend the existing `subscription-billing` workflow with "pause
 due" and "resume due" conditions, next to its existing `cancel_at` condition. Pause and resume use the
 stored times as their effective times, so a late run produces the same invoices. A dedicated schedule is
-the alternative, at the cost of extra Temporal runs on every tick.
-- **Billing anchor on resume.** An explicit `billing_anchor` on the resume request, used instead of the
-resume time.
-- **Proration at resume.** Keep the original anchor and prorate the stub period after resume. The choice is
-made on the pause request and stored on the pause row, so an automatic resume knows what to do, and a
-manual resume can override it. This needs one new column on `subscription_pauses`.
-- **Mid-period resume for calendar billing,** using the same stub proration.
+the alternative, at the cost of extra Temporal runs on every tick. An automatic or scheduled resume
+prorates with the subscription's `proration_behavior`, so it needs no new column.
+- **Billing anchor on resume.** An explicit `billing_anchor` on the resume request, for customers who want
+to move their billing day when they come back.
 - **Pausing an individual child** while the parent and the other children keep billing.
 - **Pausing with a pending cancellation or plan change.**
 - **Stripe-managed subscriptions,** through Stripe's `pause_collection`, with our Stripe sync no longer
@@ -280,16 +305,7 @@ last cycle invoice.
 
 ## 7. Open questions
 
-### 1. Calendar billing on resume
-
-Re-anchoring at a mid-month resume breaks calendar alignment, and keeping the alignment needs a prorated
-stub period, which is not in the MVP. Since the MVP only has immediate resume, refusing a mid-period resume
-means a calendar-billed subscription can only be resumed on a period boundary day.
-
-- **Proposed:** refuse a resume that is not on a period boundary for calendar-billed subscriptions.
-- **Alternative:** switch the subscription to anniversary billing on resume, anchored at the resume time.
-
-### 2. Auto-cancellation of paused subscriptions
+### 1. Auto-cancellation of paused subscriptions
 
 A customer who pauses and never pays the closing invoice stays paused forever.
 
@@ -297,14 +313,14 @@ A customer who pauses and never pays the closing invoice stays paused forever.
 - **Alternative:** include paused subscriptions with an overdue invoice in auto-cancellation. Cancelling a
 paused subscription bills nothing, so this is safe.
 
-### 3. Grouped children of a paused parent
+### 2. Grouped children of a paused parent
 
 Their charges are on the parent's invoice, so they are not billed while the parent is paused.
 
 - **Proposed:** leave their status unchanged.
 - **Alternative:** cascade the pause and resume to grouped children too, so their status shows `paused`.
 
-### 4. Commitment true-up on the closing invoice
+### 3. Commitment true-up on the closing invoice
 
 A commitment charges the gap between usage and an agreed minimum spend. The closing invoice is computed the
 way cancel computes it, so it bills the full gap even for a cut-short period. Annual commitments billed
@@ -314,7 +330,7 @@ monthly also keep counting paused months.
 - **Alternative 1:** skip the true-up on the closing invoice.
 - **Alternative 2:** prorate the true-up to the used part of the period.
 
-### 5. Stripe-managed subscriptions
+### 4. Stripe-managed subscriptions
 
 Stripe owns their status and overwrites ours on its next webhook.
 
@@ -322,7 +338,7 @@ Stripe owns their status and overwrites ours on its next webhook.
 - **Alternative:** pause in Stripe too through `pause_collection`, and stop our Stripe sync from overwriting
 the paused status.
 
-### 6. Entitlements while paused
+### 5. Entitlements while paused
 
 The customer entitlements API only returns active and trialing subscriptions, so a paused customer has no
 entitlements, boolean features included.
@@ -331,7 +347,7 @@ entitlements, boolean features included.
 - **Alternative:** return the paused subscription's entitlements, so access continues while billing is
 paused.
 
-### 7. Credit grants and coupons while paused
+### 6. Credit grants and coupons while paused
 
 Recurring credits that fall due during a pause are skipped and not caught up, and after resume they keep
 their old delivery date. Repeating coupons have a calendar end date, so a pause uses up their time.
