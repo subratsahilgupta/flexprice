@@ -370,3 +370,39 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_PaidAfterCancelledKeepsP
 	s.True(got.TrialEnd.Equal(*sub.TrialEnd), "trial end unchanged")
 	s.True(got.CurrentPeriodEnd.Equal(sub.CurrentPeriodEnd), "period unchanged")
 }
+
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_ExpiryAfterAppliedConversionKeepsPayment() {
+	ctx := s.GetContext()
+	sub, sessionID, invoiceID := s.startTrialEndCheckout()
+	params := s.service.(*subscriptionService).ServiceParams
+	session, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
+	s.Require().NoError(err)
+	paymentID := lo.FromPtr(session.CheckoutPaymentID)
+	s.Require().NotEmpty(paymentID)
+
+	// Apply succeeded, finalize kept failing until the session expired.
+	modSvc := &subscriptionModificationService{serviceParams: params}
+	s.Require().NoError(modSvc.applyTrialEndConversion(ctx, sub.ID, invoiceID))
+	converted, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: params}
+	_, err = checkoutSvc.CleanupAllExpiredSessions(ctx, lo.ToPtr(time.Now().UTC().Add(48*time.Hour)))
+	s.Require().NoError(err)
+
+	failed, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
+	s.Require().NoError(err)
+	s.Equal(types.CheckoutStatusFailed, failed.CheckoutStatus)
+	s.NotEmpty(lo.FromPtr(failed.FailureReason))
+	pay, err := s.GetStores().PaymentRepo.Get(ctx, paymentID)
+	s.Require().NoError(err)
+	s.Equal(types.StatusPublished, pay.Status, "captured payment kept for manual refund")
+	inv, err := s.GetStores().InvoiceRepo.Get(ctx, invoiceID)
+	s.Require().NoError(err)
+	s.Equal(types.StatusPublished, inv.Status, "draft invoice not archived")
+
+	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
+	s.Equal(converted.SubscriptionStatus, got.SubscriptionStatus, "subscription stays converted")
+	s.True(got.TrialEnd.Equal(lo.FromPtr(inv.PeriodStart)))
+}

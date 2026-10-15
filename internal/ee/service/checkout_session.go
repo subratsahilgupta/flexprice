@@ -407,6 +407,17 @@ func (s *checkoutSessionService) voidCheckoutInvoiceIfPartiallyPaid(ctx context.
 // cleanupCheckoutSession terminates the session and publishes checkout.session.failed
 // (reason set) or checkout.session.expired (no reason).
 func (s *checkoutSessionService) cleanupCheckoutSession(ctx context.Context, session *domainCheckout.CheckoutSession, reason error) error {
+	converted, err := s.trialEndAlreadyConverted(ctx, session)
+	if err != nil {
+		return err
+	}
+	if converted {
+		s.failCheckoutKeepingResources(ctx, session, ierr.NewError("trial-end conversion applied but checkout never completed").
+			WithHintf("subscription converted on session %s; payment and invoice kept for manual reconciliation", session.ID).
+			Mark(ierr.ErrInvalidOperation))
+		return nil
+	}
+
 	terminated, err := s.terminateCheckoutSession(ctx, session, reason)
 	if err != nil || !terminated {
 		return err
@@ -419,6 +430,27 @@ func (s *checkoutSessionService) cleanupCheckoutSession(ctx context.Context, ses
 		s.publishCheckoutEvent(ctx, resp, types.WebhookEventCheckoutSessionExpired)
 	}
 	return nil
+}
+
+// trialEndAlreadyConverted reports whether an open trial-end session's subscription already converted,
+// meaning payment was captured and cleanup must not discard the payment or invoice.
+func (s *checkoutSessionService) trialEndAlreadyConverted(ctx context.Context, session *domainCheckout.CheckoutSession) (bool, error) {
+	params := session.Configuration.ModifySubscriptionParams
+	if session.CheckoutStatus.IsTerminal() || params == nil || params.ModifyType != types.ModifySubscriptionTypeTrialEnd || lo.FromPtr(session.CheckoutInvoiceID) == "" {
+		return false, nil
+	}
+	inv, err := s.InvoiceRepo.Get(ctx, *session.CheckoutInvoiceID)
+	if err != nil {
+		return false, err
+	}
+	if inv.PeriodStart == nil {
+		return false, nil
+	}
+	sub, err := s.SubRepo.Get(ctx, params.SubscriptionID)
+	if err != nil {
+		return false, err
+	}
+	return trialEndConversionApplied(sub, inv.PeriodStart.UTC()), nil
 }
 
 // terminate cleans up a checkout session without webhook publishing.

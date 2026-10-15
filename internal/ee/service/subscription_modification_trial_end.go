@@ -224,7 +224,7 @@ func (s *subscriptionModificationService) applyTrialEndConversion(ctx context.Co
 			return err
 		}
 		if sub.SubscriptionStatus != types.SubscriptionStatusTrialing {
-			if sub.SubscriptionStatus != types.SubscriptionStatusCancelled && sub.TrialEnd != nil && sub.TrialEnd.Equal(start) {
+			if sub.SubscriptionStatus != types.SubscriptionStatusCancelled && trialEndConversionApplied(sub, start) {
 				return nil // already applied by an earlier delivery
 			}
 			return ierr.NewError("subscription is no longer trialing").
@@ -247,6 +247,11 @@ func (s *subscriptionModificationService) applyTrialEndConversion(ctx context.Co
 		}
 		return subSvc.cascadeTrialEndToInherited(txCtx, sub)
 	})
+}
+
+// trialEndConversionApplied reports whether the trial was already ended at the paid period's start.
+func trialEndConversionApplied(sub *subscription.Subscription, periodStart time.Time) bool {
+	return sub.SubscriptionStatus != types.SubscriptionStatusTrialing && sub.TrialEnd != nil && sub.TrialEnd.Equal(periodStart)
 }
 
 // executeTrialEndModifyDate extends or reduces the trial end date.
