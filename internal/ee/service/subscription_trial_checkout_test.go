@@ -406,3 +406,32 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_ExpiryAfterAppliedConver
 	s.Equal(converted.SubscriptionStatus, got.SubscriptionStatus, "subscription stays converted")
 	s.True(got.TrialEnd.Equal(lo.FromPtr(inv.PeriodStart)))
 }
+
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_ConcurrentStartLosesOnIdempotencyKey() {
+	ctx := s.GetContext()
+	sub := s.seedTrialingFixedFeeSubscription(decimal.NewFromInt(200))
+	// A racing start whose session the pending-check could not see yet holds the deterministic key.
+	s.Require().NoError(s.GetStores().CheckoutSessionRepo.Create(ctx, &domainCheckout.CheckoutSession{
+		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CHECKOUT_SESSION),
+		CustomerID:      sub.CustomerID,
+		Action:          types.CheckoutActionWalletTopup,
+		CheckoutStatus:  types.CheckoutStatusPending,
+		PaymentProvider: types.CheckoutPaymentProviderRazorpay,
+		IdempotencyKey:  lo.ToPtr("trial_end:" + sub.ID),
+		ExpiresAt:       time.Now().UTC().Add(20 * time.Minute),
+		EnvironmentID:   types.GetEnvironmentID(ctx),
+		BaseModel:       types.GetDefaultBaseModel(ctx),
+	}))
+	modSvc := NewSubscriptionModificationService(s.service.(*subscriptionService).ServiceParams)
+
+	_, err := modSvc.Execute(ctx, sub.ID, s.trialEndCheckoutRequest())
+	s.True(ierr.IsAlreadyExists(err), "duplicate trial-end checkout rejected by the idempotency key, got %v", err)
+
+	drafts := lo.Filter(s.invoicesFor(sub.ID), func(i *invoice.Invoice, _ int) bool {
+		return i.BillingReason == string(types.InvoiceBillingReasonSubscriptionTrialEnd) && i.Status == types.StatusPublished
+	})
+	s.Empty(drafts, "the losing start leaves no orphan draft")
+	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
+}

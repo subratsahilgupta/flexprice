@@ -175,6 +175,9 @@ func (s *subscriptionModificationService) settleTrialEndPayFirst(
 		return s.executeTrialEndNow(ctx, sub)
 	}
 
+	// One trial-end checkout per subscription: the active-session idempotency index rejects a racing second start.
+	keyed := *checkout
+	keyed.IdempotencyKey = lo.ToPtr("trial_end:" + sub.ID)
 	sessionResp, err := NewCheckoutSessionService(sp).StartPayFirstCheckoutSession(ctx, &dto.PayFirstCheckoutRequest{
 		CustomerID: sub.CustomerID,
 		Action:     types.CheckoutActionModifySubscription,
@@ -185,7 +188,7 @@ func (s *subscriptionModificationService) settleTrialEndPayFirst(
 			},
 		},
 		DraftInvoice: &draft.Invoice,
-		Checkout:     checkout,
+		Checkout:     &keyed,
 	})
 	if err != nil {
 		return nil, err
