@@ -120,12 +120,16 @@ func (r *subscriptionRepository) Get(ctx context.Context, id string) (*domainSub
 	})
 	defer FinishSpan(span)
 
-	// Try to get from cache first
-	if cachedSub := r.GetCache(ctx, id); cachedSub != nil {
-		return cachedSub, nil
+	// Inside a transaction the cache can't see uncommitted writes and must not store them.
+	inTx := r.client.TxFromContext(ctx) != nil
+	if !inTx {
+		if cachedSub := r.GetCache(ctx, id); cachedSub != nil {
+			return cachedSub, nil
+		}
 	}
 
-	client := r.client.Reader(ctx)
+	// Cache fills read the primary so a lagging replica row can't outlive the post-commit invalidation.
+	client := r.client.Reader(types.WithForceWriter(ctx))
 
 	sub, err := client.Subscription.Query().
 		Where(
@@ -151,7 +155,9 @@ func (r *subscriptionRepository) Get(ctx context.Context, id string) (*domainSub
 
 	SetSpanSuccess(span)
 	subData := domainSub.GetSubscriptionFromEnt(sub)
-	r.SetCache(ctx, subData)
+	if !inTx {
+		r.SetCache(ctx, subData)
+	}
 	return subData, nil
 }
 
@@ -316,7 +322,7 @@ func (r *subscriptionRepository) Update(ctx context.Context, sub *domainSub.Subs
 	}
 
 	SetSpanSuccess(span)
-	r.DeleteCache(ctx, sub.ID)
+	r.invalidateCache(ctx, sub.ID)
 	return nil
 }
 
@@ -362,7 +368,7 @@ func (r *subscriptionRepository) UpdatePlan(ctx context.Context, id string, plan
 	}
 
 	SetSpanSuccess(span)
-	r.DeleteCache(ctx, id)
+	r.invalidateCache(ctx, id)
 	return nil
 }
 
@@ -401,7 +407,7 @@ func (r *subscriptionRepository) Delete(ctx context.Context, id string) error {
 	}
 
 	SetSpanSuccess(span)
-	r.DeleteCache(ctx, id)
+	r.invalidateCache(ctx, id)
 	return nil
 }
 
@@ -1220,6 +1226,15 @@ func (r *subscriptionRepository) DeleteCache(ctx context.Context, subID string) 
 	r.redisCache.Delete(ctx, cacheKey)
 }
 
+// invalidateCache drops the cached rows once the surrounding transaction commits.
+func (r *subscriptionRepository) invalidateCache(ctx context.Context, ids ...string) {
+	afterCommit(ctx, func() {
+		for _, id := range ids {
+			r.DeleteCache(ctx, id)
+		}
+	})
+}
+
 // ListByCustomerID retrieves all active subscriptions for a customer and includes line items
 func (r *subscriptionRepository) ListByCustomerID(ctx context.Context, customerID string) ([]*domainSub.Subscription, error) {
 	r.logger.Debug(ctx, "listing subscriptions by customer ID",
@@ -1419,9 +1434,7 @@ func (r *subscriptionRepository) MarkOverdueGatedSubscriptionsIncomplete(ctx con
 			Mark(ierr.ErrDatabase)
 	}
 
-	for _, id := range ids {
-		r.DeleteCache(ctx, id)
-	}
+	r.invalidateCache(ctx, ids...)
 
 	SetSpanSuccess(span)
 	return ids, nil
