@@ -105,6 +105,12 @@ func (r *ReportsRepository) run(ctx context.Context, q *reportQuery) ([][]string
 	if r.cfg.MaxRowsToRead > 0 {
 		settings["max_rows_to_read"] = r.cfg.MaxRowsToRead
 	}
+	if r.cfg.QueryCacheTTLSeconds > 0 {
+		settings["use_query_cache"] = 1
+		settings["query_cache_ttl"] = r.cfg.QueryCacheTTLSeconds
+		// Cache, not throw, on now().
+		settings["query_cache_nondeterministic_function_handling"] = "save"
+	}
 	ctx = clickhouse_go.Context(ctx, clickhouse_go.WithParameters(q.Params), clickhouse_go.WithSettings(settings))
 
 	rows, err := r.conn.Query(ctx, q.SQL)
