@@ -433,6 +433,34 @@ func (s *SubscriptionServiceSuite) TestTrialConversionActivatesOnlyFromIncomplet
 	}
 }
 
+func (s *SubscriptionServiceSuite) TestTrialConversionUsesFreshStoredRow() {
+	tests := []struct {
+		name         string
+		stored       types.SubscriptionStatus
+		callerStatus types.SubscriptionStatus
+		want         types.SubscriptionStatus
+	}{
+		{"stale trialing copy, stored incomplete activates", types.SubscriptionStatusIncomplete, types.SubscriptionStatusTrialing, types.SubscriptionStatusActive},
+		{"stale incomplete copy, stored active is a no-op", types.SubscriptionStatusActive, types.SubscriptionStatusIncomplete, types.SubscriptionStatusActive},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			ctx := s.GetContext()
+			sub := s.seedTrialingFixedFeeSubscription(decimal.NewFromInt(200))
+			sub.SubscriptionStatus = tt.stored
+			s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
+
+			stale := *sub
+			stale.SubscriptionStatus = tt.callerStatus
+			s.Require().NoError(s.service.(*subscriptionService).completeTrialConversionToActive(ctx, &stale))
+
+			got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+			s.Require().NoError(err)
+			s.Equal(tt.want, got.SubscriptionStatus)
+		})
+	}
+}
+
 func (s *SubscriptionServiceSuite) TestTrialEndCheckout_InvoicePaidWhileTrialingThenCheckoutCompletes() {
 	ctx := s.GetContext()
 	sub, sessionID, invoiceID := s.startTrialEndCheckout()

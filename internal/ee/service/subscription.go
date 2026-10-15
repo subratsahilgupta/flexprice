@@ -5880,28 +5880,37 @@ func (s *subscriptionService) voidOverdueInvoices(ctx context.Context, invoiceSe
 // skipped (zero-amount). By the time this is called, processSubscriptionTrialEnd has already
 // advanced CurrentPeriodStart/End to the first real billing window, so only the status changes.
 func (s *subscriptionService) completeTrialConversionToActive(ctx context.Context, sub *subscription.Subscription) error {
-	// Only the post-conversion incomplete state activates; a still-trialing sub waits for its conversion.
-	if sub.SubscriptionStatus != types.SubscriptionStatusIncomplete {
-		return nil
-	}
-	sub.SubscriptionStatus = types.SubscriptionStatusActive
+	activated := false
 	if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
-		txCtx = activity.WithAction(txCtx, sub.ID, activity.SubscriptionActivated)
-		if err := s.SubRepo.Update(txCtx, sub); err != nil {
+		// Locked, uncached read: the caller's copy may be a stale cache hit.
+		fresh, err := s.SubRepo.GetForUpdate(txCtx, sub.ID)
+		if err != nil {
 			return err
 		}
-		if err := s.cascadeTrialActivationToInherited(txCtx, sub); err != nil {
+		// Only the post-conversion incomplete state activates; a still-trialing sub waits for its conversion.
+		if fresh.SubscriptionStatus != types.SubscriptionStatusIncomplete {
+			return nil
+		}
+		fresh.SubscriptionStatus = types.SubscriptionStatusActive
+		txCtx = activity.WithAction(txCtx, fresh.ID, activity.SubscriptionActivated)
+		if err := s.SubRepo.Update(txCtx, fresh); err != nil {
 			return err
 		}
-		if err := s.processPendingCreditGrantsForSubscription(txCtx, sub); err != nil {
+		if err := s.cascadeTrialActivationToInherited(txCtx, fresh); err != nil {
 			return err
 		}
+		if err := s.processPendingCreditGrantsForSubscription(txCtx, fresh); err != nil {
+			return err
+		}
+		activated = true
 		return nil
 	}); err != nil {
 		return err
 	}
 
-	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionActivated, sub.ID)
+	if activated {
+		s.publishSystemEvent(ctx, types.WebhookEventSubscriptionActivated, sub.ID)
+	}
 	return nil
 }
 
