@@ -234,7 +234,7 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_PaidEndsTrialAndActivate
 
 func (s *SubscriptionServiceSuite) TestTrialEndCheckout_DoubleCompleteIdempotent() {
 	ctx := s.GetContext()
-	sub, sessionID, invoiceID := s.startTrialEndCheckout()
+	sub, sessionID, _ := s.startTrialEndCheckout()
 	params := s.service.(*subscriptionService).ServiceParams
 	checkoutSvc := &checkoutSessionService{ServiceParams: params}
 	s.Require().NoError(checkoutSvc.CompleteCheckoutSession(ctx, sessionID, &types.CheckoutProviderResult{ProviderPaymentIntentID: "pi_trial_2"}))
@@ -245,7 +245,7 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_DoubleCompleteIdempotent
 	err = checkoutSvc.CompleteCheckoutSession(ctx, sessionID, &types.CheckoutProviderResult{ProviderPaymentIntentID: "pi_trial_2"})
 	s.True(ierr.IsAlreadyExists(err), "replayed completion is rejected at the session layer")
 	modSvc := &subscriptionModificationService{serviceParams: params}
-	s.Require().NoError(modSvc.applyTrialEndConversion(ctx, sub.ID, invoiceID))
+	s.Require().NoError(modSvc.applyTrialEndConversion(ctx, sub.ID, lo.FromPtr(first.TrialEnd)))
 
 	again, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
 	s.Require().NoError(err)
@@ -319,4 +319,42 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_ConcurrentStartLosesOnId
 	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
 	s.Require().NoError(err)
 	s.Equal(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
+}
+
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_CallerIdempotencyKeyRespected() {
+	ctx := s.GetContext()
+	sub := s.seedTrialingFixedFeeSubscription(decimal.NewFromInt(200))
+	req := s.trialEndCheckoutRequest()
+	req.Checkout.IdempotencyKey = lo.ToPtr("caller-key-" + sub.ID)
+
+	resp, err := NewSubscriptionModificationService(s.service.(*subscriptionService).ServiceParams).Execute(ctx, sub.ID, req)
+	s.Require().NoError(err)
+	session, err := s.GetStores().CheckoutSessionRepo.Get(ctx, resp.CheckoutSession.ID)
+	s.Require().NoError(err)
+	s.Equal("caller-key-"+sub.ID, lo.FromPtr(session.IdempotencyKey))
+}
+
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_CompletionUsesStoredStart() {
+	ctx := s.GetContext()
+	sub, sessionID, _ := s.startTrialEndCheckout()
+	session, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
+	s.Require().NoError(err)
+	params := session.Configuration.ModifySubscriptionParams
+	s.Require().NotNil(params.TrialEndAt, "execute records the conversion start on the session")
+
+	// Shift the stored start so the test proves completion reads it rather than the invoice period.
+	stored := params.TrialEndAt.Add(time.Minute)
+	params.TrialEndAt = &stored
+	s.Require().NoError(s.GetStores().CheckoutSessionRepo.Update(ctx, session))
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: s.service.(*subscriptionService).ServiceParams}
+	s.Require().NoError(checkoutSvc.CompleteCheckoutSession(ctx, sessionID, &types.CheckoutProviderResult{ProviderPaymentIntentID: "pi_trial_3"}))
+
+	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
+	s.True(got.CurrentPeriodStart.Equal(stored), "period starts at the stored start, got %s", got.CurrentPeriodStart)
+	s.True(got.TrialEnd.Equal(stored), "trial end moves to the stored start")
+	_, wantEnd, err := trialConversionPeriod(got, stored)
+	s.Require().NoError(err)
+	s.True(got.CurrentPeriodEnd.Equal(wantEnd))
 }

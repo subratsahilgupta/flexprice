@@ -168,9 +168,11 @@ func (s *subscriptionModificationService) settleTrialEndPayFirst(
 		return s.executeTrialEndNow(ctx, sub)
 	}
 
-	// Deterministic key: the active-session idempotency index rejects a racing second trial-end start.
+	// Default key per subscription so the active-session idempotency index rejects a racing second start.
 	keyed := *checkout
-	keyed.IdempotencyKey = lo.ToPtr("trial_end:" + sub.ID)
+	if lo.FromPtr(keyed.IdempotencyKey) == "" {
+		keyed.IdempotencyKey = lo.ToPtr("trial_end:" + sub.ID)
+	}
 	sessionResp, err := NewCheckoutSessionService(sp).StartPayFirstCheckoutSession(ctx, &dto.PayFirstCheckoutRequest{
 		CustomerID: sub.CustomerID,
 		Action:     types.CheckoutActionModifySubscription,
@@ -178,6 +180,7 @@ func (s *subscriptionModificationService) settleTrialEndPayFirst(
 			ModifySubscriptionParams: &types.ModifySubscriptionParams{
 				SubscriptionID: sub.ID,
 				ModifyType:     types.ModifySubscriptionTypeTrialEnd,
+				TrialEndAt:     &start,
 			},
 		},
 		DraftInvoice: &draft.Invoice,
@@ -197,18 +200,9 @@ func (s *subscriptionModificationService) settleTrialEndPayFirst(
 	}, nil
 }
 
-// applyTrialEndConversion ends the trial at the paid invoice's period start. Safe to replay.
-func (s *subscriptionModificationService) applyTrialEndConversion(ctx context.Context, subscriptionID, invoiceID string) error {
+// applyTrialEndConversion ends the trial at the checkout's recorded start. Safe to replay.
+func (s *subscriptionModificationService) applyTrialEndConversion(ctx context.Context, subscriptionID string, start time.Time) error {
 	sp := s.serviceParams
-	inv, err := sp.InvoiceRepo.Get(ctx, invoiceID)
-	if err != nil {
-		return err
-	}
-	if inv.PeriodStart == nil || inv.PeriodEnd == nil {
-		return ierr.NewError("trial-end checkout invoice has no period").Mark(ierr.ErrInvalidOperation)
-	}
-	start, end := inv.PeriodStart.UTC(), inv.PeriodEnd.UTC()
-
 	return sp.DB.WithTx(ctx, func(txCtx context.Context) error {
 		// Locked re-read: a concurrent delivery may have converted the row already.
 		sub, err := sp.SubRepo.GetForUpdate(txCtx, subscriptionID)
@@ -223,20 +217,9 @@ func (s *subscriptionModificationService) applyTrialEndConversion(ctx context.Co
 				WithReportableDetails(map[string]any{"subscription_id": subscriptionID, "status": sub.SubscriptionStatus}).
 				Mark(ierr.ErrInvalidOperation)
 		}
-
-		anchor, _, err := trialConversionPeriod(sub, start)
-		if err != nil {
-			return err
-		}
-		sub.TrialEnd = lo.ToPtr(start)
-		sub.BillingAnchor = anchor
-		sub.CurrentPeriodStart = start
-		sub.CurrentPeriodEnd = end
-		sub.SubscriptionStatus = types.SubscriptionStatusIncomplete
-		if err := sp.SubRepo.Update(txCtx, sub); err != nil {
-			return err
-		}
-		return (&subscriptionService{ServiceParams: sp}).cascadeTrialEndToInherited(txCtx, sub)
+		// Lands incomplete; the paid-invoice hook (completeTrialConversionToActive) activates it.
+		_, err = (&subscriptionService{ServiceParams: sp}).convertTrialToFirstPaidPeriod(txCtx, sub, start)
+		return err
 	})
 }
 

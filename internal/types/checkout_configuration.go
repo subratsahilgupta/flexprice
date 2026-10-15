@@ -150,6 +150,8 @@ type ModifySubscriptionParams struct {
 	SubscriptionID        string                       `json:"subscription_id"`
 	ModifyType            ModifySubscriptionType       `json:"modify_type,omitempty"`
 	LineItemModifications []ModifySubscriptionLineItem `json:"line_item_modifications"`
+	// TrialEndAt is where a trial_end checkout starts the first paid period.
+	TrialEndAt *time.Time `json:"trial_end_at,omitempty"`
 }
 
 // ModifySubscriptionLineItem is one close-and-replace intent for a line item.
@@ -180,8 +182,12 @@ func (p *ModifySubscriptionParams) Validate() error {
 			WithHint("Provide subscription_id in modify_subscription_params").
 			Mark(ierr.ErrValidation)
 	}
-	// A trial end changes no line items; the subscription id is all it needs.
+	// A trial end changes no line items; it needs only the conversion start.
 	if p.ModifyType == ModifySubscriptionTypeTrialEnd {
+		if p.TrialEndAt == nil {
+			return ierr.NewError("trial_end_at is required for trial_end").
+				Mark(ierr.ErrValidation)
+		}
 		return nil
 	}
 	if len(p.LineItemModifications) == 0 {
