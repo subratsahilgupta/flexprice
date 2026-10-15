@@ -113,7 +113,7 @@ func buildBillingQueryWithUsage(rv *analytics.ResolvedView, db, usageDB, tenantI
 			WithHint("snapshot metrics support neither compare nor timeseries").
 			Mark(ierr.ErrValidation)
 	}
-	if rv.Compare != "" && sq.Agg == "" {
+	if rv.Compare != "" && sq.Agg == "" && sq.CompareMeasure == nil {
 		return nil, ierr.NewErrorf("metric %q does not support compare", bm.Metric).
 			WithHint("remove compare for this metric").
 			Mark(ierr.ErrValidation)
@@ -125,8 +125,13 @@ func buildBillingQueryWithUsage(rv *analytics.ResolvedView, db, usageDB, tenantI
 	measure := sq.Measure
 	prevMeasure := ""
 	if rv.Compare != "" {
-		measure = aggIf(sq.Agg, sq.Arg, win.Cur)
-		prevMeasure = aggIf(sq.Agg, sq.Arg, win.Prev)
+		if sq.Agg == "" {
+			measure = sq.CompareMeasure(win.Cur)
+			prevMeasure = sq.CompareMeasure(win.Prev)
+		} else {
+			measure = aggIf(sq.Agg, sq.Arg, win.Cur)
+			prevMeasure = aggIf(sq.Agg, sq.Arg, win.Prev)
+		}
 	}
 
 	var selects, groups []string

@@ -12,9 +12,11 @@ type billingSQL struct {
 	TimeCol string
 	Measure string
 	// Aggregate name and argument.
-	Agg   string
-	Arg   string
-	Where []string
+	Agg string
+	Arg string
+	// Conditional Measure for ratio metrics.
+	CompareMeasure func(cond string) string
+	Where          []string
 	// Dimension expressions differing from name.
 	DimExprs map[string]string
 	// Replaces the generic builder.
@@ -78,6 +80,10 @@ var (
 	}
 )
 
+func ratioIf(col, cond string) string {
+	return "if(uniqExactIf(customer_id, " + cond + ") = 0, NULL, sumIf(" + col + ", " + cond + ") / uniqExactIf(customer_id, " + cond + "))"
+}
+
 func quotedList[T ~string](vs []T) string {
 	q := make([]string, len(vs))
 	for i, v := range vs {
@@ -120,13 +126,19 @@ var billingSQLs = map[types.Metric]*billingSQL{
 		Table:   "invoices",
 		TimeCol: "paid_at",
 		Measure: "sum(amount_paid) / uniqExact(customer_id)",
-		Where:   []string{paidIn, "paid_at > " + chEpoch},
+		CompareMeasure: func(c string) string {
+			return ratioIf("amount_paid", c)
+		},
+		Where: []string{paidIn, "paid_at > " + chEpoch},
 	},
 	types.MetricARPU: {
 		Table:   "invoices",
 		TimeCol: invoiceBillingTime(""),
 		Measure: "sum(total) / uniqExact(customer_id)",
-		Where:   []string{"invoice_status = '" + string(types.InvoiceStatusFinalized) + "'"},
+		CompareMeasure: func(c string) string {
+			return ratioIf("total", c)
+		},
+		Where: []string{"invoice_status = '" + string(types.InvoiceStatusFinalized) + "'"},
 	},
 	types.MetricCreditConsumption: {
 		Table:   "wallet_transactions",

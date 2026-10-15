@@ -214,6 +214,22 @@ func TestBuildBillingQuery_CompareTimeseries(t *testing.T) {
 	assert.False(t, hasShift)
 }
 
+func TestBuildBillingQuery_CompareARPU(t *testing.T) {
+	for _, m := range []types.Metric{types.MetricARPU, types.MetricARPUPaid} {
+		rv := billingRV(types.ShapeScalar)
+		rv.Metrics = []types.Metric{m}
+		rv.Compare = "previous_period"
+		q, err := buildBillingQuery(rv, "reports_db", "t", "e", 0)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"currency", string(m), string(m) + "_prev"}, columnNames(q))
+		assert.Equal(t, 4, strings.Count(q.SQL, "uniqExactIf(customer_id, "))
+		assert.Contains(t, q.SQL, "sumIf(")
+		assert.Contains(t, q.SQL, "{prev_from:String}")
+		assert.Contains(t, q.SQL, "{prev_to:String}")
+		assert.Contains(t, q.Params, "prev_from")
+	}
+}
+
 func TestBuildBillingQuery_CompareRollingUsesSeconds(t *testing.T) {
 	rv := billingRV(types.ShapeTimeseries)
 	rv.Time.From = time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
@@ -340,21 +356,4 @@ func TestBuildBillingQuery_ARPUBilled(t *testing.T) {
 	assert.Contains(t, q.SQL, invoiceBillingTime(""))
 	assert.NotContains(t, q.SQL, "paid_at")
 	assert.NotContains(t, q.SQL, "amount_paid")
-
-	rv.Compare = "previous_period"
-	_, err = buildBillingQuery(rv, "reports_db", "t", "e", 0)
-	require.Error(t, err)
-	assert.True(t, ierr.IsValidation(err))
-}
-
-func TestBuildBillingQuery_ARPURejectsCompare(t *testing.T) {
-	rv := billingRV(types.ShapeScalar)
-	rv.Metrics = []types.Metric{types.MetricARPUPaid}
-	_, err := buildBillingQuery(rv, "reports_db", "t", "e", 0)
-	require.NoError(t, err)
-
-	rv.Compare = "previous_period"
-	_, err = buildBillingQuery(rv, "reports_db", "t", "e", 0)
-	require.Error(t, err)
-	assert.True(t, ierr.IsValidation(err))
 }

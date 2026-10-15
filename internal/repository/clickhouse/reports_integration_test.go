@@ -130,6 +130,24 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 	byCustomer := runCmp(types.ShapeBreakdown, "", "previous_period", "customer_id")
 	assert.Contains(t, byCustomer, []string{"c1", "usd", "10", "2"})
 	assert.Contains(t, byCustomer, []string{"c4", "usd", "0", "4"})
+
+	arpuCmp := func(shape types.Shape) [][]string {
+		rv := &analytics.ResolvedView{
+			Family: types.FamilyBilling, Shape: shape, Metrics: []types.Metric{types.MetricARPU},
+			Time:    analytics.TimeSpec{From: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Grain: types.GrainMonth},
+			Compare: "previous_period",
+		}
+		res, err := repo.RunReport(ctx, rv, "t1", "e1")
+		require.NoError(t, err)
+		return res.Rows
+	}
+	// Sep usd: c1,c5 = 110/2; Aug usd: c1,c4,c6 = 13/3; inr has no prior.
+	rows := arpuCmp(types.ShapeScalar)
+	require.Len(t, rows, 2)
+	assert.Equal(t, []string{"inr", "5", ""}, rows[0])
+	assert.Equal(t, "usd", rows[1][0])
+	assert.Equal(t, "55", rows[1][1])
+	assert.Equal(t, "4.333333333", rows[1][2])
 }
 
 func TestReportsRepository_GenericReports(t *testing.T) {
