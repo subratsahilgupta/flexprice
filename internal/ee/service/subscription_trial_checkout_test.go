@@ -94,6 +94,11 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_GatesWithoutTouchingTria
 	resp, err := modSvc.Execute(ctx, sub.ID, s.trialEndCheckoutRequest())
 	s.Require().NoError(err)
 	s.Require().NotNil(resp.CheckoutSession, "a positive first-period invoice is gated")
+	session, err := s.GetStores().CheckoutSessionRepo.Get(ctx, resp.CheckoutSession.ID)
+	s.Require().NoError(err)
+	start := session.Configuration.ModifySubscriptionParams.TrialEndAt
+	s.Require().NotNil(start)
+	s.True(start.Equal(start.Truncate(time.Microsecond)), "checkout start must survive PostgreSQL timestamp persistence")
 
 	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
 	s.Require().NoError(err)
@@ -256,6 +261,48 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_DoubleCompleteIdempotent
 		return i.BillingReason == string(types.InvoiceBillingReasonSubscriptionTrialEnd) && i.InvoiceStatus == types.InvoiceStatusFinalized
 	})
 	s.Len(finalizedTrialEnd, 1, "exactly one finalized trial-end invoice")
+}
+
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_ReplayAfterTimestampPersistence() {
+	tests := []struct {
+		name   string
+		nanos  int
+		active bool
+		offset time.Duration
+	}{
+		{"incomplete rounded down", 123456123, false, 0},
+		{"active rounded up", 123456789, true, 0},
+		{"active rounded into next second", 999999789, true, 0},
+		{"different conversion rejected", 123456789, true, time.Microsecond},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			ctx := s.GetContext()
+			sub := s.seedTrialingFixedFeeSubscription(decimal.NewFromInt(200))
+			subSvc := s.service.(*subscriptionService)
+			start := time.Date(2026, 10, 15, 18, 27, 24, tt.nanos, time.UTC)
+			// Model the timestamp returned by PostgreSQL after the first conversion commits.
+			persistedStart := start.Round(time.Microsecond).Add(tt.offset)
+			_, err := subSvc.convertTrialToFirstPaidPeriod(ctx, sub, persistedStart)
+			s.Require().NoError(err)
+			if tt.active {
+				s.Require().NoError(subSvc.completeTrialConversionToActive(ctx, sub))
+			}
+			before, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+			s.Require().NoError(err)
+
+			modSvc := &subscriptionModificationService{serviceParams: subSvc.ServiceParams}
+			err = modSvc.applyTrialEndConversion(ctx, sub.ID, start)
+			if tt.offset != 0 {
+				s.Require().Error(err)
+			} else {
+				s.Require().NoError(err)
+			}
+			after, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+			s.Require().NoError(err)
+			s.Equal(before, after, "replay must not change subscription state or billing dates")
+		})
+	}
 }
 
 func (s *SubscriptionServiceSuite) TestTrialEndCheckout_UnpaidCleanupLeavesTrial() {

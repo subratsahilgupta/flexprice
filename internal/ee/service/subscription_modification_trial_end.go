@@ -150,7 +150,7 @@ func (s *subscriptionModificationService) settleTrialEndPayFirst(
 	checkout *dto.CheckoutParams,
 ) (*dto.SubscriptionModifyResponse, error) {
 	sp := s.serviceParams
-	start := time.Now().UTC()
+	start := time.Now().UTC().Truncate(time.Microsecond)
 	_, end, err := trialConversionPeriod(sub, start)
 	if err != nil {
 		return nil, err
@@ -210,7 +210,8 @@ func (s *subscriptionModificationService) applyTrialEndConversion(ctx context.Co
 			return err
 		}
 		if sub.SubscriptionStatus != types.SubscriptionStatusTrialing {
-			if sub.TrialEnd != nil && sub.TrialEnd.Equal(start) {
+			// JSON retains nanoseconds; PostgreSQL rounds timestamps to microseconds.
+			if sub.TrialEnd != nil && sub.TrialEnd.Round(time.Microsecond).Equal(start.Round(time.Microsecond)) {
 				return nil // already applied by an earlier delivery
 			}
 			return ierr.NewError("subscription is no longer trialing").
