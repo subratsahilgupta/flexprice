@@ -336,7 +336,8 @@ func (s *checkoutSessionService) completeModifySubscriptionCheckout(
 	if params.ModifyType == types.ModifySubscriptionTypeTrialEnd {
 		if err := modSvc.applyTrialEndConversion(ctx, params.SubscriptionID, invoiceID); err != nil {
 			if ierr.IsInvalidOperation(err) {
-				s.failCheckoutKeepingResources(ctx, session, err)
+				// Already logged inside; the original apply error is what the caller needs.
+				_ = s.failCheckoutKeepingResources(ctx, session, err)
 			}
 			return err
 		}

@@ -412,10 +412,9 @@ func (s *checkoutSessionService) cleanupCheckoutSession(ctx context.Context, ses
 		return err
 	}
 	if converted {
-		s.failCheckoutKeepingResources(ctx, session, ierr.NewError("trial-end conversion applied but checkout never completed").
+		return s.failCheckoutKeepingResources(ctx, session, ierr.NewError("trial-end conversion applied but checkout never completed").
 			WithHintf("subscription converted on session %s; payment and invoice kept for manual reconciliation", session.ID).
 			Mark(ierr.ErrInvalidOperation))
-		return nil
 	}
 
 	terminated, err := s.terminateCheckoutSession(ctx, session, reason)
@@ -440,6 +439,9 @@ func (s *checkoutSessionService) trialEndAlreadyConverted(ctx context.Context, s
 		return false, nil
 	}
 	inv, err := s.InvoiceRepo.Get(ctx, *session.CheckoutInvoiceID)
+	if ierr.IsNotFound(err) {
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
@@ -504,7 +506,8 @@ func (s *checkoutSessionService) terminateCheckoutSession(ctx context.Context, s
 
 // failCheckoutKeepingResources fails a session whose payment may be captured but cannot be applied.
 // Payment and invoice are kept, and expiry cleanup skips terminal sessions, so ops can refund by hand.
-func (s *checkoutSessionService) failCheckoutKeepingResources(ctx context.Context, session *domainCheckout.CheckoutSession, reason error) {
+// Returns the MarkTerminal error so callers do not treat a still-open session as terminated.
+func (s *checkoutSessionService) failCheckoutKeepingResources(ctx context.Context, session *domainCheckout.CheckoutSession, reason error) error {
 	s.Logger.Error(ctx, "checkout paid but could not be applied, manual refund required",
 		"error", reason,
 		"session_id", session.ID,
@@ -516,15 +519,16 @@ func (s *checkoutSessionService) failCheckoutKeepingResources(ctx context.Contex
 	claimed, err := s.CheckoutSessionRepo.MarkTerminal(activity.WithAction(ctx, session.ID, activity.CheckoutSessionFailed), session.ID, types.CheckoutStatusFailed, &msg)
 	if err != nil {
 		s.Logger.Error(ctx, "failed to mark unappliable checkout session failed", "error", err, "session_id", session.ID)
-		return
+		return err
 	}
 	if !claimed {
-		return
+		return nil
 	}
 	session.CheckoutStatus = types.CheckoutStatusFailed
 	session.FailureReason = &msg
 	metrics.RecordCounter(ctx, metrics.CheckoutSessions, 1, checkoutMetricLabels(session, types.CheckoutStatusFailed)...)
 	s.publishCheckoutEvent(ctx, dto.ToCheckoutSessionResponse(session), types.WebhookEventCheckoutSessionFailed)
+	return nil
 }
 
 func (s *checkoutSessionService) cleanupCheckoutResources(ctx context.Context, session *domainCheckout.CheckoutSession, reason error) error {

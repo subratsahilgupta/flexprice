@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -434,4 +436,45 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_ConcurrentStartLosesOnId
 	got, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
 	s.Require().NoError(err)
 	s.Equal(types.SubscriptionStatusTrialing, got.SubscriptionStatus)
+}
+
+// failingMarkTerminalRepo fails every MarkTerminal so callers must not treat the session as terminated.
+type failingMarkTerminalRepo struct {
+	domainCheckout.Repository
+}
+
+func (r failingMarkTerminalRepo) MarkTerminal(context.Context, string, types.CheckoutStatus, *string) (bool, error) {
+	return false, errors.New("mark terminal unavailable")
+}
+
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_ConvertedCleanupSurfacesMarkTerminalError() {
+	ctx := s.GetContext()
+	sub, sessionID, invoiceID := s.startTrialEndCheckout()
+	params := s.service.(*subscriptionService).ServiceParams
+	modSvc := &subscriptionModificationService{serviceParams: params}
+	s.Require().NoError(modSvc.applyTrialEndConversion(ctx, sub.ID, invoiceID))
+
+	params.CheckoutSessionRepo = failingMarkTerminalRepo{Repository: params.CheckoutSessionRepo}
+	checkoutSvc := &checkoutSessionService{ServiceParams: params}
+	s.Error(checkoutSvc.Delete(ctx, sessionID), "a session that could not be failed must not be archived")
+
+	stored, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
+	s.Require().NoError(err)
+	s.Equal(types.StatusPublished, stored.Status, "pending row is not archived")
+	s.Equal(types.CheckoutStatusPending, stored.CheckoutStatus)
+}
+
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_CleanupGuardTreatsMissingInvoiceAsNotConverted() {
+	ctx := s.GetContext()
+	_, sessionID, invoiceID := s.startTrialEndCheckout()
+	invoices, ok := s.GetStores().InvoiceRepo.(*testutil.InMemoryInvoiceStore)
+	s.Require().True(ok)
+	s.Require().NoError(invoices.InMemoryStore.Delete(ctx, invoiceID))
+	session, err := s.GetStores().CheckoutSessionRepo.Get(ctx, sessionID)
+	s.Require().NoError(err)
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: s.service.(*subscriptionService).ServiceParams}
+	converted, err := checkoutSvc.trialEndAlreadyConverted(ctx, session)
+	s.Require().NoError(err, "a missing checkout invoice falls through to normal cleanup")
+	s.False(converted)
 }
