@@ -101,8 +101,6 @@ func (r *ReportsRepository) run(ctx context.Context, q *reportQuery) ([][]string
 		"result_overflow_mode": "throw",
 		// Blocks writes; still allows settings.
 		"readonly": 2,
-		// Keep FINAL before WHERE.
-		"optimize_move_to_prewhere_if_final": 0,
 	}
 	if r.cfg.MaxRowsToRead > 0 {
 		settings["max_rows_to_read"] = r.cfg.MaxRowsToRead

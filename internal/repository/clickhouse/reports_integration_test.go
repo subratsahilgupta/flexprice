@@ -7,12 +7,21 @@ import (
 	"testing"
 	"time"
 
+	chstore "github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/analytics"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// Reports skip FINAL; read merged parts.
+func mergeTables(t *testing.T, admin *chstore.ClickHouseStore, db string, tables ...string) {
+	t.Helper()
+	for _, table := range tables {
+		require.NoError(t, admin.GetConn().Exec(context.Background(), "OPTIMIZE TABLE "+db+"."+table+" FINAL"))
+	}
+}
 
 func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 	address := chEnvOrDefault("FLEXPRICE_TEST_CLICKHOUSE_ADDRESS", "localhost:9000")
@@ -51,6 +60,7 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 		('i10','t1','e1','published','FINALIZED','SUBSCRIPTION','c5','usd',100,'2026-10-02 00:00:00','2026-09-15 00:00:00','2026-09-15 00:00:00',0,1),
 		('i11','t1','e1','published','FINALIZED','ONE_OFF','c6','usd',7,'2026-10-03 00:00:00','1970-01-01 00:00:00','2026-08-25 00:00:00',0,1),
 		('i12','t1','e1','published','FINALIZED','SUBSCRIPTION','c7','usd',50,'2026-09-10 00:00:00','2026-07-01 00:00:00','2026-07-01 00:00:00',0,1)`))
+	mergeTables(t, admin, db, "invoices")
 
 	cfg := &config.Configuration{
 		ClickHouse: config.ClickHouseConfig{Address: address, Username: username, Password: password, Database: "default", MaxMemoryUsage: 1},
@@ -214,6 +224,7 @@ func TestReportsRepository_GenericReports(t *testing.T) {
 		tx("w5", "debit", "completed", "INVOICE_PAYMENT", 12),
 		tx("w6", "debit", "completed", "CREDIT_EXPIRED", 5),
 	}, ",")))
+	mergeTables(t, admin, db, "invoices", "wallet_transactions")
 
 	cfg := &config.Configuration{
 		ClickHouse: config.ClickHouseConfig{Address: address, Username: username, Password: password, Database: "default", MaxMemoryUsage: 1},
@@ -324,6 +335,7 @@ func TestReportsRepository_CustomReports(t *testing.T) {
 		sub("s7", "c6", "cancelled", "2026-01-01 00:00:00", epoch, epoch),
 		sub("s8", "c7", "cancelled", "2026-01-01 00:00:00", epoch, "2026-07-15 00:00:00"),
 	}, ",")))
+	mergeTables(t, admin, db, "invoices", "credit_notes", "subscriptions")
 
 	cfg := &config.Configuration{
 		ClickHouse: config.ClickHouseConfig{Address: address, Username: username, Password: password, Database: "default", MaxMemoryUsage: 1},

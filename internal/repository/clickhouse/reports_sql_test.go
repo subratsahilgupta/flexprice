@@ -32,7 +32,7 @@ func TestBuildBillingQuery_ScopesAndInvariants(t *testing.T) {
 	q, err := buildBillingQuery(billingRV(types.ShapeScalar), "reports_db", "tenant_1", "env_1", 1000)
 	require.NoError(t, err)
 	for _, frag := range []string{
-		"FROM reports_db.invoices FINAL",
+		"FROM reports_db.invoices WHERE",
 		"tenant_id = {tenant_id:String}",
 		"environment_id = {environment_id:String}",
 		"_peerdb_is_deleted = 0",
@@ -42,6 +42,7 @@ func TestBuildBillingQuery_ScopesAndInvariants(t *testing.T) {
 		billTime + " < toDateTime64({to:String}, 6, 'UTC')",
 		"LIMIT 1001",
 	} {
+		assert.NotContains(t, q.SQL, " FINAL")
 		assert.Contains(t, q.SQL, frag)
 	}
 	assert.Equal(t, "tenant_1", q.Params["tenant_id"])

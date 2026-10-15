@@ -90,12 +90,12 @@ func buildNetBilling(m types.Metric, invoiceTime func(prefix string) string, in 
 	}
 	b.WriteString("ifNull(toString(c), '') AS d_currency, ifNull(toString(sum(v)), '') AS m_value FROM (")
 	b.WriteString("SELECT nullIf(" + invoiceTime("") + ", " + chEpoch + ") AS b, currency AS c, toDecimal128(total, 9) AS v")
-	b.WriteString(" FROM " + in.DB + ".invoices AS i FINAL WHERE " + in.Scope("i"))
+	b.WriteString(" FROM " + in.DB + ".invoices AS i WHERE " + in.Scope("i"))
 	b.WriteString(" AND i.invoice_status = '" + string(types.InvoiceStatusFinalized) + "'")
 	b.WriteString(" AND " + in.TimeCond(invoiceTime("i.")) + currencyCond(in, "i"))
 	b.WriteString(" UNION ALL ")
 	b.WriteString("SELECT nullIf(created_at, " + chEpoch + "), currency, -toDecimal128(total_amount, 9)")
-	b.WriteString(" FROM " + in.DB + ".credit_notes AS n FINAL WHERE " + in.Scope("n"))
+	b.WriteString(" FROM " + in.DB + ".credit_notes AS n WHERE " + in.Scope("n"))
 	b.WriteString(" AND n.credit_note_status = '" + string(types.CreditNoteStatusFinalized) + "'")
 	b.WriteString(" AND " + in.TimeCond("n.created_at") + currencyCond(in, "n"))
 	b.WriteString(") GROUP BY " + groups + " ORDER BY " + groups + limitClause(in.MaxRows))
@@ -114,7 +114,7 @@ func buildActiveCustomers(in buildInput) (*reportQuery, error) {
 	}
 	var b strings.Builder
 	b.WriteString("SELECT ifNull(toString(currency), '') AS d_currency, ifNull(toString(uniqExact(customer_id)), '') AS m_value")
-	b.WriteString(" FROM " + in.DB + ".subscriptions AS s FINAL WHERE " + in.Scope("s"))
+	b.WriteString(" FROM " + in.DB + ".subscriptions AS s WHERE " + in.Scope("s"))
 	b.WriteString(" AND s.subscription_status IN ('" + string(types.SubscriptionStatusActive) + "', '" + string(types.SubscriptionStatusTrialing) + "', '" + string(types.SubscriptionStatusCancelled) + "')")
 	b.WriteString(" AND s.start_date < toDateTime64({to:String}, 6, 'UTC')")
 	endExpr := "coalesce(nullIf(s.cancelled_at, " + chEpoch + "), nullIf(s.end_date, " + chEpoch + "))"

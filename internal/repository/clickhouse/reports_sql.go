@@ -183,7 +183,7 @@ func buildBillingQueryWithUsage(rv *analytics.ResolvedView, db, usageDB, tenantI
 
 	var b strings.Builder
 	b.WriteString("SELECT " + strings.Join(selects, ", "))
-	b.WriteString(" FROM " + db + "." + sq.Table + " FINAL")
+	b.WriteString(" FROM " + db + "." + sq.Table)
 	b.WriteString(" WHERE " + strings.Join(where, " AND "))
 	if len(groups) > 0 {
 		b.WriteString(" GROUP BY " + strings.Join(groups, ", "))

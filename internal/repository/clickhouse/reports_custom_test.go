@@ -22,8 +22,8 @@ func TestBuildNetBilling(t *testing.T) {
 	for _, alias := range []string{"i", "n"} {
 		assert.Contains(t, q.SQL, alias+".tenant_id = {tenant_id:String} AND "+alias+".environment_id = {environment_id:String} AND "+alias+"._peerdb_is_deleted = 0 AND "+alias+".status = 'published'")
 	}
-	assert.Contains(t, q.SQL, "reports_db.invoices AS i FINAL")
-	assert.Contains(t, q.SQL, "reports_db.credit_notes AS n FINAL")
+	assert.Contains(t, q.SQL, "reports_db.invoices AS i WHERE")
+	assert.Contains(t, q.SQL, "reports_db.credit_notes AS n WHERE")
 	assert.Contains(t, q.SQL, "i.invoice_status = 'FINALIZED'")
 	assert.Contains(t, q.SQL, "n.credit_note_status = 'FINALIZED'")
 	assert.Contains(t, q.SQL, "nullIf(coalesce(nullIf(i.period_start, toDateTime64(0, 6)), i.issue_date), toDateTime64(0, 6)) >= toDateTime64({from:String}, 6, 'UTC')")
@@ -113,7 +113,7 @@ func TestBuildActiveCustomers(t *testing.T) {
 	q, err := buildBillingQuery(customRV(types.MetricActiveCustomers, types.ShapeScalar), "reports_db", "t", "e", 5)
 	require.NoError(t, err)
 	assert.Contains(t, q.SQL, "s.tenant_id = {tenant_id:String} AND s.environment_id = {environment_id:String} AND s._peerdb_is_deleted = 0 AND s.status = 'published'")
-	assert.Contains(t, q.SQL, "reports_db.subscriptions AS s FINAL")
+	assert.Contains(t, q.SQL, "reports_db.subscriptions AS s WHERE")
 	assert.Contains(t, q.SQL, "s.subscription_status IN ('active', 'trialing', 'cancelled')")
 	assert.Contains(t, q.SQL, "s.subscription_status != 'cancelled' OR coalesce(nullIf(s.cancelled_at")
 	assert.Contains(t, q.SQL, "s.start_date < toDateTime64({to:String}, 6, 'UTC')")
