@@ -20,9 +20,9 @@ pause, is not billed while paused, and starts billing again from the moment it i
 
 Pause is not supported. There is no pause or resume endpoint. Some pause code is still in the codebase (the
 `subscription_pauses` table, the `paused` status, and old pause and resume service methods), but none of it
-is reachable and its behavior is wrong. It is removed as part of this work, except for the table, the
-status values and the webhooks, which the new flow reuses. The table exists in the database and
-get-subscription already returns its rows as `pauses`, but nothing writes to it today.
+is reachable and its behavior is wrong. The new flow replaces the old service methods and reuses the
+table, the status values and the webhooks. The table exists in the database and get-subscription returns
+its rows as `pauses` while a subscription is paused, but nothing writes to it today.
 
 Two existing flows are the closest references:
 
@@ -143,33 +143,35 @@ children.
 - BR2. Immediate cancel is allowed while paused. It bills nothing and completes the pause.
 - BR3. Auto-cancellation for overdue invoices skips paused subscriptions.
 - BR4. `subscription.paused` and `subscription.resumed` webhooks fire on each transition.
+- BR5. A subscription that reaches its `end_date` while paused is cancelled by the billing run as usual,
+and its pause is completed.
 
 **Validations**
 
 Pause is refused when:
 
 - V1. The subscription is not `active` (draft, trialing, incomplete, paused or cancelled).
-- V2. A cancellation is scheduled (`cancel_at` is set) or a plan change is pending.
+- V2. A cancellation is scheduled (`cancel_at` is set).
 - V3. The subscription is Stripe-managed, or is an individual inherited or grouped child.
+- V4. The pause time is outside the current period: the period has not started yet, or it has ended and
+the billing run has not rolled it yet.
 
 Resume is refused when:
 
-- V4. The subscription is not paused.
+- V5. The subscription is not paused.
+- V6. The subscription has reached its `end_date`.
 
 While paused:
 
-- V5. A scheduled cancellation or a plan change is refused.
+- V7. A scheduled cancellation or a plan change is refused.
+- V8. Adding or removing an addon, deleting a line item, or changing the status through the subscription
+update API is refused. The subscription has to be resumed first.
 
-**Old code removal**
+**Old code**
 
-Only code that nothing outside the old pause flow calls is removed:
-
-- The old pause and resume service methods and their unrouted API handler.
-- The old pause and auto-resume blocks inside the legacy billing period function.
-
-Anything shared with another billing flow stays, even if part of it looks unused. That covers the legacy
-billing period function itself, the `subscription_pause` table, the pause status and mode values, and the
-webhooks.
+The old pause and resume service methods are replaced by the new ones, and the unrouted API handler is
+rewritten for the two new endpoints. Everything else from the old flow stays for now and its removal is
+phase 2.
 
 
 
@@ -202,7 +204,8 @@ webhooks.
 
 ### 5.1 ERD
 
-No schema change. The new billing reasons go into the existing `invoices.billing_reason` string column, and
+No database migration. `subscriptions.proration_behavior` stops being immutable in the ent schema so resume
+can update it, which changes generated code only. The new billing reasons go into the existing `invoices.billing_reason` string column, and
 each pause is one row in the existing `subscription_pauses` table. The tables below are shown only for the
 fields the pause flow uses.
 
@@ -300,6 +303,8 @@ dates by the pause length.
 - **Pause at period end.** A `period_end` pause mode that skips the next period's advance charges on the
 last cycle invoice.
 - **Dry run.** Preview the closing and resume invoices before pausing or resuming.
+- **Old code removal.** Remove the old pause and auto-resume blocks inside the legacy billing period
+function, and any other pause code that nothing calls, once it is confirmed no other billing flow uses it.
 
 
 
