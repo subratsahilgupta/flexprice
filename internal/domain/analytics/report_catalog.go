@@ -34,7 +34,7 @@ var reportCatalog = []ReportCatalogEntry{
 	{
 		Key:            types.MetricInvoiceTotal,
 		Name:           "Total billing",
-		Description:    "Finalized invoice totals by billing period",
+		Description:    "Finalized invoice totals by finalization date",
 		Category:       "billing",
 		Kind:           "flow",
 		ValueType:      "money",
@@ -47,12 +47,12 @@ var reportCatalog = []ReportCatalogEntry{
 		},
 		Grains:          []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
 		SupportsCompare: true,
-		VariantLabel:    "Billing period",
+		VariantLabel:    "Finalized date",
 	},
 	{
 		Key:            types.MetricInvoiceTotalIssued,
-		Name:           "Total billing (invoice date)",
-		Description:    "Finalized invoice totals by invoice date",
+		Name:           "Total billing (finalized date)",
+		Description:    "Finalized invoice totals by finalization date",
 		Category:       "billing",
 		Kind:           "flow",
 		ValueType:      "money",
@@ -66,7 +66,7 @@ var reportCatalog = []ReportCatalogEntry{
 		Grains:          []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
 		SupportsCompare: true,
 		VariantOf:       types.MetricInvoiceTotal,
-		VariantLabel:    "Invoice date",
+		VariantLabel:    "Finalized date",
 	},
 	{
 		Key:          types.MetricTotalReceivables,
@@ -139,7 +139,7 @@ var reportCatalog = []ReportCatalogEntry{
 	{
 		Key:            types.MetricCreditConsumption,
 		Name:           "Credit consumption",
-		Description:    "Wallet credits applied to invoices",
+		Description:    "Invoice debits split by free and paid source credits, valued at the debit conversion rate",
 		Category:       "credits",
 		Kind:           "flow",
 		ValueType:      "money",
@@ -148,9 +148,10 @@ var reportCatalog = []ReportCatalogEntry{
 		DefaultShape:   types.ShapeTimeseries,
 		Dimensions: []ReportDimension{
 			{Key: "customer_id", Label: "Customer"},
+			{Key: "credit_type", Label: "Credit type"},
 		},
 		Grains:          []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
-		SupportsCompare: true,
+		SupportsCompare: false,
 	},
 	{
 		Key:            types.MetricCreditTopups,
@@ -172,7 +173,7 @@ var reportCatalog = []ReportCatalogEntry{
 	{
 		Key:            types.MetricNetBilling,
 		Name:           "Net billing",
-		Description:    "Billing by period minus finalized credit notes",
+		Description:    "Finalized invoices minus finalized credit notes by finalization date",
 		Category:       "billing",
 		Kind:           "flow",
 		ValueType:      "money",
@@ -180,12 +181,12 @@ var reportCatalog = []ReportCatalogEntry{
 		Shapes:         []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
 		DefaultShape:   types.ShapeTimeseries,
 		Grains:         []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
-		VariantLabel:   "Billing period",
+		VariantLabel:   "Finalized date",
 	},
 	{
 		Key:            types.MetricNetBillingIssued,
-		Name:           "Net billing (invoice date)",
-		Description:    "Invoiced by issue date minus finalized credit notes",
+		Name:           "Net billing (finalized date)",
+		Description:    "Finalized invoices minus finalized credit notes by finalization date",
 		Category:       "billing",
 		Kind:           "flow",
 		ValueType:      "money",
@@ -194,7 +195,7 @@ var reportCatalog = []ReportCatalogEntry{
 		DefaultShape:   types.ShapeTimeseries,
 		Grains:         []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
 		VariantOf:      types.MetricNetBilling,
-		VariantLabel:   "Invoice date",
+		VariantLabel:   "Finalized date",
 	},
 	{
 		Key:            types.MetricActiveCustomers,
