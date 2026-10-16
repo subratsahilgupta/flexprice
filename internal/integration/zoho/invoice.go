@@ -150,9 +150,7 @@ func (s *InvoiceService) SyncInvoiceToZoho(ctx context.Context, req ZohoInvoiceS
 	}
 
 	reqPayload.PlaceOfSupply = types.TaxMetadataFromMap(flexCustomer.Metadata).PlaceOfSupply()
-	serviceStart, serviceEnd := invoice.ResolveServicePeriod(lo.Filter(flexInvoice.LineItems, func(li *invoice.InvoiceLineItem, _ int) bool {
-		return isSyncableLineItem(li)
-	}))
+	serviceStart, serviceEnd := flexInvoice.ResolveServicePeriod(isSyncableLineItem)
 	// Ordered least to most specific: Zoho keeps the last write to a given field.
 	reqPayload.CustomFields = append(globalCustomFields(settings),
 		servicePeriodCustomFields(settings, serviceStart, serviceEnd)...)

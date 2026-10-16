@@ -28,7 +28,8 @@ func TestResolveServicePeriod(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			start, end := ResolveServicePeriod(tt.items)
+			inv := &Invoice{LineItems: tt.items}
+			start, end := inv.ResolveServicePeriod(nil)
 			assert.Equal(t, tt.start, start)
 			assert.Equal(t, tt.end, end)
 			if start != nil {
