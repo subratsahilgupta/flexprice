@@ -69,6 +69,7 @@ func buildCreditConsumption(in buildInput) (*reportQuery, error) {
 	selects = append(selects, "ifNull(toString(sum(if(item = '', d.credit_amount, JSONExtractFloat(item, 'credits')) * ifNull(d.conversion_rate, 1))), '') AS m_value")
 	cols = append(cols, analytics.ReportColumn{Name: string(types.MetricCreditConsumption), Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric})
 
+	b.WriteString("SELECT ")
 	b.WriteString(strings.Join(selects, ", "))
 	b.WriteString(" FROM (SELECT d.*, JSONExtractArrayRaw(ifNull(d.consumption_breakdown, '[]')) AS parts FROM " + in.DB + ".wallet_transactions AS d WHERE " + in.Scope("d"))
 	b.WriteString(" AND d.type = 'debit' AND d.transaction_status = 'completed' AND d.transaction_reason = 'INVOICE_PAYMENT'")
