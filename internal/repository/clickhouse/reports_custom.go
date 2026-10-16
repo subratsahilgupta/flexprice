@@ -66,7 +66,7 @@ func buildCreditConsumption(in buildInput) (*reportQuery, error) {
 		groups = append(groups, alias)
 		cols = append(cols, analytics.ReportColumn{Name: d, Type: types.ColumnTypeString, Role: types.ColumnRoleDimension})
 	}
-	selects = append(selects, "ifNull(toString(sum(if(item = '', d.credit_amount, JSONExtractFloat(item, 'credits')) * ifNull(d.conversion_rate, 1))), '') AS m_value")
+	selects = append(selects, "ifNull(toString(sum(if(item = '', d.credit_amount, toDecimal128OrZero(if(empty(JSONExtractString(item, 'credits')), JSONExtractRaw(item, 'credits'), JSONExtractString(item, 'credits')), 9)) * ifNull(d.conversion_rate, 1))), '') AS m_value")
 	cols = append(cols, analytics.ReportColumn{Name: string(types.MetricCreditConsumption), Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric})
 
 	b.WriteString("SELECT ")
