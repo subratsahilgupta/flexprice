@@ -124,8 +124,7 @@ func (r *subscriptionRepository) Get(ctx context.Context, id string) (*domainSub
 		return cachedSub, nil
 	}
 
-	// Cache fills read the primary so a lagging replica row can't outlive the post-commit invalidation.
-	client := r.client.Reader(types.WithForceWriter(ctx))
+	client := r.client.Reader(ctx)
 
 	sub, err := client.Subscription.Query().
 		Where(

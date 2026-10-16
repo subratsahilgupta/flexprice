@@ -909,8 +909,7 @@ func (s *paymentService) applyGatewayPaymentStatus(ctx context.Context, p *payme
 		return p, err
 	}
 
-	// Checkout applies the requested change before reconciling its invoice.
-	if newStatus == types.PaymentStatusSucceeded && p.DestinationType == types.PaymentDestinationTypeInvoice && p.GatewayMetadata[paymentCheckoutMarker] != "true" {
+	if newStatus == types.PaymentStatusSucceeded && p.DestinationType == types.PaymentDestinationTypeInvoice {
 		invoiceSvc := NewInvoiceService(s.ServiceParams)
 		if err := invoiceSvc.ReconcilePaymentStatus(ctx, p.DestinationID, types.PaymentStatusSucceeded, &p.Amount); err != nil {
 			s.Logger.Error(ctx, "failed to reconcile invoice after gateway sync",

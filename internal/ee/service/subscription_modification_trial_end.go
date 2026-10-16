@@ -148,10 +148,12 @@ func (s *subscriptionModificationService) settleTrialEndPayFirst(
 ) (*dto.SubscriptionModifyResponse, error) {
 	sp := s.serviceParams
 	start := time.Now().UTC().Truncate(time.Microsecond)
+
 	_, end, err := trialConversionPeriod(sub, start)
 	if err != nil {
 		return nil, err
 	}
+
 	draft, skipped, err := buildCheckoutDraftInvoice(ctx, sp, dto.CreateSubscriptionDraftInvoiceRequest{
 		SubscriptionID: sub.ID,
 		PeriodStart:    start,
@@ -161,6 +163,7 @@ func (s *subscriptionModificationService) settleTrialEndPayFirst(
 	if err != nil {
 		return nil, err
 	}
+
 	if skipped {
 		return s.executeTrialEndNow(ctx, sub)
 	}
@@ -170,6 +173,7 @@ func (s *subscriptionModificationService) settleTrialEndPayFirst(
 	if lo.FromPtr(keyed.IdempotencyKey) == "" {
 		keyed.IdempotencyKey = lo.ToPtr("trial_end:" + sub.ID)
 	}
+
 	sessionResp, err := NewCheckoutSessionService(sp).StartPayFirstCheckoutSession(ctx, &dto.PayFirstCheckoutRequest{
 		CustomerID: sub.CustomerID,
 		Action:     types.CheckoutActionModifySubscription,
@@ -186,10 +190,12 @@ func (s *subscriptionModificationService) settleTrialEndPayFirst(
 	if err != nil {
 		return nil, err
 	}
+
 	subResp, err := s.subscriptionService.GetSubscription(ctx, sub.ID)
 	if err != nil {
 		return nil, err
 	}
+
 	return &dto.SubscriptionModifyResponse{
 		Subscription:     subResp,
 		CheckoutSession:  sessionResp,
@@ -200,20 +206,24 @@ func (s *subscriptionModificationService) settleTrialEndPayFirst(
 // applyTrialEndConversion ends the trial at the checkout's recorded start. Safe to replay.
 func (s *subscriptionModificationService) applyTrialEndConversion(ctx context.Context, subscriptionID string, start time.Time) error {
 	sp := s.serviceParams
+
 	return sp.DB.WithTx(ctx, func(txCtx context.Context) error {
 		// Locked re-read: a concurrent delivery may have converted the row already.
 		sub, err := sp.SubRepo.GetForUpdate(txCtx, subscriptionID)
 		if err != nil {
 			return err
 		}
+
 		if sub.SubscriptionStatus != types.SubscriptionStatusTrialing {
 			if sub.TrialEnd != nil && sub.TrialEnd.Equal(start) {
 				return nil // already applied by an earlier delivery
 			}
+
 			return ierr.NewError("subscription is no longer trialing").
 				WithReportableDetails(map[string]any{"subscription_id": subscriptionID, "status": sub.SubscriptionStatus}).
 				Mark(ierr.ErrInvalidOperation)
 		}
+
 		_, err = s.subscriptionService.convertTrialToFirstPaidPeriod(txCtx, sub, start)
 		return err
 	})

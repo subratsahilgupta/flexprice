@@ -5876,9 +5876,8 @@ func (s *subscriptionService) voidOverdueInvoices(ctx context.Context, invoiceSe
 	}
 }
 
-// completeTrialConversionToActive activates a subscription after its trial-end invoice is paid or
-// skipped (zero-amount). By the time this is called, processSubscriptionTrialEnd has already
-// advanced CurrentPeriodStart/End to the first real billing window, so only the status changes.
+// completeTrialConversionToActive activates an incomplete subscription after trial conversion
+// and payment, or when its zero-amount invoice is skipped.
 func (s *subscriptionService) completeTrialConversionToActive(ctx context.Context, sub *subscription.Subscription) error {
 	activated := false
 	if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {

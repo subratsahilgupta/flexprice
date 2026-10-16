@@ -251,10 +251,19 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_CompletesAfterPaymentSta
 	before, err := params.InvoiceRepo.Get(ctx, invoiceID)
 	s.Require().NoError(err)
 	s.Equal(types.InvoiceStatusDraft, before.InvoiceStatus)
-	s.NotEqual(types.PaymentStatusSucceeded, before.PaymentStatus)
+	s.Equal(types.PaymentStatusSucceeded, before.PaymentStatus)
+	s.True(before.AmountPaid.Equal(before.AmountDue))
 	trial, err := params.SubRepo.Get(ctx, sub.ID)
 	s.Require().NoError(err)
 	s.Equal(types.SubscriptionStatusTrialing, trial.SubscriptionStatus)
+
+	// A paid draft must not activate even after conversion has moved the sub to incomplete.
+	modSvc := NewSubscriptionModificationService(params).(*subscriptionModificationService)
+	s.Require().NoError(modSvc.applyTrialEndConversion(ctx, sub.ID, *session.Configuration.ModifySubscriptionParams.TrialEndAt))
+	s.Require().NoError(NewInvoiceService(params).HandleIncompleteSubscriptionPayment(ctx, before))
+	converted, err := params.SubRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.SubscriptionStatusIncomplete, converted.SubscriptionStatus)
 
 	checkoutSvc := NewCheckoutSessionService(params)
 	s.Require().NoError(checkoutSvc.CompleteCheckoutSession(ctx, sessionID, &types.CheckoutProviderResult{ProviderPaymentIntentID: "pay_trial_synced"}))

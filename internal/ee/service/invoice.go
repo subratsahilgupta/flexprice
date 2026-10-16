@@ -4863,6 +4863,11 @@ func (s *invoiceService) HandleIncompleteSubscriptionPayment(ctx context.Context
 		return nil
 	}
 
+	// Checkout applies the subscription change before finalizing its paid draft.
+	if invoice.SourceType == types.InvoiceSourceTypeCheckout && invoice.InvoiceStatus == types.InvoiceStatusDraft {
+		return nil
+	}
+
 	s.Logger.Info(ctx, "processing subscription activation after invoice payment",
 		"invoice_id", invoice.ID,
 		"subscription_id", *invoice.SubscriptionID,

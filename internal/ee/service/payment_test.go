@@ -305,7 +305,7 @@ func (s *PaymentServiceSuite) TestSyncPaymentStatusFromGateway_GuardConditions()
 	}
 }
 
-func (s *PaymentServiceSuite) TestGatewayPaymentStatus_CheckoutOwnsInvoiceSettlement() {
+func (s *PaymentServiceSuite) TestGatewayPaymentStatus_ReconcilesCheckoutAndStandaloneInvoices() {
 	for _, checkout := range []bool{true, false} {
 		for _, status := range []types.PaymentStatus{types.PaymentStatusPending, types.PaymentStatusProcessing} {
 			name := string(status)
@@ -320,6 +320,7 @@ func (s *PaymentServiceSuite) TestGatewayPaymentStatus_CheckoutOwnsInvoiceSettle
 				inv.ID = "inv_sync_" + name
 				if checkout {
 					inv.InvoiceStatus = types.InvoiceStatusDraft
+					inv.SourceType = types.InvoiceSourceTypeCheckout
 				}
 				s.Require().NoError(s.GetStores().InvoiceRepo.Create(ctx, &inv))
 				p := &payment.Payment{
@@ -334,8 +335,6 @@ func (s *PaymentServiceSuite) TestGatewayPaymentStatus_CheckoutOwnsInvoiceSettle
 					p.GatewayMetadata = types.Metadata{paymentCheckoutMarker: "true"}
 				}
 				s.Require().NoError(s.GetStores().PaymentRepo.Create(ctx, p))
-				before, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
-				s.Require().NoError(err)
 				svc := s.service.(*paymentService)
 				result, err := svc.applyGatewayPaymentStatus(ctx, p, types.PaymentStatusSucceeded, "pay_captured")
 				s.Require().NoError(err)
@@ -347,12 +346,10 @@ func (s *PaymentServiceSuite) TestGatewayPaymentStatus_CheckoutOwnsInvoiceSettle
 				s.Equal(types.PaymentStatusSucceeded, stored.PaymentStatus)
 				after, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
 				s.Require().NoError(err)
-				if checkout {
-					s.Equal(before, after, "syncing a checkout payment must leave its invoice untouched")
-				} else {
-					s.Equal(types.PaymentStatusSucceeded, after.PaymentStatus)
-					s.True(after.AmountPaid.Equal(inv.AmountDue))
-				}
+				s.Equal(inv.InvoiceStatus, after.InvoiceStatus)
+				s.Equal(types.PaymentStatusSucceeded, after.PaymentStatus)
+				s.True(after.AmountPaid.Equal(inv.AmountDue))
+				s.True(after.AmountRemaining.IsZero())
 			})
 		}
 	}
