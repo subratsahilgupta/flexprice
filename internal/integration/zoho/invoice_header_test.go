@@ -373,6 +373,9 @@ func TestSyncInvoiceSendsMetadataCustomFieldsAlongsideServicePeriod(t *testing.T
 		LineItems:   []*invoice.InvoiceLineItem{hsnLineItem("li_a", "price_a")},
 	}
 
+	inv.LineItems[0].PeriodStart = tPtr("2026-08-01T00:00:00Z")
+	inv.LineItems[0].PeriodEnd = tPtr("2026-09-01T00:00:00Z")
+
 	client := &fakeSyncZohoClient{syncConfig: &types.SyncConfig{
 		InvoiceSyncSettings: &types.InvoiceSyncSettings{
 			ZohoInvoiceSyncSettings: types.ZohoInvoiceSyncSettings{
