@@ -36,6 +36,7 @@ const (
 	// InvoiceMetadataKeyCollapsedInvoiceDisplayName is the customer-facing label to use when a
 	// collector clubs the invoice lines into a single amount due item.
 	InvoiceMetadataKeyCollapsedInvoiceDisplayName InvoiceMetadataKey = "collapsed_invoice_display_name"
+	InvoiceMetadataKeyStripeHostedInvoiceURL      InvoiceMetadataKey = "stripe_hosted_invoice_url"
 )
 
 func CollapsedInvoiceDisplayName(md Metadata) string {
@@ -301,6 +302,14 @@ const (
 	// InvoiceBillingReasonWalletAutoTopup is generated when a wallet balance drops
 	// below the auto-topup threshold and invoiced top-up is enabled.
 	InvoiceBillingReasonWalletAutoTopup InvoiceBillingReason = "WALLET_AUTO_TOPUP"
+
+	// InvoiceBillingReasonSubscriptionPaused records a period, or part of one, during which the
+	// subscription was paused. It has no line items, is never computed and is always SKIPPED.
+	InvoiceBillingReasonSubscriptionPaused InvoiceBillingReason = "SUBSCRIPTION_PAUSED"
+
+	// InvoiceBillingReasonSubscriptionResume is the first invoice after a paused subscription resumes.
+	// Compute: advance charges from the resume time to the next billing date (ReferencePointPeriodStart).
+	InvoiceBillingReasonSubscriptionResume InvoiceBillingReason = "SUBSCRIPTION_RESUME"
 )
 
 func (r InvoiceBillingReason) String() string {
@@ -318,6 +327,8 @@ func (r InvoiceBillingReason) Validate() error {
 		InvoiceBillingReasonManual,
 		InvoiceBillingReasonAutoInvoiceThreshold,
 		InvoiceBillingReasonWalletAutoTopup,
+		InvoiceBillingReasonSubscriptionPaused,
+		InvoiceBillingReasonSubscriptionResume,
 	}
 
 	if r != "" && !lo.Contains(allowed, r) {
@@ -345,6 +356,16 @@ func (r InvoiceBillingReason) IsFirstSubscriptionOpenInvoiceReason() bool {
 	default:
 		return false
 	}
+}
+
+// IsPaymentGatingAllowedInvoiceReason reports whether this invoice's payment can change subscription status or grants.
+func (r InvoiceBillingReason) IsPaymentGatingAllowedInvoiceReason() bool {
+	return lo.Contains([]InvoiceBillingReason{
+		InvoiceBillingReasonSubscriptionCreate,
+		InvoiceBillingReasonSubscriptionTrialEnd,
+		InvoiceBillingReasonSubscriptionUpdate,
+		InvoiceBillingReasonSubscriptionCycle,
+	}, r)
 }
 
 const (
@@ -413,9 +434,11 @@ type InvoiceConfig struct {
 	InvoiceNumberTimezone                  string              `json:"timezone,omitempty" validate:"required,min=1"`
 	InvoiceNumberSeparator                 string              `json:"separator,omitempty"` // Empty string ("") is valid for no separator
 	InvoiceNumberSuffixLength              int                 `json:"suffix_length,omitempty" validate:"required,min=1,max=10"`
-	DueDateDays                            *int                `json:"due_date_days,omitempty" validate:"omitempty,min=0"` // Number of days after period end when payment is due
+	DueDateDays                            *int                `json:"due_date_days,omitempty" validate:"omitempty,min=0"` // Number of days after the issue date when payment is due
+	PaymentTerms                           *PaymentTerms       `json:"payment_terms,omitempty"`                            // Tenant default payment terms; takes precedence over due_date_days when set
 	AutoCompletePurchasedCreditTransaction bool                `json:"auto_complete_purchased_credit_transaction,omitempty"`
 	FinalizationDelaySeconds               int                 `json:"finalization_delay_seconds,omitempty" validate:"omitempty,min=0"` // Seconds to wait after invoice creation before finalization. 0 = immediate.
+	IncludeZeroValueLineItems              bool                `json:"include_zero_value_line_items"`                                   // Keep usage line items with zero quantity and zero amount on the invoice. Skipped by default.
 }
 
 // Validate implements SettingConfig interface
@@ -444,6 +467,12 @@ func (c InvoiceConfig) Validate() error {
 		return ierr.NewErrorf("invoice_config: 'format' must be one of %v, got %s", validFormats, c.InvoiceNumberFormat).
 			WithHintf("Invoice config format must be one of %v", validFormats).
 			Mark(ierr.ErrValidation)
+	}
+
+	if c.PaymentTerms != nil {
+		if err := c.PaymentTerms.Validate(); err != nil {
+			return err
+		}
 	}
 
 	// Validate timezone directly on the struct

@@ -1,12 +1,21 @@
 package service
 
 import (
+	"context"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/coupon"
+	"github.com/flexprice/flexprice/internal/domain/coupon_association"
+	"github.com/flexprice/flexprice/internal/domain/customer"
+	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
+	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/require"
 )
 
 // The `addons` modify type. Batch behaviour is pinned in subscription_addon_change_test.go;
@@ -368,4 +377,473 @@ func (s *SubscriptionServiceSuite) TestBulkAddonModification_Preview_MasksTheUnw
 	ended := s.changedAssociationsByAction(resp, dto.ChangedAddonAssociationActionEnded)
 	s.Require().Len(ended, 1)
 	s.Equal(outgoing, ended[0].ID, "the removed row is real, so its id is real")
+}
+
+// -----------------------------------------------------------------------------
+// coupons on an attach
+// -----------------------------------------------------------------------------
+
+func seedPercentCoupon(ctx context.Context, r *require.Assertions, stores testutil.Stores, code string, pct int64, maxRedemptions *int) *coupon.Coupon {
+	c := &coupon.Coupon{
+		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_COUPON),
+		Name:           code,
+		CouponCode:     lo.ToPtr(code),
+		Type:           types.CouponTypePercentage,
+		Cadence:        types.CouponCadenceForever,
+		PercentageOff:  lo.ToPtr(decimal.NewFromInt(pct)),
+		MaxRedemptions: maxRedemptions,
+		EnvironmentID:  types.GetEnvironmentID(ctx),
+		BaseModel:      types.GetDefaultBaseModel(ctx),
+	}
+	c.Status = types.StatusPublished
+	r.NoError(stores.CouponRepo.Create(ctx, c))
+	return c
+}
+
+func couponRedemptions(ctx context.Context, r *require.Assertions, stores testutil.Stores, couponID string) int {
+	c, err := stores.CouponRepo.Get(ctx, couponID)
+	r.NoError(err)
+	return c.TotalRedemptions
+}
+
+func subscriptionCouponAssociations(ctx context.Context, r *require.Assertions, stores testutil.Stores, subID string) []*coupon_association.CouponAssociation {
+	filter := types.NewNoLimitCouponAssociationFilter()
+	filter.SubscriptionIDs = []string{subID}
+	associations, err := stores.CouponAssociationRepo.List(ctx, filter)
+	r.NoError(err)
+	return associations
+}
+
+func (s *SubscriptionServiceSuite) modifyAddWithCoupon(addonID string, at time.Time, coupons ...dto.SubscriptionCouponInput) *dto.AddAddonToSubscriptionRequest {
+	req := s.modifyAdd(addonID, at)
+	req.Coupons = coupons
+	return req
+}
+
+// seedSecondAddonPrice gives an addon from seedFixedPriceAddon a second fixed price.
+func (s *SubscriptionServiceSuite) seedSecondAddonPrice(addonID string, amount decimal.Decimal) string {
+	ctx := s.GetContext()
+	priceID := "price_" + addonID + "_b"
+	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &price.Price{
+		ID:                 priceID,
+		Amount:             amount,
+		Currency:           "usd",
+		EntityType:         types.PRICE_ENTITY_TYPE_ADDON,
+		EntityID:           addonID,
+		Type:               types.PRICE_TYPE_FIXED,
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}))
+	return priceID
+}
+
+func approxEqual(a, b decimal.Decimal) bool {
+	return a.Sub(b).Abs().LessThanOrEqual(decimal.NewFromFloat(0.01))
+}
+
+func (s *SubscriptionServiceSuite) TestBulkAddonModification_Coupon_PreviewDiscountsAndWritesNothing() {
+	ctx := s.GetContext()
+	sub := s.monthlyPeriodSubscription()
+	s.seedFixedPriceAddon("addon_cpn_preview", decimal.NewFromInt(100), types.InvoiceCadenceAdvance)
+	c := seedPercentCoupon(ctx, s.Require(), s.GetStores(), "CPN_PREVIEW", 50, nil)
+
+	at := sub.CurrentPeriodStart.Add(10 * 24 * time.Hour)
+	resp, err := s.modificationService().Preview(ctx, sub.ID, s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{
+		Adds: []*dto.AddAddonToSubscriptionRequest{
+			s.modifyAddWithCoupon("addon_cpn_preview", at, dto.SubscriptionCouponInput{CouponCode: "CPN_PREVIEW"}),
+		},
+	}))
+	s.Require().NoError(err)
+
+	s.Require().Len(resp.ChangedResources.Invoices, 1)
+	inv := resp.ChangedResources.Invoices[0].Invoice
+	s.Require().NotNil(inv)
+	s.True(inv.Subtotal.IsPositive())
+	s.True(approxEqual(inv.TotalDiscount, inv.Subtotal.Div(decimal.NewFromInt(2))),
+		"discount %s should be half of subtotal %s", inv.TotalDiscount, inv.Subtotal)
+	s.True(approxEqual(inv.AmountDue, inv.Subtotal.Sub(inv.TotalDiscount)),
+		"amount due %s should be the discounted subtotal", inv.AmountDue)
+
+	s.Empty(subscriptionCouponAssociations(ctx, s.Require(), s.GetStores(), sub.ID), "preview writes no association")
+	s.Zero(couponRedemptions(ctx, s.Require(), s.GetStores(), c.ID), "preview redeems nothing")
+	s.Empty(s.oneOffInvoicesFor(sub.ID))
+}
+
+func (s *SubscriptionServiceSuite) TestBulkAddonModification_Coupon_PayLaterFansOutPerPrice() {
+	ctx := s.GetContext()
+	sub := s.monthlyPeriodSubscription()
+	s.seedFixedPriceAddon("addon_cpn_fan", decimal.NewFromInt(100), types.InvoiceCadenceAdvance)
+	s.seedSecondAddonPrice("addon_cpn_fan", decimal.NewFromInt(40))
+	c := seedPercentCoupon(ctx, s.Require(), s.GetStores(), "CPN_FAN", 50, nil)
+
+	at := sub.CurrentPeriodStart.Add(10 * 24 * time.Hour)
+	_, err := s.modificationService().Execute(ctx, sub.ID, s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{
+		Adds: []*dto.AddAddonToSubscriptionRequest{
+			s.modifyAddWithCoupon("addon_cpn_fan", at, dto.SubscriptionCouponInput{CouponCode: "CPN_FAN"}),
+		},
+	}))
+	s.Require().NoError(err)
+
+	invoices := s.oneOffInvoicesFor(sub.ID)
+	s.Require().Len(invoices, 1)
+	inv := invoices[0]
+	s.True(inv.Subtotal.IsPositive())
+	s.True(approxEqual(inv.TotalDiscount, inv.Subtotal.Div(decimal.NewFromInt(2))),
+		"discount %s should be half of subtotal %s", inv.TotalDiscount, inv.Subtotal)
+	s.True(approxEqual(inv.Total, inv.Subtotal.Sub(inv.TotalDiscount)),
+		"total %s should be subtotal - discount", inv.Total)
+	s.True(approxEqual(inv.AmountDue, inv.Total), "amount due %s should equal total %s", inv.AmountDue, inv.Total)
+
+	lineItems := s.addonLineItemsFor(sub.ID, "addon_cpn_fan")
+	s.Require().Len(lineItems, 2)
+	lineItemIDs := lo.Map(lineItems, func(li *subscription.SubscriptionLineItem, _ int) string { return li.ID })
+
+	associations := subscriptionCouponAssociations(ctx, s.Require(), s.GetStores(), sub.ID)
+	s.Require().Len(associations, 2, "one association per addon price")
+	for _, a := range associations {
+		s.Equal(c.ID, a.CouponID)
+		s.Require().NotNil(a.SubscriptionLineItemID)
+		s.Contains(lineItemIDs, *a.SubscriptionLineItemID)
+	}
+	s.NotEqual(*associations[0].SubscriptionLineItemID, *associations[1].SubscriptionLineItemID)
+	s.Equal(2, couponRedemptions(ctx, s.Require(), s.GetStores(), c.ID), "one redemption per association, none for the invoice")
+
+	appFilter := types.NewNoLimitCouponApplicationFilter()
+	appFilter.InvoiceIDs = []string{inv.ID}
+	applications, err := s.GetStores().CouponApplicationRepo.List(ctx, appFilter)
+	s.Require().NoError(err)
+	s.Require().Len(applications, 2)
+	associationIDs := lo.Map(associations, func(a *coupon_association.CouponAssociation, _ int) string { return a.ID })
+	for _, app := range applications {
+		s.Contains(associationIDs, app.CouponAssociationID, "the invoice application points at the created association")
+	}
+}
+
+func (s *SubscriptionServiceSuite) TestBulkAddonModification_Coupon_RejectedAtQuote() {
+	type tc struct {
+		name  string
+		input func(addonID string) dto.SubscriptionCouponInput
+		maxed bool
+	}
+	cases := []tc{
+		{
+			name: "price_id_not_on_addon",
+			input: func(addonID string) dto.SubscriptionCouponInput {
+				return dto.SubscriptionCouponInput{CouponCode: "CPN_REJECT_PRICE", PriceID: lo.ToPtr("price_not_on_addon")}
+			},
+		},
+		{
+			name: "max_redemptions_reached",
+			input: func(addonID string) dto.SubscriptionCouponInput {
+				return dto.SubscriptionCouponInput{CouponCode: "CPN_REJECT_MAXED"}
+			},
+			maxed: true,
+		},
+	}
+
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			ctx := s.GetContext()
+			sub := s.monthlyPeriodSubscription()
+			addonID := "addon_cpn_" + tc.name
+			s.seedFixedPriceAddon(addonID, decimal.NewFromInt(100), types.InvoiceCadenceAdvance)
+
+			input := tc.input(addonID)
+			var maxRedemptions *int
+			if tc.maxed {
+				maxRedemptions = lo.ToPtr(1)
+			}
+			c := seedPercentCoupon(ctx, s.Require(), s.GetStores(), input.CouponCode, 50, maxRedemptions)
+			if tc.maxed {
+				c.TotalRedemptions = 1
+				s.Require().NoError(s.GetStores().CouponRepo.Update(ctx, c))
+			}
+
+			at := sub.CurrentPeriodStart.Add(10 * 24 * time.Hour)
+			req := s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{
+				Adds: []*dto.AddAddonToSubscriptionRequest{s.modifyAddWithCoupon(addonID, at, input)},
+			})
+
+			_, err := s.modificationService().Preview(ctx, sub.ID, req)
+			s.Require().Error(err)
+			s.True(ierr.IsValidation(err), "got %v", err)
+
+			_, err = s.modificationService().Execute(ctx, sub.ID, req)
+			s.Require().Error(err)
+			s.True(ierr.IsValidation(err), "got %v", err)
+
+			s.Empty(s.addonLineItemsFor(sub.ID, addonID))
+			s.Empty(s.oneOffInvoicesFor(sub.ID))
+			s.Empty(subscriptionCouponAssociations(ctx, s.Require(), s.GetStores(), sub.ID))
+		})
+	}
+}
+
+// The discount comes off the charge before the credit is netted, so it can flip a charge into a credit.
+func (s *SubscriptionServiceSuite) TestBulkAddonModification_Coupon_DiscountAppliedBeforeNetting() {
+	ctx := s.GetContext()
+	sub := s.monthlyPeriodSubscription()
+	s.seedFixedPriceAddon("addon_cpn_net_out", decimal.NewFromInt(80), types.InvoiceCadenceAdvance)
+	s.seedFixedPriceAddon("addon_cpn_net_in", decimal.NewFromInt(100), types.InvoiceCadenceAdvance)
+	outgoing := s.attachForRemoval("addon_cpn_net_out", 80)
+	seedPercentCoupon(ctx, s.Require(), s.GetStores(), "CPN_NET", 50, nil)
+
+	at := sub.CurrentPeriodStart.Add(15 * 24 * time.Hour)
+	add := s.addEntry("addon_cpn_net_in", at)
+	add.Request.Coupons = []dto.SubscriptionCouponInput{{CouponCode: "CPN_NET"}}
+	config, _, err := s.addonChangeService().Execute(ctx, AddonChangeRequest{
+		Subscription: sub,
+		Adds:         []AddonAdd{add},
+		Removes:      []*dto.RemoveAddonRequest{s.removeEntry(outgoing, at)},
+	})
+	s.Require().NoError(err)
+
+	quote := config.getQuote()
+	s.Require().True(quote.TotalChargeAmount.GreaterThan(quote.TotalCreditAmount),
+		"undiscounted, the batch would have charged")
+	s.True(approxEqual(quote.TotalDiscountAmount, quote.TotalChargeAmount.Div(decimal.NewFromInt(2))))
+	net := quote.TotalChargeAmount.Sub(quote.TotalDiscountAmount).Sub(quote.TotalCreditAmount)
+	s.Require().True(net.IsNegative(), "the discount flips the net, got %s", net)
+	s.True(quote.NetAmount().Equal(net))
+
+	s.Empty(s.oneOffInvoicesFor(sub.ID), "a discounted net credit raises no invoice")
+	credits := s.prorationCredits()
+	s.Require().Len(credits, 1)
+	s.True(credits[0].Amount.Equal(net.Abs()), "credit %s should be charge - discount - credit = %s", credits[0].Amount, net.Abs())
+	s.Len(subscriptionCouponAssociations(ctx, s.Require(), s.GetStores(), sub.ID), 1, "the coupon still attaches to the new addon")
+}
+
+// Removing a discounted addon credits against what was paid, not the list price.
+func (s *SubscriptionServiceSuite) TestBulkAddonModification_Coupon_RemovalCreditsTheNetCharged() {
+	ctx := s.GetContext()
+	sub := s.monthlyPeriodSubscription()
+	s.seedFixedPriceAddon("addon_cpn_basis", decimal.NewFromInt(100), types.InvoiceCadenceAdvance)
+	s.seedFixedPriceAddon("addon_cpn_basis_control", decimal.NewFromInt(100), types.InvoiceCadenceAdvance)
+	seedPercentCoupon(ctx, s.Require(), s.GetStores(), "CPN_BASIS", 50, nil)
+
+	start := sub.CurrentPeriodStart
+	_, err := s.modificationService().Execute(ctx, sub.ID, s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{
+		Adds: []*dto.AddAddonToSubscriptionRequest{
+			s.modifyAddWithCoupon("addon_cpn_basis", start, dto.SubscriptionCouponInput{CouponCode: "CPN_BASIS"}),
+			s.modifyAdd("addon_cpn_basis_control", start),
+		},
+	}))
+	s.Require().NoError(err)
+
+	associationFor := func(addonID string) string {
+		filter := types.NewNoLimitAddonAssociationFilter()
+		filter.EntityIDs = []string{sub.ID}
+		filter.AddonIDs = []string{addonID}
+		rows, err := s.GetStores().AddonAssociationRepo.List(ctx, filter)
+		s.Require().NoError(err)
+		s.Require().Len(rows, 1)
+		return rows[0].ID
+	}
+
+	at := sub.CurrentPeriodStart.Add(5 * 24 * time.Hour)
+	removeCredit := func(addonID string) decimal.Decimal {
+		config, _, err := s.addonChangeService().Execute(ctx, AddonChangeRequest{
+			Subscription: sub,
+			Removes:      []*dto.RemoveAddonRequest{s.removeEntry(associationFor(addonID), at)},
+		})
+		s.Require().NoError(err)
+		return config.getQuote().TotalCreditAmount
+	}
+
+	discountedItems := s.addonLineItemsFor(sub.ID, "addon_cpn_basis")
+	s.Require().Len(discountedItems, 1)
+	invoices := s.oneOffInvoicesFor(sub.ID)
+	s.Require().Len(invoices, 1)
+	inv, err := s.GetStores().InvoiceRepo.Get(ctx, invoices[0].ID)
+	s.Require().NoError(err)
+	netCharged := decimal.Zero
+	for _, li := range inv.LineItems {
+		if lo.FromPtr(li.SubscriptionLineItemID) == discountedItems[0].ID {
+			netCharged = netCharged.Add(li.Amount.Sub(li.LineItemDiscount).Sub(li.InvoiceLevelDiscount))
+		}
+	}
+	s.Require().True(approxEqual(netCharged, decimal.NewFromInt(50)), "the attach charged %s net", netCharged)
+
+	// The prorated list credit (~83.87) exceeds what was paid, so the credit is capped at the net charged.
+	discounted := removeCredit("addon_cpn_basis")
+	control := removeCredit("addon_cpn_basis_control")
+	s.True(control.GreaterThan(netCharged), "the undiscounted control credits the prorated list, got %s", control)
+	s.True(approxEqual(discounted, netCharged),
+		"discounted addon credited %s, expected the net charged %s", discounted, netCharged)
+}
+
+// A grouped child's add-on is invoiced on its parent, with the coupon still applied.
+func (s *SubscriptionServiceSuite) TestBulkAddonModification_Coupon_GroupedChildInvoicesParent() {
+	ctx := s.GetContext()
+	child := s.monthlyPeriodSubscription()
+
+	parentCustomer := &customer.Customer{
+		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
+		ExternalID: "ext_cust_grp_parent",
+		Name:       "Parent Customer",
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().CustomerRepo.Create(ctx, parentCustomer))
+
+	parent := *child
+	parent.ID = "sub_grp_parent"
+	parent.CustomerID = parentCustomer.ID
+	parent.SubscriptionType = types.SubscriptionTypeParent
+	parent.LineItems = nil
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, &parent))
+
+	child.SubscriptionType = types.SubscriptionTypeGroupedInvoicing
+	child.ParentSubscriptionID = lo.ToPtr(parent.ID)
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, child))
+
+	s.seedFixedPriceAddon("addon_cpn_grp", decimal.NewFromInt(100), types.InvoiceCadenceAdvance)
+	seedPercentCoupon(ctx, s.Require(), s.GetStores(), "CPN_GRP", 50, nil)
+
+	at := child.CurrentPeriodStart.Add(10 * 24 * time.Hour)
+	_, err := s.modificationService().Execute(ctx, child.ID, s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{
+		Adds: []*dto.AddAddonToSubscriptionRequest{
+			s.modifyAddWithCoupon("addon_cpn_grp", at, dto.SubscriptionCouponInput{CouponCode: "CPN_GRP"}),
+		},
+	}))
+	s.Require().NoError(err)
+
+	s.Empty(s.oneOffInvoicesFor(child.ID), "nothing is invoiced on the child itself")
+	invoices := s.oneOffInvoicesFor(parent.ID)
+	s.Require().Len(invoices, 1)
+	inv := invoices[0]
+	s.Equal(parentCustomer.ID, inv.CustomerID)
+	s.True(inv.Subtotal.IsPositive())
+	s.True(approxEqual(inv.TotalDiscount, inv.Subtotal.Div(decimal.NewFromInt(2))),
+		"discount %s should be half of subtotal %s", inv.TotalDiscount, inv.Subtotal)
+	s.True(approxEqual(inv.AmountDue, inv.Subtotal.Sub(inv.TotalDiscount)))
+}
+
+// seedAddonGroup turns the suite subscription into a parent and adds one grouped child billed on it.
+func (s *SubscriptionServiceSuite) seedAddonGroup() (*subscription.Subscription, *subscription.Subscription) {
+	ctx := s.GetContext()
+	parent := s.monthlyPeriodSubscription()
+	parent.SubscriptionType = types.SubscriptionTypeParent
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, parent))
+
+	childCustomer := &customer.Customer{
+		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
+		ExternalID: "ext_cust_grp_child",
+		Name:       "Child Customer",
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().CustomerRepo.Create(ctx, childCustomer))
+
+	child := *parent
+	child.ID = "sub_grp_child"
+	child.CustomerID = childCustomer.ID
+	child.SubscriptionType = types.SubscriptionTypeGroupedInvoicing
+	child.ParentSubscriptionID = lo.ToPtr(parent.ID)
+	child.LineItems = nil
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, &child))
+
+	return parent, &child
+}
+
+func (s *SubscriptionServiceSuite) groupedModifyRequest(changes ...dto.GroupedInvoicingChange) dto.ExecuteSubscriptionModifyRequest {
+	return dto.ExecuteSubscriptionModifyRequest{
+		Type: dto.SubscriptionModifyTypeGroupedInvoicing,
+		GroupedInvoicingParams: &dto.SubModifyGroupedInvoicingParams{
+			Action:  dto.GroupedInvoicingActionModify,
+			Changes: changes,
+		},
+	}
+}
+
+// A credit on the parent nets against a charge on the child into one parent invoice, and preview quotes the same net.
+func (s *SubscriptionServiceSuite) TestGroupedModify_NetsGroupOntoOneParentInvoice() {
+	ctx := s.GetContext()
+	parent, child := s.seedAddonGroup()
+
+	s.seedFixedPriceAddon("addon_grp_out", decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+	s.seedFixedPriceAddon("addon_grp_in", decimal.NewFromInt(90), types.InvoiceCadenceAdvance)
+	outgoing := s.attachForRemoval("addon_grp_out", 30)
+
+	at := parent.CurrentPeriodStart.Add(15 * 24 * time.Hour)
+	req := s.groupedModifyRequest(
+		dto.GroupedInvoicingChange{SubscriptionID: parent.ID, AddonBulkParams: &dto.SubModifyBulkAddonParams{
+			Removes: []*dto.RemoveAddonRequest{s.modifyRemove(outgoing, at)},
+		}},
+		dto.GroupedInvoicingChange{SubscriptionID: child.ID, AddonBulkParams: &dto.SubModifyBulkAddonParams{
+			Adds: []*dto.AddAddonToSubscriptionRequest{s.modifyAdd("addon_grp_in", at)},
+		}},
+	)
+
+	preview, err := s.modificationService().Preview(ctx, parent.ID, req)
+	s.Require().NoError(err)
+	s.Require().Len(preview.ChangedResources.Invoices, 1)
+	s.Require().NotNil(preview.ChangedResources.Invoices[0].Invoice)
+	s.Empty(s.oneOffInvoicesFor(parent.ID), "preview writes nothing")
+
+	resp, err := s.modificationService().Execute(ctx, parent.ID, req)
+	s.Require().NoError(err)
+
+	s.Empty(s.oneOffInvoicesFor(child.ID), "nothing is invoiced on the child")
+	invoices := s.oneOffInvoicesFor(parent.ID)
+	s.Require().Len(invoices, 1, "the whole group settles as one document")
+	inv := invoices[0]
+	s.Equal(parent.CustomerID, inv.CustomerID)
+	s.True(inv.AmountDue.IsPositive())
+	s.True(approxEqual(inv.AmountDue, preview.ChangedResources.Invoices[0].Invoice.AmountDue),
+		"execute charged %s, preview quoted %s", inv.AmountDue, preview.ChangedResources.Invoices[0].Invoice.AmountDue)
+	s.Empty(s.prorationCredits(), "the parent's credit is netted, not paid out")
+
+	s.Len(s.addonLineItemsFor(child.ID, "addon_grp_in"), 1)
+	removed, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, outgoing)
+	s.Require().NoError(err)
+	s.NotNil(removed.EndDate)
+
+	created := s.changedLineItemsByAction(resp, dto.ChangedLineItemActionCreated)
+	s.Require().Len(created, 1)
+	s.Equal(child.ID, created[0].SubscriptionID)
+	ended := s.changedLineItemsByAction(resp, dto.ChangedLineItemActionEnded)
+	s.Require().Len(ended, 1)
+	s.Equal(parent.ID, ended[0].SubscriptionID)
+}
+
+func (s *SubscriptionServiceSuite) TestGroupedModify_InvalidTargetsRejectedWithNothingPersisted() {
+	ctx := s.GetContext()
+	parent, child := s.seedAddonGroup()
+	s.seedFixedPriceAddon("addon_grp_bad", decimal.NewFromInt(90), types.InvoiceCadenceAdvance)
+
+	outsider := *child
+	outsider.ID = "sub_grp_outsider"
+	outsider.SubscriptionType = types.SubscriptionTypeStandalone
+	outsider.ParentSubscriptionID = nil
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, &outsider))
+
+	at := parent.CurrentPeriodStart.Add(15 * 24 * time.Hour)
+	addTo := func(subscriptionID string) dto.GroupedInvoicingChange {
+		return dto.GroupedInvoicingChange{SubscriptionID: subscriptionID, AddonBulkParams: &dto.SubModifyBulkAddonParams{
+			Adds: []*dto.AddAddonToSubscriptionRequest{s.modifyAdd("addon_grp_bad", at)},
+		}}
+	}
+
+	tests := []struct {
+		name   string
+		pathID string
+		req    dto.ExecuteSubscriptionModifyRequest
+	}{
+		{"target outside the group", parent.ID, s.groupedModifyRequest(addTo(child.ID), addTo(outsider.ID))},
+		{"duplicate subscription_id", parent.ID, s.groupedModifyRequest(addTo(child.ID), addTo(child.ID))},
+		{"child as the path subscription", child.ID, s.groupedModifyRequest(addTo(child.ID))},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			_, err := s.modificationService().Execute(ctx, tt.pathID, tt.req)
+			s.Require().Error(err)
+			s.True(ierr.IsValidation(err), "got %v", err)
+		})
+	}
+
+	s.Empty(s.oneOffInvoicesFor(parent.ID))
+	s.Empty(s.addonLineItemsFor(child.ID, "addon_grp_bad"))
+	s.Empty(s.addonLineItemsFor(outsider.ID, "addon_grp_bad"))
 }

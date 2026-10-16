@@ -10,9 +10,11 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/connection"
 	"github.com/flexprice/flexprice/internal/domain/customer"
+	"github.com/flexprice/flexprice/internal/domain/entityintegrationmapping"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
+	"github.com/flexprice/flexprice/internal/domain/payment"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/settings"
@@ -20,9 +22,11 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/taxapplied"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 
+	"github.com/flexprice/flexprice/internal/metrics/metricstest"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
+	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
 	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -779,6 +783,78 @@ func (s *InvoiceServiceSuite) TestCreateOneOffInvoice_PublishesFinalizedSystemEv
 	s.Equal(resp.ID, pl.InvoiceID)
 }
 
+// A one-off invoice counts its draft creation and finalization; voiding counts once more.
+func (s *InvoiceServiceSuite) TestInvoiceTransitionsCounted() {
+	r := metricstest.Install(s.T())
+	ctx := s.GetContext()
+	count := func(status types.InvoiceStatus) int64 {
+		return r.Sum("invoice.transitions", map[string]string{
+			"invoice_type":   string(types.InvoiceTypeOneOff),
+			"billing_reason": string(types.InvoiceBillingReasonManual),
+			"status":         string(status),
+		})
+	}
+	draftBefore, finalizedBefore, voidedBefore := count(types.InvoiceStatusDraft), count(types.InvoiceStatusFinalized), count(types.InvoiceStatusVoided)
+
+	resp, err := s.service.CreateOneOffInvoice(ctx, dto.CreateInvoiceRequest{
+		CustomerID:    s.testData.customer.ID,
+		InvoiceType:   types.InvoiceTypeOneOff,
+		Currency:      "usd",
+		AmountDue:     decimal.NewFromFloat(100),
+		Total:         decimal.NewFromFloat(100),
+		Subtotal:      decimal.NewFromFloat(100),
+		BillingReason: types.InvoiceBillingReasonManual,
+	})
+	s.Require().NoError(err)
+	_, err = s.service.VoidInvoice(ctx, resp.ID, dto.InvoiceVoidRequest{})
+	s.Require().NoError(err)
+
+	s.Equal(draftBefore+1, count(types.InvoiceStatusDraft))
+	s.Equal(finalizedBefore+1, count(types.InvoiceStatusFinalized))
+	s.Equal(voidedBefore+1, count(types.InvoiceStatusVoided))
+}
+
+// A zero-charge cycle draft counts as skipped once; recomputing a still-skipped invoice adds nothing.
+func (s *InvoiceServiceSuite) TestInvoiceSkipCountedOnce() {
+	r := metricstest.Install(s.T())
+	s.invoiceRepo.Clear()
+	match := map[string]string{
+		"invoice_type":   string(types.InvoiceTypeSubscription),
+		"billing_reason": string(types.InvoiceBillingReasonSubscriptionCycle),
+		"status":         string(types.InvoiceStatusSkipped),
+	}
+	before := r.Sum("invoice.transitions", match)
+
+	inv := s.computedCycleDraft("sub_metrics_skip", "usd", decimal.Zero)
+	s.Require().Equal(types.InvoiceStatusSkipped, inv.InvoiceStatus)
+	_, skipped, err := s.service.ComputeInvoice(s.GetContext(), inv.ID, nil)
+	s.Require().NoError(err)
+	s.Require().True(skipped)
+
+	s.Equal(before+1, r.Sum("invoice.transitions", match))
+}
+
+// A skipped invoice that recompute brings back to draft counts the draft transition.
+func (s *InvoiceServiceSuite) TestInvoiceUnskipCounted() {
+	r := metricstest.Install(s.T())
+	s.invoiceRepo.Clear()
+	match := map[string]string{
+		"invoice_type":   string(types.InvoiceTypeSubscription),
+		"billing_reason": string(types.InvoiceBillingReasonSubscriptionCycle),
+		"status":         string(types.InvoiceStatusDraft),
+	}
+
+	inv := s.computedCycleDraft("sub_metrics_unskip", "usd", decimal.Zero)
+	s.Require().Equal(types.InvoiceStatusSkipped, inv.InvoiceStatus)
+	s.applyToDraft(inv, decimal.NewFromInt(20))
+	before := r.Sum("invoice.transitions", match)
+
+	_, skipped, err := s.service.ComputeInvoice(s.GetContext(), inv.ID, nil)
+	s.Require().NoError(err)
+	s.Require().False(skipped)
+	s.Equal(before+1, r.Sum("invoice.transitions", match))
+}
+
 func (s *InvoiceServiceSuite) TestSyncInvoiceToMoyasarIfEnabled_NoConnection_NoOp() {
 	ctx := s.GetContext()
 
@@ -1048,6 +1124,162 @@ func (s *InvoiceServiceSuite) TestFinalizeInvoice_PublishesFinalizedSystemEventF
 	}
 	s.Require().NoError(json.Unmarshal(finalized.Payload, &pl))
 	s.Equal(draftSubscriptionInvoice.ID, pl.InvoiceID)
+}
+
+func (s *InvoiceServiceSuite) TestFinalizeInvoice_IssuesSubscriptionInvoiceAtFinalization() {
+	ctx := s.GetContext()
+	early := time.Now().UTC().AddDate(0, 0, -40).Truncate(time.Microsecond)
+
+	tests := []struct {
+		name            string
+		explicitIssue   bool
+		manuallyEdited  bool
+		wantIssuedEarly bool
+		wantDueRedated  bool
+	}{
+		{name: "draft created early is issued at finalization", wantDueRedated: true},
+		{name: "caller-set issue date is kept and due counts from it", explicitIssue: true, wantIssuedEarly: true, wantDueRedated: true},
+		{name: "manually edited copy keeps its dates", manuallyEdited: true, wantIssuedEarly: true},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			baseModel := types.GetDefaultBaseModel(ctx)
+			if !tt.explicitIssue {
+				baseModel.CreatedAt = early
+			}
+			draft := &invoice.Invoice{
+				ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+				CustomerID:       s.testData.customer.ID,
+				SubscriptionID:   &s.testData.subscription.ID,
+				InvoiceType:      types.InvoiceTypeSubscription,
+				InvoiceStatus:    types.InvoiceStatusDraft,
+				PaymentStatus:    types.PaymentStatusPending,
+				Currency:         "usd",
+				AmountDue:        decimal.NewFromFloat(15),
+				Total:            decimal.NewFromFloat(15),
+				Subtotal:         decimal.NewFromFloat(15),
+				AmountPaid:       decimal.Zero,
+				AmountRemaining:  decimal.NewFromFloat(15),
+				IssueDate:        lo.ToPtr(early),
+				DueDate:          lo.ToPtr(early.AddDate(0, 0, 3)),
+				IsManuallyEdited: tt.manuallyEdited,
+				BaseModel:        baseModel,
+			}
+			s.Require().NoError(s.invoiceRepo.CreateWithLineItems(ctx, draft))
+
+			finalizeStart := time.Now().UTC()
+			s.Require().NoError(s.service.FinalizeInvoice(ctx, draft.ID, dto.FinalizeInvoiceRequest{}))
+			got, err := s.invoiceRepo.Get(ctx, draft.ID)
+			s.Require().NoError(err)
+
+			if tt.wantIssuedEarly {
+				s.WithinDuration(early, *got.IssueDate, time.Second)
+			} else {
+				s.False(got.IssueDate.Before(finalizeStart))
+			}
+			if tt.wantDueRedated {
+				s.WithinDuration(got.IssueDate.AddDate(0, 0, 1), *got.DueDate, time.Second)
+			} else {
+				s.WithinDuration(early.AddDate(0, 0, 3), *got.DueDate, time.Second)
+			}
+		})
+	}
+}
+
+func (s *InvoiceServiceSuite) TestPaidDraftIsIssuedAtFinalization() {
+	ctx := s.GetContext()
+	early := time.Now().UTC().AddDate(0, 0, -40).Truncate(time.Microsecond)
+	baseModel := types.GetDefaultBaseModel(ctx)
+	baseModel.CreatedAt = early
+
+	draft := &invoice.Invoice{
+		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+		CustomerID:      s.testData.customer.ID,
+		SubscriptionID:  &s.testData.subscription.ID,
+		InvoiceType:     types.InvoiceTypeSubscription,
+		InvoiceStatus:   types.InvoiceStatusDraft,
+		PaymentStatus:   types.PaymentStatusPending,
+		Currency:        "usd",
+		AmountDue:       decimal.NewFromFloat(15),
+		Total:           decimal.NewFromFloat(15),
+		Subtotal:        decimal.NewFromFloat(15),
+		AmountPaid:      decimal.Zero,
+		AmountRemaining: decimal.NewFromFloat(15),
+		IssueDate:       lo.ToPtr(early),
+		DueDate:         lo.ToPtr(early.AddDate(0, 0, 3)),
+		BaseModel:       baseModel,
+	}
+	s.Require().NoError(s.invoiceRepo.CreateWithLineItems(ctx, draft))
+
+	paid := &payment.Payment{
+		ID:                types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PAYMENT),
+		DestinationType:   types.PaymentDestinationTypeInvoice,
+		DestinationID:     draft.ID,
+		PaymentMethodType: types.PaymentMethodTypeOffline,
+		Amount:            decimal.NewFromFloat(15),
+		Currency:          "usd",
+		PaymentStatus:     types.PaymentStatusSucceeded,
+		BaseModel:         types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().PaymentRepo.Create(ctx, paid))
+
+	finalizeStart := time.Now().UTC()
+	processor := &paymentProcessor{ServiceParams: s.service.(*invoiceService).ServiceParams}
+	s.Require().NoError(processor.handleInvoicePostProcessing(ctx, paid))
+
+	got, err := s.invoiceRepo.Get(ctx, draft.ID)
+	s.Require().NoError(err)
+	s.Equal(types.InvoiceStatusFinalized, got.InvoiceStatus)
+	s.False(got.IssueDate.Before(finalizeStart))
+	s.WithinDuration(got.IssueDate.AddDate(0, 0, 1), *got.DueDate, time.Second)
+}
+
+func (s *InvoiceServiceSuite) TestPaidDraftFinalizesWhenDatingFails() {
+	ctx := s.GetContext()
+	early := time.Now().UTC().AddDate(0, 0, -40).Truncate(time.Microsecond)
+	baseModel := types.GetDefaultBaseModel(ctx)
+	baseModel.CreatedAt = early
+
+	draft := &invoice.Invoice{
+		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+		CustomerID:      s.testData.customer.ID,
+		SubscriptionID:  lo.ToPtr("subs_missing"),
+		InvoiceType:     types.InvoiceTypeSubscription,
+		InvoiceStatus:   types.InvoiceStatusDraft,
+		PaymentStatus:   types.PaymentStatusPending,
+		Currency:        "usd",
+		AmountDue:       decimal.NewFromFloat(15),
+		Total:           decimal.NewFromFloat(15),
+		Subtotal:        decimal.NewFromFloat(15),
+		AmountPaid:      decimal.Zero,
+		AmountRemaining: decimal.NewFromFloat(15),
+		IssueDate:       lo.ToPtr(early),
+		DueDate:         lo.ToPtr(early.AddDate(0, 0, 3)),
+		BaseModel:       baseModel,
+	}
+	s.Require().NoError(s.invoiceRepo.CreateWithLineItems(ctx, draft))
+
+	paid := &payment.Payment{
+		ID:                types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PAYMENT),
+		DestinationType:   types.PaymentDestinationTypeInvoice,
+		DestinationID:     draft.ID,
+		PaymentMethodType: types.PaymentMethodTypeOffline,
+		Amount:            decimal.NewFromFloat(15),
+		Currency:          "usd",
+		PaymentStatus:     types.PaymentStatusSucceeded,
+		BaseModel:         types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().PaymentRepo.Create(ctx, paid))
+
+	processor := &paymentProcessor{ServiceParams: s.service.(*invoiceService).ServiceParams}
+	s.Require().NoError(processor.handleInvoicePostProcessing(ctx, paid))
+
+	got, err := s.invoiceRepo.Get(ctx, draft.ID)
+	s.Require().NoError(err)
+	s.Equal(types.InvoiceStatusFinalized, got.InvoiceStatus)
+	s.Equal(types.PaymentStatusSucceeded, got.PaymentStatus)
+	s.WithinDuration(early, *got.IssueDate, time.Second)
+	s.WithinDuration(early.AddDate(0, 0, 3), *got.DueDate, time.Second)
 }
 
 func (s *InvoiceServiceSuite) TestUpdatePaymentStatus() {
@@ -3205,7 +3437,7 @@ func (s *InvoiceServiceSuite) TestListInvoicesReturnsTaxSummary() {
 	applied := []*taxapplied.TaxApplied{
 		{
 			ID:            "taxapp_inc",
-			TaxRateID:     "taxrate_inc",
+			TaxRateID:     lo.ToPtr("taxrate_inc"),
 			EntityType:    types.TaxRateEntityTypeInvoice,
 			EntityID:      taxed.ID,
 			TaxableAmount: decimal.NewFromInt(100),
@@ -3216,7 +3448,7 @@ func (s *InvoiceServiceSuite) TestListInvoicesReturnsTaxSummary() {
 		},
 		{
 			ID:            "taxapp_exc",
-			TaxRateID:     "taxrate_exc",
+			TaxRateID:     lo.ToPtr("taxrate_exc"),
 			EntityType:    types.TaxRateEntityTypeInvoice,
 			EntityID:      taxed.ID,
 			TaxableAmount: decimal.NewFromInt(100),
@@ -3279,7 +3511,7 @@ func (s *InvoiceServiceSuite) TestListInvoicesTaxSummaryIsPerInvoice() {
 		for r := 0; r <= i; r++ {
 			s.NoError(s.GetStores().TaxAppliedRepo.Create(ctx, &taxapplied.TaxApplied{
 				ID:            fmt.Sprintf("taxapp_per_%02d_%02d", i, r),
-				TaxRateID:     fmt.Sprintf("taxrate_%02d", r),
+				TaxRateID:     lo.ToPtr(fmt.Sprintf("taxrate_%02d", r)),
 				EntityType:    types.TaxRateEntityTypeInvoice,
 				EntityID:      id,
 				TaxableAmount: decimal.NewFromInt(100),
@@ -3310,4 +3542,75 @@ func (s *InvoiceServiceSuite) TestListInvoicesTaxSummaryIsPerInvoice() {
 		s.True(decimal.NewFromInt(int64(i+1)).Equal(inv.TaxSummary.TotalExclusiveTax),
 			"invoice %s: want exclusive %d, got %s", id, i+1, inv.TaxSummary.TotalExclusiveTax)
 	}
+}
+
+func (s *InvoiceServiceSuite) TestPublishInvoiceSyncWebhook() {
+	tests := []struct {
+		name        string
+		invoiceID   string
+		withMapping bool
+		syncErr     string
+		wantEvent   types.WebhookEventName
+		wantError   string
+	}{
+		{name: "success with mapping", invoiceID: "inv_sync_ok", withMapping: true, wantEvent: types.WebhookEventInvoiceSyncSuccess},
+		{name: "success without mapping is a skip", invoiceID: "inv_sync_skip"},
+		{name: "failure without mapping", invoiceID: "inv_sync_fail", syncErr: "stripe down", wantEvent: types.WebhookEventInvoiceSyncFailed, wantError: "stripe down"},
+		{name: "failure after mapping was created", invoiceID: "inv_sync_fail_mapped", withMapping: true, syncErr: "finalize failed", wantEvent: types.WebhookEventInvoiceSyncFailed, wantError: "finalize failed"},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			ctx := s.GetContext()
+			if tt.withMapping {
+				s.NoError(s.GetStores().EntityIntegrationMappingRepo.Create(ctx, &entityintegrationmapping.EntityIntegrationMapping{
+					ID:               "eim_" + tt.invoiceID,
+					EntityID:         tt.invoiceID,
+					EntityType:       types.IntegrationEntityTypeInvoice,
+					ProviderType:     string(types.SecretProviderStripe),
+					ProviderEntityID: "in_" + tt.invoiceID,
+					EnvironmentID:    types.GetEnvironmentID(ctx),
+					BaseModel:        types.GetDefaultBaseModel(ctx),
+				}))
+			}
+
+			s.service.PublishInvoiceSyncWebhook(ctx, tt.invoiceID, types.SecretProviderStripe, tt.syncErr)
+
+			events := lo.Filter(s.GetPublishedWebhooks(), func(e *types.WebhookEvent, _ int) bool {
+				return e.EntityID == tt.invoiceID
+			})
+			if tt.wantEvent == "" {
+				s.Empty(events)
+				return
+			}
+			s.Require().Len(events, 1)
+			s.Equal(tt.wantEvent, events[0].EventName)
+			s.Equal(types.SystemEntityTypeInvoice, events[0].EntityType)
+
+			var internal webhookDto.InternalInvoiceSyncEvent
+			s.Require().NoError(json.Unmarshal(events[0].Payload, &internal))
+			s.Equal(tt.invoiceID, internal.InvoiceID)
+			s.Equal(types.SecretProviderStripe, internal.Provider)
+			s.Equal(tt.wantError, internal.Error)
+		})
+	}
+}
+
+func (s *InvoiceServiceSuite) TestPublishInvoiceSyncWebhook_IgnoresOtherProviderMapping() {
+	ctx := s.GetContext()
+	s.NoError(s.GetStores().EntityIntegrationMappingRepo.Create(ctx, &entityintegrationmapping.EntityIntegrationMapping{
+		ID:               "eim_razorpay_only",
+		EntityID:         "inv_razorpay_only",
+		EntityType:       types.IntegrationEntityTypeInvoice,
+		ProviderType:     string(types.SecretProviderRazorpay),
+		ProviderEntityID: "rzp_inv",
+		EnvironmentID:    types.GetEnvironmentID(ctx),
+		BaseModel:        types.GetDefaultBaseModel(ctx),
+	}))
+
+	s.service.PublishInvoiceSyncWebhook(ctx, "inv_razorpay_only", types.SecretProviderStripe, "")
+
+	s.Empty(lo.Filter(s.GetPublishedWebhooks(), func(e *types.WebhookEvent, _ int) bool {
+		return e.EntityID == "inv_razorpay_only"
+	}))
 }

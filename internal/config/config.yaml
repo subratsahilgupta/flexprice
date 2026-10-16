@@ -1,8 +1,15 @@
 deployment:
-  mode: "local" # "local", "docker", "production"
+  mode: "local" # local, api, consumer, temporal_worker, admin
 
 server:
   address: ":8080"
+  # Grace period for in-flight requests after SIGTERM. Clamped to 45s.
+  shutdown_timeout: 25s
+
+# Operator portal (deployment.mode=admin). Empty secret refuses that mode at boot.
+# Prod sets FLEXPRICE_ADMIN_SECRET from the secret manager. Header: X-Admin-Secret.
+admin:
+  secret: ""
 
 auth:
   provider: "flexprice" # "flexprice" or "supabase"
@@ -273,6 +280,9 @@ otel:
     # route). Off here — SigNoz derives it from traces; turn it on where the
     # backend cannot store traces.
     http_server_enabled: false
+    app_enabled: false # Kill switch for internal/metrics.
+    disabled_metrics: [] # internal/metrics names to drop.
+    tenant_allowlist: [] # "tenant_id:environment_id" or "tenant_id"; empty = all.
 
 pyroscope:
   enabled: false # Set to true to enable continuous profiling
@@ -310,6 +320,8 @@ logging:
   # otel_auth_header: ""
   # otel_auth_value: ""
   otel_debug: false # synchronous SimpleProcessor for log export; use to confirm delivery
+  # Kill switch for provider call logs: FLEXPRICE_LOGGING_PROVIDER_CALLS_ENABLED=false
+  provider_calls_enabled: true
 
 webhook:
   enabled: true
@@ -363,6 +375,10 @@ temporal:
     max_concurrent_workflow_task_execution_size: 10 # Max workflow tasks running concurrently per worker (default: 10)
     worker_activities_per_second: 5 # Rate limit: activities dispatched per second per worker (default: 5, 0=unlimited)
     task_queue_activities_per_second: 0 # Rate limit: activities per second across ALL workers for a task queue (default: 0=unlimited)
+    # Per-queue overrides; unset keys inherit the values above.
+    queues:
+      invoice:
+        task_queue_activities_per_second: 20
   connection:
     dial_timeout_seconds: 5
     retry_max_attempts: 5
@@ -530,6 +546,20 @@ wallet_balance_alert:
   topic: "wallet_alert"
   rate_limit: 1
   consumer_group: "v1_wallet_alert_service"
+
+activity:
+  enabled: false
+  topic: activity_logs
+  topic_dlq: activity_logs_dlq
+  consumer_group: "activity_log"
+  rate_limit: 50
+  publisher:
+    buffer_size: 10000
+    workers: 4
+    max_entries_per_message: 100
+    max_message_bytes: 524288
+    max_snapshot_bytes: 262144
+    shutdown_timeout: 10s
 
 # Google Gemini (server-side AI pricing parse for dashboard). Set FLEXPRICE_GEMINI_API_KEY in secure environments.
 gemini:

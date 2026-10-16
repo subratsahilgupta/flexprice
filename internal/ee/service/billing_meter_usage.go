@@ -56,6 +56,34 @@ func resolveAsOf(params *dto.PrepareSubscriptionInvoiceRequestParams) time.Time 
 	return time.Now().UTC()
 }
 
+// UsageNetForWindow returns sub's usage charges for [periodStart, until) after coupon discounts,
+// priced as an invoice for that window would be. Nothing is persisted.
+func (s *billingService) UsageNetForWindow(ctx context.Context, sub *subscription.Subscription, periodStart, until time.Time) (decimal.Decimal, error) {
+	window := *sub // building the request replaces the subscription's line items
+	req, err := s.PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+		Subscription:   &window,
+		PeriodStart:    periodStart,
+		PeriodEnd:      until,
+		ReferencePoint: types.ReferencePointPreview,
+		AsOf:           until,
+	})
+	if err != nil {
+		return decimal.Zero, err
+	}
+	if err := s.applyCouponPreview(ctx, req); err != nil {
+		return decimal.Zero, err
+	}
+	net := decimal.Zero
+	for _, line := range req.LineItems {
+		if lo.FromPtr(line.PriceType) != string(types.PRICE_TYPE_USAGE) {
+			continue
+		}
+		discounts := lo.FromPtr(line.LineItemDiscount).Add(lo.FromPtr(line.InvoiceLevelDiscount))
+		net = net.Add(decimal.Max(decimal.Zero, line.Amount.Sub(discounts)))
+	}
+	return net, nil
+}
+
 // CalculateMeterUsageCharges computes usage-based invoice line items from the meter_usage table.
 // All queries (bucketed meters, windowed entitlements, windowed commitments) read from
 // MeterUsageRepo — never from raw events. asOfOverride, when non-nil and non-zero, overrides

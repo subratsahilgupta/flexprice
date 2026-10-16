@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/activity"
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/customer"
@@ -68,6 +70,33 @@ type subscriptionCoreResult struct {
 	Plan        *plan.Plan
 	ValidPrices []*dto.PriceResponse
 	Customer    *customer.Customer
+	// ActivatedOnCreate is set when a gated subscription was activated because nothing was owed.
+	ActivatedOnCreate bool
+}
+
+// validateBillingAnchor rejects an anchor before the start's local date or after start + 1 period.
+// e.g. monthly from Jan 10 09:00: Jan 20 and Feb 10 09:00 are allowed; Feb 10 17:00 and Dec 20 are rejected.
+func validateBillingAnchor(sub *subscription.Subscription) error {
+	// The first full period on a schedule anchored at the start is [start, start + 1 period).
+	grid, err := types.NewBillingPeriodGrid(sub.StartDate, sub.BillingPeriod, sub.BillingPeriodCount, sub.Timezone)
+	if err != nil {
+		return err
+	}
+	firstPeriod := types.FullBillingPeriod(sub.StartDate, grid)
+
+	anchorDay := types.FloorToStartOfDay(sub.BillingAnchor, sub.Timezone)
+	if anchorDay.Before(types.FloorToStartOfDay(firstPeriod.Start, sub.Timezone)) || sub.BillingAnchor.After(firstPeriod.End) {
+		return ierr.NewError("billing_anchor must be within one billing period of the start date").
+			WithHint("Set billing_anchor between the start date and one billing period after it, or backdate the start date instead").
+			WithReportableDetails(map[string]any{
+				"billing_anchor":        sub.BillingAnchor,
+				"start_date":            sub.StartDate,
+				"latest_billing_anchor": firstPeriod.End,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
 }
 
 // createSubscription creates the subscription through invoice generation. Caller must be in a transaction.
@@ -129,6 +158,7 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	if err := ccCfg.EnforceCurrency(sub.Currency); err != nil {
 		return nil, err
 	}
+
 	// Always inherit timezone from the customer record.
 	// The timezone field in the API request is intentionally ignored.
 	sub.Timezone = customer.Timezone
@@ -169,15 +199,23 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	} else {
 		sub.StartDate = sub.StartDate.UTC().Truncate(time.Millisecond)
 	}
+	if sub.BillingPeriodCount == 0 {
+		sub.BillingPeriodCount = 1
+	}
+
 	if req.BillingAnchor != nil {
-		sub.BillingAnchor = lo.FromPtr(req.BillingAnchor)
+		sub.BillingAnchor = lo.FromPtr(req.BillingAnchor).UTC().Truncate(time.Millisecond)
+		// Stripe imports keep Stripe's anchor so the schedule matches Stripe's; an anchor before the start
+		// only sets the schedule (start Nov 16, anchor Nov 1 → first bill Dec 1).
+		if lo.FromPtr(req.Workflow) != types.TemporalStripeIntegrationWorkflow && sub.BillingAnchor.After(sub.StartDate) {
+			if err := validateBillingAnchor(sub); err != nil {
+				return nil, err
+			}
+		}
 	} else if sub.BillingCycle == types.BillingCycleCalendar {
 		sub.BillingAnchor = types.CalculateCalendarBillingAnchor(sub.StartDate, sub.BillingPeriod, sub.Timezone)
 	} else {
 		sub.BillingAnchor = sub.StartDate
-	}
-	if sub.BillingPeriodCount == 0 {
-		sub.BillingPeriodCount = 1
 	}
 	nextBillingDate, err := types.NextBillingDate(&types.NextBillingDateParams{
 		CurrentPeriodStart:  sub.StartDate,
@@ -287,11 +325,6 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 
 	sub.LineItems = lineItems
 
-	// Multi-cadence validations: interval alignment and proration mutual exclusion
-	if err := s.validateMultiCadence(sub); err != nil {
-		return nil, err
-	}
-
 	// Ensure subscription-level and line-item-level commitments don't conflict
 	if err := s.validateSubscriptionLevelCommitment(sub); err != nil {
 		return nil, err
@@ -325,10 +358,17 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 
 	// Process subscription creation in transaction
 	var invoice *dto.InvoiceResponse
+	var activatedOnCreate bool
 	var updatedSub *subscription.Subscription
 	invoiceService := NewInvoiceService(s.ServiceParams)
 
 	groupedInvoicingSubIDs, childCustomerIDs, err := s.prepareSubscriptionInheritanceForCreate(ctx, &req, sub)
+	if err != nil {
+		return nil, err
+	}
+
+	// Runs after inheritance so the invoicing customer, whose billing currency applies, is known.
+	inlineFXTarget, err := s.validateSubscriptionBillingCurrency(ctx, sub, customer, ccCfg, req.FxRates)
 	if err != nil {
 		return nil, err
 	}
@@ -344,6 +384,11 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	}
 
 	if err := s.SubRepo.CreateWithLineItems(ctx, sub, sub.LineItems); err != nil {
+		return nil, err
+	}
+
+	// Inline fx_rates: create the subscription-scope rates now that the subscription id exists.
+	if err := s.handleFxOverride(ctx, sub, inlineFXTarget, req.FxRates); err != nil {
 		return nil, err
 	}
 
@@ -395,10 +440,20 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	if sub.TrialEnd != nil {
 		creditGrantStart = lo.FromPtr(sub.TrialEnd)
 	}
+
+	// Anniversary billing re-anchors at trial end, so its first paid period is whole and the
+	// grant's own anchor (trial end) already matches billing.
+	// e.g. calendar sub from Jan 15 with a 14-day trial: the plan CG is prorated over [Jan 29, Feb 1) = 3/31.
+	var firstPeriod *dto.FirstPeriodProration
+	if sub.TrialEnd == nil || sub.BillingCycle == types.BillingCycleCalendar {
+		firstPeriod = newSubscriptionGrantService(s.ServiceParams).creditGrantProration(
+			ctx, sub, creditGrantStart, sub.ProrationBehavior, grantProrationSourceSubscriptionCreate)
+	}
 	if err = creditGrantService.CreateSubscriptionCreditGrants(ctx, dto.CreateSubscriptionCreditGrantsRequest{
-		Subscription: sub,
-		Grants:       creditGrantRequests,
-		StartDate:    creditGrantStart,
+		Subscription:         sub,
+		Grants:               creditGrantRequests,
+		StartDate:            creditGrantStart,
+		FirstPeriodProration: firstPeriod,
 	}); err != nil {
 		return nil, err
 	}
@@ -500,6 +555,7 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 			if err = s.SubRepo.Update(ctx, sub); err != nil {
 				return nil, err
 			}
+			activatedOnCreate = true
 		}
 	} else if sub.SubscriptionStatus == types.SubscriptionStatusTrialing {
 		// Create a $0 preview invoice at trial start so downstream integrations (Stripe,
@@ -537,12 +593,13 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	}
 
 	return &subscriptionCoreResult{
-		Sub:         sub,
-		Invoice:     invoice,
-		Phases:      phases,
-		Plan:        plan,
-		ValidPrices: validPrices,
-		Customer:    customer,
+		Sub:               sub,
+		Invoice:           invoice,
+		Phases:            phases,
+		Plan:              plan,
+		ValidPrices:       validPrices,
+		Customer:          customer,
+		ActivatedOnCreate: activatedOnCreate,
 	}, nil
 }
 
@@ -556,6 +613,15 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// Grants were deferred while the subscription was incomplete; apply them after commit.
+	if result.ActivatedOnCreate {
+		if cgErr := s.processPendingCreditGrantsForSubscription(ctx, result.Sub); cgErr != nil {
+			s.Logger.Error(ctx, "failed to process pending credit grants after activation",
+				"error", cgErr,
+				"subscription_id", result.Sub.ID)
+		}
 	}
 
 	if req.SubscriptionStatus != types.SubscriptionStatusDraft && len(result.Phases) > 0 {
@@ -665,11 +731,21 @@ func (s *subscriptionService) ActivateDraftSubscription(ctx context.Context, sub
 
 	// Recalculate all dates with new start date
 	newStartDate := req.StartDate.UTC()
+	hasCustomAnchor := sub.BillingCycle == types.BillingCycleAnniversary && !sub.BillingAnchor.Equal(sub.StartDate)
+	startShift := newStartDate.Sub(sub.StartDate)
 	sub.StartDate = newStartDate
 
-	// Calculate billing anchor
+	// A custom anniversary anchor is kept if still valid, else moved with the start, else reset to the start.
+	// e.g. draft from Jan 10 with anchor Jan 20, activated Jan 25: Jan 20 is out of range, so it moves 15 days to Feb 4.
 	if sub.BillingCycle == types.BillingCycleCalendar {
 		sub.BillingAnchor = types.CalculateCalendarBillingAnchor(sub.StartDate, sub.BillingPeriod, sub.Timezone)
+	} else if hasCustomAnchor {
+		if validateBillingAnchor(sub) != nil {
+			sub.BillingAnchor = sub.BillingAnchor.Add(startShift)
+		}
+		if validateBillingAnchor(sub) != nil {
+			sub.BillingAnchor = sub.StartDate
+		}
 	} else {
 		// default to start date for anniversary billing
 		sub.BillingAnchor = sub.StartDate
@@ -806,6 +882,9 @@ func (s *subscriptionService) ActivateDraftSubscription(ctx context.Context, sub
 
 		if sub.SubscriptionStatus != targetStatus {
 			sub.SubscriptionStatus = targetStatus
+			if targetStatus == types.SubscriptionStatusActive || targetStatus == types.SubscriptionStatusTrialing {
+				ctx = activity.WithAction(ctx, sub.ID, activity.SubscriptionActivated)
+			}
 			err = s.SubRepo.Update(ctx, sub)
 			if err != nil {
 				return err
@@ -1415,7 +1494,6 @@ func buildOverridePriceRequest(originalPrice *dto.PriceResponse, override dto.Ov
 		BillingModel:         targetBillingModel,
 		InvoiceCadence:       originalPrice.InvoiceCadence,
 		TrialPeriodDays:      originalPrice.TrialPeriodDays,
-		TierMode:             originalPrice.TierMode,
 		BucketSize:           lo.Ternary(override.BucketSize != "", override.BucketSize, originalPrice.BucketSize),
 		MeterID:              originalPrice.MeterID,
 		Description:          originalPrice.Description,
@@ -1424,6 +1502,9 @@ func buildOverridePriceRequest(originalPrice *dto.PriceResponse, override dto.Ov
 		DisplayName:          originalPrice.DisplayName,      // Preserve original price display name
 		PriceUnitType:        originalPrice.PriceUnitType,    // Always copy from original (cannot be changed)
 		SkipEntityValidation: true,
+	}
+	if override.BucketSize == dto.BucketSizeNone {
+		createPriceReq.BucketSize = ""
 	}
 
 	// Handle PriceUnitConfig construction for CUSTOM price unit type
@@ -1811,6 +1892,18 @@ func (s *subscriptionService) GetSubscriptionV2(ctx context.Context, id string, 
 	return response, nil
 }
 
+// naturalPeriodEnd returns the current period's end at the regular billing boundary, ignoring cancellation.
+func (s *subscriptionService) naturalPeriodEnd(sub *subscription.Subscription) (time.Time, error) {
+	return types.NextBillingDate(&types.NextBillingDateParams{
+		CurrentPeriodStart:  sub.CurrentPeriodStart,
+		BillingAnchor:       sub.BillingAnchor,
+		Unit:                sub.BillingPeriodCount,
+		Period:              sub.BillingPeriod,
+		SubscriptionEndDate: nil,
+		Timezone:            sub.Timezone,
+	})
+}
+
 // UpdateSubscription updates a subscription with the provided request
 func (s *subscriptionService) UpdateSubscription(ctx context.Context, subscriptionID string, req dto.UpdateSubscriptionRequest) (*dto.SubscriptionResponse, error) {
 	logger := s.Logger.With(
@@ -1868,17 +1961,63 @@ func (s *subscriptionService) UpdateSubscription(ctx context.Context, subscripti
 		}
 	}
 
+	// A Flexprice pause ends only through resume or cancel, which settle its invoices.
+	if req.Status != "" && req.Status != subscription.SubscriptionStatus && subscription.ActivePauseID != nil {
+		return nil, ierr.NewError("cannot change the status of a paused subscription").
+			WithHint("Resume or cancel the subscription instead").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id":     subscriptionID,
+				"subscription_status": subscription.SubscriptionStatus,
+				"requested_status":    req.Status,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	// Update fields from request
 	if req.Status != "" {
 		subscription.SubscriptionStatus = req.Status
 	}
 
 	if req.CancelAt != nil {
+		// Reject cancel_at at/before period start: it would invert the stored period.
+		if !req.CancelAt.After(subscription.CurrentPeriodStart) {
+			return nil, ierr.NewError("cancel_at must be after current period start").
+				WithHint("cancel_at cannot be at or before the current period start; it would leave the subscription with an inverted billing period").
+				WithReportableDetails(map[string]interface{}{
+					"cancel_at":            req.CancelAt.UTC().Format(time.RFC3339),
+					"current_period_start": subscription.CurrentPeriodStart.UTC().Format(time.RFC3339),
+				}).
+				Mark(ierr.ErrValidation)
+		}
 		subscription.CancelAt = req.CancelAt
 		subscription.EndDate = req.CancelAt
+		// End the period at the earlier of the natural boundary and cancel_at (recomputed, not
+		// just shortened, so a later cancel_at isn't left at a stale earlier value).
+		naturalEnd, err := s.naturalPeriodEnd(subscription)
+		if err != nil {
+			return nil, err
+		}
+		if req.CancelAt.Before(naturalEnd) {
+			subscription.CurrentPeriodEnd = *req.CancelAt
+		} else {
+			subscription.CurrentPeriodEnd = naturalEnd
+		}
 	}
 
-	subscription.CancelAtPeriodEnd = req.CancelAtPeriodEnd
+	if req.CancelAtPeriodEnd != nil {
+		subscription.CancelAtPeriodEnd = *req.CancelAtPeriodEnd
+		// Explicit false with no cancel_at clears a pending cancellation; gated on an existing
+		// CancelAt so an unrelated fixed-term end_date is left untouched.
+		if !*req.CancelAtPeriodEnd && req.CancelAt == nil && subscription.CancelAt != nil {
+			subscription.CancelAt = nil
+			subscription.EndDate = nil
+			naturalEnd, err := s.naturalPeriodEnd(subscription)
+			if err != nil {
+				return nil, err
+			}
+			subscription.CurrentPeriodEnd = naturalEnd
+		}
+	}
 
 	// Update the subscription in the database
 	err = s.SubRepo.Update(ctx, subscription)
@@ -1947,8 +2086,26 @@ func (s *subscriptionService) CancelSubscription(
 			Mark(ierr.ErrValidation)
 	}
 
-	// Backdated immediate cancellation: cancel_at must be after current period start
-	if req.CancellationType == types.CancellationTypeImmediate && req.CancelAt != nil {
+	// A paused subscription was settled at the pause (closing invoice and advance credit), so it can
+	// only be cancelled immediately and that cancellation bills and credits nothing.
+	isPaused := subscription.SubscriptionStatus == types.SubscriptionStatusPaused
+	if isPaused {
+		if req.CancellationType != types.CancellationTypeImmediate {
+			return nil, ierr.NewError("a paused subscription can only be cancelled immediately").
+				WithHint("Cancel the subscription immediately, or resume it before scheduling the cancellation").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id":   subscriptionID,
+					"cancellation_type": req.CancellationType,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+		req.ProrationBehavior = types.ProrationBehaviorNone
+		req.CancelImmediatelyInvoicePolicy = types.CancelImmediatelyInvoicePolicySkip
+	}
+
+	// cancel_at must be after period start (covers scheduled_date too, which shortens the period to it).
+	if (req.CancellationType == types.CancellationTypeImmediate ||
+		req.CancellationType == types.CancellationTypeScheduledDate) && req.CancelAt != nil {
 		if !req.CancelAt.After(subscription.CurrentPeriodStart) {
 			return nil, ierr.NewError("cancel_at must be after current period start").
 				WithHint("Backdated cancellation is not allowed at or before the current period start").
@@ -1958,17 +2115,6 @@ func (s *subscriptionService) CancelSubscription(
 				}).
 				Mark(ierr.ErrValidation)
 		}
-	}
-
-	// Reject proration for subscriptions with mixed billing periods
-	if req.ProrationBehavior == types.ProrationBehaviorCreateProrations && subscription.HasMixedBillingPeriods() {
-		return nil, ierr.NewError("proration is not supported for subscriptions with mixed billing periods").
-			WithHint("Set proration_behavior to 'none' when cancelling a subscription with different billing periods").
-			WithReportableDetails(map[string]interface{}{
-				"subscription_id":    subscriptionID,
-				"proration_behavior": req.ProrationBehavior,
-			}).
-			Mark(ierr.ErrValidation)
 	}
 
 	// Step 3b: Guard against double-scheduling
@@ -2006,6 +2152,10 @@ func (s *subscriptionService) CancelSubscription(
 	// non-zero invoice on cancellation is incorrect — skip invoice creation.
 	isTrialing := subscription.SubscriptionStatus == types.SubscriptionStatusTrialing
 
+	// Scheduled cancellations stay active until the period ends; the rollover declares cancelled then.
+	if req.CancellationType == types.CancellationTypeImmediate {
+		ctx = activity.WithAction(ctx, subscriptionID, activity.SubscriptionCancelled)
+	}
 	// Step 5: Execute in transaction
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 
@@ -2034,8 +2184,21 @@ func (s *subscriptionService) CancelSubscription(
 			req.CancellationType == types.CancellationTypeScheduledDate
 		shouldCreateInvoice := !isScheduled &&
 			invoicePolicy == types.CancelImmediatelyInvoicePolicyGenerateInvoice
+		invoiceService := NewInvoiceService(s.ServiceParams)
+		// A cancel that ends the period early would leave its open draft behind, so the draft becomes
+		// the cancel invoice, is voided (refunding its applied credits), or moves to the cancel date.
+		switch {
+		case req.CancellationType == types.CancellationTypeImmediate && shouldCreateInvoice:
+			_, err = invoiceService.MoveCycleDraft(ctx, subscription, effectiveDate, types.InvoiceBillingReasonProration)
+		case req.CancellationType == types.CancellationTypeImmediate:
+			err = invoiceService.VoidCycleDraft(ctx, subscription)
+		case req.CancellationType == types.CancellationTypeScheduledDate && effectiveDate.Before(subscription.CurrentPeriodEnd):
+			_, err = invoiceService.MoveCycleDraft(ctx, subscription, effectiveDate, types.InvoiceBillingReasonSubscriptionCycle)
+		}
+		if err != nil {
+			return err
+		}
 		if shouldCreateInvoice {
-			invoiceService := NewInvoiceService(s.ServiceParams)
 			paymentParams := dto.NewPaymentParametersFromSubscription(subscription.CollectionMethod, subscription.PaymentBehavior, subscription.GatewayPaymentMethodID)
 			paymentParams = paymentParams.NormalizePaymentParameters()
 			inv, _, err := invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
@@ -2066,6 +2229,23 @@ func (s *subscriptionService) CancelSubscription(
 				EndDate:                  subscription.EndDate,
 				OriginalCurrentPeriodEnd: subscription.CurrentPeriodEnd,
 			}
+		}
+
+		// The pause ends with the subscription.
+		if isPaused {
+			if subscription.ActivePauseID != nil {
+				pause, err := s.SubRepo.GetPause(ctx, *subscription.ActivePauseID)
+				if err != nil {
+					return err
+				}
+				pause.PauseStatus = types.PauseStatusCompleted
+				pause.UpdatedBy = types.GetUserID(ctx)
+				if err := s.SubRepo.UpdatePause(ctx, pause); err != nil {
+					return err
+				}
+			}
+			subscription.PauseStatus = types.PauseStatusNone
+			subscription.ActivePauseID = nil
 		}
 
 		// Step 7: Update subscription status
@@ -3234,8 +3414,13 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 			sub.PauseStatus = types.PauseStatusNone
 			sub.ActivePauseID = nil
 
-			// Adjust the billing period by the pause duration
-			sub.CurrentPeriodEnd = sub.CurrentPeriodEnd.Add(pauseDuration)
+			// Adjust the billing period by the pause duration; the open draft's end moves with it.
+			newPeriodEnd := sub.CurrentPeriodEnd.Add(pauseDuration)
+			if _, err := NewInvoiceService(s.ServiceParams).MoveCycleDraft(ctx, sub, newPeriodEnd,
+				types.InvoiceBillingReasonSubscriptionCycle); err != nil {
+				return err
+			}
+			sub.CurrentPeriodEnd = newPeriodEnd
 
 			// Update the subscription and pause
 			if err := s.SubRepo.Update(ctx, sub); err != nil {
@@ -3494,6 +3679,9 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 		}
 
 		// Update the subscription
+		if sub.SubscriptionStatus == types.SubscriptionStatusCancelled {
+			ctx = activity.WithAction(ctx, sub.ID, activity.SubscriptionCancelled)
+		}
 		if err := s.SubRepo.Update(ctx, sub); err != nil {
 			return err
 		}
@@ -3750,7 +3938,7 @@ func (s *subscriptionService) CascadeCancelToInheritedSubscriptions(ctx context.
 	if parentSub.SubscriptionType != types.SubscriptionTypeParent {
 		return nil
 	}
-	children, err := s.getInheritedSubscriptions(ctx, parentSub.ID)
+	children, err := s.getInheritedSubscriptionsIncludingPaused(ctx, parentSub.ID)
 	if err != nil {
 		return err
 	}
@@ -3760,7 +3948,13 @@ func (s *subscriptionService) CascadeCancelToInheritedSubscriptions(ctx context.
 		child.CancelAt = parentSub.CancelAt
 		child.CancelAtPeriodEnd = parentSub.CancelAtPeriodEnd
 		child.EndDate = parentSub.EndDate
-		if err := s.SubRepo.Update(ctx, child); err != nil {
+		child.PauseStatus = parentSub.PauseStatus
+		child.ActivePauseID = nil
+		childCtx := ctx
+		if child.SubscriptionStatus == types.SubscriptionStatusCancelled {
+			childCtx = activity.WithAction(ctx, child.ID, activity.SubscriptionCancelled)
+		}
+		if err := s.SubRepo.Update(childCtx, child); err != nil {
 			return ierr.WithError(err).
 				WithHintf("Failed to cascade cancel to inherited subscription %s", child.ID).
 				Mark(ierr.ErrInternal)
@@ -3785,7 +3979,7 @@ func (s *subscriptionService) cancelInheritedSubscriptionAtPeriodEnd(ctx context
 			"subscription_id", sub.ID,
 			"error", err)
 	}
-	return s.SubRepo.Update(ctx, sub)
+	return s.SubRepo.Update(activity.WithAction(ctx, sub.ID, activity.SubscriptionCancelled), sub)
 }
 
 func createChargeResponse(priceObj *price.Price, quantity decimal.Decimal, cost decimal.Decimal, meterDisplayName string) *dto.SubscriptionUsageByMetersResponse {
@@ -3805,10 +3999,8 @@ func createChargeResponse(priceObj *price.Price, quantity decimal.Decimal, cost 
 	return charge
 }
 
-// filterAddonPricesForSubscription filters addon prices for a subscription
-// using count-aware cadence compatibility (equal, strict divisor, or strict
-// multiple). This is the pre-include_price_ids default behavior, preserved on
-// the addon path since AddAddonRequest does not carry an include list.
+// filterAddonPricesForSubscription keeps addon prices whose cadence is allowed on the subscription
+// (equal, dividing, or a whole multiple). AddAddonRequest carries no include list.
 func filterAddonPricesForSubscription(prices []*dto.PriceResponse, subscription *subscription.Subscription) []*dto.PriceResponse {
 	var validPrices []*dto.PriceResponse
 	for _, p := range prices {
@@ -3819,7 +4011,7 @@ func filterAddonPricesForSubscription(prices []*dto.PriceResponse, subscription 
 			validPrices = append(validPrices, p)
 			continue
 		}
-		if types.IsCadenceCompatible(subscription.BillingPeriod, subscription.BillingPeriodCount, p.Price.BillingPeriod, p.Price.BillingPeriodCount) {
+		if types.IsCadenceAllowed(subscription.BillingPeriod, subscription.BillingPeriodCount, p.Price.BillingPeriod, p.Price.BillingPeriodCount) {
 			validPrices = append(validPrices, p)
 		}
 	}
@@ -3837,7 +4029,7 @@ func filterAddonPricesForSubscription(prices []*dto.PriceResponse, subscription 
 //     attachment (monthly-on-quarterly etc.) requires opt-in via include_price_ids.
 //   - includeIDs == []: attach nothing.
 //   - includeIDs == [X, Y, …]: attach the intersection of {X, Y, …} with the
-//     count-aware compatibility set (IsCadenceCompatible: equal or divides).
+//     allowed cadences (IsCadenceAllowed: equal, divides, or a whole multiple).
 //     Callers upstream (ValidateAndFilterPricesForSubscription) must have
 //     already validated that each id resolves to a plan price and is
 //     cadence-compatible, so this loop trusts the include set.
@@ -3883,7 +4075,7 @@ func filterValidPricesForSubscription(
 		// Explicit include list: compat gate then intersect. Upstream already
 		// validated per-id, but re-check defensively so a stray incompatible
 		// entry can't slip through if a caller bypasses the validator.
-		if !types.IsCadenceCompatible(subscription.BillingPeriod, subscription.BillingPeriodCount, p.Price.BillingPeriod, p.Price.BillingPeriodCount) {
+		if !types.IsCadenceAllowed(subscription.BillingPeriod, subscription.BillingPeriodCount, p.Price.BillingPeriod, p.Price.BillingPeriodCount) {
 			continue
 		}
 		if _, ok := include[p.Price.ID]; !ok {
@@ -4037,7 +4229,7 @@ func (s *subscriptionService) validateIncludePriceIDs(
 		if p.Price.BillingPeriod == types.BILLING_PERIOD_ONETIME {
 			continue // always compatible
 		}
-		if !types.IsCadenceCompatible(sub.BillingPeriod, sub.BillingPeriodCount, p.Price.BillingPeriod, p.Price.BillingPeriodCount) {
+		if !types.IsCadenceAllowed(sub.BillingPeriod, sub.BillingPeriodCount, p.Price.BillingPeriod, p.Price.BillingPeriodCount) {
 			incompatible = append(incompatible, id)
 		}
 	}
@@ -4063,7 +4255,7 @@ func (s *subscriptionService) validateIncludePriceIDs(
 	}
 	return ierr.NewErrorf("include_price_ids is invalid for plan %s (billing period %s, currency %s): unknown=%v wrong_currency=%v incompatible=%v",
 		planID, subCadence, sub.Currency, unknown, wrongCurrency, incompatible).
-		WithHint("Every id in include_price_ids must belong to the plan, match the subscription currency, AND have a cadence that equals or strictly divides the subscription cadence.").
+		WithHint("Every id in include_price_ids must belong to the plan, match the subscription currency, AND have a cadence that equals, divides, or is a whole multiple of the subscription cadence.").
 		WithReportableDetails(details).
 		Mark(ierr.ErrValidation)
 }
@@ -4083,7 +4275,8 @@ func (s *subscriptionService) allowsEmptyPrices(workflowType *types.TemporalWork
 	return lo.Contains(emptyPricesAllowedWorkflows, *workflowType)
 }
 
-// PauseSubscription pauses a subscription
+// PauseSubscription pauses an active subscription now. The period up to the pause is billed on a
+// closing invoice, and every paused period after it is recorded as a $0 SKIPPED invoice.
 func (s *subscriptionService) PauseSubscription(
 	ctx context.Context,
 	subscriptionID string,
@@ -4092,134 +4285,180 @@ func (s *subscriptionService) PauseSubscription(
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
+	prorationBehavior := lo.Ternary(req.ProrationBehavior == "", types.ProrationBehaviorNone, req.ProrationBehavior)
 
-	// Get the subscription
-	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
-	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to get subscription for pausing").
-			Mark(ierr.ErrNotFound)
-	}
-	sub.LineItems = lineItems
+	ctx = activity.WithAction(ctx, subscriptionID, activity.SubscriptionPaused)
 
-	// Validate subscription can be paused
-	if sub.SubscriptionStatus != types.SubscriptionStatusActive {
-		return nil, ierr.NewError("invalid subscription status").
-			WithHint("Subscription is not active").
-			WithReportableDetails(map[string]any{
-				"status": sub.SubscriptionStatus,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	// Calculate pause start and end
-	pauseStart, pauseEnd, err := s.calculatePauseStartEnd(req, sub)
-	if err != nil {
-		return nil, err
-	}
-
-	// Use the unified billing impact calculator
-	impact, err := s.calculateBillingImpact(ctx, sub, lineItems, *pauseStart, pauseEnd, false, nil)
-	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to calculate billing impact").
-			Mark(ierr.ErrValidation)
-	}
-
-	// If this is a dry run, return the impact without making changes
-	if req.DryRun {
-		return &dto.PauseSubscriptionResponse{
-			BillingImpact: impact,
-			DryRun:        true,
-		}, nil
-	}
-
-	// Create the pause record and update the subscription
-	sub, pause, err := s.executePause(ctx, sub, req, pauseStart, pauseEnd)
-	if err != nil {
-		return nil, err
-	}
-
-	response := dto.NewSubscriptionPauseResponse(sub, pause)
-	response.BillingImpact = impact
-
-	// Return the response
-	// Publish webhook event
-	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, subscriptionID)
-	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionPaused, subscriptionID)
-	return response, nil
-}
-
-// executePause creates the pause record and updates the subscription
-func (s *subscriptionService) executePause(
-	ctx context.Context,
-	sub *subscription.Subscription,
-	req *dto.PauseSubscriptionRequest,
-	pauseStart *time.Time,
-	pauseEnd *time.Time,
-) (*subscription.Subscription, *subscription.SubscriptionPause, error) {
-	// Set pause status based on mode
-	pauseStatus := types.PauseStatusActive
-	if req.PauseMode == types.PauseModeScheduled || req.PauseMode == types.PauseModePeriodEnd {
-		pauseStatus = types.PauseStatusScheduled
-	}
-
-	// Create the pause record
-	pause := &subscription.SubscriptionPause{
-		ID:                  types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_PAUSE),
-		SubscriptionID:      sub.ID,
-		PauseStatus:         pauseStatus,
-		PauseMode:           req.PauseMode,
-		ResumeMode:          types.ResumeModeAuto, // Default to auto resume if pause end is set
-		PauseStart:          *pauseStart,
-		PauseEnd:            pauseEnd,
-		ResumedAt:           nil,
-		OriginalPeriodStart: sub.CurrentPeriodStart,
-		OriginalPeriodEnd:   sub.CurrentPeriodEnd,
-		Reason:              req.Reason,
-		Metadata:            req.Metadata,
-		EnvironmentID:       sub.EnvironmentID,
-		BaseModel:           types.GetDefaultBaseModel(ctx),
-	}
-
-	// Update the subscription
-	sub.PauseStatus = pauseStatus
-	sub.ActivePauseID = lo.ToPtr(pause.ID)
-
-	// Only change subscription status to paused for immediate pauses
-	if req.PauseMode == types.PauseModeImmediate {
-		sub.SubscriptionStatus = types.SubscriptionStatusPaused
-	}
-
-	// Execute the transaction
+	var sub *subscription.Subscription
+	var pause *subscription.SubscriptionPause
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
-		// Create the pause record
+		if _, err := s.SubRepo.GetForUpdate(txCtx, subscriptionID); err != nil {
+			return err
+		}
+		lockedSub, lineItems, err := s.SubRepo.GetWithLineItems(txCtx, subscriptionID)
+		if err != nil {
+			return err
+		}
+
+		pauseAt := time.Now().UTC()
+		if err := s.validatePause(txCtx, lockedSub, pauseAt); err != nil {
+			return err
+		}
+
+		pause = &subscription.SubscriptionPause{
+			ID:                  types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_PAUSE),
+			SubscriptionID:      lockedSub.ID,
+			PauseStatus:         types.PauseStatusActive,
+			PauseMode:           types.PauseModeImmediate,
+			PauseStart:          pauseAt,
+			OriginalPeriodStart: lockedSub.CurrentPeriodStart,
+			OriginalPeriodEnd:   lockedSub.CurrentPeriodEnd,
+			Reason:              req.Reason,
+			Metadata:            req.Metadata,
+			EnvironmentID:       lockedSub.EnvironmentID,
+			BaseModel:           types.GetDefaultBaseModel(txCtx),
+		}
+
+		// The unused part of advance fixed charges is measured against the period as it stood before the pause.
+		creditAmount := decimal.Zero
+		if prorationBehavior == types.ProrationBehaviorCreateProrations {
+			prorationResult, err := NewProrationService(s.ServiceParams).CalculateSubscriptionCancellationProration(
+				txCtx, lockedSub, lineItems, types.CancellationTypeImmediate, pauseAt, req.Reason, prorationBehavior)
+			if err != nil {
+				return err
+			}
+			_, creditAmount = s.convertProrationResultToDetails(prorationResult)
+		}
+
+		// The open draft becomes the closing invoice, so its usage is not billed again at the original period end.
+		invoiceService := NewInvoiceService(s.ServiceParams)
+		if _, err := invoiceService.MoveCycleDraft(txCtx, lockedSub, pauseAt, types.InvoiceBillingReasonProration); err != nil {
+			return err
+		}
+		paymentParams := dto.NewPaymentParametersFromSubscription(lockedSub.CollectionMethod, lockedSub.PaymentBehavior, lockedSub.GatewayPaymentMethodID).
+			NormalizePaymentParameters()
+		if _, _, err := invoiceService.CreateSubscriptionInvoice(txCtx, &dto.CreateSubscriptionInvoiceRequest{
+			SubscriptionID:    lockedSub.ID,
+			PeriodStart:       lockedSub.CurrentPeriodStart,
+			PeriodEnd:         pauseAt,
+			ReferencePoint:    types.ReferencePointCancel,
+			ProrationBehavior: &prorationBehavior,
+		}, paymentParams, types.InvoiceFlowCancel, false); err != nil {
+			return err
+		}
+
+		if creditAmount.GreaterThan(decimal.Zero) {
+			walletService := NewWalletService(s.ServiceParams)
+			creditKey := fmt.Sprintf("proration_credit_pause|%s|%s", lockedSub.ID, pause.ID)
+			if _, err := walletService.TopUpWalletForProratedCharge(txCtx, lockedSub.GetInvoicingCustomerID(), creditAmount.Abs(), lockedSub.Currency, creditKey); err != nil {
+				return err
+			}
+		}
+
 		if err := s.SubRepo.CreatePause(txCtx, pause); err != nil {
 			return err
 		}
 
-		// Update the subscription
+		// Payment handling on the closing invoice can write the subscription, so the latest row is updated.
+		sub, err = s.SubRepo.Get(txCtx, subscriptionID)
+		if err != nil {
+			return err
+		}
+		sub.SubscriptionStatus = types.SubscriptionStatusPaused
+		sub.PauseStatus = types.PauseStatusActive
+		sub.ActivePauseID = lo.ToPtr(pause.ID)
+		sub.CurrentPeriodStart = pauseAt
 		if err := s.SubRepo.Update(txCtx, sub); err != nil {
 			return err
 		}
 
 		if sub.SubscriptionType == types.SubscriptionTypeParent {
-			if err := s.cascadePauseToInherited(txCtx, sub); err != nil {
-				return err
-			}
+			return s.cascadePauseToInherited(txCtx, sub)
 		}
-
 		return nil
 	})
-
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	return sub, pause, nil
+	s.Logger.Info(ctx, "paused subscription",
+		"subscription_id", sub.ID,
+		"pause_id", pause.ID,
+		"pause_start", pause.PauseStart,
+		"proration_behavior", prorationBehavior)
+
+	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, subscriptionID)
+	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionPaused, subscriptionID)
+
+	return &dto.PauseSubscriptionResponse{
+		Subscription: &dto.SubscriptionResponse{Subscription: sub},
+		Pause:        &dto.SubscriptionPauseResponse{SubscriptionPause: pause},
+	}, nil
 }
 
-// ResumeSubscription resumes a paused subscription
+// validatePause refuses a pause the subscription's current state does not allow.
+func (s *subscriptionService) validatePause(ctx context.Context, sub *subscription.Subscription, pauseAt time.Time) error {
+	details := map[string]interface{}{
+		"subscription_id":     sub.ID,
+		"subscription_status": sub.SubscriptionStatus,
+		"subscription_type":   sub.SubscriptionType,
+	}
+
+	if sub.SubscriptionStatus != types.SubscriptionStatusActive {
+		return ierr.NewError("only an active subscription can be paused").
+			WithHint("Only active subscriptions can be paused").
+			WithReportableDetails(details).
+			Mark(ierr.ErrValidation)
+	}
+
+	if sub.SubscriptionType == types.SubscriptionTypeInherited || sub.SubscriptionType == types.SubscriptionTypeGroupedInvoicing {
+		return ierr.NewError("a child subscription cannot be paused on its own").
+			WithHint("Pause the parent subscription instead").
+			WithReportableDetails(details).
+			Mark(ierr.ErrValidation)
+	}
+
+	if sub.CancelAt != nil || sub.CancelAtPeriodEnd {
+		return ierr.NewError("subscription is scheduled to cancel").
+			WithHint("Remove the scheduled cancellation before pausing the subscription").
+			WithReportableDetails(details).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Outside the current period the closing invoice has no valid window: the period has not
+	// started yet, or it has ended and the billing run has not rolled it yet.
+	if !pauseAt.After(sub.CurrentPeriodStart) || !pauseAt.Before(sub.CurrentPeriodEnd) {
+		return ierr.NewError("subscription is outside its current billing period").
+			WithHint("The current billing period has not started or is being renewed. Retry after the renewal").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id":      sub.ID,
+				"current_period_start": sub.CurrentPeriodStart,
+				"current_period_end":   sub.CurrentPeriodEnd,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	stripeMappings, err := s.EntityIntegrationMappingRepo.List(ctx, &types.EntityIntegrationMappingFilter{
+		QueryFilter:   types.NewNoLimitPublishedQueryFilter(),
+		EntityID:      sub.ID,
+		EntityType:    types.IntegrationEntityTypeSubscription,
+		ProviderTypes: []string{string(types.SecretProviderStripe)},
+	})
+	if err != nil {
+		return err
+	}
+	if len(stripeMappings) > 0 {
+		return ierr.NewError("a Stripe-managed subscription cannot be paused in Flexprice").
+			WithHint("Pause the subscription in Stripe instead").
+			WithReportableDetails(details).
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
+// ResumeSubscription resumes a paused subscription now. The billing anchor is kept, so the first
+// period runs from the resume to the next billing date and its advance charges are invoiced at once.
 func (s *subscriptionService) ResumeSubscription(
 	ctx context.Context,
 	subscriptionID string,
@@ -4229,151 +4468,139 @@ func (s *subscriptionService) ResumeSubscription(
 		return nil, err
 	}
 
-	// Get the subscription with its pauses
-	_, pauses, err := s.SubRepo.GetWithPauses(ctx, subscriptionID)
-	if err != nil {
-		return nil, err
-	}
-	// get the line items
-	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
-	if err != nil {
-		return nil, err
-	}
-	sub.LineItems = lineItems
-	sub.Pauses = pauses
+	ctx = activity.WithAction(ctx, subscriptionID, activity.SubscriptionResumed)
 
-	// Reject resume of draft subscriptions
-	if err := s.validateNotDraftSubscription(sub, "resume"); err != nil {
-		return nil, err
-	}
-
-	// Validate subscription can be resumed
-	if sub.SubscriptionStatus != types.SubscriptionStatusPaused &&
-		sub.PauseStatus != types.PauseStatusScheduled {
-		return nil, ierr.NewError("invalid subscription status").
-			WithHint("Subscription is not paused").
-			WithReportableDetails(map[string]any{
-				"status": sub.SubscriptionStatus,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	if sub.ActivePauseID == nil {
-		return nil, ierr.NewError("invalid subscription status").
-			WithHint("Subscription has no active pause").
-			Mark(ierr.ErrValidation)
-	}
-
-	// Find the active pause
-	var activePause *subscription.SubscriptionPause
-	for _, p := range pauses {
-		if p.ID == *sub.ActivePauseID {
-			activePause = p
-			break
-		}
-	}
-
-	if activePause == nil {
-		return nil, ierr.NewError("invalid subscription status").
-			WithHint("Active pause not found").
-			Mark(ierr.ErrValidation)
-	}
-
-	// Use the unified billing impact calculator
-	impact, err := s.calculateBillingImpact(ctx, sub, lineItems, activePause.PauseStart, activePause.PauseEnd, true, activePause)
-	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to calculate billing impact").
-			Mark(ierr.ErrValidation)
-	}
-
-	// If this is a dry run, return the impact without making changes
-	if req.DryRun {
-		return &dto.ResumeSubscriptionResponse{
-			BillingImpact: impact,
-			DryRun:        true,
-		}, nil
-	}
-
-	// Resume the subscription
-	sub, activePause, err = s.executeResume(ctx, sub, activePause, req)
-	if err != nil {
-		return nil, err
-	}
-
-	// Publish webhook event
-	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, subscriptionID)
-	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionResumed, subscriptionID)
-
-	// Return the response
-	return &dto.ResumeSubscriptionResponse{
-		Subscription: &dto.SubscriptionResponse{
-			Subscription: sub,
-		},
-		Pause: &dto.SubscriptionPauseResponse{
-			SubscriptionPause: activePause,
-		},
-		BillingImpact: impact,
-		DryRun:        false,
-	}, nil
-}
-
-// executeResume updates the subscription and pause record for a resume operation
-func (s *subscriptionService) executeResume(
-	ctx context.Context,
-	sub *subscription.Subscription,
-	activePause *subscription.SubscriptionPause,
-	req *dto.ResumeSubscriptionRequest,
-) (*subscription.Subscription, *subscription.SubscriptionPause, error) {
-	// Update the pause record
-	now := time.Now()
-	activePause.PauseStatus = types.PauseStatusCompleted
-	activePause.ResumeMode = req.ResumeMode
-	activePause.ResumedAt = &now
-	activePause.Metadata = req.Metadata
-	activePause.UpdatedBy = types.GetUserID(ctx)
-
-	// Calculate the pause duration
-	pauseDuration := now.Sub(activePause.PauseStart)
-
-	// Update the subscription
-	sub.PauseStatus = types.PauseStatusNone
-	sub.ActivePauseID = nil
-
-	// Only change subscription status if it was paused
-	if sub.SubscriptionStatus == types.SubscriptionStatusPaused {
-		sub.SubscriptionStatus = types.SubscriptionStatusActive
-	}
-
-	// Adjust the billing period by the pause duration
-	sub.CurrentPeriodEnd = sub.CurrentPeriodEnd.Add(pauseDuration)
-
-	// Execute the transaction
+	var sub *subscription.Subscription
+	var pause *subscription.SubscriptionPause
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
-		// Update the pause record
-		if err := s.SubRepo.UpdatePause(txCtx, activePause); err != nil {
+		if _, err := s.SubRepo.GetForUpdate(txCtx, subscriptionID); err != nil {
+			return err
+		}
+		lockedSub, err := s.SubRepo.Get(txCtx, subscriptionID)
+		if err != nil {
 			return err
 		}
 
-		// Update the subscription
-		if err := s.SubRepo.Update(txCtx, sub); err != nil {
+		if lockedSub.SubscriptionStatus != types.SubscriptionStatusPaused || lockedSub.ActivePauseID == nil {
+			return ierr.NewError("subscription is not paused").
+				WithHint("Only a paused subscription can be resumed").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id":     lockedSub.ID,
+					"subscription_status": lockedSub.SubscriptionStatus,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		resumeAt := time.Now().UTC()
+		if lockedSub.EndDate != nil && !lockedSub.EndDate.After(resumeAt) {
+			return ierr.NewError("subscription has reached its end date").
+				WithHint("A subscription past its end date cannot be resumed").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id": lockedSub.ID,
+					"end_date":        lockedSub.EndDate,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		pause, err = s.SubRepo.GetPause(txCtx, *lockedSub.ActivePauseID)
+		if err != nil {
 			return err
 		}
 
-		if sub.SubscriptionType == types.SubscriptionTypeParent {
-			if err := s.cascadeResumeToInherited(txCtx, sub); err != nil {
+		// Paused periods that ended before the billing run rolled them are recorded first, then
+		// the paused stretch of the period the resume falls in.
+		invoiceService := NewInvoiceService(s.ServiceParams)
+		for !lockedSub.CurrentPeriodEnd.After(resumeAt) {
+			if _, err := invoiceService.CreatePausedPeriodInvoice(txCtx, lockedSub, lockedSub.CurrentPeriodStart, lockedSub.CurrentPeriodEnd); err != nil {
+				return err
+			}
+			nextPeriodEnd, err := types.NextBillingDate(&types.NextBillingDateParams{
+				CurrentPeriodStart:  lockedSub.CurrentPeriodEnd,
+				BillingAnchor:       lockedSub.BillingAnchor,
+				Unit:                lockedSub.BillingPeriodCount,
+				Period:              lockedSub.BillingPeriod,
+				SubscriptionEndDate: lockedSub.EndDate,
+				Timezone:            lockedSub.Timezone,
+			})
+			if err != nil {
+				return err
+			}
+			lockedSub.CurrentPeriodStart = lockedSub.CurrentPeriodEnd
+			lockedSub.CurrentPeriodEnd = nextPeriodEnd
+		}
+		if resumeAt.After(lockedSub.CurrentPeriodStart) {
+			if _, err := invoiceService.CreatePausedPeriodInvoice(txCtx, lockedSub, lockedSub.CurrentPeriodStart, resumeAt); err != nil {
 				return err
 			}
 		}
 
-		return nil
-	})
+		// The anchor is kept: the period end is still the next billing date on the anchor's schedule.
+		lockedSub.CurrentPeriodStart = resumeAt
+		if req.ProrationBehavior != nil {
+			lockedSub.ProrationBehavior = *req.ProrationBehavior
+		}
+		lockedSub.SubscriptionStatus = types.SubscriptionStatusActive
+		lockedSub.PauseStatus = types.PauseStatusNone
+		lockedSub.ActivePauseID = nil
+		if err := s.SubRepo.Update(txCtx, lockedSub); err != nil {
+			return err
+		}
 
+		pause.PauseStatus = types.PauseStatusCompleted
+		pause.ResumeMode = types.ResumeModeImmediate
+		pause.ResumedAt = lo.ToPtr(resumeAt)
+		pause.UpdatedBy = types.GetUserID(txCtx)
+		if len(req.Metadata) > 0 {
+			if pause.Metadata == nil {
+				pause.Metadata = types.Metadata{}
+			}
+			for key, value := range req.Metadata {
+				pause.Metadata[key] = value
+			}
+		}
+		if err := s.SubRepo.UpdatePause(txCtx, pause); err != nil {
+			return err
+		}
+
+		if lockedSub.SubscriptionType == types.SubscriptionTypeParent {
+			if err := s.cascadeResumeToInherited(txCtx, lockedSub); err != nil {
+				return err
+			}
+		}
+
+		// Advance fixed charges of the period that starts at the resume, priced by the subscription's proration_behavior.
+		paymentParams := dto.NewPaymentParametersFromSubscription(lockedSub.CollectionMethod, lockedSub.PaymentBehavior, lockedSub.GatewayPaymentMethodID).
+			NormalizePaymentParameters()
+		if _, _, err := invoiceService.CreateSubscriptionInvoice(txCtx, &dto.CreateSubscriptionInvoiceRequest{
+			SubscriptionID: lockedSub.ID,
+			PeriodStart:    resumeAt,
+			PeriodEnd:      lockedSub.CurrentPeriodEnd,
+			ReferencePoint: types.ReferencePointPeriodStart,
+			BillingReason:  types.InvoiceBillingReasonSubscriptionResume,
+		}, paymentParams, types.InvoiceFlowRenewal, false); err != nil {
+			return err
+		}
+
+		sub, err = s.SubRepo.Get(txCtx, subscriptionID)
+		return err
+	})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	return sub, activePause, nil
+	s.Logger.Info(ctx, "resumed subscription",
+		"subscription_id", sub.ID,
+		"pause_id", pause.ID,
+		"resumed_at", pause.ResumedAt,
+		"proration_behavior", sub.ProrationBehavior)
+
+	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, subscriptionID)
+	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionResumed, subscriptionID)
+
+	return &dto.ResumeSubscriptionResponse{
+		Subscription: &dto.SubscriptionResponse{Subscription: sub},
+		Pause:        &dto.SubscriptionPauseResponse{SubscriptionPause: pause},
+	}, nil
 }
 
 // GetPause gets a subscription pause by ID
@@ -4392,272 +4619,6 @@ func (s *subscriptionService) ListPauses(ctx context.Context, subscriptionID str
 		return nil, err
 	}
 	return dto.NewListSubscriptionPausesResponse(pauses), nil
-}
-
-// CalculatePauseImpact calculates the billing impact of pausing a subscription
-func (s *subscriptionService) CalculatePauseImpact(
-	ctx context.Context,
-	subscriptionID string,
-	req *dto.PauseSubscriptionRequest,
-) (*types.BillingImpactDetails, error) {
-	// Get the subscription
-	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Validate subscription can be paused
-	if sub.SubscriptionStatus != types.SubscriptionStatusActive {
-		return nil, ierr.NewError("invalid subscription status").
-			WithHint("Subscription is not active").
-			WithReportableDetails(map[string]any{
-				"status": sub.SubscriptionStatus,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	// Calculate pause start and end
-	pauseStart, pauseEnd, err := s.calculatePauseStartEnd(req, sub)
-	if err != nil {
-		return nil, err
-	}
-
-	// Use the unified billing impact calculator
-	return s.calculateBillingImpact(ctx, sub, lineItems, *pauseStart, pauseEnd, false, nil)
-}
-
-// CalculateResumeImpact calculates the billing impact of resuming a subscription
-func (s *subscriptionService) CalculateResumeImpact(
-	ctx context.Context,
-	subscriptionID string,
-	req *dto.ResumeSubscriptionRequest,
-) (*types.BillingImpactDetails, error) {
-	// Get the subscription with its pauses
-	_, pauses, err := s.SubRepo.GetWithPauses(ctx, subscriptionID)
-	if err != nil {
-		return nil, err
-	}
-
-	// get the line items
-	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
-	if err != nil {
-		return nil, err
-	}
-	sub.LineItems = lineItems
-	sub.Pauses = pauses
-
-	// Validate subscription can be resumed
-	if sub.SubscriptionStatus != types.SubscriptionStatusPaused &&
-		sub.PauseStatus != types.PauseStatusScheduled {
-		return nil, ierr.NewError("invalid subscription status").
-			WithHint("Subscription is not paused").
-			WithReportableDetails(map[string]any{
-				"status": sub.SubscriptionStatus,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	if sub.ActivePauseID == nil {
-		return nil, ierr.NewError("invalid subscription status").
-			WithHint("Subscription has no active pause").
-			Mark(ierr.ErrValidation)
-	}
-
-	// Find the active pause
-	var activePause *subscription.SubscriptionPause
-	for _, p := range pauses {
-		if p.ID == *sub.ActivePauseID {
-			activePause = p
-			break
-		}
-	}
-
-	if activePause == nil {
-		return nil, ierr.NewError("invalid subscription status").
-			WithHint("Active pause not found").
-			Mark(ierr.ErrValidation)
-	}
-
-	// Use the unified billing impact calculator
-	return s.calculateBillingImpact(ctx, sub, lineItems, activePause.PauseStart, activePause.PauseEnd, true, activePause)
-}
-
-// Pause subscription helper methods
-
-// calculatePauseStartEnd calculates the pause start and end dates based on the pause mode
-// requested input and the subscription's current period end date.
-// TODO: add a config check for max pause duration and make it configurable for each tenant
-func (s *subscriptionService) calculatePauseStartEnd(req *dto.PauseSubscriptionRequest, sub *subscription.Subscription) (*time.Time, *time.Time, error) {
-	now := time.Now().UTC()
-
-	// First lets handle pause_start date based on pause mode
-	var pauseStart, pauseEnd *time.Time
-	switch req.PauseMode {
-	case types.PauseModeImmediate:
-		pauseStart = &now
-	case types.PauseModeScheduled:
-		pauseStart = req.PauseStart
-	case types.PauseModePeriodEnd:
-		pauseStart = lo.ToPtr(sub.CurrentPeriodEnd)
-	default:
-		return nil, nil, ierr.NewError("invalid pause mode").
-			WithHint("Invalid pause mode").
-			WithReportableDetails(map[string]any{
-				"pauseMode": req.PauseMode,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	if pauseStart == nil || pauseStart.IsZero() {
-		return nil, nil, ierr.NewError("invalid pause start date").
-			WithHint("Pause start date is required").
-			Mark(ierr.ErrValidation)
-	}
-
-	if req.PauseDays != nil {
-		pauseEnd = lo.ToPtr(pauseStart.AddDate(0, 0, *req.PauseDays))
-	} else if req.PauseEnd != nil {
-		pauseEnd = req.PauseEnd
-	}
-
-	if pauseEnd == nil || pauseEnd.IsZero() || pauseEnd.Before(*pauseStart) {
-		return nil, nil, ierr.NewError("invalid pause end date").
-			WithHint("Pause end date is not valid").
-			WithReportableDetails(map[string]any{
-				"pauseStart": pauseStart,
-				"pauseEnd":   pauseEnd,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	return pauseStart, pauseEnd, nil
-}
-
-// calculateBillingImpact calculates the billing impact of pause/resume operations
-func (s *subscriptionService) calculateBillingImpact(
-	_ context.Context,
-	sub *subscription.Subscription,
-	lineItems []*subscription.SubscriptionLineItem,
-	pauseStart time.Time,
-	pauseEnd *time.Time,
-	isResume bool,
-	activePause *subscription.SubscriptionPause,
-) (*types.BillingImpactDetails, error) {
-	// Initialize impact details
-	impact := &types.BillingImpactDetails{}
-
-	// Get subscription configuration for billing model (advance vs. arrears)
-	// TODO: handle this when we implement add ons with one time charges
-	var invoiceCadence types.InvoiceCadence
-	for _, li := range lineItems {
-		if li.PriceType == types.PRICE_TYPE_FIXED {
-			invoiceCadence = li.InvoiceCadence
-			break
-		}
-	}
-
-	// TODO: need to handle this better for cases with no fixed prices
-	if invoiceCadence == "" {
-		invoiceCadence = types.InvoiceCadenceArrear
-	}
-
-	// Set original period information
-	if isResume && activePause != nil {
-		impact.OriginalPeriodStart = &activePause.OriginalPeriodStart
-		impact.OriginalPeriodEnd = &activePause.OriginalPeriodEnd
-	} else {
-		impact.OriginalPeriodStart = &sub.CurrentPeriodStart
-		impact.OriginalPeriodEnd = &sub.CurrentPeriodEnd
-	}
-
-	now := time.Now()
-
-	if isResume {
-		// Resume impact calculation
-		if activePause == nil {
-			return nil, ierr.NewError("missing active pause").
-				WithHint("Cannot calculate resume impact without active pause").
-				Mark(ierr.ErrValidation)
-		}
-
-		// Calculate pause duration
-		pauseDuration := now.Sub(activePause.PauseStart)
-		impact.PauseDurationDays = int(pauseDuration.Hours() / 24)
-
-		// Set next billing date to now for immediate resumes
-		impact.NextBillingDate = &now
-
-		// Calculate adjusted period dates
-		adjustedStart := now
-		adjustedEnd := activePause.OriginalPeriodEnd.Add(pauseDuration)
-		impact.AdjustedPeriodStart = &adjustedStart
-		impact.AdjustedPeriodEnd = &adjustedEnd
-
-		// Calculate next billing amount based on billing model
-		if invoiceCadence == types.InvoiceCadenceAdvance {
-			// For advance billing, calculate the prorated amount for the resumed period
-			// This is a simplified calculation - in a real implementation, you would
-			// need to consider the subscription's line items, pricing, etc.
-			totalPeriodDuration := activePause.OriginalPeriodEnd.Sub(activePause.OriginalPeriodStart)
-			remainingDuration := adjustedEnd.Sub(now)
-			if totalPeriodDuration > 0 {
-				remainingRatio := float64(remainingDuration) / float64(totalPeriodDuration)
-				impact.NextBillingAmount = decimal.NewFromFloat(100.00 * remainingRatio) // Placeholder value
-			}
-		} else {
-			// For arrears billing, no immediate charge on resume
-			impact.NextBillingAmount = decimal.Zero
-		}
-	} else {
-		// Pause impact calculation
-
-		// Calculate the current period adjustment (credit for unused time)
-		if invoiceCadence == types.InvoiceCadenceAdvance {
-			// For advance billing, calculate credit for unused portion
-			totalPeriodDuration := sub.CurrentPeriodEnd.Sub(sub.CurrentPeriodStart)
-			unusedDuration := sub.CurrentPeriodEnd.Sub(pauseStart)
-			if totalPeriodDuration > 0 {
-				unusedRatio := float64(unusedDuration) / float64(totalPeriodDuration)
-				// Negative value indicates a credit to the customer
-				impact.PeriodAdjustmentAmount = decimal.NewFromFloat(-100.00 * unusedRatio) // Placeholder value
-			}
-		} else {
-			// For arrears billing, calculate charge for used portion
-			totalPeriodDuration := sub.CurrentPeriodEnd.Sub(sub.CurrentPeriodStart)
-			usedDuration := pauseStart.Sub(sub.CurrentPeriodStart)
-			if totalPeriodDuration > 0 {
-				usedRatio := float64(usedDuration) / float64(totalPeriodDuration)
-				impact.PeriodAdjustmentAmount = decimal.NewFromFloat(100.00 * usedRatio) // Placeholder value
-			}
-		}
-
-		// Calculate pause duration and next billing date
-		if pauseEnd != nil {
-			pauseDuration := pauseEnd.Sub(pauseStart)
-			impact.PauseDurationDays = int(pauseDuration.Hours() / 24)
-			impact.NextBillingDate = pauseEnd
-
-			// Calculate adjusted period dates
-			adjustedStart := pauseStart
-			adjustedEnd := sub.CurrentPeriodEnd.Add(pauseDuration)
-			impact.AdjustedPeriodStart = &adjustedStart
-			impact.AdjustedPeriodEnd = &adjustedEnd
-		} else {
-			// For indefinite pauses, use a default of 30 days for estimation
-			defaultPauseDays := 30
-			impact.PauseDurationDays = defaultPauseDays
-			estimatedEnd := pauseStart.AddDate(0, 0, defaultPauseDays)
-			impact.NextBillingDate = &estimatedEnd
-
-			// Calculate adjusted period dates
-			adjustedStart := pauseStart
-			adjustedEnd := sub.CurrentPeriodEnd.AddDate(0, 0, defaultPauseDays)
-			impact.AdjustedPeriodStart = &adjustedStart
-			impact.AdjustedPeriodEnd = &adjustedEnd
-		}
-	}
-
-	return impact, nil
 }
 
 // publishSubscriptionCreatedEvent publishes the subscription.created event with enriched fields
@@ -4926,9 +4887,10 @@ func (s *subscriptionService) handleSubscriptionAddons(
 			addonReq.StartDate = &subscription.StartDate
 		}
 
-		// The opening invoice bills these line items for the whole period, so settling a
-		// proration here as well would charge the addon twice.
+		// The opening invoice already prices these line items, so settling a second
+		// proration would charge the addon twice. Grants still follow the subscription.
 		addonReq.ProrationBehavior = types.ProrationBehaviorNone
+		addonReq.ProrationSettings = dto.NewProrationSettings(subscription.ProrationBehavior)
 
 		adds = append(adds, AddonAdd{Request: &addonReq})
 	}
@@ -5052,9 +5014,23 @@ func (s *subscriptionService) createAddonAttachParams(
 			sub.ID,
 			types.AddonAssociationEntityTypeSubscription,
 		)
+		// Stamp the association at the addon's current usage-price sequence so a
+		// freshly attached addon is considered already-synced and the sync status
+		// does not report it as behind (mirrors subscription creation for plans).
+		currentAddonSeq, seqErr := s.AddonPriceSyncRepo.CurrentAddonSequence(ctx, req.AddonID)
+		if seqErr != nil {
+			return nil, ierr.WithError(seqErr).
+				WithHint("Failed to read current addon price sequence").
+				WithReportableDetails(map[string]any{"addon_id": req.AddonID}).
+				Mark(ierr.ErrDatabase)
+		}
+		addonAssociation.SyncedPriceSequence = currentAddonSeq
 	}
 
 	addonRequestedStart := lo.Ternary(req.StartDate != nil, lo.FromPtr(req.StartDate), time.Now())
+	if req.StartDate == nil && sub.CurrentPeriodStart.After(addonRequestedStart) {
+		addonRequestedStart = sub.CurrentPeriodStart
+	}
 
 	// A onetime addon ends on the boundary of the period containing its start date; any
 	// other cadence renews each period and keeps the zero time.
@@ -5077,12 +5053,13 @@ func (s *subscriptionService) createAddonAttachParams(
 		return nil, err
 	}
 
-	// createLineItemFromPrice clamps every line item's start to
-	// max(requestedStart, sub.StartDate, price.StartDate), so anchoring the proration at
-	// requestedStart alone would price a window the addon is not live for.
+	// createLineItemFromPrice clamps every line item's start to max(requestedStart, price.StartDate),
+	// so anchoring the proration at requestedStart alone would price a window the addon is not live for.
+	// e.g. attach Jan 10 with a price starting Jan 15 → prorate from Jan 15.
+	// A backdated start is charged from the current period start: closed periods are never billed.
 	prorationEffectiveDate := lo.Reduce(lineItems, func(acc time.Time, li *subscription.SubscriptionLineItem, _ int) time.Time {
 		return lo.Ternary(li.StartDate.After(acc), li.StartDate, acc)
-	}, addonRequestedStart)
+	}, types.LatestOf(addonRequestedStart, sub.CurrentPeriodStart))
 
 	// Ensure subscription-level and line-item-level commitments don't conflict
 	originalLineItems := sub.LineItems
@@ -5363,26 +5340,24 @@ func (s *subscriptionService) createLineItemFromPrice(ctx context.Context, price
 	price := priceResponse.Price
 
 	lineItemStart := addonRequestedStart
-	if sub.StartDate.After(lineItemStart) {
-		lineItemStart = sub.StartDate
-	}
 	if price.StartDate != nil && price.StartDate.After(lineItemStart) {
 		lineItemStart = *price.StartDate
 	}
 
 	lineItem := &subscription.SubscriptionLineItem{
-		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
-		SubscriptionID: sub.ID,
-		CustomerID:     sub.CustomerID,
-		EntityID:       addonID,
-		EntityType:     types.SubscriptionLineItemEntityTypeAddon,
-		PriceID:        price.ID,
-		PriceType:      price.Type,
-		Currency:       sub.Currency,
-		BillingPeriod:  price.BillingPeriod,
-		InvoiceCadence: price.InvoiceCadence,
-		StartDate:      lineItemStart,
-		EndDate:        time.Time{},
+		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+		SubscriptionID:     sub.ID,
+		CustomerID:         sub.CustomerID,
+		EntityID:           addonID,
+		EntityType:         types.SubscriptionLineItemEntityTypeAddon,
+		PriceID:            price.ID,
+		PriceType:          price.Type,
+		Currency:           sub.Currency,
+		BillingPeriod:      price.BillingPeriod,
+		BillingPeriodCount: price.BillingPeriodCount,
+		InvoiceCadence:     price.InvoiceCadence,
+		StartDate:          lineItemStart,
+		EndDate:            time.Time{},
 		Metadata: map[string]string{
 			"addon_id":        addonID,
 			"subscription_id": sub.ID,
@@ -5523,21 +5498,10 @@ func (s *subscriptionService) buildAddonProrationEntries(
 	return entries, nil
 }
 
-// ActivateIncompleteSubscription activates a subscription that is in incomplete status
-// after the first invoice has been successfully paid
-func (s *subscriptionService) ActivateIncompleteSubscription(ctx context.Context, subscriptionID string) error {
+// activateIncompleteSubscription activates an incomplete subscription after its invoice is paid.
+func (s *subscriptionService) activateIncompleteSubscription(ctx context.Context, sub *subscription.Subscription) error {
+	subscriptionID := sub.ID
 	s.Logger.Info(ctx, "activating incomplete subscription", "subscription_id", subscriptionID)
-
-	// Get the subscription
-	sub, err := s.SubRepo.Get(ctx, subscriptionID)
-	if err != nil {
-		return ierr.WithError(err).
-			WithHint("Failed to get subscription").
-			WithReportableDetails(map[string]interface{}{
-				"subscription_id": subscriptionID,
-			}).
-			Mark(ierr.ErrDatabase)
-	}
 
 	// Check if subscription is in incomplete status
 	if sub.SubscriptionStatus != types.SubscriptionStatusIncomplete {
@@ -5549,7 +5513,7 @@ func (s *subscriptionService) ActivateIncompleteSubscription(ctx context.Context
 	sub.SubscriptionStatus = types.SubscriptionStatusActive
 
 	// Update the subscription in database
-	err = s.SubRepo.Update(ctx, sub)
+	err := s.SubRepo.Update(activity.WithAction(ctx, sub.ID, activity.SubscriptionActivated), sub)
 	if err != nil {
 		return ierr.WithError(err).
 			WithHint("Failed to update subscription status").
@@ -5584,26 +5548,139 @@ func (s *subscriptionService) ActivateIncompleteSubscription(ctx context.Context
 }
 
 // HandleSubscriptionActivatingInvoicePaid completes subscription lifecycle when an activating invoice
-// (subscription create or trial-end conversion) is fully paid.
+// (subscription create or trial-end conversion) or a payment-gated renewal invoice is fully paid.
 func (s *subscriptionService) HandleSubscriptionActivatingInvoicePaid(ctx context.Context, inv *invoice.Invoice) error {
 	if inv == nil || inv.SubscriptionID == nil {
 		return nil
 	}
 	reason := types.InvoiceBillingReason(inv.BillingReason)
-	if !reason.IsFirstSubscriptionOpenInvoiceReason() {
+	if !reason.IsPaymentGatingAllowedInvoiceReason() {
 		return nil
 	}
-	switch reason {
-	case types.InvoiceBillingReasonSubscriptionCreate, types.InvoiceBillingReasonSubscriptionUpdate:
-		return s.ActivateIncompleteSubscription(ctx, lo.FromPtr(inv.SubscriptionID))
-	case types.InvoiceBillingReasonSubscriptionTrialEnd:
-		sub, err := s.SubRepo.Get(ctx, lo.FromPtr(inv.SubscriptionID))
-		if err != nil {
-			return err
-		}
-		return s.completeTrialConversionToActive(ctx, sub)
-	default:
+
+	sub, err := s.SubRepo.Get(ctx, lo.FromPtr(inv.SubscriptionID))
+	if err != nil {
+		return err
+	}
+
+	// Renewals only gate payment-gated subscriptions; the grants cron applies everyone else's.
+	if reason == types.InvoiceBillingReasonSubscriptionCycle && !types.PaymentBehavior(sub.PaymentBehavior).IsIncompleteType() {
 		return nil
+	}
+
+	if reason == types.InvoiceBillingReasonSubscriptionTrialEnd {
+		return s.completeTrialConversionToActive(ctx, sub)
+	}
+
+	if sub.SubscriptionStatus == types.SubscriptionStatusIncomplete {
+		return s.activateIncompleteSubscription(ctx, sub)
+	}
+
+	// when the first renewal charge on subscription succeeds, so we never moved the subscription to incomplete, only held off it's new period benefits.
+	return s.processPendingCreditGrantsForSubscription(ctx, sub)
+}
+
+// MarkSubscriptionIncomplete moves a gated subscription to incomplete when its renewal invoice goes unpaid.
+func (s *subscriptionService) MarkSubscriptionIncomplete(ctx context.Context, invoiceID string) error {
+	inv, err := s.InvoiceRepo.Get(ctx, invoiceID)
+	if err != nil {
+		return err
+	}
+	if inv.SubscriptionID == nil || types.InvoiceBillingReason(inv.BillingReason) != types.InvoiceBillingReasonSubscriptionCycle ||
+		inv.InvoiceStatus != types.InvoiceStatusFinalized || !inv.AmountRemaining.IsPositive() {
+		return nil
+	}
+
+	sub, err := s.SubRepo.Get(ctx, lo.FromPtr(inv.SubscriptionID))
+	if err != nil {
+		return err
+	}
+	if sub.SubscriptionStatus != types.SubscriptionStatusActive || !types.PaymentBehavior(sub.PaymentBehavior).IsIncompleteType() {
+		return nil
+	}
+	isOverdue := inv.DueDate != nil && !time.Now().UTC().Before(*inv.DueDate)
+	if types.CollectionMethod(sub.CollectionMethod) != types.CollectionMethodChargeAutomatically && !isOverdue {
+		return nil
+	}
+
+	sub.SubscriptionStatus = types.SubscriptionStatusIncomplete
+	if err := s.SubRepo.Update(ctx, sub); err != nil {
+		return err
+	}
+
+	s.Logger.Info(ctx, "marked subscription incomplete for unpaid renewal invoice",
+		"subscription_id", sub.ID,
+		"invoice_id", inv.ID,
+		"is_overdue", isOverdue)
+	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, sub.ID)
+	return nil
+}
+
+func (s *subscriptionService) ProcessOverdueSubscriptionInvoices(ctx context.Context) error {
+	envs, err := s.SubRepo.ListEnvironmentsWithGatedActiveSubscriptions(ctx)
+	if err != nil {
+		s.Logger.Error(ctx, "failed to list environments with payment-gated subscriptions", "error", err)
+		return err
+	}
+	if len(envs) == 0 {
+		return nil
+	}
+
+	settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
+	now := time.Now().UTC()
+	var failures []error
+	for _, env := range envs {
+		tenantCtx := context.WithValue(ctx, types.CtxTenantID, env.TenantID)
+		tenantCtx = context.WithValue(tenantCtx, types.CtxEnvironmentID, env.EnvironmentID)
+
+		config, err := GetSetting[types.SubscriptionConfig](settingsSvc, tenantCtx, types.SettingKeySubscriptionConfig)
+		if err != nil {
+			s.Logger.Error(ctx, "failed to get subscription config for overdue processing",
+				"error", err,
+				"tenant_id", env.TenantID,
+				"environment_id", env.EnvironmentID)
+			failures = append(failures, err)
+			continue
+		}
+		grace := config.GracePeriodDays
+
+		// Past grace is left to auto-cancellation, so older unpaid invoices never flip a subscription here.
+		ids, err := s.SubRepo.MarkOverdueGatedSubscriptionsIncomplete(tenantCtx, now, grace)
+		if err != nil {
+			s.Logger.Error(ctx, "failed to mark overdue subscriptions incomplete",
+				"error", err,
+				"tenant_id", env.TenantID,
+				"environment_id", env.EnvironmentID)
+			failures = append(failures, err)
+			continue
+		}
+		if len(ids) == 0 {
+			continue
+		}
+
+		s.Logger.Info(ctx, "marked subscriptions incomplete for overdue renewal invoices",
+			"tenant_id", env.TenantID,
+			"environment_id", env.EnvironmentID,
+			"grace_period_days", grace,
+			"subscription_ids", ids)
+		for _, id := range ids {
+			s.publishSystemEvent(tenantCtx, types.WebhookEventSubscriptionUpdated, id)
+		}
+	}
+
+	// The update is idempotent, so failing the run just lets Temporal retry the failed environments.
+	return errors.Join(failures...)
+}
+
+// voidOverdueInvoices voids overdue invoices in Flexprice; failures are retried on the next auto-cancel run.
+func (s *subscriptionService) voidOverdueInvoices(ctx context.Context, invoiceService InvoiceService, invoices []*invoice.Invoice, subscriptionID string) {
+	for _, inv := range invoices {
+		if _, err := invoiceService.VoidInvoice(ctx, inv.ID, dto.InvoiceVoidRequest{}); err != nil {
+			s.Logger.Error(ctx, "failed to void overdue invoice after auto-cancellation",
+				"error", err,
+				"invoice_id", inv.ID,
+				"subscription_id", subscriptionID)
+		}
 	}
 }
 
@@ -5611,11 +5688,12 @@ func (s *subscriptionService) HandleSubscriptionActivatingInvoicePaid(ctx contex
 // skipped (zero-amount). By the time this is called, processSubscriptionTrialEnd has already
 // advanced CurrentPeriodStart/End to the first real billing window, so only the status changes.
 func (s *subscriptionService) completeTrialConversionToActive(ctx context.Context, sub *subscription.Subscription) error {
-	if sub.SubscriptionStatus == types.SubscriptionStatusActive {
+	if sub.SubscriptionStatus == types.SubscriptionStatusActive || sub.SubscriptionStatus == types.SubscriptionStatusCancelled {
 		return nil
 	}
 	sub.SubscriptionStatus = types.SubscriptionStatusActive
 	if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		txCtx = activity.WithAction(txCtx, sub.ID, activity.SubscriptionActivated)
 		if err := s.SubRepo.Update(txCtx, sub); err != nil {
 			return err
 		}
@@ -5668,7 +5746,12 @@ func (s *subscriptionService) processPendingCreditGrantsForSubscription(ctx cont
 	// Process each application
 	successCount := 0
 	failureCount := 0
+	now := time.Now().UTC()
 	for _, cga := range applications {
+		if cga.PeriodStart.After(now) {
+			continue
+		}
+
 		// Get the credit grant
 		creditGrant, err := creditGrantService.GetCreditGrant(ctx, cga.CreditGrantID)
 		if err != nil {
@@ -5681,8 +5764,8 @@ func (s *subscriptionService) processPendingCreditGrantsForSubscription(ctx cont
 		}
 
 		// Check subscription state and determine action
-		stateHandler := NewSubscriptionStateHandler(sub, creditGrant.CreditGrant)
-		action, err := stateHandler.DetermineCreditGrantAction()
+		stateHandler := NewSubscriptionStateHandler(sub, creditGrant.CreditGrant, cga, creditGrantService)
+		action, err := stateHandler.DetermineCreditGrantAction(ctx)
 		if err != nil {
 			s.Logger.Error(ctx, "failed to determine credit grant action",
 				"application_id", cga.ID,
@@ -5842,10 +5925,10 @@ func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.C
 			return isPastGracePeriod
 		})
 
-		// Extract unique subscription IDs from eligible invoices
-		subscriptionIDs := lo.Uniq(lo.FilterMap(eligibleInvoices, func(inv *invoice.Invoice, _ int) (string, bool) {
-			return lo.FromPtr(inv.SubscriptionID), inv.SubscriptionID != nil
-		}))
+		overdueInvoicesBySub := lo.GroupBy(eligibleInvoices, func(inv *invoice.Invoice) string {
+			return lo.FromPtr(inv.SubscriptionID)
+		})
+		subscriptionIDs := lo.Keys(overdueInvoicesBySub)
 
 		s.Logger.Debug(ctx, "found subscriptions with invoices past grace period",
 			"tenant_id", tenantConfig.TenantID,
@@ -5861,10 +5944,9 @@ func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.C
 			continue
 		}
 
-		// Get ONLY ACTIVE subscriptions for this tenant x environment
 		filter := &types.SubscriptionFilter{
 			SubscriptionIDs:    subscriptionIDs,
-			SubscriptionStatus: []types.SubscriptionStatus{types.SubscriptionStatusActive},
+			SubscriptionStatus: []types.SubscriptionStatus{types.SubscriptionStatusActive, types.SubscriptionStatusIncomplete, types.SubscriptionStatusCancelled},
 		}
 
 		subscriptions, err := s.SubRepo.List(tenantCtx, filter)
@@ -5884,39 +5966,90 @@ func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.C
 		canceledCount := 0
 		failedCount := 0
 
-		// Cancel all subscriptions - they've already been filtered for eligibility
-		for _, sub := range subscriptions {
-			s.Logger.Info(ctx, "auto-cancelling subscription",
-				"subscription_id", sub.ID,
+		stripeIntegration, err := s.IntegrationFactory.GetStripeIntegration(tenantCtx)
+		if err != nil {
+			s.Logger.Error(ctx, "failed to get Stripe integration for auto-cancellation",
+				"error", err,
 				"tenant_id", tenantConfig.TenantID,
-				"environment_id", tenantConfig.EnvironmentID,
-				"grace_period_days", tenantConfig.GracePeriodDays,
-				"reason", "grace_period_expired",
-			)
+				"environment_id", tenantConfig.EnvironmentID)
+			continue
+		}
+		invoiceService := NewInvoiceService(s.ServiceParams)
 
-			// Cancel the subscription
-			if _, err := s.CancelSubscription(tenantCtx, sub.ID, &dto.CancelSubscriptionRequest{
-				CancellationType: types.CancellationTypeImmediate,
-			}); err != nil {
-				s.Logger.Error(ctx, "failed to auto-cancel subscription",
-					"subscription_id", sub.ID,
-					"tenant_id", tenantConfig.TenantID,
-					"environment_id", tenantConfig.EnvironmentID,
-					"error", err)
-				failedCount++
+		// Void on Stripe, cancel, then void in Flexprice so a failed cancel retries next tick.
+		for _, sub := range subscriptions {
+			overdueInvoices := overdueInvoicesBySub[sub.ID]
+			if len(overdueInvoices) == 0 {
 				continue
 			}
 
-			canceledCount++
+			// Cancelled subs are only revisited to finish our own voids; tenants may still collect on theirs.
+			if sub.SubscriptionStatus == types.SubscriptionStatusCancelled && sub.Metadata["cancellation_reason"] != types.CancellationReasonPaymentOverdue {
+				continue
+			}
 
-			// Log audit trail
-			s.Logger.Info(ctx, "successfully auto-canceled subscription",
-				"subscription_id", sub.ID,
-				"reason", "grace_period_expired",
-				"grace_period_days", tenantConfig.GracePeriodDays,
-				"canceled_by", "auto_cancellation_system",
-				"tenant_id", tenantConfig.TenantID,
-				"environment_id", tenantConfig.EnvironmentID)
+			voidedInStripe := true
+			for _, inv := range overdueInvoices {
+				ok, err := stripeIntegration.InvoiceSyncSvc.VoidInvoiceInStripe(tenantCtx, inv.ID)
+				if err != nil {
+					s.Logger.Error(ctx, "failed to void overdue invoice in Stripe, retrying next run",
+						"error", err,
+						"invoice_id", inv.ID,
+						"subscription_id", sub.ID)
+				} else if !ok {
+					s.Logger.Info(ctx, "Stripe invoice already paid, holding auto-cancellation",
+						"invoice_id", inv.ID,
+						"subscription_id", sub.ID)
+				}
+				if !ok {
+					voidedInStripe = false
+					break
+				}
+			}
+			if !voidedInStripe {
+				continue
+			}
+
+			switch {
+			case sub.SubscriptionStatus != types.SubscriptionStatusCancelled:
+				reason := types.CancellationReasonPaymentOverdue
+
+				s.Logger.Info(ctx, "auto-cancelling subscription",
+					"subscription_id", sub.ID,
+					"tenant_id", tenantConfig.TenantID,
+					"environment_id", tenantConfig.EnvironmentID,
+					"grace_period_days", tenantConfig.GracePeriodDays,
+					"reason", reason,
+				)
+
+				if _, err := s.CancelSubscription(tenantCtx, sub.ID, &dto.CancelSubscriptionRequest{
+					CancellationType: types.CancellationTypeImmediate,
+					Reason:           reason,
+				}); err != nil {
+					s.Logger.Error(ctx, "failed to auto-cancel subscription",
+						"subscription_id", sub.ID,
+						"tenant_id", tenantConfig.TenantID,
+						"environment_id", tenantConfig.EnvironmentID,
+						"error", err)
+					failedCount++
+					continue
+				}
+
+				canceledCount++
+
+				s.voidOverdueInvoices(tenantCtx, invoiceService, overdueInvoices, sub.ID)
+
+				// Log audit trail
+				s.Logger.Info(ctx, "successfully auto-canceled subscription",
+					"subscription_id", sub.ID,
+					"reason", reason,
+					"grace_period_days", tenantConfig.GracePeriodDays,
+					"canceled_by", "auto_cancellation_system",
+					"tenant_id", tenantConfig.TenantID,
+					"environment_id", tenantConfig.EnvironmentID)
+			case sub.Metadata["cancellation_reason"] == types.CancellationReasonPaymentOverdue:
+				s.voidOverdueInvoices(tenantCtx, invoiceService, overdueInvoices, sub.ID)
+			}
 		}
 
 		s.Logger.Info(ctx, "completed processing for tenant",
@@ -7229,6 +7362,33 @@ func (s *subscriptionService) CalculateBillingPeriods(ctx context.Context, subsc
 	currentStart := sub.CurrentPeriodStart
 	currentEnd := sub.CurrentPeriodEnd
 
+	// Inverted stored period can't be billed; fail loudly. Zero-width is allowed (terminal sentinel).
+	if currentEnd.Before(currentStart) {
+		return nil, ierr.NewError("subscription has an inverted current billing period").
+			WithHint("current_period_end is at or before current_period_start; repair the subscription's stored period before billing").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id":      sub.ID,
+				"current_period_start": currentStart.UTC().Format(time.RFC3339Nano),
+				"current_period_end":   currentEnd.UTC().Format(time.RFC3339Nano),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Close the period at end_date when it falls inside; an end_date at/before the start is unrepairable.
+	if sub.EndDate != nil && sub.EndDate.Before(currentEnd) {
+		if !sub.EndDate.After(currentStart) {
+			return nil, ierr.NewError("subscription end date precedes its current billing period").
+				WithHint("end_date is at or before current_period_start; repair the subscription before billing").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id":      sub.ID,
+					"current_period_start": currentStart.UTC().Format(time.RFC3339Nano),
+					"end_date":             sub.EndDate.UTC().Format(time.RFC3339Nano),
+				}).
+				Mark(ierr.ErrValidation)
+		}
+		currentEnd = *sub.EndDate
+	}
+
 	periods := make([]dto.Period, 0)
 
 	periods = append(periods, dto.Period{
@@ -7251,6 +7411,7 @@ func (s *subscriptionService) CalculateBillingPeriods(ctx context.Context, subsc
 		if err != nil {
 			return nil, err
 		}
+
 		periods = append(periods, dto.Period{
 			Start: nextStart,
 			End:   nextEnd,
@@ -7284,6 +7445,20 @@ func (s *subscriptionService) CalculateBillingPeriods(ctx context.Context, subsc
 // Always returns a draft; ComputeInvoice later assigns number or marks SKIPPED. Delegates to invoice service.
 func (s *subscriptionService) CreateDraftInvoiceForSubscription(ctx context.Context, subscriptionID string, period dto.Period) (*dto.InvoiceResponse, error) {
 	invoiceService := NewInvoiceService(s.ServiceParams)
+
+	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+	// A period that passes while paused is recorded as a $0 SKIPPED invoice instead of being billed.
+	if sub.SubscriptionStatus == types.SubscriptionStatusPaused {
+		inv, err := invoiceService.CreatePausedPeriodInvoice(ctx, sub, period.Start, period.End)
+		if err != nil {
+			return nil, err
+		}
+		return dto.NewInvoiceResponse(inv), nil
+	}
+
 	return invoiceService.CreateDraftInvoiceForSubscription(ctx, dto.CreateSubscriptionDraftInvoiceRequest{
 		SubscriptionID: subscriptionID,
 		PeriodStart:    period.Start,
@@ -7657,6 +7832,75 @@ func (s *subscriptionService) resolveExternalCustomersForInheritance(ctx context
 	return childCustomerIDs, nil
 }
 
+// validateSubscriptionBillingCurrency checks the subscription can be converted to its invoicing
+// customer's billing currency. It returns that currency when inline fx_rates should be created for it.
+func (s *subscriptionService) validateSubscriptionBillingCurrency(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	subscriber *customer.Customer,
+	ccCfg types.CustomCurrencyConfig,
+	fxRates []dto.InlineFXRate,
+) (string, error) {
+	invoicingCust := subscriber
+	if id := sub.GetInvoicingCustomerID(); id != subscriber.ID {
+		c, err := s.CustomerRepo.Get(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		invoicingCust = c
+	}
+
+	billing := lo.FromPtr(invoicingCust.BillingCurrency)
+	needsConversion := billing != "" && !types.IsMatchingCurrency(billing, sub.Currency)
+
+	if len(fxRates) > 0 && (!needsConversion || ccCfg.IsCustom(sub.Currency)) {
+		return "", ierr.NewError("fx_rates is not applicable").
+			WithHint("fx_rates can only be set on a fiat subscription billed in another currency.").
+			Mark(ierr.ErrValidation)
+	}
+	if !needsConversion {
+		return "", nil
+	}
+
+	ok, err := conversionAvailable(ctx, s.ServiceParams, ccCfg, sub.Currency, billing)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", ierr.NewErrorf("no conversion configured from %s to %s", sub.Currency, billing).
+			WithHintf("%s before creating this subscription.", missingConversionHint(ccCfg, sub.Currency, billing)).
+			WithReportableDetails(map[string]any{"from": sub.Currency, "to": billing, "missing_pairs": []string{fxPairKey(sub.Currency, billing)}}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if len(fxRates) == 0 {
+		return "", nil
+	}
+	return billing, nil
+}
+
+// handleFxOverride creates one subscription-scope rate per inline fx_rates entry; no-op without a target.
+func (s *subscriptionService) handleFxOverride(ctx context.Context, sub *subscription.Subscription, target string, fxRates []dto.InlineFXRate) error {
+	if target == "" {
+		return nil
+	}
+	fxRateService := NewFXRateService(s.ServiceParams)
+	for _, r := range fxRates {
+		if _, err := fxRateService.CreateFXRate(ctx, dto.CreateFXRateRequest{
+			Scope:        types.FXRateScopeSubscription,
+			ScopeID:      sub.ID,
+			FromCurrency: sub.Currency,
+			ToCurrency:   target,
+			Rate:         lo.ToPtr(r.Rate),
+			StartDate:    r.StartDate,
+			EndDate:      r.EndDate,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // validateAutoInvoiceThresholdForCreate enforces auto_invoice_threshold before create: the effective
 // subscription type (same rules as prepareSubscriptionInheritanceForCreate) must be standalone, and
 // every plan line item must be usage-based.
@@ -7940,6 +8184,22 @@ func (s *subscriptionService) getInheritedSubscriptions(ctx context.Context, par
 	return s.SubRepo.List(ctx, filter)
 }
 
+// getInheritedSubscriptionsIncludingPaused retrieves INHERITED children including paused ones, for the
+// parent's pause, resume and cancel. getInheritedSubscriptions leaves paused children out of usage.
+func (s *subscriptionService) getInheritedSubscriptionsIncludingPaused(ctx context.Context, parentSubID string) ([]*subscription.Subscription, error) {
+	filter := types.NewNoLimitSubscriptionFilter()
+	filter.ParentSubscriptionIDs = []string{parentSubID}
+	filter.SubscriptionTypes = []types.SubscriptionType{types.SubscriptionTypeInherited}
+	filter.SubscriptionStatus = []types.SubscriptionStatus{
+		types.SubscriptionStatusActive,
+		types.SubscriptionStatusTrialing,
+		types.SubscriptionStatusDraft,
+		types.SubscriptionStatusPaused,
+	}
+
+	return s.SubRepo.List(ctx, filter)
+}
+
 // syncTrialingStateFromCreateRequest lines up trialing status and the current period with the trial window.
 // Skips draft subs. If the caller already set subscription_status to something other than trialing, respect it.
 func syncTrialingStateFromCreateRequest(req *dto.CreateSubscriptionRequest, sub *subscription.Subscription) {
@@ -7969,7 +8229,7 @@ func syncTrialingStateFromCreateRequest(req *dto.CreateSubscriptionRequest, sub 
 
 // cascadePauseToInherited mirrors pause status on all INHERITED child subscriptions.
 func (s *subscriptionService) cascadePauseToInherited(ctx context.Context, parentSub *subscription.Subscription) error {
-	children, err := s.getInheritedSubscriptions(ctx, parentSub.ID)
+	children, err := s.getInheritedSubscriptionsIncludingPaused(ctx, parentSub.ID)
 	if err != nil {
 		return err
 	}
@@ -7988,7 +8248,7 @@ func (s *subscriptionService) cascadePauseToInherited(ctx context.Context, paren
 
 // cascadeResumeToInherited mirrors resume on all INHERITED child subscriptions.
 func (s *subscriptionService) cascadeResumeToInherited(ctx context.Context, parentSub *subscription.Subscription) error {
-	children, err := s.getInheritedSubscriptions(ctx, parentSub.ID)
+	children, err := s.getInheritedSubscriptionsIncludingPaused(ctx, parentSub.ID)
 	if err != nil {
 		return err
 	}
@@ -8097,6 +8357,11 @@ func (s *subscriptionService) processAutoInvoiceThresholdSubscription(
 	if usageAmount.LessThan(lo.FromPtr(sub.AutoInvoiceThreshold)) {
 		return nil
 	}
+	// The threshold invoice finalizes at once, so it waits for an expiring credit the job hasn't applied.
+	pending, err := NewWalletService(s.ServiceParams).HasPendingExpiringCredit(ctx, sub.GetInvoicingCustomerID(), sub.Currency, sub.CurrentPeriodStart, effectiveTime)
+	if err != nil || pending {
+		return err
+	}
 
 	invoiceService := NewInvoiceService(s.ServiceParams)
 
@@ -8105,6 +8370,10 @@ func (s *subscriptionService) processAutoInvoiceThresholdSubscription(
 
 	var inv *dto.InvoiceResponse
 	if err := s.DB.WithTx(ctx, func(ctx context.Context) error {
+		// The period restarts at effectiveTime, so the open draft becomes the threshold invoice.
+		if _, err := invoiceService.MoveCycleDraft(ctx, sub, effectiveTime, types.InvoiceBillingReasonAutoInvoiceThreshold); err != nil {
+			return err
+		}
 
 		inv, _, err = invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
 			SubscriptionID: sub.ID,

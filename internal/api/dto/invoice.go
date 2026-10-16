@@ -373,6 +373,10 @@ type InvoiceComputeRequest struct {
 	// forwarded to PrepareSubscriptionInvoiceRequestParams.OpeningInvoiceAdjustmentAmount, which applies it
 	// in CalculateFixedCharges (reducing fixed line item amounts directly). Not applied inside ComputeInvoice itself.
 	OpeningInvoiceAdjustmentAmount *decimal.Decimal `json:"-"`
+
+	// ProrationBehavior is internal: when set, partial-period fixed charges of a subscription invoice are
+	// priced with it instead of the subscription's own proration_behavior. Nothing is persisted.
+	ProrationBehavior *types.ProrationBehavior `json:"-"`
 }
 
 func (r *InvoiceComputeRequest) SourceID() string {
@@ -1487,6 +1491,9 @@ type CreateSubscriptionInvoiceRequest struct {
 
 	// OpeningInvoiceAdjustmentAmount is internal: same as InvoiceComputeRequest. Not in public JSON.
 	OpeningInvoiceAdjustmentAmount *decimal.Decimal `json:"-"`
+
+	// ProrationBehavior is internal: same as InvoiceComputeRequest. Not in public JSON.
+	ProrationBehavior *types.ProrationBehavior `json:"-"`
 }
 
 // ToDraftRequest builds a CreateDraftInvoiceRequest from the subscription invoice request
@@ -1675,6 +1682,10 @@ type GetUnpaidInvoicesToBePaidRequest struct {
 
 	// currency is the three-letter ISO currency code for this request
 	Currency string `json:"currency" validate:"required"`
+
+	// CurrentPeriodStarts maps subscription ID to the period start whose usage the caller counts
+	// live; that period's draft is skipped and its applied credits reported instead.
+	CurrentPeriodStarts map[string]time.Time `json:"-"`
 }
 
 func (r *GetUnpaidInvoicesToBePaidRequest) Validate() error {
@@ -1699,6 +1710,10 @@ type GetUnpaidInvoicesToBePaidResponse struct {
 
 	// total paid invoice amount
 	TotalPaidInvoiceAmount decimal.Decimal `json:"total_paid_invoice_amount" swaggertype:"string"`
+
+	// CurrentPeriodCreditsApplied maps subscription ID to credits already applied to its
+	// current-period draft (credits settled at expiry), in the wallet's currency.
+	CurrentPeriodCreditsApplied map[string]decimal.Decimal `json:"-"`
 }
 
 type ApplyExternalInvoiceDiscountRequest struct {
@@ -1731,18 +1746,12 @@ type TaxExemptionSummary struct {
 }
 
 func buildTaxSummary(taxes []*TaxAppliedResponse, reasonCode *types.TaxExemptionReasonCode) *TaxSummary {
-	// A reason code means nothing was charged, so the totals are zero by definition.
-	if reasonCode != nil {
-		return &TaxSummary{
-			Exemption: &TaxExemptionSummary{
-				ReasonCode: *reasonCode,
-				Reason:     reasonCode.DisplayLabel(),
-			},
-		}
-	}
-
 	var inclusiveTax, exclusiveTax decimal.Decimal
 	for _, t := range taxes {
+		// A reversal records tax being un-filed, not a tax the invoice charges.
+		if t.IsReversal() {
+			continue
+		}
 		switch t.TaxBehavior {
 		case types.TaxBehaviorInclusive:
 			inclusiveTax = inclusiveTax.Add(t.TaxAmount)
@@ -1751,11 +1760,23 @@ func buildTaxSummary(taxes []*TaxAppliedResponse, reasonCode *types.TaxExemption
 		}
 	}
 
-	return &TaxSummary{
+	summary := &TaxSummary{
 		TotalInclusiveTax: inclusiveTax,
 		TotalExclusiveTax: exclusiveTax,
 		TotalTax:          inclusiveTax.Add(exclusiveTax),
 	}
+
+	// A reason does not mean nothing was charged. An invoice can reverse charge one
+	// jurisdiction and be taxed in another, and reporting that one as zero hides the tax
+	// the customer actually owes.
+	if reasonCode != nil {
+		summary.Exemption = &TaxExemptionSummary{
+			ReasonCode: *reasonCode,
+			Reason:     reasonCode.DisplayLabel(),
+		}
+	}
+
+	return summary
 }
 
 // InvoicePDFRequest selects which rendering of an invoice to return.

@@ -115,6 +115,7 @@ func (s *WalletServiceSuite) buildServiceParams() ServiceParams {
 		IntegrationFactory:           s.GetIntegrationFactory(),
 		ConnectionRepo:               stores.ConnectionRepo,
 		EntityIntegrationMappingRepo: stores.EntityIntegrationMappingRepo,
+		FXRateRepo:                   stores.FXRateRepo,
 	}
 }
 
@@ -3206,6 +3207,42 @@ func (s *CheckWalletBalanceAlertSuite) TestWalletAlerts_BalanceBelowCritical_InA
 }
 
 // ---------------------------------------------------------------------------
+// Test 5b – conversion_rate != 1: absolute thresholds are in wallet currency,
+//           so the credit balance must be converted to currency before compare.
+//           Here credits (4000) are far above the $50 threshold, but the
+//           currency balance ($40) is below it → in_alarm. Pre-fix this compared
+//           raw credits (4000 <= 50 == false) and never fired.
+// ---------------------------------------------------------------------------
+
+func (s *CheckWalletBalanceAlertSuite) TestWalletAlerts_AbsoluteThresholdUsesCurrency_InAlarm() {
+	ctx := s.GetContext()
+	w := &wallet.Wallet{
+		ID:                  "wallet_rate_alarm",
+		CustomerID:          s.customer.ID,
+		Currency:            "usd",
+		WalletType:          types.WalletTypePrePaid,
+		WalletStatus:        types.WalletStatusActive,
+		Balance:             decimal.NewFromInt(40),   // currency: $40
+		CreditBalance:       decimal.NewFromInt(4000), // credits: 4000 @ 0.01 = $40
+		ConversionRate:      decimal.NewFromFloat(0.01),
+		TopupConversionRate: decimal.NewFromFloat(0.01),
+		AlertSettings:       s.enabledAlertSettings(decimal.NewFromInt(50)), // below $50
+		Config:              *types.GetDefaultWalletConfig(),
+		BaseModel:           types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().WalletRepo.CreateWallet(ctx, w))
+
+	s.NoError(s.service.CheckWalletBalanceAlert(ctx, s.makeEvent()))
+
+	logs, err := s.GetStores().AlertLogsRepo.ListByEntity(ctx, types.AlertEntityTypeWallet, w.ID, 10)
+	s.NoError(err)
+	s.Require().Len(logs, 1, "expected in_alarm: $40 currency balance is below the $50 threshold")
+	s.Equal(types.AlertStateInAlarm, logs[0].AlertStatus)
+	s.True(decimal.NewFromInt(40).Equal(logs[0].AlertInfo.ValueAtTime),
+		"value_at_time must be the currency balance, not the raw credit count")
+}
+
+// ---------------------------------------------------------------------------
 // Test 6 – both wallet alerts and auto top-up enabled → both fire independently
 // ---------------------------------------------------------------------------
 
@@ -4079,7 +4116,7 @@ func (s *WalletServiceSuite) TestCompletePurchasedCreditTransaction_WithLinkedBo
 	s.NoError(err)
 	s.True(decimal.NewFromInt(1000).Equal(balanceBefore.CreditBalance))
 
-	err = s.service.(*walletService).CompletePurchasedCreditTransactionWithRetry(s.GetContext(), resp.WalletTransaction.ID)
+	err = s.service.(*walletService).CompletePurchasedCreditTransactionWithRetry(s.GetContext(), resp.WalletTransaction.ID, lo.FromPtr(resp.InvoiceID))
 	s.NoError(err)
 
 	purchaseTx, err := s.GetStores().WalletRepo.GetTransactionByID(s.GetContext(), resp.WalletTransaction.ID)
@@ -4107,7 +4144,7 @@ func (s *WalletServiceSuite) TestCompletePurchasedCreditTransaction_NoLinkedBonu
 	resp, err := s.service.TopUpWallet(s.GetContext(), s.testData.wallet.ID, req)
 	s.NoError(err)
 
-	err = s.service.(*walletService).CompletePurchasedCreditTransactionWithRetry(s.GetContext(), resp.WalletTransaction.ID)
+	err = s.service.(*walletService).CompletePurchasedCreditTransactionWithRetry(s.GetContext(), resp.WalletTransaction.ID, lo.FromPtr(resp.InvoiceID))
 	s.NoError(err, "completion must succeed even when GetPendingTransactionByParent finds nothing")
 
 	purchaseTx, err := s.GetStores().WalletRepo.GetTransactionByID(s.GetContext(), resp.WalletTransaction.ID)
@@ -4127,14 +4164,14 @@ func (s *WalletServiceSuite) TestCompletePurchasedCreditTransaction_WithLinkedBo
 	resp, err := s.service.TopUpWallet(s.GetContext(), s.testData.wallet.ID, req)
 	s.NoError(err)
 
-	err = s.service.(*walletService).CompletePurchasedCreditTransactionWithRetry(s.GetContext(), resp.WalletTransaction.ID)
+	err = s.service.(*walletService).CompletePurchasedCreditTransactionWithRetry(s.GetContext(), resp.WalletTransaction.ID, lo.FromPtr(resp.InvoiceID))
 	s.NoError(err)
 
 	w1, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallet.ID)
 	s.NoError(err)
 
 	// second call must be a no-op: the top-of-function pending-check short-circuits
-	err = s.service.(*walletService).CompletePurchasedCreditTransactionWithRetry(s.GetContext(), resp.WalletTransaction.ID)
+	err = s.service.(*walletService).CompletePurchasedCreditTransactionWithRetry(s.GetContext(), resp.WalletTransaction.ID, lo.FromPtr(resp.InvoiceID))
 	s.NoError(err)
 
 	w2, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallet.ID)
@@ -4190,7 +4227,7 @@ func (s *WalletServiceSuite) TestCompletePurchasedCreditTransaction_WithLinkedBo
 	// Call the non-retrying entrypoint directly: CompletePurchasedCreditTransactionWithRetry
 	// would retry and, since the mock has no rollback, find the purchase tx already marked
 	// completed from the first (failed) attempt and short-circuit as a false success.
-	err = failingService.completePurchasedCreditTransaction(s.GetContext(), resp.WalletTransaction.ID)
+	err = failingService.completePurchasedCreditTransaction(s.GetContext(), resp.WalletTransaction.ID, lo.FromPtr(resp.InvoiceID))
 	s.Error(err, "the injected failure on the bonus half must surface as an error")
 }
 

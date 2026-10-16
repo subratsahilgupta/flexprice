@@ -44,6 +44,7 @@ func (s *SubscriptionTimezoneTestSuite) SetupTest() {
 		DB:                         s.GetDB(),
 		TaxAssociationRepo:         s.GetStores().TaxAssociationRepo,
 		TaxRateRepo:                s.GetStores().TaxRateRepo,
+		TaxAppliedRepo:             s.GetStores().TaxAppliedRepo,
 		SubRepo:                    s.GetStores().SubscriptionRepo,
 		SubscriptionLineItemRepo:   s.GetStores().SubscriptionLineItemRepo,
 		SubscriptionPhaseRepo:      s.GetStores().SubscriptionPhaseRepo,
@@ -78,6 +79,7 @@ func (s *SubscriptionTimezoneTestSuite) SetupTest() {
 		ProrationCalculator:        s.GetCalculator(),
 		IntegrationFactory:         s.GetIntegrationFactory(),
 		PlanPriceSyncRepo:          s.GetStores().PlanPriceSyncRepo,
+		AddonPriceSyncRepo:         s.GetStores().AddonPriceSyncRepo,
 	}
 
 	s.subscriptionSvc = NewSubscriptionService(params)

@@ -555,6 +555,39 @@ func (c *SubscriptionCreationConfig) Validate() error {
 	return nil
 }
 
+// InlineFXRate is one subscription-scope rate created with the subscription. The pair is the
+// subscription currency to the invoicing customer's billing currency; the window is [start_date, end_date).
+type InlineFXRate struct {
+	Rate      decimal.Decimal `json:"rate" swaggertype:"string"`
+	StartDate *time.Time      `json:"start_date,omitempty"`
+	EndDate   *time.Time      `json:"end_date,omitempty"`
+}
+
+// validateInlineFXRates checks each rate and window, and that no two windows overlap.
+func validateInlineFXRates(rates []InlineFXRate) error {
+	for i, r := range rates {
+		if !r.Rate.IsPositive() {
+			return ierr.NewErrorf("fx_rates[%d].rate must be greater than zero", i).
+				WithHint("Provide a positive exchange rate for every fx_rates entry.").
+				Mark(ierr.ErrValidation)
+		}
+		if r.StartDate != nil && r.EndDate != nil && !r.StartDate.Before(*r.EndDate) {
+			return ierr.NewErrorf("fx_rates[%d].start_date must be before end_date", i).
+				WithHint("The start of a validity window must be before its end.").
+				Mark(ierr.ErrValidation)
+		}
+		for j := 0; j < i; j++ {
+			if types.FXRateWindowsOverlap(rates[j].StartDate, rates[j].EndDate, r.StartDate, r.EndDate) {
+				return ierr.NewErrorf("fx_rates[%d] and fx_rates[%d] overlap", j, i).
+					WithHint("Each fx_rates entry must cover a separate period.").
+					WithReportableDetails(map[string]any{"first_index": j, "second_index": i}).
+					Mark(ierr.ErrValidation)
+			}
+		}
+	}
+	return nil
+}
+
 type CreateSubscriptionRequest struct {
 	// ID is pre-generated for internal use (e.g. Paddle mapping before write). Never from external JSON.
 	// TODO: Remove once plan-change integration carryover is handled generically.
@@ -564,11 +597,15 @@ type CreateSubscriptionRequest struct {
 	CustomerID         string `json:"customer_id"`
 	ExternalCustomerID string `json:"external_customer_id"`
 
-	PlanID    string     `json:"plan_id" validate:"required"`
-	Currency  string     `json:"currency" validate:"required,len=3"`
-	LookupKey string     `json:"lookup_key"`
-	StartDate *time.Time `json:"start_date,omitempty"`
-	EndDate   *time.Time `json:"end_date,omitempty"`
+	PlanID    string `json:"plan_id" validate:"required"`
+	Currency  string `json:"currency" validate:"required,len=3"`
+	LookupKey string `json:"lookup_key"`
+
+	// FxRates sets subscription-scope rates to the invoicing customer's billing currency, one per
+	// non-overlapping window. Rejected when nothing needs converting or the pair has no tenant rate.
+	FxRates   []InlineFXRate `json:"fx_rates,omitempty"`
+	StartDate *time.Time     `json:"start_date,omitempty"`
+	EndDate   *time.Time     `json:"end_date,omitempty"`
 
 	// TrialStart/TrialEnd are for internal integrations (e.g. Stripe sync); not accepted from public JSON.
 	TrialStart *time.Time `json:"-"`
@@ -712,9 +749,10 @@ func (r *RemoveAddonRequest) Validate() error {
 }
 
 type UpdateSubscriptionRequest struct {
-	Status            types.SubscriptionStatus `json:"status"`
-	CancelAt          *time.Time               `json:"cancel_at,omitempty"`
-	CancelAtPeriodEnd bool                     `json:"cancel_at_period_end,omitempty"`
+	Status   types.SubscriptionStatus `json:"status"`
+	CancelAt *time.Time               `json:"cancel_at,omitempty"`
+	// Pointer so omitting the field leaves the stored value unchanged; sending it sets the flag.
+	CancelAtPeriodEnd *bool `json:"cancel_at_period_end,omitempty"`
 
 	// ParentSubscriptionID sets or clears the parent subscription. Omit to leave unchanged; send "" to clear.
 	ParentSubscriptionID *string `json:"parent_subscription_id,omitempty"`
@@ -740,7 +778,10 @@ type CancelSubscriptionRequest struct {
 	CancellationType types.CancellationType `json:"cancellation_type" validate:"required"`
 
 	// CancelImmediatelyInvoicePolicy controls whether to generate a final invoice on immediate cancellation. Defaults to skip.
-	CancelImmediatelyInvoicePolicy types.CancelImmediatelyInvoicePolicy `json:"cancel_immediately_inovice_policy,omitempty"`
+	CancelImmediatelyInvoicePolicy types.CancelImmediatelyInvoicePolicy `json:"cancel_immediately_invoice_policy,omitempty"`
+
+	// Deprecated: misspelled key still accepted from older clients; Validate copies it into CancelImmediatelyInvoicePolicy.
+	CancelImmediatelyInovicePolicy types.CancelImmediatelyInvoicePolicy `json:"cancel_immediately_inovice_policy,omitempty" swaggerignore:"true"`
 
 	// Reason for cancellation (for audit and business intelligence)
 	Reason string `json:"reason,omitempty"`
@@ -777,6 +818,25 @@ type CancelSubscriptionResponse struct {
 	ProcessedAt time.Time `json:"processed_at"`
 }
 
+// ProrationSettings decides whether a change prorates each grant type.
+type ProrationSettings struct {
+	CreditGrantBehavior      types.ProrationBehavior `json:"credit_grant_behavior,omitempty"`
+	EntitlementGrantBehavior types.ProrationBehavior `json:"entitlement_grant_behavior,omitempty"`
+}
+
+// NewProrationSettings applies one behavior to every grant type.
+func NewProrationSettings(behavior types.ProrationBehavior) ProrationSettings {
+	return ProrationSettings{CreditGrantBehavior: behavior, EntitlementGrantBehavior: behavior}
+}
+
+// WithDefault fills each unset behavior with defaultBehavior.
+func (p ProrationSettings) WithDefault(defaultBehavior types.ProrationBehavior) ProrationSettings {
+	return ProrationSettings{
+		CreditGrantBehavior:      lo.CoalesceOrEmpty(p.CreditGrantBehavior, defaultBehavior),
+		EntitlementGrantBehavior: lo.CoalesceOrEmpty(p.EntitlementGrantBehavior, defaultBehavior),
+	}
+}
+
 // ProrationDetail provides line-item level proration information
 type ProrationDetail struct {
 	LineItemID     string          `json:"line_item_id"`
@@ -810,6 +870,9 @@ func (r *CancelSubscriptionRequest) Validate() error {
 	// Set default proration behavior if not provided
 	if r.ProrationBehavior == "" {
 		r.ProrationBehavior = types.ProrationBehaviorNone
+	}
+	if r.CancelImmediatelyInvoicePolicy == "" {
+		r.CancelImmediatelyInvoicePolicy = r.CancelImmediatelyInovicePolicy
 	}
 	// Set default cancel immediately invoice policy if not provided or empty (default: skip = do not generate invoice)
 	if r.CancelImmediatelyInvoicePolicy == "" {
@@ -985,6 +1048,10 @@ func (r *CreateSubscriptionRequest) Validate() error {
 	if r.OpeningInvoiceAdjustmentAmount != nil && r.OpeningInvoiceAdjustmentAmount.IsNegative() {
 		return ierr.NewError("opening invoice adjustment amount must be >= 0").
 			Mark(ierr.ErrValidation)
+	}
+
+	if err := validateInlineFXRates(r.FxRates); err != nil {
+		return err
 	}
 
 	if err := r.LineItemGrouping.Validate(); err != nil {
@@ -1358,7 +1425,7 @@ func (r *CreateSubscriptionRequest) validateShouldAllowProrationOnStartDate(requ
 	// If the start date is before the current date and proration mode is active, return an error
 	// This prevents creating subscriptions with backdated start dates that would trigger proration
 
-	if request.Workflow == lo.ToPtr(types.TemporalSubscriptionCreationWorkflow) {
+	if lo.FromPtr(request.Workflow) == types.TemporalSubscriptionCreationWorkflow {
 		return nil
 	}
 
@@ -1947,7 +2014,8 @@ func (r *OverrideLineItemRequest) Validate(
 		}
 	}
 
-	return nil
+	return validateBillingModelChange(originalPrice.Price, r.BillingModel, r.TierMode,
+		r.Amount != nil || r.PriceUnitAmount != nil, len(r.Tiers) > 0 || len(r.PriceUnitTiers) > 0)
 }
 
 // ToSubscriptionLineItem converts a request to a domain subscription line item

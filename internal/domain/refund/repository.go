@@ -12,6 +12,8 @@ type Repository interface {
 	Create(ctx context.Context, refund *Refund) error
 	CreateBulk(ctx context.Context, refunds []*Refund) error
 	Get(ctx context.Context, id string) (*Refund, error)
+	// GetLinkedCustomerID returns the customer the refund is linked to, in any status; "" when it has none.
+	GetLinkedCustomerID(ctx context.Context, id string) (string, error)
 
 	// GetForUpdate row-locks the refund. Must be called inside a transaction.
 	GetForUpdate(ctx context.Context, id string) (*Refund, error)
@@ -37,4 +39,8 @@ type Repository interface {
 	// SumInFlightByPaymentIDs sums the requested amount of refunds that have claimed money
 	// but not yet settled, so a second allocation cannot draw the same balance again.
 	SumInFlightByPaymentIDs(ctx context.Context, invoiceID string, paymentIDs []string) (map[string]decimal.Decimal, error)
+
+	// SumSettledToWalletByInvoice sums the settled amount of an invoice's succeeded wallet refunds in
+	// the given currency.
+	SumSettledToWalletByInvoice(ctx context.Context, invoiceID, currency string) (decimal.Decimal, error)
 }

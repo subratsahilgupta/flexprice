@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	domainCreditGrantApplication "github.com/flexprice/flexprice/internal/domain/creditgrantapplication"
 	"github.com/flexprice/flexprice/internal/domain/proration"
@@ -14,6 +15,12 @@ import (
 	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
+)
+
+const (
+	creditGrantApplyLockTTL           = 30 * time.Second
+	creditGrantApplyLockAttempts      = 40
+	creditGrantApplyLockRetryInterval = 250 * time.Millisecond
 )
 
 // CreditGrantService defines the interface for credit grant service
@@ -69,13 +76,14 @@ type CreditGrantService interface {
 
 	// ListCreditGrantApplications retrieves credit grant applications based on filter
 	ListCreditGrantApplications(ctx context.Context, filter *types.CreditGrantApplicationFilter) (*dto.ListCreditGrantApplicationsResponse, error)
+
+	// ShouldGateApplicationOnPayment reports whether a recurring CGA waits for its renewal invoice to be paid.
+	ShouldGateApplicationOnPayment(ctx context.Context, sub *subscription.Subscription, cga *domainCreditGrantApplication.CreditGrantApplication) (bool, error)
 }
 
 type creditGrantService struct {
 	ServiceParams
 }
-
-const creditGrantCreditsScale = 8
 
 func NewCreditGrantService(
 	serviceParams ServiceParams,
@@ -83,6 +91,19 @@ func NewCreditGrantService(
 	return &creditGrantService{
 		ServiceParams: serviceParams,
 	}
+}
+
+// creditGrantFollowsBilling reports whether a grant recurs on the subscription's billing period,
+// the only case its first period is prorated: a onetime grant is a fixed lump, and a monthly grant
+// on an annual subscription keeps recurring monthly.
+// e.g. monthly 1000-credit grant on a calendar monthly sub from Jan 15: 548.39 now, 1000 every Feb 1 onward.
+func creditGrantFollowsBilling(req dto.CreateCreditGrantRequest, sub *subscription.Subscription) bool {
+	if req.Cadence != types.CreditGrantCadenceRecurring || req.Period == nil {
+		return false
+	}
+
+	period, err := types.GetBillingPeriodFromCreditGrantPeriod(lo.FromPtr(req.Period))
+	return err == nil && period == sub.BillingPeriod && lo.FromPtrOr(req.PeriodCount, 1) == max(sub.BillingPeriodCount, 1)
 }
 
 func (s *creditGrantService) CreateCreditGrant(ctx context.Context, req dto.CreateCreditGrantRequest) (*dto.CreditGrantResponse, error) {
@@ -239,6 +260,17 @@ func (s *creditGrantService) CreateCreditGrant(ctx context.Context, req dto.Crea
 			}
 		}
 
+		// Only a grant on the subscription's billing period has a first period to prorate or align.
+		if !creditGrantFollowsBilling(req, sub) {
+			req.FirstPeriodProration = nil
+		} else if req.FirstPeriodProration == nil && req.ProrationBehavior != "" {
+			req.FirstPeriodProration = newSubscriptionGrantService(s.ServiceParams).creditGrantProration(
+				ctx, sub, lo.FromPtr(req.StartDate), req.ProrationBehavior, grantProrationSourceCreditGrantCreate)
+		}
+		if req.FirstPeriodProration != nil {
+			req.CreditGrantAnchor = lo.ToPtr(req.FirstPeriodProration.PeriodEnd)
+		}
+
 		// Set credit grant anchor to start date if not provided
 		if req.CreditGrantAnchor == nil && req.StartDate != nil {
 			req.CreditGrantAnchor = req.StartDate
@@ -338,22 +370,28 @@ func (s *creditGrantService) InitializeCreditGrantWorkflow(
 
 	credits := cg.Credits
 	var prorationMetadata types.Metadata
-	if prorationCfg != nil {
-		coefficient, err := proration.Coefficient(
-			prorationCfg.PeriodStart, prorationCfg.PeriodEnd, prorationCfg.ProrationDate, prorationCfg.Strategy)
+	if prorationCfg != nil && prorationCfg.Prorate {
+		serviceablePeriod := types.Period{Start: prorationCfg.ProrationDate, End: prorationCfg.PeriodEnd}
+		coefficient, full, err := proration.CalculateProrationCoefficient(
+			subscription,
+			subscription.BillingPeriod,
+			subscription.BillingPeriodCount,
+			serviceablePeriod,
+			types.StrategySecondBased,
+		)
 		if err != nil {
 			return nil, err
 		}
-		credits = cg.Credits.Mul(coefficient).Round(creditGrantCreditsScale)
+		credits = cg.Credits.Mul(coefficient).Round(types.GetCurrencyPrecision(subscription.Currency))
 		prorationMetadata = proration.AuditMetadata(proration.AuditParams{
 			Source:        prorationCfg.Source,
 			Coefficient:   coefficient,
 			OriginalKey:   "proration_original_credits",
 			OriginalValue: cg.Credits,
-			PeriodStart:   prorationCfg.PeriodStart,
-			PeriodEnd:     prorationCfg.PeriodEnd,
+			PeriodStart:   full.Start,
+			PeriodEnd:     full.End,
 			ProrationDate: prorationCfg.ProrationDate,
-			Strategy:      prorationCfg.Strategy,
+			Strategy:      types.StrategySecondBased,
 		})
 
 		s.Logger.Info(ctx, "prorating first credit grant application",
@@ -633,6 +671,28 @@ func (s *creditGrantService) ProcessCreditGrantApplication(ctx context.Context, 
 	return nil
 }
 
+// acquireCreditGrantApplyLock serializes grant application per customer; nil means proceed unlocked.
+func (s *creditGrantService) acquireCreditGrantApplyLock(ctx context.Context, customerID string) cache.Lock {
+	lockKey := cache.GenerateKey(ctx, cache.PrefixCreditGrantApplyLock, customerID)
+	lock, err := cache.AcquireLockWithRetry(ctx, s.Locker, lockKey,
+		creditGrantApplyLockTTL, creditGrantApplyLockAttempts, creditGrantApplyLockRetryInterval)
+
+	switch {
+	case err != nil:
+		s.Logger.Error(ctx, "failed to acquire credit grant apply lock, proceeding without it",
+			"error", err,
+			"customer_id", customerID)
+		return nil
+	case lock == nil:
+		return nil
+	case !lock.AcquiredSuccessfully():
+		s.Logger.Info(ctx, "timed out waiting for credit grant apply lock, proceeding",
+			"customer_id", customerID)
+		return nil
+	}
+	return lock
+}
+
 // applyCreditGrantToWallet applies credit grant in a complete transaction
 // This function performs 3 main tasks atomically:
 // 1. Apply credits to wallet
@@ -641,6 +701,25 @@ func (s *creditGrantService) ProcessCreditGrantApplication(ctx context.Context, 
 // If any task fails, all changes are rolled back and CGA is marked as failed
 func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant *creditgrant.CreditGrant, subscription *subscription.Subscription, cga *domainCreditGrantApplication.CreditGrantApplication) (*domainCreditGrantApplication.CreditGrantApplication, error) {
 	walletService := NewWalletService(s.ServiceParams)
+
+	if lock := s.acquireCreditGrantApplyLock(ctx, subscription.CustomerID); lock != nil {
+		defer func() {
+			if err := lock.Release(ctx); err != nil {
+				s.Logger.Error(ctx, "failed to release credit grant apply lock",
+					"error", err,
+					"customer_id", subscription.CustomerID)
+			}
+		}()
+	}
+
+	// A concurrent run may have applied it already.
+	latest, err := s.CreditGrantApplicationRepo.Get(ctx, cga.ID)
+	if err != nil {
+		return nil, s.handleCreditGrantFailure(ctx, cga, err, "Failed to reload credit grant application")
+	}
+	if latest.ApplicationStatus == types.ApplicationStatusApplied {
+		return nil, nil
+	}
 
 	// Find or create wallet outside of transaction for better error handling
 	wallets, err := walletService.GetWalletsByCustomerID(ctx, subscription.CustomerID)
@@ -832,8 +911,11 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 			}
 		}
 
-		// Task 1: Apply credit to wallet
-		_, err := walletService.TopUpWallet(txCtx, selectedWallet.ID, topupReq)
+		// Task 1: Apply credit to wallet, unless an earlier run already did
+		_, err := s.WalletRepo.GetTransactionByIdempotencyKey(txCtx, cga.ID)
+		if ierr.IsNotFound(err) {
+			_, err = walletService.TopUpWallet(txCtx, selectedWallet.ID, topupReq)
+		}
 		if err != nil {
 			return err
 		}
@@ -1005,8 +1087,8 @@ func (s *creditGrantService) processScheduledApplication(
 
 	// Apply the grant
 	// Check subscription state
-	stateHandler := NewSubscriptionStateHandler(subscription.Subscription, creditGrant.CreditGrant)
-	action, err := stateHandler.DetermineCreditGrantAction()
+	stateHandler := NewSubscriptionStateHandler(subscription.Subscription, creditGrant.CreditGrant, cga, s)
+	action, err := stateHandler.DetermineCreditGrantAction(ctx)
 
 	if err != nil {
 		s.Logger.Error(ctx, "Failed to determine action", "application_id", cga.ID, "error", err)
@@ -1142,6 +1224,15 @@ func (s *creditGrantService) createNextPeriodApplication(ctx context.Context, gr
 	}
 
 	if err := nextPeriodCGAAReq.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Reuse the next period a retried application already created.
+	existing, err := s.CreditGrantApplicationRepo.FindByIdempotencyKey(ctx, nextPeriodCGAAReq.IdempotencyKey)
+	if err == nil {
+		return existing, nil
+	}
+	if !ierr.IsNotFound(err) {
 		return nil, err
 	}
 
@@ -1432,32 +1523,9 @@ func (s *creditGrantService) CreateSubscriptionCreditGrants(ctx context.Context,
 		// Use subscription start date as the anchor for the credit grant chain
 		grantReq.CreditGrantAnchor = lo.ToPtr(startDate)
 
-		// Prorating a mid-cycle grant only makes sense for a recurring allowance that
-		// shares the subscription's billing rhythm; a onetime grant is a fixed lump,
-		// and a monthly grant on an annual subscription should keep recurring monthly
-		// rather than stretch to the billing period.
-		grantPeriod := types.BillingPeriod("")
-		if grantReq.Period != nil {
-			period, err := types.GetBillingPeriodFromCreditGrantPeriod(lo.FromPtr(grantReq.Period))
-			if err != nil {
-				s.Logger.Error(ctx, "failed to get billing period from credit grant period",
-					"subscription_id", subscription.ID,
-					"credit_grant_period", grantReq.Period,
-					"error", err)
-			}
-			grantPeriod = period
-		}
-
-		if prorationCfg != nil &&
-			grantReq.Cadence == types.CreditGrantCadenceRecurring &&
-			grantPeriod == subscription.BillingPeriod {
-			// Anchor on the subscription's period boundary rather than the attach date, so
-			// every period after the short first one lands on an invoicing boundary instead
-			// of drifting. Chaining stays correct because createNextPeriodApplication feeds
-			// each period end back in as the next period start, matching this anchor.
-			grantReq.CreditGrantAnchor = lo.ToPtr(prorationCfg.PeriodEnd)
-			grantReq.FirstPeriodProration = prorationCfg
-		}
+		// CreateCreditGrant keeps it only for grants that recur on the subscription's billing
+		// period, and then anchors them on the billing boundary.
+		grantReq.FirstPeriodProration = prorationCfg
 
 		// Create credit grant: this now triggers initializeCreditGrantWorkflow
 		// which handles creation, anchor calculation, and eager application
@@ -1548,4 +1616,49 @@ func (s *creditGrantService) ListCreditGrantApplications(ctx context.Context, fi
 	)
 
 	return response, nil
+}
+
+func (s *creditGrantService) ShouldGateApplicationOnPayment(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	cga *domainCreditGrantApplication.CreditGrantApplication,
+) (bool, error) {
+	if !types.PaymentBehavior(sub.PaymentBehavior).IsIncompleteType() ||
+		cga.ApplicationReason != types.ApplicationReasonRecurringCreditGrant {
+		return false, nil
+	}
+
+	// means period didn't rollover for the subs but grant is trying to apply
+	if !cga.PeriodStart.Before(sub.CurrentPeriodEnd) {
+		return true, nil
+	}
+
+	// Only the latest renewal invoice decides, so fetch just that one rather than the whole history.
+	filter := types.NewInvoiceFilter()
+	filter.Limit = lo.ToPtr(1)
+	filter.Sort = []*types.SortCondition{{Field: "period_end", Direction: types.SortDirectionDesc}}
+	filter.SubscriptionID = sub.ID
+	filter.BillingReason = types.InvoiceBillingReasonSubscriptionCycle
+	filter.PeriodEndLTE = lo.ToPtr(cga.PeriodStart)
+	filter.InvoiceStatus = []types.InvoiceStatus{
+		types.InvoiceStatusDraft,
+		types.InvoiceStatusFinalized,
+		types.InvoiceStatusSkipped,
+	}
+	filter.SkipLineItems = true
+
+	invoices, err := s.InvoiceRepo.List(ctx, filter)
+	if err != nil {
+		return false, err
+	}
+	// the renewal invoice is created in the same transaction as the rollover, so the gate never sees a finished period without its invoice.
+	if len(invoices) == 0 {
+		return false, nil
+	}
+
+	latest := invoices[0]
+	paid := latest.InvoiceStatus == types.InvoiceStatusSkipped ||
+		latest.PaymentStatus == types.PaymentStatusSucceeded ||
+		latest.PaymentStatus == types.PaymentStatusOverpaid
+	return !paid, nil
 }

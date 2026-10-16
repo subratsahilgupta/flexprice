@@ -34,6 +34,9 @@ func NewMeterUsageRepository(store *clickhouse.ClickHouseStore, logger *logger.L
 	}
 }
 
+// insertTimeout caps each batch insert; without it the driver uses the caller's much longer deadline.
+const insertTimeout = 30 * time.Second
+
 // BulkInsertMeterUsage inserts meter usage records in batches of 100
 func (r *MeterUsageRepository) BulkInsertMeterUsage(ctx context.Context, records []*events.MeterUsage) error {
 	span := StartRepositorySpan(ctx, "meter_usage", "bulk_insert", map[string]interface{}{
@@ -49,7 +52,10 @@ func (r *MeterUsageRepository) BulkInsertMeterUsage(ctx context.Context, records
 	batches := lo.Chunk(records, 100)
 
 	for _, batch := range batches {
-		stmt, err := r.store.GetConn().PrepareBatch(ctx, `
+		batchCtx, cancel := context.WithTimeout(ctx, insertTimeout)
+		defer cancel()
+
+		stmt, err := r.store.GetConn().PrepareBatch(batchCtx, `
 			INSERT INTO meter_usage (
 				id, tenant_id, environment_id, external_customer_id, meter_id, event_name,
 				timestamp, qty_total, unique_hash, source, properties, ingested_at
@@ -1077,6 +1083,43 @@ func (r *MeterUsageRepository) GetMeterUsageForExport(ctx context.Context, start
 
 	SetSpanSuccess(span)
 	return results, nil
+}
+
+// CountMeterUsageForExport returns an approximate row count for the export window.
+// Uses count() without FINAL so the gate stays cheap; duplicates may inflate the
+// count slightly, which is acceptable for a fail-fast volume check.
+func (r *MeterUsageRepository) CountMeterUsageForExport(ctx context.Context, startTime, endTime time.Time) (int, error) {
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	span := StartRepositorySpan(ctx, "meter_usage", "count_meter_usage_for_export", map[string]interface{}{
+		"tenant_id":      tenantID,
+		"environment_id": environmentID,
+		"start_time":     startTime,
+		"end_time":       endTime,
+	})
+	defer FinishSpan(span)
+
+	query := `
+		SELECT count()
+		FROM meter_usage
+		WHERE tenant_id = ?
+		  AND environment_id = ?
+		  AND timestamp >= ?
+		  AND timestamp < ?
+		SETTINGS max_memory_usage = 96636764160
+	`
+
+	var count uint64
+	if err := r.store.GetConn().QueryRow(ctx, query, tenantID, environmentID, startTime, endTime).Scan(&count); err != nil {
+		SetSpanError(span, err)
+		return 0, ierr.WithError(err).
+			WithHint("Failed to count meter_usage rows for export").
+			Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return int(count), nil
 }
 
 // GetDailyUsageByMeter returns per-day SUM(qty_total) over

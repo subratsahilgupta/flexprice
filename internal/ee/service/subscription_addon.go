@@ -6,24 +6,11 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
-	domainCheckout "github.com/flexprice/flexprice/internal/domain/checkout"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 )
-
-// pendingAddAddonCheckoutSessions returns EVERY open addon checkout on the subscription.
-// A scan for one association has to see all of them, not whichever row came back first.
-func pendingAddAddonCheckoutSessions(
-	ctx context.Context,
-	sp ServiceParams,
-	customerID string,
-	subscriptionID string,
-) ([]*domainCheckout.CheckoutSession, error) {
-	return sp.CheckoutSessionRepo.List(ctx,
-		pendingCheckoutSessionFilter(customerID, subscriptionID, types.CheckoutActionAddAddon))
-}
 
 // pendingCheckoutSessionForAssociation reports whether an outstanding checkout already gates this
 // association's removal. In a mixed batch the association stays active while the session is open,
@@ -33,19 +20,18 @@ func (s *subscriptionService) pendingCheckoutSessionForAssociation(
 	sub *subscription.Subscription,
 	associationID string,
 ) (bool, error) {
-	sessions, err := pendingAddAddonCheckoutSessions(ctx, s.ServiceParams, sub.CustomerID, sub.ID)
+	sessions, err := pendingCheckoutSessions(ctx, s.ServiceParams, sub.ID)
 	if err != nil {
 		return false, err
 	}
 
 	for _, session := range sessions {
 		cfg := session.Configuration.ToCheckoutConfiguration()
-		if cfg.AddAddonParams == nil {
-			continue
-		}
-		for _, ref := range cfg.AddAddonParams.Removes {
-			if ref.AssociationID == associationID {
-				return true, nil
+		for _, params := range cfg.AddAddonEntries() {
+			for _, ref := range params.Removes {
+				if ref.AssociationID == associationID {
+					return true, nil
+				}
 			}
 		}
 	}
@@ -61,10 +47,6 @@ func (s *subscriptionService) pendingCheckoutSessionForAssociation(
 // settling is finalizeCheckoutInvoiceAndPayment's job. Credit-grant proration is not
 // suppressed, so grants scale exactly as they would have pay-later.
 func (s *subscriptionService) applyAddAddonCheckoutParams(ctx context.Context, params *types.AddAddonParams) error {
-	if err := params.Validate(); err != nil {
-		return err
-	}
-
 	return s.DB.WithTx(ctx, func(ctx context.Context) error {
 		sub, err := s.loadSubscriptionForChange(ctx, params.SubscriptionID, true)
 		if err != nil {
@@ -192,6 +174,7 @@ func (s *subscriptionService) replayAddonChangeRequest(
 				StartDate:         lo.ToPtr(ref.StartDate),
 				ProrationBehavior: ref.ProrationBehavior,
 				Metadata:          association.Metadata,
+				CouponRefs:        ref.Coupons,
 			},
 			Existing: association,
 		})

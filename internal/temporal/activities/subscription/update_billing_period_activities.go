@@ -3,7 +3,6 @@ package subscription
 import (
 	"context"
 	"fmt"
-	"math/rand" // nosemgrep: go.lang.security.audit.crypto.math_random.math-random-used -- jitter, not security-sensitive
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -152,6 +151,10 @@ func (s *BillingActivities) CreateDraftInvoicesActivity(
 			return nil, fmt.Errorf("CreateDraftInvoiceForSubscription returned nil for subscription %s period %s-%s",
 				input.SubscriptionID, period.Start, period.End)
 		}
+		// A paused period's invoice is final as SKIPPED and has nothing left to process.
+		if types.InvoiceBillingReason(draft.BillingReason) == types.InvoiceBillingReasonSubscriptionPaused {
+			continue
+		}
 		invoices = append(invoices, draft.ID)
 	}
 
@@ -256,6 +259,9 @@ func (s *BillingActivities) advanceGroupedInvoicingChildrenPeriod(
 	return nil
 }
 
+// Lets late-arriving events and pipeline lag settle.
+const processInvoiceStartDelay = 1 * time.Hour
+
 // TriggerInvoiceWorkflowActivity triggers invoice workflows for each invoice (fire-and-forget)
 // If triggering fails for any invoice, it logs the error and continues with the rest
 func (s *BillingActivities) TriggerInvoiceWorkflowActivity(
@@ -289,7 +295,7 @@ func (s *BillingActivities) TriggerInvoiceWorkflowActivity(
 				EnvironmentID: input.EnvironmentID,
 				UserID:        input.UserID,
 			},
-			900+rand.Intn(300), // #nosec G404 -- jitter, not security-sensitive
+			int(processInvoiceStartDelay/time.Second),
 		)
 		if err != nil {
 			s.logger.Error(ctx, "failed to trigger invoice workflow",
@@ -359,6 +365,13 @@ func (s *BillingActivities) CheckCancellationActivity(
 
 	// Perform cancellation if required
 	if shouldCancel {
+		// A subscription that reaches its end date while paused ends its pause with it.
+		var endedPauseID *string
+		if sub.SubscriptionStatus == types.SubscriptionStatusPaused {
+			endedPauseID = sub.ActivePauseID
+			sub.PauseStatus = types.PauseStatusNone
+			sub.ActivePauseID = nil
+		}
 		sub.SubscriptionStatus = types.SubscriptionStatusCancelled
 		sub.CancelledAt = cancelledAt
 		subscriptionService := service.NewSubscriptionService(s.serviceParams)
@@ -367,6 +380,17 @@ func (s *BillingActivities) CheckCancellationActivity(
 			// Update subscription
 			if err := s.serviceParams.SubRepo.Update(ctx, sub); err != nil {
 				return err
+			}
+
+			if endedPauseID != nil {
+				pause, err := s.serviceParams.SubRepo.GetPause(ctx, *endedPauseID)
+				if err != nil {
+					return err
+				}
+				pause.PauseStatus = types.PauseStatusCompleted
+				if err := s.serviceParams.SubRepo.UpdatePause(ctx, pause); err != nil {
+					return err
+				}
 			}
 
 			// Terminate line items, addon associations, and credit grants now that the

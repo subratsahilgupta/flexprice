@@ -268,7 +268,7 @@ func (s *temporalService) RegisterWorkflow(taskQueue types.TemporalTaskQueue, wo
 			Mark(errors.ErrValidation)
 	}
 
-	options := s.buildWorkerOptions()
+	options := s.buildWorkerOptions(taskQueue)
 
 	w, err := s.workerManager.GetOrCreateWorker(taskQueue, options)
 	if err != nil {
@@ -293,7 +293,7 @@ func (s *temporalService) RegisterActivity(taskQueue types.TemporalTaskQueue, ac
 			Mark(errors.ErrValidation)
 	}
 
-	options := s.buildWorkerOptions()
+	options := s.buildWorkerOptions(taskQueue)
 
 	w, err := s.workerManager.GetOrCreateWorker(taskQueue, options)
 	if err != nil {
@@ -327,8 +327,9 @@ func (s *temporalService) StopWorker(taskQueue types.TemporalTaskQueue) error {
 	return s.workerManager.StopWorker(taskQueue)
 }
 
-// buildWorkerOptions creates worker options from config with interceptors
-func (s *temporalService) buildWorkerOptions() *models.WorkerOptions {
+// buildWorkerOptions creates worker options for a task queue, applying global
+// config then that queue's overrides, with interceptors.
+func (s *temporalService) buildWorkerOptions(taskQueue types.TemporalTaskQueue) *models.WorkerOptions {
 	options := models.DefaultWorkerOptions()
 
 	// Apply config overrides (0 values mean use defaults)
@@ -345,17 +346,34 @@ func (s *temporalService) buildWorkerOptions() *models.WorkerOptions {
 		options.TaskQueueActivitiesPerSecond = s.workerConfig.TaskQueueActivitiesPerSecond
 	}
 
+	if q, ok := s.workerConfig.Queues[taskQueue.String()]; ok {
+		if q.MaxConcurrentActivityExecutionSize > 0 {
+			options.MaxConcurrentActivityExecutionSize = q.MaxConcurrentActivityExecutionSize
+		}
+		if q.MaxConcurrentWorkflowTaskExecutionSize > 0 {
+			options.MaxConcurrentWorkflowTaskExecutionSize = q.MaxConcurrentWorkflowTaskExecutionSize
+		}
+		if q.WorkerActivitiesPerSecond > 0 {
+			options.WorkerActivitiesPerSecond = q.WorkerActivitiesPerSecond
+		}
+		if q.TaskQueueActivitiesPerSecond > 0 {
+			options.TaskQueueActivitiesPerSecond = q.TaskQueueActivitiesPerSecond
+		}
+	}
+
 	// Add interceptors
 	if s.tracing != nil && s.tracing.IsEnabled() {
 		options.Interceptors = []interceptor.WorkerInterceptor{
 			temporalInterceptor.NewTracingInterceptor(s.tracing),
 			temporalInterceptor.NewWorkflowTrackingInterceptor(),
 			temporalInterceptor.NewWriterPinInterceptor(),
+			temporalInterceptor.NewActorInterceptor(),
 		}
 	} else {
 		options.Interceptors = []interceptor.WorkerInterceptor{
 			temporalInterceptor.NewWorkflowTrackingInterceptor(),
 			temporalInterceptor.NewWriterPinInterceptor(),
+			temporalInterceptor.NewActorInterceptor(),
 		}
 	}
 
@@ -562,6 +580,10 @@ func (s *temporalService) extractWorkflowContextID(workflowType types.TemporalWo
 		if input, ok := params.(models.MarketplaceSubscriptionFinalUsageFlushWorkflowInput); ok {
 			return input.SubscriptionID
 		}
+	case types.TemporalAddonPriceSyncWorkflow:
+		if input, ok := params.(models.AddonPriceSyncWorkflowInput); ok {
+			return input.AddonID
+		}
 	case types.TemporalRecalculateInvoiceWorkflow:
 		// Extract invoice ID from RecalculateInvoiceWorkflowInput
 		if input, ok := params.(invoiceModels.RecalculateInvoiceWorkflowInput); ok {
@@ -635,6 +657,8 @@ func (s *temporalService) buildWorkflowInput(ctx context.Context, workflowType t
 	switch workflowType {
 	case types.TemporalPriceSyncWorkflow, types.TemporalPriceSyncV2Workflow:
 		return s.buildPriceSyncInput(ctx, tenantID, environmentID, userID, params)
+	case types.TemporalAddonPriceSyncWorkflow:
+		return s.buildAddonPriceSyncInput(ctx, tenantID, environmentID, userID, params)
 	case types.TemporalQuickBooksPriceSyncWorkflow:
 		return s.buildQuickBooksPriceSyncInput(ctx, tenantID, environmentID, userID, params)
 	case types.TemporalTaskProcessingWorkflow:
@@ -734,6 +758,30 @@ func (s *temporalService) buildPriceSyncInput(_ context.Context, tenantID, envir
 
 	return models.PriceSyncWorkflowInput{
 		PlanID:        planID,
+		TenantID:      tenantID,
+		EnvironmentID: environmentID,
+		UserID:        userID,
+	}, nil
+}
+
+// buildAddonPriceSyncInput builds input for the addon usage-price sync workflow
+func (s *temporalService) buildAddonPriceSyncInput(_ context.Context, tenantID, environmentID, userID string, params interface{}) (interface{}, error) {
+	if input, ok := params.(models.AddonPriceSyncWorkflowInput); ok {
+		input.TenantID = tenantID
+		input.EnvironmentID = environmentID
+		input.UserID = userID
+		return input, nil
+	}
+
+	addonID, ok := params.(string)
+	if !ok || addonID == "" {
+		return nil, errors.NewError("addon ID is required").
+			WithHint("Provide addon ID as string or AddonPriceSyncWorkflowInput").
+			Mark(errors.ErrValidation)
+	}
+
+	return models.AddonPriceSyncWorkflowInput{
+		AddonID:       addonID,
 		TenantID:      tenantID,
 		EnvironmentID: environmentID,
 		UserID:        userID,

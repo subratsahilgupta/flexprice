@@ -22,6 +22,112 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/activity": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use when you need the audit trail of changes to billing entities: who changed what, when, from where. Filter by entity, customer, actor, action or request; pages are newest first.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Activity"
+                ],
+                "summary": "List activity",
+                "operationId": "listActivity",
+                "parameters": [
+                    {
+                        "description": "Filters",
+                        "name": "filter",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ListActivityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ListActivityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "read"
+            }
+        },
+        "/activity/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use when you need one activity entry with the state of the entity right after the change.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Activity"
+                ],
+                "summary": "Get activity",
+                "operationId": "getActivity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Activity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ActivityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid activity id",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Activity not found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/addons": {
             "post": {
                 "security": [
@@ -421,6 +527,68 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/addons/{id}/sync/subscriptions": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use when you have changed an addon's usage charges and need to push them to all active subscriptions holding the addon. Returns workflow ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Addons"
+                ],
+                "summary": "Synchronize addon prices",
+                "operationId": "syncAddonPrices",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Addon ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.TemporalWorkflowResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/errors.ErrorResponse"
                         }
@@ -4490,6 +4658,270 @@ const docTemplate = `{
                 "x-scope": "write"
             }
         },
+        "/forex": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Configure a fixed exchange rate at tenant, customer or subscription scope. Overrides need a tenant rate for the same pair.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "FX Rates"
+                ],
+                "summary": "Create an FX rate",
+                "operationId": "createFXRate",
+                "parameters": [
+                    {
+                        "description": "FX rate to create",
+                        "name": "fx_rate",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/CreateFXRateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/FXRateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/forex/query": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Filter FX rates via a request body (POST used for a complex query, but read-only).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "FX Rates"
+                ],
+                "summary": "Query FX rates",
+                "operationId": "queryFXRates",
+                "parameters": [
+                    {
+                        "description": "Filter",
+                        "name": "filter",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/types.FXRateFilter"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ListFXRatesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "read"
+            }
+        },
+        "/forex/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Load a single FX rate by ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "FX Rates"
+                ],
+                "summary": "Get an FX rate",
+                "operationId": "getFXRate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "FX rate ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/FXRateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Update a rate's value, validity window (overrides only) or metadata. Scope, scope_id and the currency pair are immutable.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "FX Rates"
+                ],
+                "summary": "Update an FX rate",
+                "operationId": "updateFXRate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "FX rate ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "FX rate fields to update",
+                        "name": "fx_rate",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/UpdateFXRateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/FXRateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Archive a customer or subscription override. Tenant rates cannot be deleted.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "FX Rates"
+                ],
+                "summary": "Delete an FX rate",
+                "operationId": "deleteFXRate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "FX rate ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "delete"
+            }
+        },
         "/groups": {
             "post": {
                 "security": [
@@ -8300,6 +8732,47 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Filter by subscription IDs",
+                        "name": "subscription_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "enum": [
+                                "plan_change",
+                                "cancellation"
+                            ],
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Filter by schedule type",
+                        "name": "schedule_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "enum": [
+                                "pending",
+                                "executing",
+                                "executed",
+                                "cancelled",
+                                "failed"
+                            ],
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Filter by schedule status",
+                        "name": "schedule_status",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "Limit results",
                         "name": "limit",
@@ -9350,6 +9823,136 @@ const docTemplate = `{
                     }
                 },
                 "x-scope": "read"
+            }
+        },
+        "/subscriptions/{id}/pause": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use when a customer stops temporarily. Pauses an active subscription now: usage and arrear fixed charges up to the pause are billed on a closing invoice, and every paused period after it gets a $0 skipped invoice.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Pause subscription",
+                "operationId": "pauseSubscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Subscription ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Pause subscription request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/PauseSubscriptionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/PauseSubscriptionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/subscriptions/{id}/resume": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use when a paused customer comes back. Resumes a paused subscription now on its existing billing anchor: the first period runs from the resume to the next billing date and its advance charges are invoiced at once.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Resume subscription",
+                "operationId": "resumeSubscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Subscription ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Resume subscription request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ResumeSubscriptionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ResumeSubscriptionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/subscriptions/{id}/schedules": {
@@ -12699,6 +13302,52 @@ const docTemplate = `{
                 }
             }
         },
+        "/webhook-events/invoice.sync.failed": {
+            "post": {
+                "description": "Fired once per provider when an invoice sync fails after its last retry.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhook Events"
+                ],
+                "summary": "invoice.sync.failed",
+                "responses": {
+                    "200": {
+                        "description": "Webhook payload",
+                        "schema": {
+                            "$ref": "#/definitions/webhookDto.InvoiceSyncWebhookPayload"
+                        }
+                    }
+                }
+            }
+        },
+        "/webhook-events/invoice.sync.success": {
+            "post": {
+                "description": "Fired once per provider when an invoice is synced to that provider.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhook Events"
+                ],
+                "summary": "invoice.sync.success",
+                "responses": {
+                    "200": {
+                        "description": "Webhook payload",
+                        "schema": {
+                            "$ref": "#/definitions/webhookDto.InvoiceSyncWebhookPayload"
+                        }
+                    }
+                }
+            }
+        },
         "/webhook-events/invoice.update": {
             "post": {
                 "description": "Fired when an invoice is updated. ` + "`" + `invoice.line_items` + "`" + ` omits line items with neither an amount nor a quantity (period fan-out emits one per window whether or not usage landed in it), and ` + "`" + `invoice.subscription.plan.prices` + "`" + ` carries only the prices this invoice references, not the plan's full catalogue. Doc-only for parsing.",
@@ -14381,6 +15030,47 @@ const docTemplate = `{
                 }
             }
         },
+        "customer.ContactPerson": {
+            "type": "object",
+            "required": [
+                "first_name"
+            ],
+            "properties": {
+                "department": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "designation": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "email": {
+                    "type": "string"
+                },
+                "first_name": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_primary": {
+                    "type": "boolean"
+                },
+                "last_name": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "mobile": {
+                    "type": "string",
+                    "maxLength": 20
+                },
+                "salutation": {
+                    "type": "string",
+                    "maxLength": 25
+                }
+            }
+        },
         "AWSMarketplaceAgreement": {
             "type": "object",
             "required": [
@@ -14424,6 +15114,86 @@ const docTemplate = `{
                 }
             }
         },
+        "ActivityActor": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "ActivityEntity": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "ActivityPagination": {
+            "type": "object",
+            "properties": {
+                "has_more": {
+                    "type": "boolean"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "next_cursor": {
+                    "type": "string"
+                }
+            }
+        },
+        "ActivityResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "actor": {
+                    "$ref": "#/definitions/ActivityActor"
+                },
+                "customer_id": {
+                    "type": "string"
+                },
+                "entity": {
+                    "$ref": "#/definitions/ActivityEntity"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "occurred_at": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "object"
+                },
+                "user_agent": {
+                    "type": "string"
+                }
+            }
+        },
         "AddAddonRequest": {
             "type": "object",
             "required": [
@@ -14447,6 +15217,13 @@ const docTemplate = `{
                 },
                 "checkout": {
                     "$ref": "#/definitions/CheckoutParams"
+                },
+                "coupons": {
+                    "description": "Coupons apply to this addon's line items; price_id targets one price, omitted targets all.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/SubscriptionCouponInput"
+                    }
                 },
                 "line_item_commitments": {
                     "description": "LineItemCommitments allows setting commitment configuration per addon line item (keyed by price_id)",
@@ -14496,6 +15273,13 @@ const docTemplate = `{
                             "$ref": "#/definitions/types.ScheduleType"
                         }
                     ]
+                },
+                "coupons": {
+                    "description": "Coupons apply to this addon's line items; price_id targets one price, omitted targets all.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/SubscriptionCouponInput"
+                    }
                 },
                 "line_item_commitments": {
                     "description": "LineItemCommitments allows setting commitment configuration per addon line item (keyed by price_id)",
@@ -14574,6 +15358,10 @@ const docTemplate = `{
                 },
                 "status": {
                     "$ref": "#/definitions/types.Status"
+                },
+                "synced_price_sequence": {
+                    "description": "SyncedPriceSequence is the addon price sequence this association's line items\nhave been reconciled up to. Written only by the addon usage-price sync.",
+                    "type": "integer"
                 },
                 "tenant_id": {
                     "type": "string"
@@ -14666,6 +15454,10 @@ const docTemplate = `{
                 "subscription": {
                     "$ref": "#/definitions/SubscriptionResponse"
                 },
+                "synced_price_sequence": {
+                    "description": "SyncedPriceSequence is the addon price sequence this association's line items\nhave been reconciled up to. Written only by the addon usage-price sync.",
+                    "type": "integer"
+                },
                 "tenant_id": {
                     "type": "string"
                 },
@@ -14674,6 +15466,20 @@ const docTemplate = `{
                 },
                 "updated_by": {
                     "type": "string"
+                }
+            }
+        },
+        "AddonPriceSyncStatusResponse": {
+            "type": "object",
+            "properties": {
+                "current_sequence": {
+                    "type": "integer"
+                },
+                "synced": {
+                    "type": "boolean"
+                },
+                "unsynced_association_count": {
+                    "type": "integer"
                 }
             }
         },
@@ -14716,6 +15522,14 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "price_sync_status": {
+                    "description": "PriceSyncStatus reports how many associations are still behind this addon's\ncurrent usage-price sequence. Only populated on GetAddons when\n` + "`" + `expand=price_sync_status` + "`" + ` is requested.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/AddonPriceSyncStatusResponse"
+                        }
+                    ]
                 },
                 "prices": {
                     "description": "Optional expanded fields",
@@ -15271,7 +16085,7 @@ const docTemplate = `{
                     "description": "CancelAt is the exact date/time when the subscription should be cancelled.\nRequired for cancellation_type \"scheduled_date\"; optional for \"immediate\" (past dates only — backdated cancellation).\nFor \"scheduled_date\", accepts both future dates (deferred cancellation) and past dates (backdated cancellation).\nFor \"immediate\", accepts past/current dates only; use \"scheduled_date\" for future dates.",
                     "type": "string"
                 },
-                "cancel_immediately_inovice_policy": {
+                "cancel_immediately_invoice_policy": {
                     "description": "CancelImmediatelyInvoicePolicy controls whether to generate a final invoice on immediate cancellation. Defaults to skip.",
                     "allOf": [
                         {
@@ -15373,6 +16187,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "start_date": {
+                    "type": "string"
+                },
+                "subscription_id": {
                     "type": "string"
                 }
             }
@@ -15493,6 +16310,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "start_date": {
+                    "type": "string"
+                },
+                "subscription_id": {
                     "type": "string"
                 }
             }
@@ -15815,6 +16635,14 @@ const docTemplate = `{
                 }
             }
         },
+        "ConfigurationDetails": {
+            "type": "object",
+            "properties": {
+                "plan_change": {
+                    "$ref": "#/definitions/PlanChangeScheduleDetails"
+                }
+            }
+        },
         "CostAnalyticItem": {
             "type": "object",
             "properties": {
@@ -15842,7 +16670,7 @@ const docTemplate = `{
                     "description": "Expanded data (populated when expand options are specified)",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/meter.Meter"
+                            "$ref": "#/definitions/Meter"
                         }
                     ]
                 },
@@ -16254,6 +17082,14 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "price_sync_status": {
+                    "description": "PriceSyncStatus reports how many associations are still behind this addon's\ncurrent usage-price sequence. Only populated on GetAddons when\n` + "`" + `expand=price_sync_status` + "`" + ` is requested.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/AddonPriceSyncStatusResponse"
+                        }
+                    ]
+                },
                 "prices": {
                     "description": "Optional expanded fields",
                     "type": "array",
@@ -16574,6 +17410,14 @@ const docTemplate = `{
                 "priority": {
                     "type": "integer"
                 },
+                "proration_behavior": {
+                    "description": "ProrationBehavior applies to SUBSCRIPTION scope only. create_prorations scales the first\napplication to the rest of the current billing period and puts later ones on the\nsubscription's billing dates, when the grant recurs on the subscription's billing period.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ProrationBehavior"
+                        }
+                    ]
+                },
                 "scope": {
                     "$ref": "#/definitions/types.CreditGrantScope"
                 },
@@ -16716,10 +17560,23 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 100
                 },
+                "billing_currency": {
+                    "description": "billing_currency is the fiat currency invoices are issued in; empty means the charge currency is used as-is",
+                    "type": "string",
+                    "maxLength": 10
+                },
                 "contact": {
                     "description": "contact is an optional contact number for the customer (e.g. phone)",
                     "type": "string",
                     "maxLength": 20
+                },
+                "contact_persons": {
+                    "description": "contact_persons are people at the customer; at most one may be primary",
+                    "type": "array",
+                    "maxItems": 5,
+                    "items": {
+                        "$ref": "#/definitions/customer.ContactPerson"
+                    }
                 },
                 "email": {
                     "description": "email is the customer's email address and must be a valid email format if provided",
@@ -16882,6 +17739,51 @@ const docTemplate = `{
                 "provider_type": {
                     "type": "string",
                     "maxLength": 50
+                }
+            }
+        },
+        "CreateFXRateRequest": {
+            "type": "object",
+            "required": [
+                "from_currency",
+                "scope",
+                "to_currency"
+            ],
+            "properties": {
+                "end_date": {
+                    "type": "string"
+                },
+                "from_currency": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "rate": {
+                    "type": "string"
+                },
+                "scope": {
+                    "$ref": "#/definitions/types.FXRateScope"
+                },
+                "scope_id": {
+                    "type": "string"
+                },
+                "source": {
+                    "description": "Source defaults to \"fixed\". A fixed rate requires ` + "`" + `rate` + "`" + `; a market rate ignores it\n(the value comes from the market-rate integration at conversion time).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FXRateSource"
+                        }
+                    ]
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "to_currency": {
+                    "type": "string"
                 }
             }
         },
@@ -17746,6 +18648,13 @@ const docTemplate = `{
                 },
                 "external_customer_id": {
                     "type": "string"
+                },
+                "fx_rates": {
+                    "description": "FxRates sets subscription-scope rates to the invoicing customer's billing currency, one per\nnon-overlapping window. Rejected when nothing needs converting or the pair has no tenant rate.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/InlineFXRate"
+                    }
                 },
                 "gateway_payment_method_id": {
                     "type": "string"
@@ -18613,9 +19522,19 @@ const docTemplate = `{
                     "description": "AddressState is the state of the customer's address",
                     "type": "string"
                 },
+                "billing_currency": {
+                    "description": "BillingCurrency is the fiat currency invoices are issued in; nil means charge currency is used as-is.",
+                    "type": "string"
+                },
                 "contact": {
                     "description": "Contact is an optional contact number for the customer (e.g. phone)",
                     "type": "string"
+                },
+                "contact_persons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/customer.ContactPerson"
+                    }
                 },
                 "created_at": {
                     "type": "string"
@@ -19137,6 +20056,73 @@ const docTemplate = `{
                 },
                 "type": {
                     "$ref": "#/definitions/SubscriptionModifyType"
+                }
+            }
+        },
+        "ExecutionDetails": {
+            "type": "object",
+            "properties": {
+                "plan_change": {
+                    "$ref": "#/definitions/PlanChangeScheduleResult"
+                }
+            }
+        },
+        "FXRateResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "from_currency": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "rate": {
+                    "type": "string"
+                },
+                "scope": {
+                    "$ref": "#/definitions/types.FXRateScope"
+                },
+                "scope_id": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/types.FXRateSource"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "to_currency": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
                 }
             }
         },
@@ -20020,12 +21006,25 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "add",
-                "remove"
+                "remove",
+                "modify"
             ],
             "x-enum-varnames": [
                 "GroupedInvoicingActionAdd",
-                "GroupedInvoicingActionRemove"
+                "GroupedInvoicingActionRemove",
+                "GroupedInvoicingActionModify"
             ]
+        },
+        "GroupedInvoicingChange": {
+            "type": "object",
+            "properties": {
+                "addon_bulk_params": {
+                    "$ref": "#/definitions/SubModifyBulkAddonParams"
+                },
+                "subscription_id": {
+                    "type": "string"
+                }
+            }
         },
         "GroupedInvoicingChildRequest": {
             "type": "object",
@@ -20194,6 +21193,20 @@ const docTemplate = `{
                 "InheritanceActionRemove"
             ]
         },
+        "InlineFXRate": {
+            "type": "object",
+            "properties": {
+                "end_date": {
+                    "type": "string"
+                },
+                "rate": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                }
+            }
+        },
         "IntegrationConfigEntry": {
             "type": "object",
             "properties": {
@@ -20332,6 +21345,14 @@ const docTemplate = `{
                 },
                 "environment_id": {
                     "type": "string"
+                },
+                "fx_conversion": {
+                    "description": "fx_conversion holds this line's charge-currency amounts from before conversion (charge_currency\nand source only; the rate lives on the invoice). Nil for lines that were never converted.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FxConversion"
+                        }
+                    ]
                 },
                 "id": {
                     "type": "string"
@@ -20614,6 +21635,14 @@ const docTemplate = `{
                     "description": "finalized_at is the timestamp when this invoice was finalized and made ready for payment",
                     "type": "string"
                 },
+                "fx_conversion": {
+                    "description": "fx_conversion is the frozen fiat→fiat conversion applied at finalize; nil when the invoice was never converted.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FxConversion"
+                        }
+                    ]
+                },
                 "id": {
                     "description": "id is the unique identifier for this invoice",
                     "type": "string"
@@ -20799,6 +21828,13 @@ const docTemplate = `{
                     "description": "Amount reprices the charge. Flat fee only for now.",
                     "type": "string"
                 },
+                "coupons": {
+                    "description": "Coupons apply to the new line item created by this change.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/SubscriptionCouponInput"
+                    }
+                },
                 "effective_date": {
                     "type": "string"
                 },
@@ -20907,6 +21943,70 @@ const docTemplate = `{
                 }
             }
         },
+        "ListActivityRequest": {
+            "type": "object",
+            "properties": {
+                "actions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "actor_id": {
+                    "type": "string"
+                },
+                "actor_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "cursor": {
+                    "type": "string"
+                },
+                "customer_id": {
+                    "type": "string"
+                },
+                "end_time": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "expand": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "start_time": {
+                    "type": "string"
+                }
+            }
+        },
+        "ListActivityResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ActivityResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/ActivityPagination"
+                }
+            }
+        },
         "ListAlertLogsResponse": {
             "type": "object",
             "properties": {
@@ -20956,6 +22056,20 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/EntityIntegrationMappingResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                }
+            }
+        },
+        "ListFXRatesResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/FXRateResponse"
                     }
                 },
                 "pagination": {
@@ -21040,7 +22154,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "meter": {
-                    "$ref": "#/definitions/meter.Meter"
+                    "$ref": "#/definitions/Meter"
                 },
                 "meter_id": {
                     "type": "string"
@@ -21284,6 +22398,44 @@ const docTemplate = `{
                 }
             }
         },
+        "PauseSubscriptionRequest": {
+            "description": "Pauses an active subscription now. Usage and arrear fixed charges up to the pause are billed on a closing invoice.",
+            "type": "object",
+            "properties": {
+                "metadata": {
+                    "description": "Metadata stored on the pause\n@Example {\"requested_by\": \"customer\", \"channel\": \"support_ticket\"}",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "proration_behavior": {
+                    "description": "ProrationBehavior controls proration on the closing invoice. Defaults to none.\n@Description none bills arrear fixed charges for the full period and gives no credit. create_prorations bills arrear fixed charges for the used part of the period and credits the unused part of advance fixed charges to the wallet.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ProrationBehavior"
+                        }
+                    ]
+                },
+                "reason": {
+                    "description": "Reason for pausing the subscription\n@Description Optional reason for the pause. Maximum 255 characters\n@Example \"Customer requested temporary suspension\"",
+                    "type": "string",
+                    "maxLength": 255
+                }
+            }
+        },
+        "PauseSubscriptionResponse": {
+            "description": "The paused subscription and its pause",
+            "type": "object",
+            "properties": {
+                "pause": {
+                    "$ref": "#/definitions/SubscriptionPauseResponse"
+                },
+                "subscription": {
+                    "$ref": "#/definitions/SubscriptionResponse"
+                }
+            }
+        },
         "PaymentAttemptResponse": {
             "type": "object",
             "properties": {
@@ -21421,6 +22573,44 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "voided_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "PlanChangeScheduleDetails": {
+            "type": "object",
+            "properties": {
+                "billing_period_behaviour": {
+                    "$ref": "#/definitions/types.BillingPeriodBehaviour"
+                },
+                "entity_policies": {
+                    "$ref": "#/definitions/SubscriptionChangeEntityPolicies"
+                },
+                "target_plan_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "PlanChangeScheduleResult": {
+            "type": "object",
+            "properties": {
+                "change_type": {
+                    "type": "string"
+                },
+                "effective_date": {
+                    "type": "string"
+                },
+                "from_plan_id": {
+                    "type": "string"
+                },
+                "previous_subscription_id": {
+                    "description": "previous_subscription_id is set when the change replaced the subscription with a new one",
+                    "type": "string"
+                },
+                "subscription_id": {
+                    "type": "string"
+                },
+                "to_plan_id": {
                     "type": "string"
                 }
             }
@@ -22130,6 +23320,39 @@ const docTemplate = `{
                 }
             }
         },
+        "ResumeSubscriptionRequest": {
+            "description": "Resumes a paused subscription now. The billing anchor is kept, so the first period runs from the resume time to the next billing date.",
+            "type": "object",
+            "properties": {
+                "metadata": {
+                    "description": "Metadata merged into the pause\n@Example {\"resumed_by\": \"admin\"}",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "proration_behavior": {
+                    "description": "ProrationBehavior, when sent, is saved on the subscription and prices the period that starts at the resume.\n@Description none bills fixed charges of the first period at the full price. create_prorations bills them for the remaining part of the period. When omitted, the subscription's current proration_behavior is used.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ProrationBehavior"
+                        }
+                    ]
+                }
+            }
+        },
+        "ResumeSubscriptionResponse": {
+            "description": "The resumed subscription and the pause it ended",
+            "type": "object",
+            "properties": {
+                "pause": {
+                    "$ref": "#/definitions/SubscriptionPauseResponse"
+                },
+                "subscription": {
+                    "$ref": "#/definitions/SubscriptionResponse"
+                }
+            }
+        },
         "RevenueAnalyticsRequest": {
             "type": "object",
             "required": [
@@ -22607,12 +23830,19 @@ const docTemplate = `{
             ],
             "properties": {
                 "action": {
-                    "description": "Action specifies whether to add or remove the child subscriptions from grouped invoicing.",
+                    "description": "Action adds or removes child subscriptions, or modifies addons across the group ('modify').",
                     "allOf": [
                         {
                             "$ref": "#/definitions/GroupedInvoicingAction"
                         }
                     ]
+                },
+                "changes": {
+                    "description": "Changes is required for action 'modify'; the path subscription is the parent.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/GroupedInvoicingChange"
+                    }
                 },
                 "child_subscription_ids": {
                     "type": "array",
@@ -23282,7 +24512,7 @@ const docTemplate = `{
                     "description": "Meter is populated when the caller adds \"meters\" to a subscription-scoped\nexpand string alongside \"subscription_line_items\". Only usage line items\n(PriceType == USAGE with a non-empty MeterID) will have a non-nil Meter.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/meter.Meter"
+                            "$ref": "#/definitions/Meter"
                         }
                     ]
                 },
@@ -23398,6 +24628,78 @@ const docTemplate = `{
                 "SubscriptionModifyTypeAddon",
                 "SubscriptionModifyTypeLineItemChange"
             ]
+        },
+        "SubscriptionPauseResponse": {
+            "description": "Response object containing subscription pause information",
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "description": "EnvironmentID is the environment identifier for the pause",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID is the unique identifier for the subscription pause",
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "original_period_end": {
+                    "description": "OriginalPeriodEnd is the end of the billing period when the pause was created",
+                    "type": "string"
+                },
+                "original_period_start": {
+                    "description": "OriginalPeriodStart is the start of the billing period when the pause was created",
+                    "type": "string"
+                },
+                "pause_end": {
+                    "description": "PauseEnd is when the pause will end (null for indefinite)",
+                    "type": "string"
+                },
+                "pause_mode": {
+                    "$ref": "#/definitions/types.PauseMode"
+                },
+                "pause_start": {
+                    "description": "PauseStart is when the pause actually started",
+                    "type": "string"
+                },
+                "pause_status": {
+                    "$ref": "#/definitions/types.PauseStatus"
+                },
+                "reason": {
+                    "description": "Reason is the reason for pausing",
+                    "type": "string"
+                },
+                "resume_mode": {
+                    "$ref": "#/definitions/types.ResumeMode"
+                },
+                "resumed_at": {
+                    "description": "ResumedAt is when the pause was actually ended (if manually resumed)",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "description": "SubscriptionID is the identifier for the subscription",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
         },
         "SubscriptionPhaseCreateRequest": {
             "type": "object",
@@ -24128,9 +25430,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "configuration": {
-                    "description": "configuration contains type-specific configuration (e.g., target_plan_id for plan changes)",
+                    "description": "configuration is the raw type-specific configuration. Deprecated: use configuration_details.",
                     "type": "object",
                     "additionalProperties": true
+                },
+                "configuration_details": {
+                    "description": "configuration_details is the typed counterpart of configuration",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/ConfigurationDetails"
+                        }
+                    ]
                 },
                 "created_at": {
                     "description": "created_at timestamp",
@@ -24148,8 +25458,16 @@ const docTemplate = `{
                     "description": "executed_at is when the schedule was executed",
                     "type": "string"
                 },
+                "execution_details": {
+                    "description": "execution_details is the typed counterpart of execution_result",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/ExecutionDetails"
+                        }
+                    ]
+                },
                 "execution_result": {
-                    "description": "execution_result contains type-specific execution result",
+                    "description": "execution_result is the raw type-specific execution result. Deprecated: use execution_details.",
                     "type": "object",
                     "additionalProperties": true
                 },
@@ -24389,6 +25707,14 @@ const docTemplate = `{
                 "environment_id": {
                     "type": "string"
                 },
+                "external_tax_details": {
+                    "description": "ExternalTaxDetails is what the engine returned about this tax. Null on a native row.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ExternalTaxDetails"
+                        }
+                    ]
+                },
                 "id": {
                     "type": "string"
                 },
@@ -24400,6 +25726,14 @@ const docTemplate = `{
                     "additionalProperties": {
                         "type": "string"
                     }
+                },
+                "provider": {
+                    "description": "Provider is the engine that produced this row. Empty means the native engine.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TaxProvider"
+                        }
+                    ]
                 },
                 "status": {
                     "$ref": "#/definitions/types.Status"
@@ -24417,7 +25751,20 @@ const docTemplate = `{
                     "$ref": "#/definitions/TaxRateResponse"
                 },
                 "tax_rate_id": {
+                    "description": "Null when an external engine calculated the tax: there is no Flexprice rate to point at.",
                     "type": "string"
+                },
+                "tax_transaction_id": {
+                    "description": "TaxTransactionID is the provider transaction recording the filed tax, stamped at commit.",
+                    "type": "string"
+                },
+                "tax_transaction_type": {
+                    "description": "TaxTransactionType is what the provider transaction did. Empty means a filing.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TaxTransactionType"
+                        }
+                    ]
                 },
                 "taxable_amount": {
                     "type": "string"
@@ -24710,6 +26057,17 @@ const docTemplate = `{
                 }
             }
         },
+        "TopUpCoupon": {
+            "type": "object",
+            "required": [
+                "coupon_code"
+            ],
+            "properties": {
+                "coupon_code": {
+                    "type": "string"
+                }
+            }
+        },
         "TopUpWalletRequest": {
             "type": "object",
             "required": [
@@ -24735,6 +26093,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/CheckoutParams"
                         }
                     ]
+                },
+                "coupons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/TopUpCoupon"
+                    }
                 },
                 "credits_to_add": {
                     "description": "credits_to_add is the number of credits to add to the wallet",
@@ -24967,10 +26331,23 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 100
                 },
+                "billing_currency": {
+                    "description": "billing_currency updates the invoicing currency; send \"\" to clear it back to the charge currency",
+                    "type": "string",
+                    "maxLength": 10
+                },
                 "contact": {
                     "description": "contact is the updated contact number for the customer (e.g. phone)",
                     "type": "string",
                     "maxLength": 20
+                },
+                "contact_persons": {
+                    "description": "contact_persons replaces the customer's contact persons when provided; at most one may be primary",
+                    "type": "array",
+                    "maxItems": 5,
+                    "items": {
+                        "$ref": "#/definitions/customer.ContactPerson"
+                    }
                 },
                 "email": {
                     "description": "email is the updated email address and must be a valid email format if provided",
@@ -25054,6 +26431,26 @@ const docTemplate = `{
                 },
                 "usage_reset_period": {
                     "$ref": "#/definitions/types.EntitlementUsageResetPeriod"
+                }
+            }
+        },
+        "UpdateFXRateRequest": {
+            "type": "object",
+            "properties": {
+                "end_date": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "rate": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
                 }
             }
         },
@@ -25420,6 +26817,17 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "price_unit_amount": {
+                    "description": "PriceUnitAmount is the amount for a CUSTOM price unit price (FLAT_FEE/PACKAGE billing models)",
+                    "type": "string"
+                },
+                "price_unit_tiers": {
+                    "description": "PriceUnitTiers are the tiers for a CUSTOM price unit price (TIERED billing model)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/CreatePriceTier"
+                    }
+                },
                 "tier_mode": {
                     "description": "TierMode determines how to calculate the price for a given quantity",
                     "allOf": [
@@ -25452,6 +26860,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "cancel_at_period_end": {
+                    "description": "Pointer so omitting the field leaves the stored value unchanged; sending it sets the flag.",
                     "type": "boolean"
                 },
                 "parent_subscription_id": {
@@ -25506,11 +26915,51 @@ const docTemplate = `{
                 }
             }
         },
+        "UpdateTenantAddress": {
+            "type": "object",
+            "properties": {
+                "address_city": {
+                    "type": "string"
+                },
+                "address_country": {
+                    "type": "string"
+                },
+                "address_line1": {
+                    "type": "string"
+                },
+                "address_line2": {
+                    "type": "string"
+                },
+                "address_postal_code": {
+                    "type": "string"
+                },
+                "address_state": {
+                    "type": "string"
+                }
+            }
+        },
+        "UpdateTenantBillingDetails": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "$ref": "#/definitions/UpdateTenantAddress"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "help_email": {
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
+                }
+            }
+        },
         "UpdateTenantRequest": {
             "type": "object",
             "properties": {
                 "billing_details": {
-                    "$ref": "#/definitions/TenantBillingDetails"
+                    "$ref": "#/definitions/UpdateTenantBillingDetails"
                 },
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
@@ -25698,7 +27147,7 @@ const docTemplate = `{
                     "description": "Full meter object (only if expand includes \"meter\")",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/meter.Meter"
+                            "$ref": "#/definitions/Meter"
                         }
                     ]
                 },
@@ -26211,6 +27660,13 @@ const docTemplate = `{
                 "amount": {
                     "type": "string"
                 },
+                "consumption_breakdown": {
+                    "description": "ConsumptionBreakdown is set on debits: the credits drawn from each credit batch.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.WalletTxConsumption"
+                    }
+                },
                 "conversion_rate": {
                     "description": "conversion_rate is the conversion rate for the transaction to the currency",
                     "type": "string"
@@ -26275,6 +27731,17 @@ const docTemplate = `{
                 },
                 "reference_type": {
                     "$ref": "#/definitions/types.WalletTxReferenceType"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "description": "SourceType/SourceID identify the entity this transaction's value comes from or goes to\n(e.g. an invoice). Empty when there is none.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WalletTxSourceType"
+                        }
+                    ]
                 },
                 "status": {
                     "$ref": "#/definitions/types.Status"
@@ -26543,9 +28010,19 @@ const docTemplate = `{
                     "description": "AddressState is the state of the customer's address",
                     "type": "string"
                 },
+                "billing_currency": {
+                    "description": "BillingCurrency is the fiat currency invoices are issued in; nil means charge currency is used as-is.",
+                    "type": "string"
+                },
                 "contact": {
                     "description": "Contact is an optional contact number for the customer (e.g. phone)",
                     "type": "string"
+                },
+                "contact_persons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/customer.ContactPerson"
+                    }
                 },
                 "created_at": {
                     "type": "string"
@@ -26666,6 +28143,68 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "unit_singular": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "Meter": {
+            "type": "object",
+            "properties": {
+                "aggregation": {
+                    "description": "Aggregation defines the aggregation type and field for the meter\nIt is used to aggregate the events into a single value for calculating the usage",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/meter.Aggregation"
+                        }
+                    ]
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "description": "EnvironmentID is the environment identifier for the meter",
+                    "type": "string"
+                },
+                "event_name": {
+                    "description": "EventName is the unique identifier for the event that this meter is tracking\nIt is a mandatory field in the events table and hence being used as the primary matching field\nWe can have multiple meters tracking the same event but with different filters and aggregation",
+                    "type": "string"
+                },
+                "filters": {
+                    "description": "Filters define the criteria for the meter to be applied on the events before aggregation\nIt also defines the possible values on which later the charges will be applied",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/meter.Filter"
+                    }
+                },
+                "id": {
+                    "description": "ID is the unique identifier for the meter",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is the display name of the meter",
+                    "type": "string"
+                },
+                "reset_usage": {
+                    "description": "ResetUsage defines whether the usage should be reset periodically or not\nFor ex meters tracking total storage used do not get reset but meters tracking\ntotal API requests do.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ResetUsage"
+                        }
+                    ]
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -26864,6 +28403,14 @@ const docTemplate = `{
                 "environment_id": {
                     "type": "string"
                 },
+                "fx_conversion": {
+                    "description": "fx_conversion holds this line's charge-currency amounts from before conversion (charge_currency\nand source only; the rate lives on the invoice). Nil for lines that were never converted.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FxConversion"
+                        }
+                    ]
+                },
                 "id": {
                     "type": "string"
                 },
@@ -26989,68 +28536,6 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
-                }
-            }
-        },
-        "meter.Meter": {
-            "type": "object",
-            "properties": {
-                "aggregation": {
-                    "description": "Aggregation defines the aggregation type and field for the meter\nIt is used to aggregate the events into a single value for calculating the usage",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/meter.Aggregation"
-                        }
-                    ]
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "environment_id": {
-                    "description": "EnvironmentID is the environment identifier for the meter",
-                    "type": "string"
-                },
-                "event_name": {
-                    "description": "EventName is the unique identifier for the event that this meter is tracking\nIt is a mandatory field in the events table and hence being used as the primary matching field\nWe can have multiple meters tracking the same event but with different filters and aggregation",
-                    "type": "string"
-                },
-                "filters": {
-                    "description": "Filters define the criteria for the meter to be applied on the events before aggregation\nIt also defines the possible values on which later the charges will be applied",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/meter.Filter"
-                    }
-                },
-                "id": {
-                    "description": "ID is the unique identifier for the meter",
-                    "type": "string"
-                },
-                "name": {
-                    "description": "Name is the display name of the meter",
-                    "type": "string"
-                },
-                "reset_usage": {
-                    "description": "ResetUsage defines whether the usage should be reset periodically or not\nFor ex meters tracking total storage used do not get reset but meters tracking\ntotal API requests do.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.ResetUsage"
-                        }
-                    ]
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "string"
                 }
             }
         },
@@ -27396,7 +28881,7 @@ const docTemplate = `{
                     "description": "Meter is populated when the caller adds \"meters\" to a subscription-scoped\nexpand string alongside \"subscription_line_items\". Only usage line items\n(PriceType == USAGE with a non-empty MeterID) will have a non-nil Meter.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/meter.Meter"
+                            "$ref": "#/definitions/Meter"
                         }
                     ]
                 },
@@ -27611,6 +29096,12 @@ const docTemplate = `{
                 },
                 "cadence": {
                     "$ref": "#/definitions/types.AddonCadence"
+                },
+                "coupons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.CouponRef"
+                    }
                 },
                 "proration_behavior": {
                     "description": "Needed to prorate the addon's first credit grant.",
@@ -28168,6 +29659,12 @@ const docTemplate = `{
         "types.CheckoutConfiguration": {
             "type": "object",
             "properties": {
+                "add_addon_batch_params": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.AddAddonParams"
+                    }
+                },
                 "add_addon_params": {
                     "$ref": "#/definitions/types.AddAddonParams"
                 },
@@ -28377,6 +29874,26 @@ const docTemplate = `{
                 },
                 "status": {
                     "$ref": "#/definitions/types.Status"
+                }
+            }
+        },
+        "types.CouponRef": {
+            "type": "object",
+            "properties": {
+                "association_id": {
+                    "type": "string"
+                },
+                "coupon_id": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "price_id": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
                 }
             }
         },
@@ -29015,6 +30532,145 @@ const docTemplate = `{
                 }
             }
         },
+        "types.ExternalTaxDetails": {
+            "type": "object",
+            "properties": {
+                "calculation_expires_at": {
+                    "description": "CalculationExpiresAt is when the calculation can no longer be filed, RFC3339.",
+                    "type": "string"
+                },
+                "calculation_id": {
+                    "description": "CalculationID is the provider calculation this row was written from. Commit files it.",
+                    "type": "string"
+                },
+                "display_name": {
+                    "description": "DisplayName is the engine's own name for the tax, such as\n\"Integrated goods and services tax (IGST)\".",
+                    "type": "string"
+                },
+                "jurisdiction": {
+                    "$ref": "#/definitions/types.TaxJurisdiction"
+                },
+                "percentage": {
+                    "description": "Percentage is the resolved rate, such as \"18.0\". This is what was charged, not the\nrate that would apply if the tax were imposed.",
+                    "type": "string"
+                },
+                "reference": {
+                    "description": "Reference is what this row's provider transaction was filed under. It is unique across\nevery transaction on the account, so it is also the only way back to a transaction whose\nid failed to land here.",
+                    "type": "string"
+                },
+                "reversal": {
+                    "description": "Reversal is set only on a row that records tax being un-filed.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TaxReversal"
+                        }
+                    ]
+                },
+                "sourcing": {
+                    "description": "Sourcing is whether the jurisdiction followed the seller's address or the buyer's.",
+                    "type": "string"
+                },
+                "tax_code": {
+                    "description": "TaxCode is the product tax category the engine priced against, such as txcd_10000000.\nIt belongs to the line rather than the rate, so today every row on an invoice carries\nthe account default. It only varies once tax is calculated per line item.",
+                    "type": "string"
+                },
+                "tax_type": {
+                    "description": "TaxType is the tax family, such as vat, igst or sales_tax.",
+                    "type": "string"
+                },
+                "taxability_reason": {
+                    "description": "TaxabilityReason is why the engine charged what it did, such as standard_rated or\nreverse_charge. Recorded, not yet rendered.",
+                    "type": "string"
+                }
+            }
+        },
+        "types.FXRateFilter": {
+            "type": "object",
+            "properties": {
+                "end_time": {
+                    "type": "string"
+                },
+                "expand": {
+                    "type": "string"
+                },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FilterCondition"
+                    }
+                },
+                "from_currency": {
+                    "type": "string"
+                },
+                "fx_rate_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "order": {
+                    "type": "string",
+                    "enum": [
+                        "asc",
+                        "desc"
+                    ]
+                },
+                "scope": {
+                    "$ref": "#/definitions/types.FXRateScope"
+                },
+                "scope_id": {
+                    "type": "string"
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.SortCondition"
+                    }
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "to_currency": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.FXRateScope": {
+            "type": "string",
+            "enum": [
+                "tenant",
+                "customer",
+                "subscription"
+            ],
+            "x-enum-varnames": [
+                "FXRateScopeTenant",
+                "FXRateScopeCustomer",
+                "FXRateScopeSubscription"
+            ]
+        },
+        "types.FXRateSource": {
+            "type": "string",
+            "enum": [
+                "fixed",
+                "market"
+            ],
+            "x-enum-varnames": [
+                "FXRateSourceFixed",
+                "FXRateSourceMarket"
+            ]
+        },
         "types.FactStatus": {
             "type": "string",
             "enum": [
@@ -29195,6 +30851,64 @@ const docTemplate = `{
                 "AFTER"
             ]
         },
+        "types.FxConversion": {
+            "type": "object",
+            "properties": {
+                "billing_currency": {
+                    "description": "BillingCurrency is the currency the invoice was issued in.",
+                    "type": "string"
+                },
+                "charge_currency": {
+                    "description": "ChargeCurrency is the invoice's original (draft) currency.",
+                    "type": "string"
+                },
+                "converted_at": {
+                    "description": "ConvertedAt is when the conversion ran.",
+                    "type": "string"
+                },
+                "rate": {
+                    "description": "Rate is the frozen rate: billing per 1 charge unit.",
+                    "type": "string"
+                },
+                "rate_id": {
+                    "description": "RateID is the fx_rates row used, for reference only; never read again.",
+                    "type": "string"
+                },
+                "scope": {
+                    "description": "Scope is where the rate was resolved: subscription, customer or tenant.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FXRateScope"
+                        }
+                    ]
+                },
+                "source": {
+                    "description": "Source holds the original charge-currency amounts, before tax.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FxConversionSource"
+                        }
+                    ]
+                }
+            }
+        },
+        "types.FxConversionSource": {
+            "type": "object",
+            "properties": {
+                "net": {
+                    "type": "string"
+                },
+                "subtotal": {
+                    "type": "string"
+                },
+                "total_discount": {
+                    "type": "string"
+                },
+                "total_prepaid_credits_applied": {
+                    "type": "string"
+                }
+            }
+        },
         "types.GlobalCustomField": {
             "type": "object",
             "properties": {
@@ -29336,7 +31050,9 @@ const docTemplate = `{
                 "PRORATION",
                 "MANUAL",
                 "AUTO_INVOICE_THRESHOLD",
-                "WALLET_AUTO_TOPUP"
+                "WALLET_AUTO_TOPUP",
+                "SUBSCRIPTION_PAUSED",
+                "SUBSCRIPTION_RESUME"
             ],
             "x-enum-varnames": [
                 "InvoiceBillingReasonSubscriptionCreate",
@@ -29347,7 +31063,9 @@ const docTemplate = `{
                 "InvoiceBillingReasonProration",
                 "InvoiceBillingReasonManual",
                 "InvoiceBillingReasonAutoInvoiceThreshold",
-                "InvoiceBillingReasonWalletAutoTopup"
+                "InvoiceBillingReasonWalletAutoTopup",
+                "InvoiceBillingReasonSubscriptionPaused",
+                "InvoiceBillingReasonSubscriptionResume"
             ]
         },
         "types.InvoiceCadence": {
@@ -29659,6 +31377,12 @@ const docTemplate = `{
                 "amount": {
                     "type": "string"
                 },
+                "coupons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.CouponRef"
+                    }
+                },
                 "effective_date": {
                     "type": "string"
                 },
@@ -29909,7 +31633,9 @@ const docTemplate = `{
                 "45 NET",
                 "60 NET",
                 "75 NET",
-                "90 NET"
+                "90 NET",
+                "END_OF_MONTH",
+                "END_OF_NEXT_MONTH"
             ],
             "x-enum-varnames": [
                 "PaymentTerms15Net",
@@ -29917,7 +31643,9 @@ const docTemplate = `{
                 "PaymentTerms45Net",
                 "PaymentTerms60Net",
                 "PaymentTerms75Net",
-                "PaymentTerms90Net"
+                "PaymentTerms90Net",
+                "PaymentTermsEndOfMonth",
+                "PaymentTermsEndOfNextMonth"
             ]
         },
         "types.PlanFilter": {
@@ -30510,6 +32238,7 @@ const docTemplate = `{
                 "events",
                 "invoice",
                 "credit_topups",
+                "wallet_debits",
                 "credit_usage",
                 "usage_analytics",
                 "revenue_facts"
@@ -30518,6 +32247,7 @@ const docTemplate = `{
                 "ScheduledTaskEntityTypeEvents",
                 "ScheduledTaskEntityTypeInvoice",
                 "ScheduledTaskEntityTypeCreditTopups",
+                "ScheduledTaskEntityTypeWalletDebits",
                 "ScheduledTaskEntityTypeCreditUsage",
                 "ScheduledTaskEntityTypeUsageAnalytics",
                 "ScheduledTaskEntityTypeRevenueFacts"
@@ -31143,11 +32873,47 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "customer_exempt",
-                "no_tax_configured"
+                "no_tax_configured",
+                "reverse_charge",
+                "not_collecting",
+                "not_subject_to_tax",
+                "not_supported"
             ],
             "x-enum-varnames": [
                 "TaxExemptionReasonCustomerExempt",
-                "TaxExemptionReasonNoTaxConfigured"
+                "TaxExemptionReasonNoTaxConfigured",
+                "TaxExemptionReasonReverseCharge",
+                "TaxExemptionReasonNotCollecting",
+                "TaxExemptionReasonNotSubjectToTax",
+                "TaxExemptionReasonNotSupported"
+            ]
+        },
+        "types.TaxJurisdiction": {
+            "type": "object",
+            "properties": {
+                "country": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "level": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.TaxProvider": {
+            "type": "string",
+            "enum": [
+                "flexprice",
+                "stripe"
+            ],
+            "x-enum-varnames": [
+                "TaxProviderFlexprice",
+                "TaxProviderStripe"
             ]
         },
         "types.TaxRateEntityType": {
@@ -31156,13 +32922,15 @@ const docTemplate = `{
                 "customer",
                 "subscription",
                 "invoice",
-                "tenant"
+                "tenant",
+                "credit_note"
             ],
             "x-enum-varnames": [
                 "TaxRateEntityTypeCustomer",
                 "TaxRateEntityTypeSubscription",
                 "TaxRateEntityTypeInvoice",
-                "TaxRateEntityTypeTenant"
+                "TaxRateEntityTypeTenant",
+                "TaxRateEntityTypeCreditNote"
             ]
         },
         "types.TaxRateScope": {
@@ -31196,6 +32964,39 @@ const docTemplate = `{
             ],
             "x-enum-varnames": [
                 "TaxRateTypePercentage"
+            ]
+        },
+        "types.TaxReversal": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "$ref": "#/definitions/types.TaxReversalMode"
+                },
+                "original_transaction": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.TaxReversalMode": {
+            "type": "string",
+            "enum": [
+                "full",
+                "partial"
+            ],
+            "x-enum-varnames": [
+                "TaxReversalModeFull",
+                "TaxReversalModePartial"
+            ]
+        },
+        "types.TaxTransactionType": {
+            "type": "string",
+            "enum": [
+                "filing",
+                "reversal"
+            ],
+            "x-enum-varnames": [
+                "TaxTransactionTypeFiling",
+                "TaxTransactionTypeReversal"
             ]
         },
         "types.TaxTreatment": {
@@ -31673,6 +33474,17 @@ const docTemplate = `{
                 }
             }
         },
+        "types.WalletTxConsumption": {
+            "type": "object",
+            "properties": {
+                "credit_transaction_id": {
+                    "type": "string"
+                },
+                "credits": {
+                    "type": "string"
+                }
+            }
+        },
         "types.WalletTxReferenceType": {
             "type": "string",
             "enum": [
@@ -31686,6 +33498,15 @@ const docTemplate = `{
                 "WalletTxReferenceTypeExternal",
                 "WalletTxReferenceTypeRequest",
                 "WalletTxReferenceTypeInvoice"
+            ]
+        },
+        "types.WalletTxSourceType": {
+            "type": "string",
+            "enum": [
+                "INVOICE"
+            ],
+            "x-enum-varnames": [
+                "WalletTxSourceTypeInvoice"
             ]
         },
         "types.WalletType": {
@@ -31741,6 +33562,8 @@ const docTemplate = `{
                 "invoice.update.voided",
                 "invoice.update",
                 "invoice.payment.overdue",
+                "invoice.sync.success",
+                "invoice.sync.failed",
                 "wallet.credit_balance.dropped",
                 "wallet.credit_balance.recovered",
                 "wallet.ongoing_balance.dropped",
@@ -31803,6 +33626,8 @@ const docTemplate = `{
                 "WebhookEventInvoiceUpdateVoided",
                 "WebhookEventInvoiceUpdate",
                 "WebhookEventInvoicePaymentOverdue",
+                "WebhookEventInvoiceSyncSuccess",
+                "WebhookEventInvoiceSyncFailed",
                 "WebhookEventWalletCreditBalanceDropped",
                 "WebhookEventWalletCreditBalanceRecovered",
                 "WebhookEventWalletOngoingBalanceDropped",
@@ -32352,6 +34177,14 @@ const docTemplate = `{
                 "finalized_at": {
                     "type": "string"
                 },
+                "fx_conversion": {
+                    "description": "fx_conversion is the frozen fiat→fiat conversion snapshot; nil when the invoice was never converted.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FxConversion"
+                        }
+                    ]
+                },
                 "id": {
                     "type": "string"
                 },
@@ -32453,6 +34286,14 @@ const docTemplate = `{
                 "entity_type": {
                     "type": "string"
                 },
+                "fx_conversion": {
+                    "description": "fx_conversion holds the line's pre-conversion charge amounts; nil on non-converted invoices.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FxConversion"
+                        }
+                    ]
+                },
                 "id": {
                     "type": "string"
                 },
@@ -32500,6 +34341,23 @@ const docTemplate = `{
                 },
                 "subscription_line_item_id": {
                     "type": "string"
+                }
+            }
+        },
+        "webhookDto.InvoiceSyncWebhookPayload": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "event_type": {
+                    "$ref": "#/definitions/types.WebhookEventName"
+                },
+                "invoice": {
+                    "$ref": "#/definitions/webhookDto.Invoice"
+                },
+                "provider_details": {
+                    "$ref": "#/definitions/webhookDto.ProviderDetails"
                 }
             }
         },
@@ -32689,6 +34547,20 @@ const docTemplate = `{
                 },
                 "type": {
                     "$ref": "#/definitions/types.PriceType"
+                }
+            }
+        },
+        "webhookDto.ProviderDetails": {
+            "type": "object",
+            "properties": {
+                "hosted_invoice_url": {
+                    "type": "string"
+                },
+                "invoice_id": {
+                    "type": "string"
+                },
+                "provider": {
+                    "$ref": "#/definitions/types.SecretProvider"
                 }
             }
         },
@@ -33048,6 +34920,14 @@ const docTemplate = `{
                 "currency": {
                     "type": "string"
                 },
+                "external_tax_details": {
+                    "description": "ExternalTaxDetails carries the name, code, rate and jurisdiction an external engine\nresolved. An external row points at no Flexprice rate, so this is the only description\nof what was charged.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ExternalTaxDetails"
+                        }
+                    ]
+                },
                 "id": {
                     "type": "string"
                 },
@@ -33056,6 +34936,14 @@ const docTemplate = `{
                     "additionalProperties": {
                         "type": "string"
                     }
+                },
+                "provider": {
+                    "description": "Provider names the engine that produced this row. Empty means the native engine, which\nis what tells a subscriber an empty tax_rate_id is external rather than missing data.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TaxProvider"
+                        }
+                    ]
                 },
                 "tax_amount": {
                     "type": "string"
@@ -33068,6 +34956,14 @@ const docTemplate = `{
                 },
                 "tax_rate_id": {
                     "type": "string"
+                },
+                "tax_transaction_type": {
+                    "description": "TaxTransactionType is empty for a filing and reversal for tax being un-filed. A reversal\nis not a tax the invoice carries, so a subscriber totalling tax must skip it.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TaxTransactionType"
+                        }
+                    ]
                 },
                 "taxable_amount": {
                     "type": "string"
@@ -33177,6 +35073,12 @@ const docTemplate = `{
                 "amount": {
                     "type": "string"
                 },
+                "consumption_breakdown": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.WalletTxConsumption"
+                    }
+                },
                 "credit_amount": {
                     "type": "string"
                 },
@@ -33209,6 +35111,12 @@ const docTemplate = `{
                 },
                 "reference_type": {
                     "$ref": "#/definitions/types.WalletTxReferenceType"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "$ref": "#/definitions/types.WalletTxSourceType"
                 },
                 "transaction_reason": {
                     "$ref": "#/definitions/types.TransactionReason"

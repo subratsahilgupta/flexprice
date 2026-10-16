@@ -38,6 +38,8 @@ const (
 	SettingKeyWalletTopupConfig           SettingKey = "wallet_topup_config"
 	SettingKeyCustomCurrencyConfig        SettingKey = "custom_currency_config"
 	SettingKeyRevenueAnalyticsConfig      SettingKey = "revenue_analytics_config"
+	SettingKeyUsageAlertConfig            SettingKey = "usage_alert_config"
+	SettingKeyTaxConfig                   SettingKey = "tax_config"
 )
 
 func (s *SettingKey) Validate() error {
@@ -62,6 +64,8 @@ func (s *SettingKey) Validate() error {
 		SettingKeyWalletTopupConfig,
 		SettingKeyCustomCurrencyConfig,
 		SettingKeyRevenueAnalyticsConfig,
+		SettingKeyUsageAlertConfig,
+		SettingKeyTaxConfig,
 	}
 
 	if !lo.Contains(allowedKeys, *s) {
@@ -118,6 +122,12 @@ type TenantConfig struct {
 // Validate implements SettingConfig interface
 func (c TenantConfig) Validate() error {
 	return validator.ValidateRequest(c)
+}
+
+// TenantEnvironment identifies one tenant and environment pair.
+type TenantEnvironment struct {
+	TenantID      string `json:"tenant_id"`
+	EnvironmentID string `json:"environment_id"`
 }
 
 // TenantEnvConfig represents a generic configuration for a specific tenant and environment
@@ -511,6 +521,22 @@ func (c PaymentMandateLimits) Validate() error {
 	return nil
 }
 
+const (
+	UsageAlertConfigFieldScheduleDelaySeconds = "schedule_delay_seconds"
+	UsageAlertConfigFieldStaleAfterSeconds    = "stale_after_seconds"
+)
+
+// UsageAlertConfig overrides the usage alert workflow timing per environment; 0 keeps the deployment default.
+type UsageAlertConfig struct {
+	ScheduleDelaySeconds int `json:"schedule_delay_seconds" validate:"omitempty,min=30,max=3600"`
+	StaleAfterSeconds    int `json:"stale_after_seconds" validate:"omitempty,min=60,max=86400"`
+}
+
+// Validate implements SettingConfig.
+func (c UsageAlertConfig) Validate() error {
+	return validator.ValidateRequest(c)
+}
+
 // DraftInvoiceRecomputeConfig enables daily draft invoice recomputation.
 type DraftInvoiceRecomputeConfig struct {
 	Enabled bool `json:"enabled"`
@@ -586,6 +612,7 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 		DueDateDays:                            lo.ToPtr(1),
 		AutoCompletePurchasedCreditTransaction: false,
 		FinalizationDelaySeconds:               7200, // 2 hours
+		IncludeZeroValueLineItems:              false,
 	}
 
 	defaultSubscriptionConfig := SubscriptionConfig{
@@ -778,6 +805,11 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 		return nil, err
 	}
 
+	defaultUsageAlertConfigMap, err := utils.ToMap(UsageAlertConfig{})
+	if err != nil {
+		return nil, err
+	}
+
 	defaultWalletTopupConfig := WalletTopupConfig{
 		FreeCreditLimitPerTransaction: decimal.Zero,
 		MinTopupAmountPerCurrency: map[string]decimal.Decimal{
@@ -886,6 +918,11 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 			DefaultValue: defaultRevenueAnalyticsConfigMap,
 			Description:  "Gates the revenue_facts rollup for this tenant/environment: when enabled, the scheduled dirty-scan decomposes its active subscriptions into provisional revenue facts",
 		},
+		SettingKeyUsageAlertConfig: {
+			Key:          SettingKeyUsageAlertConfig,
+			DefaultValue: defaultUsageAlertConfigMap,
+			Description:  "Flexprice-managed tuning of the usage alert workflow (debounce delay, staleness bound); zero uses the deployment default",
+		},
 		SettingKeyWalletTopupConfig: {
 			Key:          SettingKeyWalletTopupConfig,
 			DefaultValue: defaultWalletTopupConfigMap,
@@ -898,6 +935,13 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 				"default_fiat_currency": "",
 			},
 			Description: "Tenant-defined custom currencies and their fiat conversion factors. Empty means no enforcement",
+		},
+		SettingKeyTaxConfig: {
+			Key: SettingKeyTaxConfig,
+			// Empty, so the zero value decides: no external engine, and tax is calculated
+			// natively exactly as it is for a tenant that has never held this setting.
+			DefaultValue: map[string]interface{}{},
+			Description:  "Which external tax engine calculates tax, if any. Absent or disabled means the native engine",
 		},
 	}, nil
 }
@@ -1040,6 +1084,13 @@ func ValidateSettingValue(key SettingKey, value map[string]interface{}) error {
 		}
 		return config.Validate()
 
+	case SettingKeyUsageAlertConfig:
+		config, err := utils.ToStruct[UsageAlertConfig](value)
+		if err != nil {
+			return err
+		}
+		return config.Validate()
+
 	case SettingKeySAMLConfig:
 		// Validated against the raw value rather than the decoded struct: the
 		// rules that matter (certificate parses, identity provider is https,
@@ -1056,6 +1107,13 @@ func ValidateSettingValue(key SettingKey, value map[string]interface{}) error {
 	case SettingKeyCustomCurrencyConfig:
 		// Lenient here: a partial update fragment may omit required fields the merged result already has.
 		return nil
+
+	case SettingKeyTaxConfig:
+		config, err := utils.ToStruct[TaxConfig](value)
+		if err != nil {
+			return err
+		}
+		return config.Validate()
 
 	default:
 		return ierr.NewErrorf("unknown setting key: %s", key).

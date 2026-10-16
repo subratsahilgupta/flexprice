@@ -2,10 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
+	"strings"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/activity"
 	"github.com/flexprice/flexprice/internal/api"
+	adminapi "github.com/flexprice/flexprice/internal/api/admin"
+	adminv1 "github.com/flexprice/flexprice/internal/api/admin/v1"
 	v1 "github.com/flexprice/flexprice/internal/api/v1"
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/clickhouse"
@@ -14,6 +20,7 @@ import (
 	"github.com/flexprice/flexprice/internal/ee/analytics"
 	"github.com/flexprice/flexprice/internal/ee/auth/saml"
 	"github.com/flexprice/flexprice/internal/ee/service"
+	adminsvc "github.com/flexprice/flexprice/internal/ee/service/admin"
 	"github.com/flexprice/flexprice/internal/ee/service/revenue"
 	"github.com/flexprice/flexprice/internal/httpclient"
 	integrationevents "github.com/flexprice/flexprice/internal/integration/events"
@@ -140,6 +147,7 @@ func main() {
 			repository.NewEventRepository,
 			repository.NewProcessedEventRepository,
 			repository.NewMeterUsageRepository,
+			repository.NewActivityRepository,
 			repository.NewMeterRepository,
 			repository.NewUserRepository,
 			repository.NewAuthRepository,
@@ -147,6 +155,7 @@ func main() {
 			repository.NewCustomerRepository,
 			repository.NewPlanRepository,
 			repository.NewPlanPriceSyncRepository,
+			repository.NewAddonPriceSyncRepository,
 			repository.NewSubscriptionRepository,
 			repository.NewWalletRepository,
 			repository.NewTenantRepository,
@@ -171,6 +180,7 @@ func main() {
 			repository.NewEntityIntegrationMappingRepository,
 			repository.NewUsageRecordRepository,
 			repository.NewTaxRateRepository,
+			repository.NewFXRateRepository,
 			repository.NewTaxAssociationRepository,
 			repository.NewCouponRepository,
 			repository.NewCouponAssociationRepository,
@@ -216,6 +226,17 @@ func main() {
 		),
 	)
 
+	// Activity log capture (hook, publisher); inert unless activity.enabled
+	opts = append(opts,
+		fx.Provide(
+			provideActivityPubSub,
+			activity.Registrations,
+			activity.NewPublisher,
+			activity.NewLinkedCustomers,
+			activity.NewConsumer,
+		),
+	)
+
 	// Service layer
 	opts = append(opts,
 		fx.Provide(
@@ -241,6 +262,10 @@ func main() {
 			service.NewUserService,
 			service.NewEnvAccessService,
 			service.NewEnvironmentService,
+			adminsvc.NewEnvironmentService,
+			adminsvc.NewTenantService,
+			adminsvc.NewUserService,
+			adminsvc.NewSettingsService,
 			service.NewMeterService,
 			service.NewEventService,
 			service.NewEventConsumptionService,
@@ -259,6 +284,7 @@ func main() {
 			service.NewWalletService,
 			service.NewInvoiceService,
 			service.NewFeatureService,
+			service.NewActivityService,
 			service.NewEntitlementService,
 			service.NewEntitlementGrantService,
 			service.NewPaymentService,
@@ -279,6 +305,7 @@ func main() {
 			service.NewEntityIntegrationMappingService,
 			service.NewIntegrationSyncService,
 			service.NewTaxService,
+			service.NewFXRateService,
 			service.NewCouponService,
 			service.NewCouponAssociationService,
 			service.NewAddonService,
@@ -313,16 +340,19 @@ func main() {
 			// API components
 			provideHandlers,
 			provideRouter,
+			provideAdminHandlers,
+			provideAdminRouter,
 		),
 		fx.Invoke(
 			tracing.RegisterHooks,
 			repository.InitTracing,
 			pyroscope.RegisterHooks,
+			activity.Install,
 			initIntegrationFactory,
 			startServer,
 		),
 	)
-	opts = append(opts, fx.StartTimeout(3*time.Minute))
+	opts = append(opts, fx.StartTimeout(3*time.Minute), fx.StopTimeout(config.ServerStopTimeout))
 	app := fx.New(opts...)
 	app.Run()
 }
@@ -348,6 +378,7 @@ func provideHandlers(
 	invoiceService service.InvoiceService,
 	temporalService temporalservice.TemporalService,
 	featureService service.FeatureService,
+	activityService service.ActivityService,
 	entitlementService service.EntitlementService,
 	paymentService service.PaymentService,
 	paymentProcessorService service.PaymentProcessorService,
@@ -367,6 +398,7 @@ func provideHandlers(
 	integrationSyncService service.IntegrationSyncService,
 	svixClient *svix.Client,
 	taxService service.TaxService,
+	fxRateService service.FXRateService,
 	couponService service.CouponService,
 	couponAssociationService service.CouponAssociationService,
 	addonService service.AddonService,
@@ -407,6 +439,7 @@ func provideHandlers(
 		Customer:                 v1.NewCustomerHandler(customerService, billingService, paymentService, entityIntegrationMappingService, logger),
 		Plan:                     v1.NewPlanHandler(planService, entitlementService, creditGrantService, temporalService, locker, cfg, logger),
 		Subscription:             v1.NewSubscriptionHandler(subscriptionService, logger),
+		SubscriptionPause:        v1.NewSubscriptionPauseHandler(subscriptionService, logger),
 		SubscriptionChange:       v1.NewSubscriptionChangeHandler(subscriptionChangeService, logger),
 		SubscriptionModification: v1.NewSubscriptionModificationHandler(subscriptionModificationService, logger),
 		InvoiceModification:      v1.NewInvoiceModificationHandler(invoiceService, logger),
@@ -415,11 +448,13 @@ func provideHandlers(
 		Tenant:                   v1.NewTenantHandler(tenantService, logger),
 		Invoice:                  v1.NewInvoiceHandler(invoiceService, cfg, logger),
 		Feature:                  v1.NewFeatureHandler(featureService, logger),
+		Activity:                 v1.NewActivityHandler(activityService, logger),
 		Entitlement:              v1.NewEntitlementHandler(entitlementService, logger),
 		Payment:                  v1.NewPaymentHandler(paymentService, paymentProcessorService, logger),
 		Task:                     v1.NewTaskHandler(taskService, temporalService, logger),
 		Secret:                   v1.NewSecretHandler(secretService, logger),
 		Tax:                      v1.NewTaxHandler(taxService, logger),
+		FXRate:                   v1.NewFXRateHandler(fxRateService, logger),
 		Onboarding:               v1.NewOnboardingHandler(onboardingService, logger),
 		AIPricing:                v1.NewAIPricingHandler(geminiPricingService, logger),
 		CreditGrant:              v1.NewCreditGrantHandler(creditGrantService, logger),
@@ -434,7 +469,7 @@ func provideHandlers(
 		Paddle:                   v1.NewPaddleHandler(integrationFactory, logger),
 		Webhook:                  v1.NewWebhookHandler(cfg, svixClient, logger, integrationFactory, customerService, paymentService, invoiceService, planService, subscriptionService, entityIntegrationMappingService, checkoutSessionService, refundService, db, webhookService),
 		Coupon:                   v1.NewCouponHandler(couponService, couponAssociationService, logger),
-		Addon:                    v1.NewAddonHandler(addonService, entitlementService, logger),
+		Addon:                    v1.NewAddonHandler(addonService, entitlementService, temporalService, locker, logger),
 		Settings:                 v1.NewSettingsHandler(settingsService, logger),
 		SetupIntent:              v1.NewSetupIntentHandler(integrationFactory, customerService, cfg, logger),
 		Group:                    v1.NewGroupHandler(groupService, logger),
@@ -451,6 +486,29 @@ func provideHandlers(
 		CheckoutSession:          v1.NewCheckoutSessionHandler(checkoutSessionService, logger),
 		Analytics:                v1.NewAnalyticsHandler(analyticsService, revenueService, logger),
 	}
+}
+
+func provideAdminHandlers(
+	environments adminsvc.EnvironmentService,
+	tenants adminsvc.TenantService,
+	users adminsvc.UserService,
+	settings adminsvc.SettingsService,
+) adminapi.Handlers {
+	return adminapi.Handlers{
+		Health:      adminv1.NewHealthHandler(),
+		Me:          adminv1.NewMeHandler(),
+		Environment: adminv1.NewEnvironmentHandler(environments),
+		Tenant:      adminv1.NewTenantHandler(tenants),
+		User:        adminv1.NewUserHandler(users),
+		Settings:    adminv1.NewSettingsHandler(settings),
+	}
+}
+
+func provideAdminRouter(handlers adminapi.Handlers, log *logger.Logger, cfg *config.Configuration) (*adminapi.Server, error) {
+	if cfg.Deployment.Mode == types.ModeAdmin && strings.TrimSpace(cfg.Admin.Secret) == "" {
+		return nil, fmt.Errorf("admin mode requires admin.secret (FLEXPRICE_ADMIN_SECRET)")
+	}
+	return adminapi.NewRouter(handlers, log, cfg.Admin.Secret), nil
 }
 
 func provideRouter(
@@ -548,6 +606,7 @@ func startServer(
 	lc fx.Lifecycle,
 	cfg *config.Configuration,
 	r *gin.Engine,
+	adminRouter *adminapi.Server,
 	consumer kafka.MessageConsumer,
 	temporalClient client.TemporalClient,
 	temporalService temporalservice.TemporalService,
@@ -561,6 +620,7 @@ func startServer(
 	walletBalanceAlertSvc service.WalletBalanceAlertService,
 	rawEventConsumptionSvc service.RawEventConsumptionService,
 	meterUsageTrackingSvc service.MeterUsageTrackingService,
+	activityConsumer *activity.Consumer,
 	params service.ServiceParams,
 ) {
 	mode := cfg.Deployment.Mode
@@ -573,24 +633,26 @@ func startServer(
 		if consumer == nil {
 			log.Fatal(context.Background(), "Kafka consumer required for local mode")
 		}
-		startAPIServer(lc, r, cfg, log)
-
 		// Register all handlers and start router once
-		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, cfg, true)
+		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, activityConsumer, cfg, true)
 		startRouter(lc, router, log)
 		startTemporalWorker(lc, log, temporalClient, temporalService, params, webhookService)
-	case types.ModeAPI:
-		startAPIServer(lc, r, cfg, log)
 
+		// Registered last so fx's reverse-order stop drains HTTP before deps close.
+		startAPIServer(lc, r, cfg, log)
+	case types.ModeAPI:
 		// Register all handlers and start router once (no event consumption)
-		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, cfg, false)
+		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, activityConsumer, cfg, false)
 		startRouter(lc, router, log)
+
+		// Registered last so fx's reverse-order stop drains HTTP before deps close.
+		startAPIServer(lc, r, cfg, log)
 
 	case types.ModeTemporalWorker:
 		// Register webhook handler and start router so that webhook events
 		// published by temporal activities (e.g. invoice finalization) are
 		// consumed and delivered via Svix/native in the same process.
-		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, cfg, false)
+		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, activityConsumer, cfg, false)
 		startRouter(lc, router, log)
 		startTemporalWorker(lc, log, temporalClient, temporalService, params, webhookService)
 	case types.ModeConsumer:
@@ -599,8 +661,10 @@ func startServer(
 		}
 
 		// Register all handlers and start router once
-		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, cfg, true)
+		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, activityConsumer, cfg, true)
 		startRouter(lc, router, log)
+	case types.ModeAdmin:
+		startAPIServer(lc, adminRouter, cfg, log)
 	default:
 		log.Fatalf("Unknown deployment mode: %s", mode)
 	}
@@ -654,25 +718,46 @@ func startTemporalWorker(
 
 func startAPIServer(
 	lc fx.Lifecycle,
-	r *gin.Engine,
+	r http.Handler,
 	cfg *config.Configuration,
 	log *logger.Logger,
 ) {
 	log.Info(context.Background(), "Registering API server start hook")
+	srv := &http.Server{
+		Addr:    cfg.Server.Address,
+		Handler: r,
+	}
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			log.Info(ctx, "Starting API server...")
 			go func() {
-				if err := r.Run(cfg.Server.Address); err != nil {
+				if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					log.Fatalf("Failed to start server: %v", err)
 				}
 			}()
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
-			log.Info(ctx, "Shutting down server...")
+			timeout := cfg.Server.GetShutdownTimeout()
+			log.Info(ctx, "Shutting down server, draining in-flight requests", "timeout", timeout.String())
+
+			shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+			defer cancel()
+
+			err := srv.Shutdown(shutdownCtx)
+			if err != nil {
+				// Shutdown leaves connections past the deadline running; sever them
+				// so later stop hooks do not tear down deps under live handlers.
+				log.Error(ctx, "server drain timed out, closing active connections", "error", err)
+				if closeErr := srv.Close(); closeErr != nil {
+					log.Error(ctx, "failed to close listener after drain timeout", "error", closeErr)
+				}
+			} else {
+				log.Info(ctx, "server drained, all in-flight requests completed")
+			}
+
 			log.Shutdown(ctx)
-			return nil
+			return err
 		},
 	})
 }
@@ -687,6 +772,7 @@ func registerRouterHandlers(
 	walletBalanceAlertSvc service.WalletBalanceAlertService,
 	rawEventConsumptionSvc service.RawEventConsumptionService,
 	meterUsageTrackingSvc service.MeterUsageTrackingService,
+	activityConsumer *activity.Consumer,
 	cfg *config.Configuration,
 	includeProcessingHandlers bool,
 ) {
@@ -703,6 +789,7 @@ func registerRouterHandlers(
 		meterUsageTrackingSvc.RegisterHandler(router, cfg)
 		meterUsageTrackingSvc.RegisterHandlerLazy(router, cfg)
 		meterUsageTrackingSvc.RegisterBulkHandler(router, cfg)
+		activityConsumer.RegisterHandler(router, cfg)
 	}
 }
 
@@ -742,6 +829,21 @@ func provideWalletBalanceAlertPubSub(
 		return types.WalletBalanceAlertPubSub{}
 	}
 	return types.WalletBalanceAlertPubSub{PubSub: pubSub}
+}
+
+func provideActivityPubSub(
+	cfg *config.Configuration,
+	logger *logger.Logger,
+) types.ActivityPubSub {
+	if !cfg.Activity.Enabled {
+		return types.ActivityPubSub{}
+	}
+	pubSub, err := kafkaPubsub.NewPubSubFromConfig(cfg, logger, cfg.Activity.ConsumerGroup)
+	if err != nil {
+		logger.Fatalw("failed to create pubsub for activity log", "error", err)
+		return types.ActivityPubSub{}
+	}
+	return types.ActivityPubSub{PubSub: pubSub}
 }
 
 // enrichServiceParams returns the ServiceParams the rest of the app consumes:

@@ -34,6 +34,7 @@ import (
 	"github.com/flexprice/flexprice/ent/entityintegrationmapping"
 	"github.com/flexprice/flexprice/ent/environment"
 	"github.com/flexprice/flexprice/ent/feature"
+	"github.com/flexprice/flexprice/ent/fxrate"
 	"github.com/flexprice/flexprice/ent/group"
 	"github.com/flexprice/flexprice/ent/incomingwebhookevent"
 	"github.com/flexprice/flexprice/ent/invoice"
@@ -105,6 +106,7 @@ const (
 	TypeEntitlementGrant         = "EntitlementGrant"
 	TypeEntityIntegrationMapping = "EntityIntegrationMapping"
 	TypeEnvironment              = "Environment"
+	TypeFXRate                   = "FXRate"
 	TypeFeature                  = "Feature"
 	TypeGroup                    = "Group"
 	TypeIncomingWebhookEvent     = "IncomingWebhookEvent"
@@ -1290,29 +1292,31 @@ func (m *AddonMutation) ResetEdge(name string) error {
 // AddonAssociationMutation represents an operation that mutates the AddonAssociation nodes in the graph.
 type AddonAssociationMutation struct {
 	config
-	op                  Op
-	typ                 string
-	id                  *string
-	tenant_id           *string
-	status              *string
-	created_at          *time.Time
-	updated_at          *time.Time
-	created_by          *string
-	updated_by          *string
-	environment_id      *string
-	entity_id           *string
-	entity_type         *string
-	addon_id            *string
-	start_date          *time.Time
-	end_date            *time.Time
-	addon_status        *string
-	cancellation_reason *string
-	cancelled_at        *time.Time
-	metadata            *map[string]interface{}
-	clearedFields       map[string]struct{}
-	done                bool
-	oldValue            func(context.Context) (*AddonAssociation, error)
-	predicates          []predicate.AddonAssociation
+	op                       Op
+	typ                      string
+	id                       *string
+	tenant_id                *string
+	status                   *string
+	created_at               *time.Time
+	updated_at               *time.Time
+	created_by               *string
+	updated_by               *string
+	environment_id           *string
+	entity_id                *string
+	entity_type              *string
+	addon_id                 *string
+	start_date               *time.Time
+	end_date                 *time.Time
+	addon_status             *string
+	cancellation_reason      *string
+	cancelled_at             *time.Time
+	metadata                 *map[string]interface{}
+	synced_price_sequence    *int64
+	addsynced_price_sequence *int64
+	clearedFields            map[string]struct{}
+	done                     bool
+	oldValue                 func(context.Context) (*AddonAssociation, error)
+	predicates               []predicate.AddonAssociation
 }
 
 var _ ent.Mutation = (*AddonAssociationMutation)(nil)
@@ -2099,6 +2103,62 @@ func (m *AddonAssociationMutation) ResetMetadata() {
 	delete(m.clearedFields, addonassociation.FieldMetadata)
 }
 
+// SetSyncedPriceSequence sets the "synced_price_sequence" field.
+func (m *AddonAssociationMutation) SetSyncedPriceSequence(i int64) {
+	m.synced_price_sequence = &i
+	m.addsynced_price_sequence = nil
+}
+
+// SyncedPriceSequence returns the value of the "synced_price_sequence" field in the mutation.
+func (m *AddonAssociationMutation) SyncedPriceSequence() (r int64, exists bool) {
+	v := m.synced_price_sequence
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSyncedPriceSequence returns the old "synced_price_sequence" field's value of the AddonAssociation entity.
+// If the AddonAssociation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AddonAssociationMutation) OldSyncedPriceSequence(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSyncedPriceSequence is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSyncedPriceSequence requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSyncedPriceSequence: %w", err)
+	}
+	return oldValue.SyncedPriceSequence, nil
+}
+
+// AddSyncedPriceSequence adds i to the "synced_price_sequence" field.
+func (m *AddonAssociationMutation) AddSyncedPriceSequence(i int64) {
+	if m.addsynced_price_sequence != nil {
+		*m.addsynced_price_sequence += i
+	} else {
+		m.addsynced_price_sequence = &i
+	}
+}
+
+// AddedSyncedPriceSequence returns the value that was added to the "synced_price_sequence" field in this mutation.
+func (m *AddonAssociationMutation) AddedSyncedPriceSequence() (r int64, exists bool) {
+	v := m.addsynced_price_sequence
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSyncedPriceSequence resets all changes to the "synced_price_sequence" field.
+func (m *AddonAssociationMutation) ResetSyncedPriceSequence() {
+	m.synced_price_sequence = nil
+	m.addsynced_price_sequence = nil
+}
+
 // Where appends a list predicates to the AddonAssociationMutation builder.
 func (m *AddonAssociationMutation) Where(ps ...predicate.AddonAssociation) {
 	m.predicates = append(m.predicates, ps...)
@@ -2133,7 +2193,7 @@ func (m *AddonAssociationMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AddonAssociationMutation) Fields() []string {
-	fields := make([]string, 0, 16)
+	fields := make([]string, 0, 17)
 	if m.tenant_id != nil {
 		fields = append(fields, addonassociation.FieldTenantID)
 	}
@@ -2182,6 +2242,9 @@ func (m *AddonAssociationMutation) Fields() []string {
 	if m.metadata != nil {
 		fields = append(fields, addonassociation.FieldMetadata)
 	}
+	if m.synced_price_sequence != nil {
+		fields = append(fields, addonassociation.FieldSyncedPriceSequence)
+	}
 	return fields
 }
 
@@ -2222,6 +2285,8 @@ func (m *AddonAssociationMutation) Field(name string) (ent.Value, bool) {
 		return m.CancelledAt()
 	case addonassociation.FieldMetadata:
 		return m.Metadata()
+	case addonassociation.FieldSyncedPriceSequence:
+		return m.SyncedPriceSequence()
 	}
 	return nil, false
 }
@@ -2263,6 +2328,8 @@ func (m *AddonAssociationMutation) OldField(ctx context.Context, name string) (e
 		return m.OldCancelledAt(ctx)
 	case addonassociation.FieldMetadata:
 		return m.OldMetadata(ctx)
+	case addonassociation.FieldSyncedPriceSequence:
+		return m.OldSyncedPriceSequence(ctx)
 	}
 	return nil, fmt.Errorf("unknown AddonAssociation field %s", name)
 }
@@ -2384,6 +2451,13 @@ func (m *AddonAssociationMutation) SetField(name string, value ent.Value) error 
 		}
 		m.SetMetadata(v)
 		return nil
+	case addonassociation.FieldSyncedPriceSequence:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSyncedPriceSequence(v)
+		return nil
 	}
 	return fmt.Errorf("unknown AddonAssociation field %s", name)
 }
@@ -2391,13 +2465,21 @@ func (m *AddonAssociationMutation) SetField(name string, value ent.Value) error 
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *AddonAssociationMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.addsynced_price_sequence != nil {
+		fields = append(fields, addonassociation.FieldSyncedPriceSequence)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *AddonAssociationMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case addonassociation.FieldSyncedPriceSequence:
+		return m.AddedSyncedPriceSequence()
+	}
 	return nil, false
 }
 
@@ -2406,6 +2488,13 @@ func (m *AddonAssociationMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *AddonAssociationMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case addonassociation.FieldSyncedPriceSequence:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSyncedPriceSequence(v)
+		return nil
 	}
 	return fmt.Errorf("unknown AddonAssociation numeric field %s", name)
 }
@@ -2531,6 +2620,9 @@ func (m *AddonAssociationMutation) ResetField(name string) error {
 		return nil
 	case addonassociation.FieldMetadata:
 		m.ResetMetadata()
+		return nil
+	case addonassociation.FieldSyncedPriceSequence:
+		m.ResetSyncedPriceSequence()
 		return nil
 	}
 	return fmt.Errorf("unknown AddonAssociation field %s", name)
@@ -22966,33 +23058,36 @@ func (m *CreditNoteLineItemMutation) ResetEdge(name string) error {
 // CustomerMutation represents an operation that mutates the Customer nodes in the graph.
 type CustomerMutation struct {
 	config
-	op                  Op
-	typ                 string
-	id                  *string
-	tenant_id           *string
-	status              *string
-	created_at          *time.Time
-	updated_at          *time.Time
-	created_by          *string
-	updated_by          *string
-	environment_id      *string
-	metadata            *map[string]string
-	external_id         *string
-	name                *string
-	email               *string
-	contact             *string
-	address_line1       *string
-	address_line2       *string
-	address_city        *string
-	address_state       *string
-	address_postal_code *string
-	address_country     *string
-	timezone            *string
-	tax_treatment       *types.TaxTreatment
-	clearedFields       map[string]struct{}
-	done                bool
-	oldValue            func(context.Context) (*Customer, error)
-	predicates          []predicate.Customer
+	op                    Op
+	typ                   string
+	id                    *string
+	tenant_id             *string
+	status                *string
+	created_at            *time.Time
+	updated_at            *time.Time
+	created_by            *string
+	updated_by            *string
+	environment_id        *string
+	metadata              *map[string]string
+	external_id           *string
+	name                  *string
+	email                 *string
+	contact               *string
+	billing_currency      *string
+	address_line1         *string
+	address_line2         *string
+	address_city          *string
+	address_state         *string
+	address_postal_code   *string
+	address_country       *string
+	timezone              *string
+	tax_treatment         *types.TaxTreatment
+	contact_persons       *[]*schema.ContactPerson
+	appendcontact_persons []*schema.ContactPerson
+	clearedFields         map[string]struct{}
+	done                  bool
+	oldValue              func(context.Context) (*Customer, error)
+	predicates            []predicate.Customer
 }
 
 var _ ent.Mutation = (*CustomerMutation)(nil)
@@ -23609,6 +23704,55 @@ func (m *CustomerMutation) ResetContact() {
 	delete(m.clearedFields, customer.FieldContact)
 }
 
+// SetBillingCurrency sets the "billing_currency" field.
+func (m *CustomerMutation) SetBillingCurrency(s string) {
+	m.billing_currency = &s
+}
+
+// BillingCurrency returns the value of the "billing_currency" field in the mutation.
+func (m *CustomerMutation) BillingCurrency() (r string, exists bool) {
+	v := m.billing_currency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBillingCurrency returns the old "billing_currency" field's value of the Customer entity.
+// If the Customer object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CustomerMutation) OldBillingCurrency(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBillingCurrency is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBillingCurrency requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBillingCurrency: %w", err)
+	}
+	return oldValue.BillingCurrency, nil
+}
+
+// ClearBillingCurrency clears the value of the "billing_currency" field.
+func (m *CustomerMutation) ClearBillingCurrency() {
+	m.billing_currency = nil
+	m.clearedFields[customer.FieldBillingCurrency] = struct{}{}
+}
+
+// BillingCurrencyCleared returns if the "billing_currency" field was cleared in this mutation.
+func (m *CustomerMutation) BillingCurrencyCleared() bool {
+	_, ok := m.clearedFields[customer.FieldBillingCurrency]
+	return ok
+}
+
+// ResetBillingCurrency resets all changes to the "billing_currency" field.
+func (m *CustomerMutation) ResetBillingCurrency() {
+	m.billing_currency = nil
+	delete(m.clearedFields, customer.FieldBillingCurrency)
+}
+
 // SetAddressLine1 sets the "address_line1" field.
 func (m *CustomerMutation) SetAddressLine1(s string) {
 	m.address_line1 = &s
@@ -23988,6 +24132,71 @@ func (m *CustomerMutation) ResetTaxTreatment() {
 	m.tax_treatment = nil
 }
 
+// SetContactPersons sets the "contact_persons" field.
+func (m *CustomerMutation) SetContactPersons(sp []*schema.ContactPerson) {
+	m.contact_persons = &sp
+	m.appendcontact_persons = nil
+}
+
+// ContactPersons returns the value of the "contact_persons" field in the mutation.
+func (m *CustomerMutation) ContactPersons() (r []*schema.ContactPerson, exists bool) {
+	v := m.contact_persons
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldContactPersons returns the old "contact_persons" field's value of the Customer entity.
+// If the Customer object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CustomerMutation) OldContactPersons(ctx context.Context) (v []*schema.ContactPerson, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldContactPersons is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldContactPersons requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldContactPersons: %w", err)
+	}
+	return oldValue.ContactPersons, nil
+}
+
+// AppendContactPersons adds sp to the "contact_persons" field.
+func (m *CustomerMutation) AppendContactPersons(sp []*schema.ContactPerson) {
+	m.appendcontact_persons = append(m.appendcontact_persons, sp...)
+}
+
+// AppendedContactPersons returns the list of values that were appended to the "contact_persons" field in this mutation.
+func (m *CustomerMutation) AppendedContactPersons() ([]*schema.ContactPerson, bool) {
+	if len(m.appendcontact_persons) == 0 {
+		return nil, false
+	}
+	return m.appendcontact_persons, true
+}
+
+// ClearContactPersons clears the value of the "contact_persons" field.
+func (m *CustomerMutation) ClearContactPersons() {
+	m.contact_persons = nil
+	m.appendcontact_persons = nil
+	m.clearedFields[customer.FieldContactPersons] = struct{}{}
+}
+
+// ContactPersonsCleared returns if the "contact_persons" field was cleared in this mutation.
+func (m *CustomerMutation) ContactPersonsCleared() bool {
+	_, ok := m.clearedFields[customer.FieldContactPersons]
+	return ok
+}
+
+// ResetContactPersons resets all changes to the "contact_persons" field.
+func (m *CustomerMutation) ResetContactPersons() {
+	m.contact_persons = nil
+	m.appendcontact_persons = nil
+	delete(m.clearedFields, customer.FieldContactPersons)
+}
+
 // Where appends a list predicates to the CustomerMutation builder.
 func (m *CustomerMutation) Where(ps ...predicate.Customer) {
 	m.predicates = append(m.predicates, ps...)
@@ -24022,7 +24231,7 @@ func (m *CustomerMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CustomerMutation) Fields() []string {
-	fields := make([]string, 0, 20)
+	fields := make([]string, 0, 22)
 	if m.tenant_id != nil {
 		fields = append(fields, customer.FieldTenantID)
 	}
@@ -24059,6 +24268,9 @@ func (m *CustomerMutation) Fields() []string {
 	if m.contact != nil {
 		fields = append(fields, customer.FieldContact)
 	}
+	if m.billing_currency != nil {
+		fields = append(fields, customer.FieldBillingCurrency)
+	}
 	if m.address_line1 != nil {
 		fields = append(fields, customer.FieldAddressLine1)
 	}
@@ -24082,6 +24294,9 @@ func (m *CustomerMutation) Fields() []string {
 	}
 	if m.tax_treatment != nil {
 		fields = append(fields, customer.FieldTaxTreatment)
+	}
+	if m.contact_persons != nil {
+		fields = append(fields, customer.FieldContactPersons)
 	}
 	return fields
 }
@@ -24115,6 +24330,8 @@ func (m *CustomerMutation) Field(name string) (ent.Value, bool) {
 		return m.Email()
 	case customer.FieldContact:
 		return m.Contact()
+	case customer.FieldBillingCurrency:
+		return m.BillingCurrency()
 	case customer.FieldAddressLine1:
 		return m.AddressLine1()
 	case customer.FieldAddressLine2:
@@ -24131,6 +24348,8 @@ func (m *CustomerMutation) Field(name string) (ent.Value, bool) {
 		return m.Timezone()
 	case customer.FieldTaxTreatment:
 		return m.TaxTreatment()
+	case customer.FieldContactPersons:
+		return m.ContactPersons()
 	}
 	return nil, false
 }
@@ -24164,6 +24383,8 @@ func (m *CustomerMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldEmail(ctx)
 	case customer.FieldContact:
 		return m.OldContact(ctx)
+	case customer.FieldBillingCurrency:
+		return m.OldBillingCurrency(ctx)
 	case customer.FieldAddressLine1:
 		return m.OldAddressLine1(ctx)
 	case customer.FieldAddressLine2:
@@ -24180,6 +24401,8 @@ func (m *CustomerMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldTimezone(ctx)
 	case customer.FieldTaxTreatment:
 		return m.OldTaxTreatment(ctx)
+	case customer.FieldContactPersons:
+		return m.OldContactPersons(ctx)
 	}
 	return nil, fmt.Errorf("unknown Customer field %s", name)
 }
@@ -24273,6 +24496,13 @@ func (m *CustomerMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetContact(v)
 		return nil
+	case customer.FieldBillingCurrency:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBillingCurrency(v)
+		return nil
 	case customer.FieldAddressLine1:
 		v, ok := value.(string)
 		if !ok {
@@ -24329,6 +24559,13 @@ func (m *CustomerMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetTaxTreatment(v)
 		return nil
+	case customer.FieldContactPersons:
+		v, ok := value.([]*schema.ContactPerson)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetContactPersons(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Customer field %s", name)
 }
@@ -24377,6 +24614,9 @@ func (m *CustomerMutation) ClearedFields() []string {
 	if m.FieldCleared(customer.FieldContact) {
 		fields = append(fields, customer.FieldContact)
 	}
+	if m.FieldCleared(customer.FieldBillingCurrency) {
+		fields = append(fields, customer.FieldBillingCurrency)
+	}
 	if m.FieldCleared(customer.FieldAddressLine1) {
 		fields = append(fields, customer.FieldAddressLine1)
 	}
@@ -24397,6 +24637,9 @@ func (m *CustomerMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(customer.FieldTimezone) {
 		fields = append(fields, customer.FieldTimezone)
+	}
+	if m.FieldCleared(customer.FieldContactPersons) {
+		fields = append(fields, customer.FieldContactPersons)
 	}
 	return fields
 }
@@ -24430,6 +24673,9 @@ func (m *CustomerMutation) ClearField(name string) error {
 	case customer.FieldContact:
 		m.ClearContact()
 		return nil
+	case customer.FieldBillingCurrency:
+		m.ClearBillingCurrency()
+		return nil
 	case customer.FieldAddressLine1:
 		m.ClearAddressLine1()
 		return nil
@@ -24450,6 +24696,9 @@ func (m *CustomerMutation) ClearField(name string) error {
 		return nil
 	case customer.FieldTimezone:
 		m.ClearTimezone()
+		return nil
+	case customer.FieldContactPersons:
+		m.ClearContactPersons()
 		return nil
 	}
 	return fmt.Errorf("unknown Customer nullable field %s", name)
@@ -24495,6 +24744,9 @@ func (m *CustomerMutation) ResetField(name string) error {
 	case customer.FieldContact:
 		m.ResetContact()
 		return nil
+	case customer.FieldBillingCurrency:
+		m.ResetBillingCurrency()
+		return nil
 	case customer.FieldAddressLine1:
 		m.ResetAddressLine1()
 		return nil
@@ -24518,6 +24770,9 @@ func (m *CustomerMutation) ResetField(name string) error {
 		return nil
 	case customer.FieldTaxTreatment:
 		m.ResetTaxTreatment()
+		return nil
+	case customer.FieldContactPersons:
+		m.ResetContactPersons()
 		return nil
 	}
 	return fmt.Errorf("unknown Customer field %s", name)
@@ -30076,6 +30331,1265 @@ func (m *EnvironmentMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown Environment edge %s", name)
 }
 
+// FXRateMutation represents an operation that mutates the FXRate nodes in the graph.
+type FXRateMutation struct {
+	config
+	op             Op
+	typ            string
+	id             *string
+	tenant_id      *string
+	status         *string
+	created_at     *time.Time
+	updated_at     *time.Time
+	created_by     *string
+	updated_by     *string
+	environment_id *string
+	scope          *types.FXRateScope
+	scope_id       *string
+	from_currency  *string
+	to_currency    *string
+	rate           *decimal.Decimal
+	source         *types.FXRateSource
+	start_date     *time.Time
+	end_date       *time.Time
+	metadata       *map[string]string
+	clearedFields  map[string]struct{}
+	done           bool
+	oldValue       func(context.Context) (*FXRate, error)
+	predicates     []predicate.FXRate
+}
+
+var _ ent.Mutation = (*FXRateMutation)(nil)
+
+// fxrateOption allows management of the mutation configuration using functional options.
+type fxrateOption func(*FXRateMutation)
+
+// newFXRateMutation creates new mutation for the FXRate entity.
+func newFXRateMutation(c config, op Op, opts ...fxrateOption) *FXRateMutation {
+	m := &FXRateMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeFXRate,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withFXRateID sets the ID field of the mutation.
+func withFXRateID(id string) fxrateOption {
+	return func(m *FXRateMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *FXRate
+		)
+		m.oldValue = func(ctx context.Context) (*FXRate, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().FXRate.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withFXRate sets the old FXRate of the mutation.
+func withFXRate(node *FXRate) fxrateOption {
+	return func(m *FXRateMutation) {
+		m.oldValue = func(context.Context) (*FXRate, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m FXRateMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m FXRateMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of FXRate entities.
+func (m *FXRateMutation) SetID(id string) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *FXRateMutation) ID() (id string, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *FXRateMutation) IDs(ctx context.Context) ([]string, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []string{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().FXRate.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetTenantID sets the "tenant_id" field.
+func (m *FXRateMutation) SetTenantID(s string) {
+	m.tenant_id = &s
+}
+
+// TenantID returns the value of the "tenant_id" field in the mutation.
+func (m *FXRateMutation) TenantID() (r string, exists bool) {
+	v := m.tenant_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTenantID returns the old "tenant_id" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldTenantID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTenantID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTenantID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTenantID: %w", err)
+	}
+	return oldValue.TenantID, nil
+}
+
+// ResetTenantID resets all changes to the "tenant_id" field.
+func (m *FXRateMutation) ResetTenantID() {
+	m.tenant_id = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *FXRateMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *FXRateMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *FXRateMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *FXRateMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *FXRateMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *FXRateMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *FXRateMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *FXRateMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *FXRateMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetCreatedBy sets the "created_by" field.
+func (m *FXRateMutation) SetCreatedBy(s string) {
+	m.created_by = &s
+}
+
+// CreatedBy returns the value of the "created_by" field in the mutation.
+func (m *FXRateMutation) CreatedBy() (r string, exists bool) {
+	v := m.created_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedBy returns the old "created_by" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldCreatedBy(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedBy: %w", err)
+	}
+	return oldValue.CreatedBy, nil
+}
+
+// ClearCreatedBy clears the value of the "created_by" field.
+func (m *FXRateMutation) ClearCreatedBy() {
+	m.created_by = nil
+	m.clearedFields[fxrate.FieldCreatedBy] = struct{}{}
+}
+
+// CreatedByCleared returns if the "created_by" field was cleared in this mutation.
+func (m *FXRateMutation) CreatedByCleared() bool {
+	_, ok := m.clearedFields[fxrate.FieldCreatedBy]
+	return ok
+}
+
+// ResetCreatedBy resets all changes to the "created_by" field.
+func (m *FXRateMutation) ResetCreatedBy() {
+	m.created_by = nil
+	delete(m.clearedFields, fxrate.FieldCreatedBy)
+}
+
+// SetUpdatedBy sets the "updated_by" field.
+func (m *FXRateMutation) SetUpdatedBy(s string) {
+	m.updated_by = &s
+}
+
+// UpdatedBy returns the value of the "updated_by" field in the mutation.
+func (m *FXRateMutation) UpdatedBy() (r string, exists bool) {
+	v := m.updated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedBy returns the old "updated_by" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldUpdatedBy(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedBy: %w", err)
+	}
+	return oldValue.UpdatedBy, nil
+}
+
+// ClearUpdatedBy clears the value of the "updated_by" field.
+func (m *FXRateMutation) ClearUpdatedBy() {
+	m.updated_by = nil
+	m.clearedFields[fxrate.FieldUpdatedBy] = struct{}{}
+}
+
+// UpdatedByCleared returns if the "updated_by" field was cleared in this mutation.
+func (m *FXRateMutation) UpdatedByCleared() bool {
+	_, ok := m.clearedFields[fxrate.FieldUpdatedBy]
+	return ok
+}
+
+// ResetUpdatedBy resets all changes to the "updated_by" field.
+func (m *FXRateMutation) ResetUpdatedBy() {
+	m.updated_by = nil
+	delete(m.clearedFields, fxrate.FieldUpdatedBy)
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (m *FXRateMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *FXRateMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *FXRateMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[fxrate.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *FXRateMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[fxrate.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *FXRateMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, fxrate.FieldEnvironmentID)
+}
+
+// SetScope sets the "scope" field.
+func (m *FXRateMutation) SetScope(trs types.FXRateScope) {
+	m.scope = &trs
+}
+
+// Scope returns the value of the "scope" field in the mutation.
+func (m *FXRateMutation) Scope() (r types.FXRateScope, exists bool) {
+	v := m.scope
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldScope returns the old "scope" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldScope(ctx context.Context) (v types.FXRateScope, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldScope is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldScope requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldScope: %w", err)
+	}
+	return oldValue.Scope, nil
+}
+
+// ResetScope resets all changes to the "scope" field.
+func (m *FXRateMutation) ResetScope() {
+	m.scope = nil
+}
+
+// SetScopeID sets the "scope_id" field.
+func (m *FXRateMutation) SetScopeID(s string) {
+	m.scope_id = &s
+}
+
+// ScopeID returns the value of the "scope_id" field in the mutation.
+func (m *FXRateMutation) ScopeID() (r string, exists bool) {
+	v := m.scope_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldScopeID returns the old "scope_id" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldScopeID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldScopeID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldScopeID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldScopeID: %w", err)
+	}
+	return oldValue.ScopeID, nil
+}
+
+// ResetScopeID resets all changes to the "scope_id" field.
+func (m *FXRateMutation) ResetScopeID() {
+	m.scope_id = nil
+}
+
+// SetFromCurrency sets the "from_currency" field.
+func (m *FXRateMutation) SetFromCurrency(s string) {
+	m.from_currency = &s
+}
+
+// FromCurrency returns the value of the "from_currency" field in the mutation.
+func (m *FXRateMutation) FromCurrency() (r string, exists bool) {
+	v := m.from_currency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFromCurrency returns the old "from_currency" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldFromCurrency(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFromCurrency is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFromCurrency requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFromCurrency: %w", err)
+	}
+	return oldValue.FromCurrency, nil
+}
+
+// ResetFromCurrency resets all changes to the "from_currency" field.
+func (m *FXRateMutation) ResetFromCurrency() {
+	m.from_currency = nil
+}
+
+// SetToCurrency sets the "to_currency" field.
+func (m *FXRateMutation) SetToCurrency(s string) {
+	m.to_currency = &s
+}
+
+// ToCurrency returns the value of the "to_currency" field in the mutation.
+func (m *FXRateMutation) ToCurrency() (r string, exists bool) {
+	v := m.to_currency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldToCurrency returns the old "to_currency" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldToCurrency(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldToCurrency is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldToCurrency requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldToCurrency: %w", err)
+	}
+	return oldValue.ToCurrency, nil
+}
+
+// ResetToCurrency resets all changes to the "to_currency" field.
+func (m *FXRateMutation) ResetToCurrency() {
+	m.to_currency = nil
+}
+
+// SetRate sets the "rate" field.
+func (m *FXRateMutation) SetRate(d decimal.Decimal) {
+	m.rate = &d
+}
+
+// Rate returns the value of the "rate" field in the mutation.
+func (m *FXRateMutation) Rate() (r decimal.Decimal, exists bool) {
+	v := m.rate
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRate returns the old "rate" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldRate(ctx context.Context) (v decimal.Decimal, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRate: %w", err)
+	}
+	return oldValue.Rate, nil
+}
+
+// ResetRate resets all changes to the "rate" field.
+func (m *FXRateMutation) ResetRate() {
+	m.rate = nil
+}
+
+// SetSource sets the "source" field.
+func (m *FXRateMutation) SetSource(trs types.FXRateSource) {
+	m.source = &trs
+}
+
+// Source returns the value of the "source" field in the mutation.
+func (m *FXRateMutation) Source() (r types.FXRateSource, exists bool) {
+	v := m.source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSource returns the old "source" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldSource(ctx context.Context) (v types.FXRateSource, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSource: %w", err)
+	}
+	return oldValue.Source, nil
+}
+
+// ResetSource resets all changes to the "source" field.
+func (m *FXRateMutation) ResetSource() {
+	m.source = nil
+}
+
+// SetStartDate sets the "start_date" field.
+func (m *FXRateMutation) SetStartDate(t time.Time) {
+	m.start_date = &t
+}
+
+// StartDate returns the value of the "start_date" field in the mutation.
+func (m *FXRateMutation) StartDate() (r time.Time, exists bool) {
+	v := m.start_date
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStartDate returns the old "start_date" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldStartDate(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStartDate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStartDate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStartDate: %w", err)
+	}
+	return oldValue.StartDate, nil
+}
+
+// ClearStartDate clears the value of the "start_date" field.
+func (m *FXRateMutation) ClearStartDate() {
+	m.start_date = nil
+	m.clearedFields[fxrate.FieldStartDate] = struct{}{}
+}
+
+// StartDateCleared returns if the "start_date" field was cleared in this mutation.
+func (m *FXRateMutation) StartDateCleared() bool {
+	_, ok := m.clearedFields[fxrate.FieldStartDate]
+	return ok
+}
+
+// ResetStartDate resets all changes to the "start_date" field.
+func (m *FXRateMutation) ResetStartDate() {
+	m.start_date = nil
+	delete(m.clearedFields, fxrate.FieldStartDate)
+}
+
+// SetEndDate sets the "end_date" field.
+func (m *FXRateMutation) SetEndDate(t time.Time) {
+	m.end_date = &t
+}
+
+// EndDate returns the value of the "end_date" field in the mutation.
+func (m *FXRateMutation) EndDate() (r time.Time, exists bool) {
+	v := m.end_date
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEndDate returns the old "end_date" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldEndDate(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEndDate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEndDate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEndDate: %w", err)
+	}
+	return oldValue.EndDate, nil
+}
+
+// ClearEndDate clears the value of the "end_date" field.
+func (m *FXRateMutation) ClearEndDate() {
+	m.end_date = nil
+	m.clearedFields[fxrate.FieldEndDate] = struct{}{}
+}
+
+// EndDateCleared returns if the "end_date" field was cleared in this mutation.
+func (m *FXRateMutation) EndDateCleared() bool {
+	_, ok := m.clearedFields[fxrate.FieldEndDate]
+	return ok
+}
+
+// ResetEndDate resets all changes to the "end_date" field.
+func (m *FXRateMutation) ResetEndDate() {
+	m.end_date = nil
+	delete(m.clearedFields, fxrate.FieldEndDate)
+}
+
+// SetMetadata sets the "metadata" field.
+func (m *FXRateMutation) SetMetadata(value map[string]string) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *FXRateMutation) Metadata() (r map[string]string, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldMetadata(ctx context.Context) (v map[string]string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (m *FXRateMutation) ClearMetadata() {
+	m.metadata = nil
+	m.clearedFields[fxrate.FieldMetadata] = struct{}{}
+}
+
+// MetadataCleared returns if the "metadata" field was cleared in this mutation.
+func (m *FXRateMutation) MetadataCleared() bool {
+	_, ok := m.clearedFields[fxrate.FieldMetadata]
+	return ok
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *FXRateMutation) ResetMetadata() {
+	m.metadata = nil
+	delete(m.clearedFields, fxrate.FieldMetadata)
+}
+
+// Where appends a list predicates to the FXRateMutation builder.
+func (m *FXRateMutation) Where(ps ...predicate.FXRate) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the FXRateMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *FXRateMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.FXRate, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *FXRateMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *FXRateMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (FXRate).
+func (m *FXRateMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *FXRateMutation) Fields() []string {
+	fields := make([]string, 0, 16)
+	if m.tenant_id != nil {
+		fields = append(fields, fxrate.FieldTenantID)
+	}
+	if m.status != nil {
+		fields = append(fields, fxrate.FieldStatus)
+	}
+	if m.created_at != nil {
+		fields = append(fields, fxrate.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, fxrate.FieldUpdatedAt)
+	}
+	if m.created_by != nil {
+		fields = append(fields, fxrate.FieldCreatedBy)
+	}
+	if m.updated_by != nil {
+		fields = append(fields, fxrate.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, fxrate.FieldEnvironmentID)
+	}
+	if m.scope != nil {
+		fields = append(fields, fxrate.FieldScope)
+	}
+	if m.scope_id != nil {
+		fields = append(fields, fxrate.FieldScopeID)
+	}
+	if m.from_currency != nil {
+		fields = append(fields, fxrate.FieldFromCurrency)
+	}
+	if m.to_currency != nil {
+		fields = append(fields, fxrate.FieldToCurrency)
+	}
+	if m.rate != nil {
+		fields = append(fields, fxrate.FieldRate)
+	}
+	if m.source != nil {
+		fields = append(fields, fxrate.FieldSource)
+	}
+	if m.start_date != nil {
+		fields = append(fields, fxrate.FieldStartDate)
+	}
+	if m.end_date != nil {
+		fields = append(fields, fxrate.FieldEndDate)
+	}
+	if m.metadata != nil {
+		fields = append(fields, fxrate.FieldMetadata)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *FXRateMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case fxrate.FieldTenantID:
+		return m.TenantID()
+	case fxrate.FieldStatus:
+		return m.Status()
+	case fxrate.FieldCreatedAt:
+		return m.CreatedAt()
+	case fxrate.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case fxrate.FieldCreatedBy:
+		return m.CreatedBy()
+	case fxrate.FieldUpdatedBy:
+		return m.UpdatedBy()
+	case fxrate.FieldEnvironmentID:
+		return m.EnvironmentID()
+	case fxrate.FieldScope:
+		return m.Scope()
+	case fxrate.FieldScopeID:
+		return m.ScopeID()
+	case fxrate.FieldFromCurrency:
+		return m.FromCurrency()
+	case fxrate.FieldToCurrency:
+		return m.ToCurrency()
+	case fxrate.FieldRate:
+		return m.Rate()
+	case fxrate.FieldSource:
+		return m.Source()
+	case fxrate.FieldStartDate:
+		return m.StartDate()
+	case fxrate.FieldEndDate:
+		return m.EndDate()
+	case fxrate.FieldMetadata:
+		return m.Metadata()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *FXRateMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case fxrate.FieldTenantID:
+		return m.OldTenantID(ctx)
+	case fxrate.FieldStatus:
+		return m.OldStatus(ctx)
+	case fxrate.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case fxrate.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case fxrate.FieldCreatedBy:
+		return m.OldCreatedBy(ctx)
+	case fxrate.FieldUpdatedBy:
+		return m.OldUpdatedBy(ctx)
+	case fxrate.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
+	case fxrate.FieldScope:
+		return m.OldScope(ctx)
+	case fxrate.FieldScopeID:
+		return m.OldScopeID(ctx)
+	case fxrate.FieldFromCurrency:
+		return m.OldFromCurrency(ctx)
+	case fxrate.FieldToCurrency:
+		return m.OldToCurrency(ctx)
+	case fxrate.FieldRate:
+		return m.OldRate(ctx)
+	case fxrate.FieldSource:
+		return m.OldSource(ctx)
+	case fxrate.FieldStartDate:
+		return m.OldStartDate(ctx)
+	case fxrate.FieldEndDate:
+		return m.OldEndDate(ctx)
+	case fxrate.FieldMetadata:
+		return m.OldMetadata(ctx)
+	}
+	return nil, fmt.Errorf("unknown FXRate field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *FXRateMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case fxrate.FieldTenantID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTenantID(v)
+		return nil
+	case fxrate.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case fxrate.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case fxrate.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case fxrate.FieldCreatedBy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedBy(v)
+		return nil
+	case fxrate.FieldUpdatedBy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedBy(v)
+		return nil
+	case fxrate.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
+		return nil
+	case fxrate.FieldScope:
+		v, ok := value.(types.FXRateScope)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetScope(v)
+		return nil
+	case fxrate.FieldScopeID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetScopeID(v)
+		return nil
+	case fxrate.FieldFromCurrency:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFromCurrency(v)
+		return nil
+	case fxrate.FieldToCurrency:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetToCurrency(v)
+		return nil
+	case fxrate.FieldRate:
+		v, ok := value.(decimal.Decimal)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRate(v)
+		return nil
+	case fxrate.FieldSource:
+		v, ok := value.(types.FXRateSource)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSource(v)
+		return nil
+	case fxrate.FieldStartDate:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStartDate(v)
+		return nil
+	case fxrate.FieldEndDate:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEndDate(v)
+		return nil
+	case fxrate.FieldMetadata:
+		v, ok := value.(map[string]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
+		return nil
+	}
+	return fmt.Errorf("unknown FXRate field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *FXRateMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *FXRateMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *FXRateMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown FXRate numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *FXRateMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(fxrate.FieldCreatedBy) {
+		fields = append(fields, fxrate.FieldCreatedBy)
+	}
+	if m.FieldCleared(fxrate.FieldUpdatedBy) {
+		fields = append(fields, fxrate.FieldUpdatedBy)
+	}
+	if m.FieldCleared(fxrate.FieldEnvironmentID) {
+		fields = append(fields, fxrate.FieldEnvironmentID)
+	}
+	if m.FieldCleared(fxrate.FieldStartDate) {
+		fields = append(fields, fxrate.FieldStartDate)
+	}
+	if m.FieldCleared(fxrate.FieldEndDate) {
+		fields = append(fields, fxrate.FieldEndDate)
+	}
+	if m.FieldCleared(fxrate.FieldMetadata) {
+		fields = append(fields, fxrate.FieldMetadata)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *FXRateMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *FXRateMutation) ClearField(name string) error {
+	switch name {
+	case fxrate.FieldCreatedBy:
+		m.ClearCreatedBy()
+		return nil
+	case fxrate.FieldUpdatedBy:
+		m.ClearUpdatedBy()
+		return nil
+	case fxrate.FieldEnvironmentID:
+		m.ClearEnvironmentID()
+		return nil
+	case fxrate.FieldStartDate:
+		m.ClearStartDate()
+		return nil
+	case fxrate.FieldEndDate:
+		m.ClearEndDate()
+		return nil
+	case fxrate.FieldMetadata:
+		m.ClearMetadata()
+		return nil
+	}
+	return fmt.Errorf("unknown FXRate nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *FXRateMutation) ResetField(name string) error {
+	switch name {
+	case fxrate.FieldTenantID:
+		m.ResetTenantID()
+		return nil
+	case fxrate.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case fxrate.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case fxrate.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case fxrate.FieldCreatedBy:
+		m.ResetCreatedBy()
+		return nil
+	case fxrate.FieldUpdatedBy:
+		m.ResetUpdatedBy()
+		return nil
+	case fxrate.FieldEnvironmentID:
+		m.ResetEnvironmentID()
+		return nil
+	case fxrate.FieldScope:
+		m.ResetScope()
+		return nil
+	case fxrate.FieldScopeID:
+		m.ResetScopeID()
+		return nil
+	case fxrate.FieldFromCurrency:
+		m.ResetFromCurrency()
+		return nil
+	case fxrate.FieldToCurrency:
+		m.ResetToCurrency()
+		return nil
+	case fxrate.FieldRate:
+		m.ResetRate()
+		return nil
+	case fxrate.FieldSource:
+		m.ResetSource()
+		return nil
+	case fxrate.FieldStartDate:
+		m.ResetStartDate()
+		return nil
+	case fxrate.FieldEndDate:
+		m.ResetEndDate()
+		return nil
+	case fxrate.FieldMetadata:
+		m.ResetMetadata()
+		return nil
+	}
+	return fmt.Errorf("unknown FXRate field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *FXRateMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *FXRateMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *FXRateMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *FXRateMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *FXRateMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *FXRateMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *FXRateMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown FXRate unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *FXRateMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown FXRate edge %s", name)
+}
+
 // FeatureMutation represents an operation that mutates the Feature nodes in the graph.
 type FeatureMutation struct {
 	config
@@ -33781,6 +35295,7 @@ type InvoiceMutation struct {
 	total_discount                *decimal.Decimal
 	total                         *decimal.Decimal
 	custom_currency               **types.CustomCurrency
+	fx_conversion                 **types.FxConversion
 	description                   *string
 	due_date                      *time.Time
 	paid_at                       *time.Time
@@ -34939,6 +36454,55 @@ func (m *InvoiceMutation) CustomCurrencyCleared() bool {
 func (m *InvoiceMutation) ResetCustomCurrency() {
 	m.custom_currency = nil
 	delete(m.clearedFields, invoice.FieldCustomCurrency)
+}
+
+// SetFxConversion sets the "fx_conversion" field.
+func (m *InvoiceMutation) SetFxConversion(tc *types.FxConversion) {
+	m.fx_conversion = &tc
+}
+
+// FxConversion returns the value of the "fx_conversion" field in the mutation.
+func (m *InvoiceMutation) FxConversion() (r *types.FxConversion, exists bool) {
+	v := m.fx_conversion
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFxConversion returns the old "fx_conversion" field's value of the Invoice entity.
+// If the Invoice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceMutation) OldFxConversion(ctx context.Context) (v *types.FxConversion, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFxConversion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFxConversion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFxConversion: %w", err)
+	}
+	return oldValue.FxConversion, nil
+}
+
+// ClearFxConversion clears the value of the "fx_conversion" field.
+func (m *InvoiceMutation) ClearFxConversion() {
+	m.fx_conversion = nil
+	m.clearedFields[invoice.FieldFxConversion] = struct{}{}
+}
+
+// FxConversionCleared returns if the "fx_conversion" field was cleared in this mutation.
+func (m *InvoiceMutation) FxConversionCleared() bool {
+	_, ok := m.clearedFields[invoice.FieldFxConversion]
+	return ok
+}
+
+// ResetFxConversion resets all changes to the "fx_conversion" field.
+func (m *InvoiceMutation) ResetFxConversion() {
+	m.fx_conversion = nil
+	delete(m.clearedFields, invoice.FieldFxConversion)
 }
 
 // SetDescription sets the "description" field.
@@ -36176,7 +37740,7 @@ func (m *InvoiceMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InvoiceMutation) Fields() []string {
-	fields := make([]string, 0, 46)
+	fields := make([]string, 0, 47)
 	if m.tenant_id != nil {
 		fields = append(fields, invoice.FieldTenantID)
 	}
@@ -36248,6 +37812,9 @@ func (m *InvoiceMutation) Fields() []string {
 	}
 	if m.custom_currency != nil {
 		fields = append(fields, invoice.FieldCustomCurrency)
+	}
+	if m.fx_conversion != nil {
+		fields = append(fields, invoice.FieldFxConversion)
 	}
 	if m.description != nil {
 		fields = append(fields, invoice.FieldDescription)
@@ -36371,6 +37938,8 @@ func (m *InvoiceMutation) Field(name string) (ent.Value, bool) {
 		return m.Total()
 	case invoice.FieldCustomCurrency:
 		return m.CustomCurrency()
+	case invoice.FieldFxConversion:
+		return m.FxConversion()
 	case invoice.FieldDescription:
 		return m.Description()
 	case invoice.FieldDueDate:
@@ -36472,6 +38041,8 @@ func (m *InvoiceMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldTotal(ctx)
 	case invoice.FieldCustomCurrency:
 		return m.OldCustomCurrency(ctx)
+	case invoice.FieldFxConversion:
+		return m.OldFxConversion(ctx)
 	case invoice.FieldDescription:
 		return m.OldDescription(ctx)
 	case invoice.FieldDueDate:
@@ -36692,6 +38263,13 @@ func (m *InvoiceMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetCustomCurrency(v)
+		return nil
+	case invoice.FieldFxConversion:
+		v, ok := value.(*types.FxConversion)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFxConversion(v)
 		return nil
 	case invoice.FieldDescription:
 		v, ok := value.(string)
@@ -36940,6 +38518,9 @@ func (m *InvoiceMutation) ClearedFields() []string {
 	if m.FieldCleared(invoice.FieldCustomCurrency) {
 		fields = append(fields, invoice.FieldCustomCurrency)
 	}
+	if m.FieldCleared(invoice.FieldFxConversion) {
+		fields = append(fields, invoice.FieldFxConversion)
+	}
 	if m.FieldCleared(invoice.FieldDescription) {
 		fields = append(fields, invoice.FieldDescription)
 	}
@@ -37049,6 +38630,9 @@ func (m *InvoiceMutation) ClearField(name string) error {
 		return nil
 	case invoice.FieldCustomCurrency:
 		m.ClearCustomCurrency()
+		return nil
+	case invoice.FieldFxConversion:
+		m.ClearFxConversion()
 		return nil
 	case invoice.FieldDescription:
 		m.ClearDescription()
@@ -37189,6 +38773,9 @@ func (m *InvoiceMutation) ResetField(name string) error {
 		return nil
 	case invoice.FieldCustomCurrency:
 		m.ResetCustomCurrency()
+		return nil
+	case invoice.FieldFxConversion:
+		m.ResetFxConversion()
 		return nil
 	case invoice.FieldDescription:
 		m.ResetDescription()
@@ -37410,6 +38997,7 @@ type InvoiceLineItemMutation struct {
 	adjusted_entitlement_quantity *decimal.Decimal
 	parent_line_item_id           *string
 	custom_currency               **types.CustomCurrencyLineItem
+	fx_conversion                 **types.FxConversion
 	clearedFields                 map[string]struct{}
 	invoice                       *string
 	clearedinvoice                bool
@@ -39123,6 +40711,55 @@ func (m *InvoiceLineItemMutation) ResetCustomCurrency() {
 	delete(m.clearedFields, invoicelineitem.FieldCustomCurrency)
 }
 
+// SetFxConversion sets the "fx_conversion" field.
+func (m *InvoiceLineItemMutation) SetFxConversion(tc *types.FxConversion) {
+	m.fx_conversion = &tc
+}
+
+// FxConversion returns the value of the "fx_conversion" field in the mutation.
+func (m *InvoiceLineItemMutation) FxConversion() (r *types.FxConversion, exists bool) {
+	v := m.fx_conversion
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFxConversion returns the old "fx_conversion" field's value of the InvoiceLineItem entity.
+// If the InvoiceLineItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceLineItemMutation) OldFxConversion(ctx context.Context) (v *types.FxConversion, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFxConversion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFxConversion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFxConversion: %w", err)
+	}
+	return oldValue.FxConversion, nil
+}
+
+// ClearFxConversion clears the value of the "fx_conversion" field.
+func (m *InvoiceLineItemMutation) ClearFxConversion() {
+	m.fx_conversion = nil
+	m.clearedFields[invoicelineitem.FieldFxConversion] = struct{}{}
+}
+
+// FxConversionCleared returns if the "fx_conversion" field was cleared in this mutation.
+func (m *InvoiceLineItemMutation) FxConversionCleared() bool {
+	_, ok := m.clearedFields[invoicelineitem.FieldFxConversion]
+	return ok
+}
+
+// ResetFxConversion resets all changes to the "fx_conversion" field.
+func (m *InvoiceLineItemMutation) ResetFxConversion() {
+	m.fx_conversion = nil
+	delete(m.clearedFields, invoicelineitem.FieldFxConversion)
+}
+
 // ClearInvoice clears the "invoice" edge to the Invoice entity.
 func (m *InvoiceLineItemMutation) ClearInvoice() {
 	m.clearedinvoice = true
@@ -39238,7 +40875,7 @@ func (m *InvoiceLineItemMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InvoiceLineItemMutation) Fields() []string {
-	fields := make([]string, 0, 35)
+	fields := make([]string, 0, 36)
 	if m.tenant_id != nil {
 		fields = append(fields, invoicelineitem.FieldTenantID)
 	}
@@ -39344,6 +40981,9 @@ func (m *InvoiceLineItemMutation) Fields() []string {
 	if m.custom_currency != nil {
 		fields = append(fields, invoicelineitem.FieldCustomCurrency)
 	}
+	if m.fx_conversion != nil {
+		fields = append(fields, invoicelineitem.FieldFxConversion)
+	}
 	return fields
 }
 
@@ -39422,6 +41062,8 @@ func (m *InvoiceLineItemMutation) Field(name string) (ent.Value, bool) {
 		return m.ParentLineItemID()
 	case invoicelineitem.FieldCustomCurrency:
 		return m.CustomCurrency()
+	case invoicelineitem.FieldFxConversion:
+		return m.FxConversion()
 	}
 	return nil, false
 }
@@ -39501,6 +41143,8 @@ func (m *InvoiceLineItemMutation) OldField(ctx context.Context, name string) (en
 		return m.OldParentLineItemID(ctx)
 	case invoicelineitem.FieldCustomCurrency:
 		return m.OldCustomCurrency(ctx)
+	case invoicelineitem.FieldFxConversion:
+		return m.OldFxConversion(ctx)
 	}
 	return nil, fmt.Errorf("unknown InvoiceLineItem field %s", name)
 }
@@ -39755,6 +41399,13 @@ func (m *InvoiceLineItemMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetCustomCurrency(v)
 		return nil
+	case invoicelineitem.FieldFxConversion:
+		v, ok := value.(*types.FxConversion)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFxConversion(v)
+		return nil
 	}
 	return fmt.Errorf("unknown InvoiceLineItem field %s", name)
 }
@@ -39863,6 +41514,9 @@ func (m *InvoiceLineItemMutation) ClearedFields() []string {
 	if m.FieldCleared(invoicelineitem.FieldCustomCurrency) {
 		fields = append(fields, invoicelineitem.FieldCustomCurrency)
 	}
+	if m.FieldCleared(invoicelineitem.FieldFxConversion) {
+		fields = append(fields, invoicelineitem.FieldFxConversion)
+	}
 	return fields
 }
 
@@ -39954,6 +41608,9 @@ func (m *InvoiceLineItemMutation) ClearField(name string) error {
 		return nil
 	case invoicelineitem.FieldCustomCurrency:
 		m.ClearCustomCurrency()
+		return nil
+	case invoicelineitem.FieldFxConversion:
+		m.ClearFxConversion()
 		return nil
 	}
 	return fmt.Errorf("unknown InvoiceLineItem nullable field %s", name)
@@ -40067,6 +41724,9 @@ func (m *InvoiceLineItemMutation) ResetField(name string) error {
 		return nil
 	case invoicelineitem.FieldCustomCurrency:
 		m.ResetCustomCurrency()
+		return nil
+	case invoicelineitem.FieldFxConversion:
+		m.ResetFxConversion()
 		return nil
 	}
 	return fmt.Errorf("unknown InvoiceLineItem field %s", name)
@@ -73665,31 +75325,35 @@ func (m *TaskMutation) ResetEdge(name string) error {
 // TaxAppliedMutation represents an operation that mutates the TaxApplied nodes in the graph.
 type TaxAppliedMutation struct {
 	config
-	op                 Op
-	typ                string
-	id                 *string
-	tenant_id          *string
-	status             *string
-	created_at         *time.Time
-	updated_at         *time.Time
-	created_by         *string
-	updated_by         *string
-	environment_id     *string
-	tax_rate_id        *string
-	entity_type        *string
-	entity_id          *string
-	tax_association_id *string
-	taxable_amount     *decimal.Decimal
-	tax_amount         *decimal.Decimal
-	currency           *string
-	applied_at         *time.Time
-	metadata           *map[string]string
-	idempotency_key    *string
-	tax_behavior       *types.TaxBehavior
-	clearedFields      map[string]struct{}
-	done               bool
-	oldValue           func(context.Context) (*TaxApplied, error)
-	predicates         []predicate.TaxApplied
+	op                   Op
+	typ                  string
+	id                   *string
+	tenant_id            *string
+	status               *string
+	created_at           *time.Time
+	updated_at           *time.Time
+	created_by           *string
+	updated_by           *string
+	environment_id       *string
+	tax_rate_id          *string
+	entity_type          *string
+	entity_id            *string
+	tax_association_id   *string
+	taxable_amount       *decimal.Decimal
+	tax_amount           *decimal.Decimal
+	currency             *string
+	applied_at           *time.Time
+	metadata             *map[string]string
+	idempotency_key      *string
+	tax_behavior         *types.TaxBehavior
+	provider             *types.TaxProvider
+	tax_transaction_id   *string
+	tax_transaction_type *types.TaxTransactionType
+	external_tax_details **types.ExternalTaxDetails
+	clearedFields        map[string]struct{}
+	done                 bool
+	oldValue             func(context.Context) (*TaxApplied, error)
+	predicates           []predicate.TaxApplied
 }
 
 var _ ent.Mutation = (*TaxAppliedMutation)(nil)
@@ -74104,7 +75768,7 @@ func (m *TaxAppliedMutation) TaxRateID() (r string, exists bool) {
 // OldTaxRateID returns the old "tax_rate_id" field's value of the TaxApplied entity.
 // If the TaxApplied object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *TaxAppliedMutation) OldTaxRateID(ctx context.Context) (v string, err error) {
+func (m *TaxAppliedMutation) OldTaxRateID(ctx context.Context) (v *string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldTaxRateID is only allowed on UpdateOne operations")
 	}
@@ -74118,9 +75782,22 @@ func (m *TaxAppliedMutation) OldTaxRateID(ctx context.Context) (v string, err er
 	return oldValue.TaxRateID, nil
 }
 
+// ClearTaxRateID clears the value of the "tax_rate_id" field.
+func (m *TaxAppliedMutation) ClearTaxRateID() {
+	m.tax_rate_id = nil
+	m.clearedFields[taxapplied.FieldTaxRateID] = struct{}{}
+}
+
+// TaxRateIDCleared returns if the "tax_rate_id" field was cleared in this mutation.
+func (m *TaxAppliedMutation) TaxRateIDCleared() bool {
+	_, ok := m.clearedFields[taxapplied.FieldTaxRateID]
+	return ok
+}
+
 // ResetTaxRateID resets all changes to the "tax_rate_id" field.
 func (m *TaxAppliedMutation) ResetTaxRateID() {
 	m.tax_rate_id = nil
+	delete(m.clearedFields, taxapplied.FieldTaxRateID)
 }
 
 // SetEntityType sets the "entity_type" field.
@@ -74535,6 +76212,202 @@ func (m *TaxAppliedMutation) ResetTaxBehavior() {
 	delete(m.clearedFields, taxapplied.FieldTaxBehavior)
 }
 
+// SetProvider sets the "provider" field.
+func (m *TaxAppliedMutation) SetProvider(tp types.TaxProvider) {
+	m.provider = &tp
+}
+
+// Provider returns the value of the "provider" field in the mutation.
+func (m *TaxAppliedMutation) Provider() (r types.TaxProvider, exists bool) {
+	v := m.provider
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProvider returns the old "provider" field's value of the TaxApplied entity.
+// If the TaxApplied object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TaxAppliedMutation) OldProvider(ctx context.Context) (v types.TaxProvider, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProvider is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProvider requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProvider: %w", err)
+	}
+	return oldValue.Provider, nil
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (m *TaxAppliedMutation) ClearProvider() {
+	m.provider = nil
+	m.clearedFields[taxapplied.FieldProvider] = struct{}{}
+}
+
+// ProviderCleared returns if the "provider" field was cleared in this mutation.
+func (m *TaxAppliedMutation) ProviderCleared() bool {
+	_, ok := m.clearedFields[taxapplied.FieldProvider]
+	return ok
+}
+
+// ResetProvider resets all changes to the "provider" field.
+func (m *TaxAppliedMutation) ResetProvider() {
+	m.provider = nil
+	delete(m.clearedFields, taxapplied.FieldProvider)
+}
+
+// SetTaxTransactionID sets the "tax_transaction_id" field.
+func (m *TaxAppliedMutation) SetTaxTransactionID(s string) {
+	m.tax_transaction_id = &s
+}
+
+// TaxTransactionID returns the value of the "tax_transaction_id" field in the mutation.
+func (m *TaxAppliedMutation) TaxTransactionID() (r string, exists bool) {
+	v := m.tax_transaction_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaxTransactionID returns the old "tax_transaction_id" field's value of the TaxApplied entity.
+// If the TaxApplied object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TaxAppliedMutation) OldTaxTransactionID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaxTransactionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaxTransactionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaxTransactionID: %w", err)
+	}
+	return oldValue.TaxTransactionID, nil
+}
+
+// ClearTaxTransactionID clears the value of the "tax_transaction_id" field.
+func (m *TaxAppliedMutation) ClearTaxTransactionID() {
+	m.tax_transaction_id = nil
+	m.clearedFields[taxapplied.FieldTaxTransactionID] = struct{}{}
+}
+
+// TaxTransactionIDCleared returns if the "tax_transaction_id" field was cleared in this mutation.
+func (m *TaxAppliedMutation) TaxTransactionIDCleared() bool {
+	_, ok := m.clearedFields[taxapplied.FieldTaxTransactionID]
+	return ok
+}
+
+// ResetTaxTransactionID resets all changes to the "tax_transaction_id" field.
+func (m *TaxAppliedMutation) ResetTaxTransactionID() {
+	m.tax_transaction_id = nil
+	delete(m.clearedFields, taxapplied.FieldTaxTransactionID)
+}
+
+// SetTaxTransactionType sets the "tax_transaction_type" field.
+func (m *TaxAppliedMutation) SetTaxTransactionType(ttt types.TaxTransactionType) {
+	m.tax_transaction_type = &ttt
+}
+
+// TaxTransactionType returns the value of the "tax_transaction_type" field in the mutation.
+func (m *TaxAppliedMutation) TaxTransactionType() (r types.TaxTransactionType, exists bool) {
+	v := m.tax_transaction_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaxTransactionType returns the old "tax_transaction_type" field's value of the TaxApplied entity.
+// If the TaxApplied object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TaxAppliedMutation) OldTaxTransactionType(ctx context.Context) (v types.TaxTransactionType, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaxTransactionType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaxTransactionType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaxTransactionType: %w", err)
+	}
+	return oldValue.TaxTransactionType, nil
+}
+
+// ClearTaxTransactionType clears the value of the "tax_transaction_type" field.
+func (m *TaxAppliedMutation) ClearTaxTransactionType() {
+	m.tax_transaction_type = nil
+	m.clearedFields[taxapplied.FieldTaxTransactionType] = struct{}{}
+}
+
+// TaxTransactionTypeCleared returns if the "tax_transaction_type" field was cleared in this mutation.
+func (m *TaxAppliedMutation) TaxTransactionTypeCleared() bool {
+	_, ok := m.clearedFields[taxapplied.FieldTaxTransactionType]
+	return ok
+}
+
+// ResetTaxTransactionType resets all changes to the "tax_transaction_type" field.
+func (m *TaxAppliedMutation) ResetTaxTransactionType() {
+	m.tax_transaction_type = nil
+	delete(m.clearedFields, taxapplied.FieldTaxTransactionType)
+}
+
+// SetExternalTaxDetails sets the "external_tax_details" field.
+func (m *TaxAppliedMutation) SetExternalTaxDetails(ttd *types.ExternalTaxDetails) {
+	m.external_tax_details = &ttd
+}
+
+// ExternalTaxDetails returns the value of the "external_tax_details" field in the mutation.
+func (m *TaxAppliedMutation) ExternalTaxDetails() (r *types.ExternalTaxDetails, exists bool) {
+	v := m.external_tax_details
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExternalTaxDetails returns the old "external_tax_details" field's value of the TaxApplied entity.
+// If the TaxApplied object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TaxAppliedMutation) OldExternalTaxDetails(ctx context.Context) (v *types.ExternalTaxDetails, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExternalTaxDetails is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExternalTaxDetails requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExternalTaxDetails: %w", err)
+	}
+	return oldValue.ExternalTaxDetails, nil
+}
+
+// ClearExternalTaxDetails clears the value of the "external_tax_details" field.
+func (m *TaxAppliedMutation) ClearExternalTaxDetails() {
+	m.external_tax_details = nil
+	m.clearedFields[taxapplied.FieldExternalTaxDetails] = struct{}{}
+}
+
+// ExternalTaxDetailsCleared returns if the "external_tax_details" field was cleared in this mutation.
+func (m *TaxAppliedMutation) ExternalTaxDetailsCleared() bool {
+	_, ok := m.clearedFields[taxapplied.FieldExternalTaxDetails]
+	return ok
+}
+
+// ResetExternalTaxDetails resets all changes to the "external_tax_details" field.
+func (m *TaxAppliedMutation) ResetExternalTaxDetails() {
+	m.external_tax_details = nil
+	delete(m.clearedFields, taxapplied.FieldExternalTaxDetails)
+}
+
 // Where appends a list predicates to the TaxAppliedMutation builder.
 func (m *TaxAppliedMutation) Where(ps ...predicate.TaxApplied) {
 	m.predicates = append(m.predicates, ps...)
@@ -74569,7 +76442,7 @@ func (m *TaxAppliedMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TaxAppliedMutation) Fields() []string {
-	fields := make([]string, 0, 18)
+	fields := make([]string, 0, 22)
 	if m.tenant_id != nil {
 		fields = append(fields, taxapplied.FieldTenantID)
 	}
@@ -74624,6 +76497,18 @@ func (m *TaxAppliedMutation) Fields() []string {
 	if m.tax_behavior != nil {
 		fields = append(fields, taxapplied.FieldTaxBehavior)
 	}
+	if m.provider != nil {
+		fields = append(fields, taxapplied.FieldProvider)
+	}
+	if m.tax_transaction_id != nil {
+		fields = append(fields, taxapplied.FieldTaxTransactionID)
+	}
+	if m.tax_transaction_type != nil {
+		fields = append(fields, taxapplied.FieldTaxTransactionType)
+	}
+	if m.external_tax_details != nil {
+		fields = append(fields, taxapplied.FieldExternalTaxDetails)
+	}
 	return fields
 }
 
@@ -74668,6 +76553,14 @@ func (m *TaxAppliedMutation) Field(name string) (ent.Value, bool) {
 		return m.IdempotencyKey()
 	case taxapplied.FieldTaxBehavior:
 		return m.TaxBehavior()
+	case taxapplied.FieldProvider:
+		return m.Provider()
+	case taxapplied.FieldTaxTransactionID:
+		return m.TaxTransactionID()
+	case taxapplied.FieldTaxTransactionType:
+		return m.TaxTransactionType()
+	case taxapplied.FieldExternalTaxDetails:
+		return m.ExternalTaxDetails()
 	}
 	return nil, false
 }
@@ -74713,6 +76606,14 @@ func (m *TaxAppliedMutation) OldField(ctx context.Context, name string) (ent.Val
 		return m.OldIdempotencyKey(ctx)
 	case taxapplied.FieldTaxBehavior:
 		return m.OldTaxBehavior(ctx)
+	case taxapplied.FieldProvider:
+		return m.OldProvider(ctx)
+	case taxapplied.FieldTaxTransactionID:
+		return m.OldTaxTransactionID(ctx)
+	case taxapplied.FieldTaxTransactionType:
+		return m.OldTaxTransactionType(ctx)
+	case taxapplied.FieldExternalTaxDetails:
+		return m.OldExternalTaxDetails(ctx)
 	}
 	return nil, fmt.Errorf("unknown TaxApplied field %s", name)
 }
@@ -74848,6 +76749,34 @@ func (m *TaxAppliedMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetTaxBehavior(v)
 		return nil
+	case taxapplied.FieldProvider:
+		v, ok := value.(types.TaxProvider)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProvider(v)
+		return nil
+	case taxapplied.FieldTaxTransactionID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaxTransactionID(v)
+		return nil
+	case taxapplied.FieldTaxTransactionType:
+		v, ok := value.(types.TaxTransactionType)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaxTransactionType(v)
+		return nil
+	case taxapplied.FieldExternalTaxDetails:
+		v, ok := value.(*types.ExternalTaxDetails)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExternalTaxDetails(v)
+		return nil
 	}
 	return fmt.Errorf("unknown TaxApplied field %s", name)
 }
@@ -74887,6 +76816,9 @@ func (m *TaxAppliedMutation) ClearedFields() []string {
 	if m.FieldCleared(taxapplied.FieldEnvironmentID) {
 		fields = append(fields, taxapplied.FieldEnvironmentID)
 	}
+	if m.FieldCleared(taxapplied.FieldTaxRateID) {
+		fields = append(fields, taxapplied.FieldTaxRateID)
+	}
 	if m.FieldCleared(taxapplied.FieldTaxAssociationID) {
 		fields = append(fields, taxapplied.FieldTaxAssociationID)
 	}
@@ -74898,6 +76830,18 @@ func (m *TaxAppliedMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(taxapplied.FieldTaxBehavior) {
 		fields = append(fields, taxapplied.FieldTaxBehavior)
+	}
+	if m.FieldCleared(taxapplied.FieldProvider) {
+		fields = append(fields, taxapplied.FieldProvider)
+	}
+	if m.FieldCleared(taxapplied.FieldTaxTransactionID) {
+		fields = append(fields, taxapplied.FieldTaxTransactionID)
+	}
+	if m.FieldCleared(taxapplied.FieldTaxTransactionType) {
+		fields = append(fields, taxapplied.FieldTaxTransactionType)
+	}
+	if m.FieldCleared(taxapplied.FieldExternalTaxDetails) {
+		fields = append(fields, taxapplied.FieldExternalTaxDetails)
 	}
 	return fields
 }
@@ -74922,6 +76866,9 @@ func (m *TaxAppliedMutation) ClearField(name string) error {
 	case taxapplied.FieldEnvironmentID:
 		m.ClearEnvironmentID()
 		return nil
+	case taxapplied.FieldTaxRateID:
+		m.ClearTaxRateID()
+		return nil
 	case taxapplied.FieldTaxAssociationID:
 		m.ClearTaxAssociationID()
 		return nil
@@ -74933,6 +76880,18 @@ func (m *TaxAppliedMutation) ClearField(name string) error {
 		return nil
 	case taxapplied.FieldTaxBehavior:
 		m.ClearTaxBehavior()
+		return nil
+	case taxapplied.FieldProvider:
+		m.ClearProvider()
+		return nil
+	case taxapplied.FieldTaxTransactionID:
+		m.ClearTaxTransactionID()
+		return nil
+	case taxapplied.FieldTaxTransactionType:
+		m.ClearTaxTransactionType()
+		return nil
+	case taxapplied.FieldExternalTaxDetails:
+		m.ClearExternalTaxDetails()
 		return nil
 	}
 	return fmt.Errorf("unknown TaxApplied nullable field %s", name)
@@ -74995,6 +76954,18 @@ func (m *TaxAppliedMutation) ResetField(name string) error {
 		return nil
 	case taxapplied.FieldTaxBehavior:
 		m.ResetTaxBehavior()
+		return nil
+	case taxapplied.FieldProvider:
+		m.ResetProvider()
+		return nil
+	case taxapplied.FieldTaxTransactionID:
+		m.ResetTaxTransactionID()
+		return nil
+	case taxapplied.FieldTaxTransactionType:
+		m.ResetTaxTransactionType()
+		return nil
+	case taxapplied.FieldExternalTaxDetails:
+		m.ResetExternalTaxDetails()
 		return nil
 	}
 	return fmt.Errorf("unknown TaxApplied field %s", name)
@@ -82372,42 +84343,46 @@ func (m *WalletMutation) ResetEdge(name string) error {
 // WalletTransactionMutation represents an operation that mutates the WalletTransaction nodes in the graph.
 type WalletTransactionMutation struct {
 	config
-	op                    Op
-	typ                   string
-	id                    *string
-	tenant_id             *string
-	status                *string
-	created_at            *time.Time
-	updated_at            *time.Time
-	created_by            *string
-	updated_by            *string
-	environment_id        *string
-	wallet_id             *string
-	customer_id           *string
-	_type                 *types.TransactionType
-	amount                *decimal.Decimal
-	credit_amount         *decimal.Decimal
-	credit_balance_before *decimal.Decimal
-	credit_balance_after  *decimal.Decimal
-	reference_type        *types.WalletTxReferenceType
-	reference_id          *string
-	description           *string
-	metadata              *map[string]string
-	transaction_status    *types.TransactionStatus
-	expiry_date           *time.Time
-	credits_available     *decimal.Decimal
-	currency              *string
-	conversion_rate       *decimal.Decimal
-	topup_conversion_rate *decimal.Decimal
-	idempotency_key       *string
-	transaction_reason    *types.TransactionReason
-	priority              *int
-	addpriority           *int
-	parent_transaction_id *string
-	clearedFields         map[string]struct{}
-	done                  bool
-	oldValue              func(context.Context) (*WalletTransaction, error)
-	predicates            []predicate.WalletTransaction
+	op                          Op
+	typ                         string
+	id                          *string
+	tenant_id                   *string
+	status                      *string
+	created_at                  *time.Time
+	updated_at                  *time.Time
+	created_by                  *string
+	updated_by                  *string
+	environment_id              *string
+	wallet_id                   *string
+	customer_id                 *string
+	_type                       *types.TransactionType
+	amount                      *decimal.Decimal
+	credit_amount               *decimal.Decimal
+	credit_balance_before       *decimal.Decimal
+	credit_balance_after        *decimal.Decimal
+	reference_type              *types.WalletTxReferenceType
+	reference_id                *string
+	description                 *string
+	metadata                    *map[string]string
+	transaction_status          *types.TransactionStatus
+	expiry_date                 *time.Time
+	credits_available           *decimal.Decimal
+	currency                    *string
+	conversion_rate             *decimal.Decimal
+	topup_conversion_rate       *decimal.Decimal
+	idempotency_key             *string
+	transaction_reason          *types.TransactionReason
+	priority                    *int
+	addpriority                 *int
+	parent_transaction_id       *string
+	source_type                 *types.WalletTxSourceType
+	source_id                   *string
+	consumption_breakdown       *[]*types.WalletTxConsumption
+	appendconsumption_breakdown []*types.WalletTxConsumption
+	clearedFields               map[string]struct{}
+	done                        bool
+	oldValue                    func(context.Context) (*WalletTransaction, error)
+	predicates                  []predicate.WalletTransaction
 }
 
 var _ ent.Mutation = (*WalletTransactionMutation)(nil)
@@ -83725,6 +85700,169 @@ func (m *WalletTransactionMutation) ResetParentTransactionID() {
 	delete(m.clearedFields, wallettransaction.FieldParentTransactionID)
 }
 
+// SetSourceType sets the "source_type" field.
+func (m *WalletTransactionMutation) SetSourceType(ttst types.WalletTxSourceType) {
+	m.source_type = &ttst
+}
+
+// SourceType returns the value of the "source_type" field in the mutation.
+func (m *WalletTransactionMutation) SourceType() (r types.WalletTxSourceType, exists bool) {
+	v := m.source_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceType returns the old "source_type" field's value of the WalletTransaction entity.
+// If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletTransactionMutation) OldSourceType(ctx context.Context) (v *types.WalletTxSourceType, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceType: %w", err)
+	}
+	return oldValue.SourceType, nil
+}
+
+// ClearSourceType clears the value of the "source_type" field.
+func (m *WalletTransactionMutation) ClearSourceType() {
+	m.source_type = nil
+	m.clearedFields[wallettransaction.FieldSourceType] = struct{}{}
+}
+
+// SourceTypeCleared returns if the "source_type" field was cleared in this mutation.
+func (m *WalletTransactionMutation) SourceTypeCleared() bool {
+	_, ok := m.clearedFields[wallettransaction.FieldSourceType]
+	return ok
+}
+
+// ResetSourceType resets all changes to the "source_type" field.
+func (m *WalletTransactionMutation) ResetSourceType() {
+	m.source_type = nil
+	delete(m.clearedFields, wallettransaction.FieldSourceType)
+}
+
+// SetSourceID sets the "source_id" field.
+func (m *WalletTransactionMutation) SetSourceID(s string) {
+	m.source_id = &s
+}
+
+// SourceID returns the value of the "source_id" field in the mutation.
+func (m *WalletTransactionMutation) SourceID() (r string, exists bool) {
+	v := m.source_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceID returns the old "source_id" field's value of the WalletTransaction entity.
+// If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletTransactionMutation) OldSourceID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceID: %w", err)
+	}
+	return oldValue.SourceID, nil
+}
+
+// ClearSourceID clears the value of the "source_id" field.
+func (m *WalletTransactionMutation) ClearSourceID() {
+	m.source_id = nil
+	m.clearedFields[wallettransaction.FieldSourceID] = struct{}{}
+}
+
+// SourceIDCleared returns if the "source_id" field was cleared in this mutation.
+func (m *WalletTransactionMutation) SourceIDCleared() bool {
+	_, ok := m.clearedFields[wallettransaction.FieldSourceID]
+	return ok
+}
+
+// ResetSourceID resets all changes to the "source_id" field.
+func (m *WalletTransactionMutation) ResetSourceID() {
+	m.source_id = nil
+	delete(m.clearedFields, wallettransaction.FieldSourceID)
+}
+
+// SetConsumptionBreakdown sets the "consumption_breakdown" field.
+func (m *WalletTransactionMutation) SetConsumptionBreakdown(ttc []*types.WalletTxConsumption) {
+	m.consumption_breakdown = &ttc
+	m.appendconsumption_breakdown = nil
+}
+
+// ConsumptionBreakdown returns the value of the "consumption_breakdown" field in the mutation.
+func (m *WalletTransactionMutation) ConsumptionBreakdown() (r []*types.WalletTxConsumption, exists bool) {
+	v := m.consumption_breakdown
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConsumptionBreakdown returns the old "consumption_breakdown" field's value of the WalletTransaction entity.
+// If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletTransactionMutation) OldConsumptionBreakdown(ctx context.Context) (v []*types.WalletTxConsumption, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConsumptionBreakdown is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConsumptionBreakdown requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConsumptionBreakdown: %w", err)
+	}
+	return oldValue.ConsumptionBreakdown, nil
+}
+
+// AppendConsumptionBreakdown adds ttc to the "consumption_breakdown" field.
+func (m *WalletTransactionMutation) AppendConsumptionBreakdown(ttc []*types.WalletTxConsumption) {
+	m.appendconsumption_breakdown = append(m.appendconsumption_breakdown, ttc...)
+}
+
+// AppendedConsumptionBreakdown returns the list of values that were appended to the "consumption_breakdown" field in this mutation.
+func (m *WalletTransactionMutation) AppendedConsumptionBreakdown() ([]*types.WalletTxConsumption, bool) {
+	if len(m.appendconsumption_breakdown) == 0 {
+		return nil, false
+	}
+	return m.appendconsumption_breakdown, true
+}
+
+// ClearConsumptionBreakdown clears the value of the "consumption_breakdown" field.
+func (m *WalletTransactionMutation) ClearConsumptionBreakdown() {
+	m.consumption_breakdown = nil
+	m.appendconsumption_breakdown = nil
+	m.clearedFields[wallettransaction.FieldConsumptionBreakdown] = struct{}{}
+}
+
+// ConsumptionBreakdownCleared returns if the "consumption_breakdown" field was cleared in this mutation.
+func (m *WalletTransactionMutation) ConsumptionBreakdownCleared() bool {
+	_, ok := m.clearedFields[wallettransaction.FieldConsumptionBreakdown]
+	return ok
+}
+
+// ResetConsumptionBreakdown resets all changes to the "consumption_breakdown" field.
+func (m *WalletTransactionMutation) ResetConsumptionBreakdown() {
+	m.consumption_breakdown = nil
+	m.appendconsumption_breakdown = nil
+	delete(m.clearedFields, wallettransaction.FieldConsumptionBreakdown)
+}
+
 // Where appends a list predicates to the WalletTransactionMutation builder.
 func (m *WalletTransactionMutation) Where(ps ...predicate.WalletTransaction) {
 	m.predicates = append(m.predicates, ps...)
@@ -83759,7 +85897,7 @@ func (m *WalletTransactionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *WalletTransactionMutation) Fields() []string {
-	fields := make([]string, 0, 28)
+	fields := make([]string, 0, 31)
 	if m.tenant_id != nil {
 		fields = append(fields, wallettransaction.FieldTenantID)
 	}
@@ -83844,6 +85982,15 @@ func (m *WalletTransactionMutation) Fields() []string {
 	if m.parent_transaction_id != nil {
 		fields = append(fields, wallettransaction.FieldParentTransactionID)
 	}
+	if m.source_type != nil {
+		fields = append(fields, wallettransaction.FieldSourceType)
+	}
+	if m.source_id != nil {
+		fields = append(fields, wallettransaction.FieldSourceID)
+	}
+	if m.consumption_breakdown != nil {
+		fields = append(fields, wallettransaction.FieldConsumptionBreakdown)
+	}
 	return fields
 }
 
@@ -83908,6 +86055,12 @@ func (m *WalletTransactionMutation) Field(name string) (ent.Value, bool) {
 		return m.Priority()
 	case wallettransaction.FieldParentTransactionID:
 		return m.ParentTransactionID()
+	case wallettransaction.FieldSourceType:
+		return m.SourceType()
+	case wallettransaction.FieldSourceID:
+		return m.SourceID()
+	case wallettransaction.FieldConsumptionBreakdown:
+		return m.ConsumptionBreakdown()
 	}
 	return nil, false
 }
@@ -83973,6 +86126,12 @@ func (m *WalletTransactionMutation) OldField(ctx context.Context, name string) (
 		return m.OldPriority(ctx)
 	case wallettransaction.FieldParentTransactionID:
 		return m.OldParentTransactionID(ctx)
+	case wallettransaction.FieldSourceType:
+		return m.OldSourceType(ctx)
+	case wallettransaction.FieldSourceID:
+		return m.OldSourceID(ctx)
+	case wallettransaction.FieldConsumptionBreakdown:
+		return m.OldConsumptionBreakdown(ctx)
 	}
 	return nil, fmt.Errorf("unknown WalletTransaction field %s", name)
 }
@@ -84178,6 +86337,27 @@ func (m *WalletTransactionMutation) SetField(name string, value ent.Value) error
 		}
 		m.SetParentTransactionID(v)
 		return nil
+	case wallettransaction.FieldSourceType:
+		v, ok := value.(types.WalletTxSourceType)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceType(v)
+		return nil
+	case wallettransaction.FieldSourceID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceID(v)
+		return nil
+	case wallettransaction.FieldConsumptionBreakdown:
+		v, ok := value.([]*types.WalletTxConsumption)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConsumptionBreakdown(v)
+		return nil
 	}
 	return fmt.Errorf("unknown WalletTransaction field %s", name)
 }
@@ -84265,6 +86445,15 @@ func (m *WalletTransactionMutation) ClearedFields() []string {
 	if m.FieldCleared(wallettransaction.FieldParentTransactionID) {
 		fields = append(fields, wallettransaction.FieldParentTransactionID)
 	}
+	if m.FieldCleared(wallettransaction.FieldSourceType) {
+		fields = append(fields, wallettransaction.FieldSourceType)
+	}
+	if m.FieldCleared(wallettransaction.FieldSourceID) {
+		fields = append(fields, wallettransaction.FieldSourceID)
+	}
+	if m.FieldCleared(wallettransaction.FieldConsumptionBreakdown) {
+		fields = append(fields, wallettransaction.FieldConsumptionBreakdown)
+	}
 	return fields
 }
 
@@ -84320,6 +86509,15 @@ func (m *WalletTransactionMutation) ClearField(name string) error {
 		return nil
 	case wallettransaction.FieldParentTransactionID:
 		m.ClearParentTransactionID()
+		return nil
+	case wallettransaction.FieldSourceType:
+		m.ClearSourceType()
+		return nil
+	case wallettransaction.FieldSourceID:
+		m.ClearSourceID()
+		return nil
+	case wallettransaction.FieldConsumptionBreakdown:
+		m.ClearConsumptionBreakdown()
 		return nil
 	}
 	return fmt.Errorf("unknown WalletTransaction nullable field %s", name)
@@ -84412,6 +86610,15 @@ func (m *WalletTransactionMutation) ResetField(name string) error {
 		return nil
 	case wallettransaction.FieldParentTransactionID:
 		m.ResetParentTransactionID()
+		return nil
+	case wallettransaction.FieldSourceType:
+		m.ResetSourceType()
+		return nil
+	case wallettransaction.FieldSourceID:
+		m.ResetSourceID()
+		return nil
+	case wallettransaction.FieldConsumptionBreakdown:
+		m.ResetConsumptionBreakdown()
 		return nil
 	}
 	return fmt.Errorf("unknown WalletTransaction field %s", name)

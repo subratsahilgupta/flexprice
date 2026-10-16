@@ -73,7 +73,8 @@ func (s *SubscriptionActivities) ScheduleBillingActivity(ctx context.Context, in
 				Offset: lo.ToPtr(offset),
 				Status: lo.ToPtr(types.StatusPublished),
 			},
-			SubscriptionStatus:     []types.SubscriptionStatus{types.SubscriptionStatusActive},
+			// Paused subscriptions keep rolling so each paused period gets its SKIPPED invoice.
+			SubscriptionStatus:     []types.SubscriptionStatus{types.SubscriptionStatusActive, types.SubscriptionStatusPaused},
 			EffectiveDateForUpdate: &now,
 			SubscriptionTypes: []types.SubscriptionType{
 				types.SubscriptionTypeStandalone,
@@ -138,6 +139,8 @@ func (s *SubscriptionActivities) ScheduleBillingActivity(ctx context.Context, in
 			response.SubscriptionIDs = append(response.SubscriptionIDs, sub.ID)
 			totalProcessed++
 		}
+
+		activity.RecordHeartbeat(ctx, offset+len(subs.Items))
 
 		// Check if we got fewer results than batch size (last page)
 		if len(subs.Items) < batchSize {

@@ -275,3 +275,63 @@ func getGroupedInvoicingChildren(
 
 	return sp.SubRepo.List(ctx, filter)
 }
+
+// invoicingSubscription returns the subscription whose invoice carries sub's charges: the parent for a grouped child, else sub.
+func invoicingSubscription(ctx context.Context, sp ServiceParams, sub *subscription.Subscription) (*subscription.Subscription, error) {
+	if sub.SubscriptionType != types.SubscriptionTypeGroupedInvoicing || lo.FromPtr(sub.ParentSubscriptionID) == "" {
+		return sub, nil
+	}
+
+	return sp.SubRepo.Get(ctx, *sub.ParentSubscriptionID)
+}
+
+// checkoutPayerID returns the customer who pays sub's checkout: the parent's invoicing customer for a grouped child, else sub's customer.
+func checkoutPayerID(ctx context.Context, sp ServiceParams, sub *subscription.Subscription) (string, error) {
+	invoicingSub, err := invoicingSubscription(ctx, sp, sub)
+	if err != nil {
+		return "", err
+	}
+	if invoicingSub == sub {
+		return sub.CustomerID, nil
+	}
+
+	return invoicingSub.GetInvoicingCustomerID(), nil
+}
+
+// validateGroupedChangeTarget checks that target is the parent itself or one of its live grouped children.
+func validateGroupedChangeTarget(parent, target *subscription.Subscription) error {
+	isLive := func(sub *subscription.Subscription) bool {
+		return sub.SubscriptionStatus == types.SubscriptionStatusActive ||
+			sub.SubscriptionStatus == types.SubscriptionStatusTrialing
+	}
+
+	if parent.SubscriptionType != types.SubscriptionTypeParent || !isLive(parent) {
+		return ierr.NewError("subscription must be an active or trialing parent").
+			WithHint("Grouped invoicing action 'modify' runs on the parent subscription").
+			WithReportableDetails(map[string]any{
+				"parent_subscription_id":     parent.ID,
+				"parent_subscription_type":   parent.SubscriptionType,
+				"parent_subscription_status": parent.SubscriptionStatus,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if target.ID == parent.ID {
+		return nil
+	}
+
+	if target.SubscriptionType != types.SubscriptionTypeGroupedInvoicing ||
+		lo.FromPtr(target.ParentSubscriptionID) != parent.ID || !isLive(target) {
+		return ierr.NewError("subscription is not an active or trialing member of this group").
+			WithHint("Each change must target the parent or one of its grouped invoicing children").
+			WithReportableDetails(map[string]any{
+				"parent_subscription_id": parent.ID,
+				"subscription_id":        target.ID,
+				"subscription_type":      target.SubscriptionType,
+				"subscription_status":    target.SubscriptionStatus,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}

@@ -114,7 +114,7 @@ func NewClient(
 		logger:            logger,
 		httpClient: &http.Client{
 			Timeout:   30 * time.Second,
-			Transport: httpclient.OtelTransport(nil),
+			Transport: httpclient.ProviderTransport(nil, logger, string(types.SecretProviderQuickBooks)),
 		},
 		minorVersion: "70",
 	}

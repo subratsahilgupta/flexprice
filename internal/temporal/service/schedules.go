@@ -39,6 +39,13 @@ func AllTemporalScheduleConfigs() []types.ScheduleConfig {
 			TaskQueue: types.TemporalTaskQueueCron,
 		},
 		{
+			ID:        types.ScheduleIDSubscriptionOverdueInvoices,
+			Interval:  15 * time.Minute,
+			Workflow:  cronWorkflows.SubscriptionOverdueInvoicesWorkflow,
+			Input:     models.SubscriptionOverdueInvoicesWorkflowInput{},
+			TaskQueue: types.TemporalTaskQueueCron,
+		},
+		{
 			ID:        types.ScheduleIDWalletCreditExpiry,
 			Interval:  15 * time.Minute,
 			Workflow:  cronWorkflows.WalletCreditExpiryWorkflow,

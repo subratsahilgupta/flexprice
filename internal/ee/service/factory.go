@@ -3,8 +3,10 @@ package service
 import (
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/config"
+	domainActivity "github.com/flexprice/flexprice/internal/domain/activity"
 	"github.com/flexprice/flexprice/internal/domain/addon"
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
+	"github.com/flexprice/flexprice/internal/domain/addonpricesync"
 	"github.com/flexprice/flexprice/internal/domain/alert"
 	"github.com/flexprice/flexprice/internal/domain/alertlogs"
 	domainAnalytics "github.com/flexprice/flexprice/internal/domain/analytics"
@@ -25,6 +27,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/environment"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/feature"
+	fxrate "github.com/flexprice/flexprice/internal/domain/fxrate"
 	"github.com/flexprice/flexprice/internal/domain/group"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
@@ -110,6 +113,7 @@ type ServiceParams struct {
 	CreditNoteLineItemRepo       creditnote.CreditNoteLineItemRepository
 	CreditGrantApplicationRepo   creditgrantapplication.Repository
 	TaxRateRepo                  taxrate.Repository
+	FXRateRepo                   fxrate.Repository
 	TaxAssociationRepo           taxassociation.Repository
 	TaxAppliedRepo               taxapplied.Repository
 	CouponRepo                   coupon.Repository
@@ -126,10 +130,12 @@ type ServiceParams struct {
 	GroupRepo                    group.Repository
 	ScheduledTaskRepo            scheduledtask.Repository
 	PlanPriceSyncRepo            planpricesync.Repository
+	AddonPriceSyncRepo           addonpricesync.Repository
 	WorkflowExecutionRepo        workflowexecution.Repository
 	CheckoutSessionRepo          domainCheckout.Repository
 	AnalyticsViewRepo            domainAnalytics.Repository
 	RevenueFactRepo              revenuefact.Repository
+	ActivityRepo                 domainActivity.Repository
 
 	// Publishers
 	EventPublisher   publisher.EventPublisher
@@ -208,6 +214,7 @@ func NewServiceParams(
 	costSheetRepo costsheet.Repository,
 	taxAppliedRepo taxapplied.Repository,
 	taxRateRepo taxrate.Repository,
+	fxRateRepo fxrate.Repository,
 	couponRepo coupon.Repository,
 	couponAssociationRepo coupon_association.Repository,
 	couponApplicationRepo coupon_application.Repository,
@@ -229,12 +236,14 @@ func NewServiceParams(
 	walletBalanceAlertPubSub types.WalletBalanceAlertPubSub,
 	webhookPubSub pubsub.PubSub,
 	planPriceSyncRepo planpricesync.Repository,
+	addonPriceSyncRepo addonpricesync.Repository,
 	workflowExecutionRepo workflowexecution.Repository,
 	checkoutSessionRepo domainCheckout.Repository,
 	usageRecordRepo usagerecord.Repository,
 	encryptionService security.EncryptionService,
 	analyticsViewRepo domainAnalytics.Repository,
 	revenueFactRepo revenuefact.Repository,
+	activityRepo domainActivity.Repository,
 ) ServiceParams {
 	return ServiceParams{
 		Logger:                       logger,
@@ -278,6 +287,7 @@ func NewServiceParams(
 		CreditNoteRepo:               creditNoteRepo,
 		CreditNoteLineItemRepo:       creditNoteLineItemRepo,
 		TaxRateRepo:                  taxRateRepo,
+		FXRateRepo:                   fxRateRepo,
 		TaxAssociationRepo:           taxConfigRepo,
 		TaxAppliedRepo:               taxAppliedRepo,
 		EventPublisher:               eventPublisher,
@@ -303,9 +313,11 @@ func NewServiceParams(
 		WalletBalanceAlertPubSub:     walletBalanceAlertPubSub,
 		WebhookPubSub:                webhookPubSub,
 		PlanPriceSyncRepo:            planPriceSyncRepo,
+		AddonPriceSyncRepo:           addonPriceSyncRepo,
 		WorkflowExecutionRepo:        workflowExecutionRepo,
 		CheckoutSessionRepo:          checkoutSessionRepo,
 		AnalyticsViewRepo:            analyticsViewRepo,
 		RevenueFactRepo:              revenueFactRepo,
+		ActivityRepo:                 activityRepo,
 	}
 }

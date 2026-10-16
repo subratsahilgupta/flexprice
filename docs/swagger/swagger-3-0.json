@@ -23,6 +23,134 @@
     }
   ],
   "paths": {
+    "/activity": {
+      "post": {
+        "tags": [
+          "Activity"
+        ],
+        "summary": "List activity",
+        "description": "Use when you need the audit trail of changes to billing entities: who changed what, when, from where. Filter by entity, customer, actor, action or request; pages are newest first.",
+        "operationId": "listActivity",
+        "requestBody": {
+          "description": "Filters",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListActivityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListActivityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "read",
+        "x-codegen-request-body-name": "filter"
+      }
+    },
+    "/activity/{id}": {
+      "get": {
+        "tags": [
+          "Activity"
+        ],
+        "summary": "Get activity",
+        "description": "Use when you need one activity entry with the state of the entity right after the change.",
+        "operationId": "getActivity",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Activity ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid activity id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Activity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
     "/addons": {
       "post": {
         "tags": [
@@ -501,6 +629,84 @@
           },
           "500": {
             "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/addons/{id}/sync/subscriptions": {
+      "post": {
+        "tags": [
+          "Addons"
+        ],
+        "summary": "Synchronize addon prices",
+        "description": "Use when you have changed an addon's usage charges and need to push them to all active subscriptions holding the addon. Returns workflow ID.",
+        "operationId": "syncAddonPrices",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Addon ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/models.TemporalWorkflowResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
             "content": {
               "application/json": {
                 "schema": {
@@ -5439,6 +5645,311 @@
         "x-codegen-request-body-name": "request"
       }
     },
+    "/forex": {
+      "post": {
+        "tags": [
+          "FX Rates"
+        ],
+        "summary": "Create an FX rate",
+        "description": "Configure a fixed exchange rate at tenant, customer or subscription scope. Overrides need a tenant rate for the same pair.",
+        "operationId": "createFXRate",
+        "requestBody": {
+          "description": "FX rate to create",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFXRateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FXRateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-codegen-request-body-name": "fx_rate"
+      }
+    },
+    "/forex/query": {
+      "post": {
+        "tags": [
+          "FX Rates"
+        ],
+        "summary": "Query FX rates",
+        "description": "Filter FX rates via a request body (POST used for a complex query, but read-only).",
+        "operationId": "queryFXRates",
+        "requestBody": {
+          "description": "Filter",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/types.FXRateFilter"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListFXRatesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "read",
+        "x-codegen-request-body-name": "filter"
+      }
+    },
+    "/forex/{id}": {
+      "get": {
+        "tags": [
+          "FX Rates"
+        ],
+        "summary": "Get an FX rate",
+        "description": "Load a single FX rate by ID.",
+        "operationId": "getFXRate",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "FX rate ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FXRateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "FX Rates"
+        ],
+        "summary": "Update an FX rate",
+        "description": "Update a rate's value, validity window (overrides only) or metadata. Scope, scope_id and the currency pair are immutable.",
+        "operationId": "updateFXRate",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "FX rate ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "FX rate fields to update",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFXRateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FXRateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-codegen-request-body-name": "fx_rate"
+      },
+      "delete": {
+        "tags": [
+          "FX Rates"
+        ],
+        "summary": "Delete an FX rate",
+        "description": "Archive a customer or subscription override. Tenant rates cannot be deleted.",
+        "operationId": "deleteFXRate",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "FX rate ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "delete"
+      }
+    },
     "/groups": {
       "post": {
         "tags": [
@@ -9996,6 +10507,56 @@
             }
           },
           {
+            "name": "subscription_ids",
+            "in": "query",
+            "description": "Filter by subscription IDs",
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "schedule_type",
+            "in": "query",
+            "description": "Filter by schedule type",
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "plan_change",
+                  "cancellation"
+                ]
+              }
+            }
+          },
+          {
+            "name": "schedule_status",
+            "in": "query",
+            "description": "Filter by schedule status",
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "executing",
+                  "executed",
+                  "cancelled",
+                  "failed"
+                ]
+              }
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "description": "Limit results",
@@ -11266,6 +11827,166 @@
           }
         ],
         "x-scope": "read",
+        "x-codegen-request-body-name": "request"
+      }
+    },
+    "/subscriptions/{id}/pause": {
+      "post": {
+        "tags": [
+          "Subscriptions"
+        ],
+        "summary": "Pause subscription",
+        "description": "Use when a customer stops temporarily. Pauses an active subscription now: usage and arrear fixed charges up to the pause are billed on a closing invoice, and every paused period after it gets a $0 skipped invoice.",
+        "operationId": "pauseSubscription",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Subscription ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Pause subscription request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PauseSubscriptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PauseSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-codegen-request-body-name": "request"
+      }
+    },
+    "/subscriptions/{id}/resume": {
+      "post": {
+        "tags": [
+          "Subscriptions"
+        ],
+        "summary": "Resume subscription",
+        "description": "Use when a paused customer comes back. Resumes a paused subscription now on its existing billing anchor: the first period runs from the resume to the next billing date and its advance charges are invoiced at once.",
+        "operationId": "resumeSubscription",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Subscription ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Resume subscription request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResumeSubscriptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumeSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
         "x-codegen-request-body-name": "request"
       }
     },
@@ -15196,6 +15917,48 @@
         }
       }
     },
+    "/webhook-events/invoice.sync.failed": {
+      "post": {
+        "tags": [
+          "Webhook Events"
+        ],
+        "summary": "invoice.sync.failed",
+        "description": "Fired once per provider when an invoice sync fails after its last retry.",
+        "responses": {
+          "200": {
+            "description": "Webhook payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/webhookDto.InvoiceSyncWebhookPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhook-events/invoice.sync.success": {
+      "post": {
+        "tags": [
+          "Webhook Events"
+        ],
+        "summary": "invoice.sync.success",
+        "description": "Fired once per provider when an invoice is synced to that provider.",
+        "responses": {
+          "200": {
+            "description": "Webhook payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/webhookDto.InvoiceSyncWebhookPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/webhook-events/invoice.update": {
       "post": {
         "tags": [
@@ -16763,6 +17526,47 @@
           }
         }
       },
+      "customer.ContactPerson": {
+        "required": [
+          "first_name"
+        ],
+        "type": "object",
+        "properties": {
+          "department": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "designation": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "first_name": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_primary": {
+            "type": "boolean"
+          },
+          "last_name": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "mobile": {
+            "maxLength": 20,
+            "type": "string"
+          },
+          "salutation": {
+            "maxLength": 25,
+            "type": "string"
+          }
+        }
+      },
       "AWSMarketplaceAgreement": {
         "required": [
           "customer_aws_account_id",
@@ -16807,6 +17611,88 @@
           }
         }
       },
+      "ActivityActor": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "ActivityEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "ActivityPagination": {
+        "type": "object",
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "next_cursor": {
+            "type": "string"
+          }
+        }
+      },
+      "ActivityResponse": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/ActivityActor"
+          },
+          "customer_id": {
+            "type": "string"
+          },
+          "entity": {
+            "$ref": "#/components/schemas/ActivityEntity"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "state": {
+            "type": "object",
+            "properties": {}
+          },
+          "user_agent": {
+            "type": "string"
+          }
+        }
+      },
       "AddAddonRequest": {
         "required": [
           "addon_id",
@@ -16825,6 +17711,13 @@
           },
           "checkout": {
             "$ref": "#/components/schemas/CheckoutParams"
+          },
+          "coupons": {
+            "type": "array",
+            "description": "Coupons apply to this addon's line items; price_id targets one price, omitted targets all.",
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionCouponInput"
+            }
           },
           "line_item_commitments": {
             "type": "object",
@@ -16870,6 +17763,13 @@
           },
           "change_at": {
             "$ref": "#/components/schemas/types.ScheduleType"
+          },
+          "coupons": {
+            "type": "array",
+            "description": "Coupons apply to this addon's line items; price_id targets one price, omitted targets all.",
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionCouponInput"
+            }
           },
           "line_item_commitments": {
             "type": "object",
@@ -16953,6 +17853,10 @@
           },
           "status": {
             "$ref": "#/components/schemas/types.Status"
+          },
+          "synced_price_sequence": {
+            "type": "integer",
+            "description": "SyncedPriceSequence is the addon price sequence this association's line items\nhave been reconciled up to. Written only by the addon usage-price sync."
           },
           "tenant_id": {
             "type": "string"
@@ -17052,6 +17956,10 @@
           "subscription": {
             "$ref": "#/components/schemas/SubscriptionResponse"
           },
+          "synced_price_sequence": {
+            "type": "integer",
+            "description": "SyncedPriceSequence is the addon price sequence this association's line items\nhave been reconciled up to. Written only by the addon usage-price sync."
+          },
           "tenant_id": {
             "type": "string"
           },
@@ -17061,6 +17969,20 @@
           },
           "updated_by": {
             "type": "string"
+          }
+        }
+      },
+      "AddonPriceSyncStatusResponse": {
+        "type": "object",
+        "properties": {
+          "current_sequence": {
+            "type": "integer"
+          },
+          "synced": {
+            "type": "boolean"
+          },
+          "unsynced_association_count": {
+            "type": "integer"
           }
         }
       },
@@ -17104,6 +18026,9 @@
           },
           "name": {
             "type": "string"
+          },
+          "price_sync_status": {
+            "$ref": "#/components/schemas/AddonPriceSyncStatusResponse"
           },
           "prices": {
             "type": "array",
@@ -17647,7 +18572,7 @@
             "description": "CancelAt is the exact date/time when the subscription should be cancelled.\nRequired for cancellation_type \"scheduled_date\"; optional for \"immediate\" (past dates only \u2014 backdated cancellation).\nFor \"scheduled_date\", accepts both future dates (deferred cancellation) and past dates (backdated cancellation).\nFor \"immediate\", accepts past/current dates only; use \"scheduled_date\" for future dates.",
             "format": "date-time"
           },
-          "cancel_immediately_inovice_policy": {
+          "cancel_immediately_invoice_policy": {
             "$ref": "#/components/schemas/types.CancelImmediatelyInvoicePolicy"
           },
           "cancellation_type": {
@@ -17726,6 +18651,9 @@
           "start_date": {
             "type": "string",
             "format": "date-time"
+          },
+          "subscription_id": {
+            "type": "string"
           }
         }
       },
@@ -17806,6 +18734,9 @@
           "start_date": {
             "type": "string",
             "format": "date-time"
+          },
+          "subscription_id": {
+            "type": "string"
           }
         }
       },
@@ -18109,6 +19040,14 @@
           }
         }
       },
+      "ConfigurationDetails": {
+        "type": "object",
+        "properties": {
+          "plan_change": {
+            "$ref": "#/components/schemas/PlanChangeScheduleDetails"
+          }
+        }
+      },
       "CostAnalyticItem": {
         "type": "object",
         "properties": {
@@ -18133,7 +19072,7 @@
             "type": "string"
           },
           "meter": {
-            "$ref": "#/components/schemas/meter.Meter"
+            "$ref": "#/components/schemas/Meter"
           },
           "meter_id": {
             "type": "string"
@@ -18556,6 +19495,9 @@
           "name": {
             "type": "string"
           },
+          "price_sync_status": {
+            "$ref": "#/components/schemas/AddonPriceSyncStatusResponse"
+          },
           "prices": {
             "type": "array",
             "description": "Optional expanded fields",
@@ -18846,6 +19788,9 @@
           "priority": {
             "type": "integer"
           },
+          "proration_behavior": {
+            "$ref": "#/components/schemas/types.ProrationBehavior"
+          },
           "scope": {
             "$ref": "#/components/schemas/types.CreditGrantScope"
           },
@@ -18968,10 +19913,23 @@
             "type": "string",
             "description": "address_state is the state, province, or region name with maximum 100 characters"
           },
+          "billing_currency": {
+            "maxLength": 10,
+            "type": "string",
+            "description": "billing_currency is the fiat currency invoices are issued in; empty means the charge currency is used as-is"
+          },
           "contact": {
             "maxLength": 20,
             "type": "string",
             "description": "contact is an optional contact number for the customer (e.g. phone)"
+          },
+          "contact_persons": {
+            "maxItems": 5,
+            "type": "array",
+            "description": "contact_persons are people at the customer; at most one may be primary",
+            "items": {
+              "$ref": "#/components/schemas/customer.ContactPerson"
+            }
           },
           "email": {
             "type": "string",
@@ -19126,6 +20084,48 @@
           },
           "provider_type": {
             "maxLength": 50,
+            "type": "string"
+          }
+        }
+      },
+      "CreateFXRateRequest": {
+        "required": [
+          "from_currency",
+          "scope",
+          "to_currency"
+        ],
+        "type": "object",
+        "properties": {
+          "end_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "from_currency": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "rate": {
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/types.FXRateScope"
+          },
+          "scope_id": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/types.FXRateSource"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to_currency": {
             "type": "string"
           }
         }
@@ -19930,6 +20930,13 @@
           "external_customer_id": {
             "type": "string"
           },
+          "fx_rates": {
+            "type": "array",
+            "description": "FxRates sets subscription-scope rates to the invoicing customer's billing currency, one per\nnon-overlapping window. Rejected when nothing needs converting or the pair has no tenant rate.",
+            "items": {
+              "$ref": "#/components/schemas/InlineFXRate"
+            }
+          },
           "gateway_payment_method_id": {
             "type": "string"
           },
@@ -20722,9 +21729,19 @@
             "type": "string",
             "description": "AddressState is the state of the customer's address"
           },
+          "billing_currency": {
+            "type": "string",
+            "description": "BillingCurrency is the fiat currency invoices are issued in; nil means charge currency is used as-is."
+          },
           "contact": {
             "type": "string",
             "description": "Contact is an optional contact number for the customer (e.g. phone)"
+          },
+          "contact_persons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/customer.ContactPerson"
+            }
           },
           "created_at": {
             "type": "string",
@@ -21243,6 +22260,77 @@
           },
           "type": {
             "$ref": "#/components/schemas/SubscriptionModifyType"
+          }
+        }
+      },
+      "ExecutionDetails": {
+        "type": "object",
+        "properties": {
+          "plan_change": {
+            "$ref": "#/components/schemas/PlanChangeScheduleResult"
+          }
+        }
+      },
+      "FXRateResponse": {
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "environment_id": {
+            "type": "string"
+          },
+          "from_currency": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "rate": {
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/types.FXRateScope"
+          },
+          "scope_id": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/types.FXRateSource"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.Status"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "to_currency": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": "string"
           }
         }
       },
@@ -22132,12 +23220,25 @@
         "type": "string",
         "enum": [
           "add",
-          "remove"
+          "remove",
+          "modify"
         ],
         "x-enum-varnames": [
           "GroupedInvoicingActionAdd",
-          "GroupedInvoicingActionRemove"
+          "GroupedInvoicingActionRemove",
+          "GroupedInvoicingActionModify"
         ]
+      },
+      "GroupedInvoicingChange": {
+        "type": "object",
+        "properties": {
+          "addon_bulk_params": {
+            "$ref": "#/components/schemas/SubModifyBulkAddonParams"
+          },
+          "subscription_id": {
+            "type": "string"
+          }
+        }
       },
       "GroupedInvoicingChildRequest": {
         "required": [
@@ -22301,6 +23402,22 @@
           "InheritanceActionRemove"
         ]
       },
+      "InlineFXRate": {
+        "type": "object",
+        "properties": {
+          "end_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rate": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "IntegrationConfigEntry": {
         "type": "object",
         "properties": {
@@ -22437,6 +23554,9 @@
           },
           "environment_id": {
             "type": "string"
+          },
+          "fx_conversion": {
+            "$ref": "#/components/schemas/types.FxConversion"
           },
           "id": {
             "type": "string"
@@ -22711,6 +23831,9 @@
             "description": "finalized_at is the timestamp when this invoice was finalized and made ready for payment",
             "format": "date-time"
           },
+          "fx_conversion": {
+            "$ref": "#/components/schemas/types.FxConversion"
+          },
           "id": {
             "type": "string",
             "description": "id is the unique identifier for this invoice"
@@ -22868,6 +23991,13 @@
             "type": "string",
             "description": "Amount reprices the charge. Flat fee only for now."
           },
+          "coupons": {
+            "type": "array",
+            "description": "Coupons apply to the new line item created by this change.",
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionCouponInput"
+            }
+          },
           "effective_date": {
             "type": "string",
             "format": "date-time"
@@ -22973,6 +24103,72 @@
           }
         }
       },
+      "ListActivityRequest": {
+        "type": "object",
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "actor_id": {
+            "type": "string"
+          },
+          "actor_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "customer_id": {
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "entity_id": {
+            "type": "string"
+          },
+          "entity_type": {
+            "type": "string"
+          },
+          "expand": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ListActivityResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityResponse"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/ActivityPagination"
+          }
+        }
+      },
       "ListAlertLogsResponse": {
         "type": "object",
         "properties": {
@@ -23022,6 +24218,20 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/EntityIntegrationMappingResponse"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/types.PaginationResponse"
+          }
+        }
+      },
+      "ListFXRatesResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FXRateResponse"
             }
           },
           "pagination": {
@@ -23106,7 +24316,7 @@
             "type": "string"
           },
           "meter": {
-            "$ref": "#/components/schemas/meter.Meter"
+            "$ref": "#/components/schemas/Meter"
           },
           "meter_id": {
             "type": "string"
@@ -23339,6 +24549,39 @@
           }
         }
       },
+      "PauseSubscriptionRequest": {
+        "type": "object",
+        "properties": {
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Metadata stored on the pause\n@Example {\"requested_by\": \"customer\", \"channel\": \"support_ticket\"}"
+          },
+          "proration_behavior": {
+            "$ref": "#/components/schemas/types.ProrationBehavior"
+          },
+          "reason": {
+            "maxLength": 255,
+            "type": "string",
+            "description": "Reason for pausing the subscription\n@Description Optional reason for the pause. Maximum 255 characters\n@Example \"Customer requested temporary suspension\""
+          }
+        },
+        "description": "Pauses an active subscription now. Usage and arrear fixed charges up to the pause are billed on a closing invoice."
+      },
+      "PauseSubscriptionResponse": {
+        "type": "object",
+        "properties": {
+          "pause": {
+            "$ref": "#/components/schemas/SubscriptionPauseResponse"
+          },
+          "subscription": {
+            "$ref": "#/components/schemas/SubscriptionResponse"
+          }
+        },
+        "description": "The paused subscription and its pause"
+      },
       "PaymentAttemptResponse": {
         "type": "object",
         "properties": {
@@ -23485,6 +24728,45 @@
           "voided_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "PlanChangeScheduleDetails": {
+        "type": "object",
+        "properties": {
+          "billing_period_behaviour": {
+            "$ref": "#/components/schemas/types.BillingPeriodBehaviour"
+          },
+          "entity_policies": {
+            "$ref": "#/components/schemas/SubscriptionChangeEntityPolicies"
+          },
+          "target_plan_id": {
+            "type": "string"
+          }
+        }
+      },
+      "PlanChangeScheduleResult": {
+        "type": "object",
+        "properties": {
+          "change_type": {
+            "type": "string"
+          },
+          "effective_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "from_plan_id": {
+            "type": "string"
+          },
+          "previous_subscription_id": {
+            "type": "string",
+            "description": "previous_subscription_id is set when the change replaced the subscription with a new one"
+          },
+          "subscription_id": {
+            "type": "string"
+          },
+          "to_plan_id": {
+            "type": "string"
           }
         }
       },
@@ -24165,6 +25447,34 @@
           }
         }
       },
+      "ResumeSubscriptionRequest": {
+        "type": "object",
+        "properties": {
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Metadata merged into the pause\n@Example {\"resumed_by\": \"admin\"}"
+          },
+          "proration_behavior": {
+            "$ref": "#/components/schemas/types.ProrationBehavior"
+          }
+        },
+        "description": "Resumes a paused subscription now. The billing anchor is kept, so the first period runs from the resume time to the next billing date."
+      },
+      "ResumeSubscriptionResponse": {
+        "type": "object",
+        "properties": {
+          "pause": {
+            "$ref": "#/components/schemas/SubscriptionPauseResponse"
+          },
+          "subscription": {
+            "$ref": "#/components/schemas/SubscriptionResponse"
+          }
+        },
+        "description": "The resumed subscription and the pause it ended"
+      },
       "RevenueAnalyticsRequest": {
         "required": [
           "start_time"
@@ -24611,6 +25921,13 @@
         "properties": {
           "action": {
             "$ref": "#/components/schemas/GroupedInvoicingAction"
+          },
+          "changes": {
+            "type": "array",
+            "description": "Changes is required for action 'modify'; the path subscription is the parent.",
+            "items": {
+              "$ref": "#/components/schemas/GroupedInvoicingChange"
+            }
           },
           "child_subscription_ids": {
             "type": "array",
@@ -25180,7 +26497,7 @@
             }
           },
           "meter": {
-            "$ref": "#/components/schemas/meter.Meter"
+            "$ref": "#/components/schemas/Meter"
           },
           "meter_display_name": {
             "type": "string"
@@ -25281,6 +26598,85 @@
           "SubscriptionModifyTypeAddon",
           "SubscriptionModifyTypeLineItemChange"
         ]
+      },
+      "SubscriptionPauseResponse": {
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "environment_id": {
+            "type": "string",
+            "description": "EnvironmentID is the environment identifier for the pause"
+          },
+          "id": {
+            "type": "string",
+            "description": "ID is the unique identifier for the subscription pause"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/types.Metadata"
+          },
+          "original_period_end": {
+            "type": "string",
+            "description": "OriginalPeriodEnd is the end of the billing period when the pause was created",
+            "format": "date-time"
+          },
+          "original_period_start": {
+            "type": "string",
+            "description": "OriginalPeriodStart is the start of the billing period when the pause was created",
+            "format": "date-time"
+          },
+          "pause_end": {
+            "type": "string",
+            "description": "PauseEnd is when the pause will end (null for indefinite)",
+            "format": "date-time"
+          },
+          "pause_mode": {
+            "$ref": "#/components/schemas/types.PauseMode"
+          },
+          "pause_start": {
+            "type": "string",
+            "description": "PauseStart is when the pause actually started",
+            "format": "date-time"
+          },
+          "pause_status": {
+            "$ref": "#/components/schemas/types.PauseStatus"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason is the reason for pausing"
+          },
+          "resume_mode": {
+            "$ref": "#/components/schemas/types.ResumeMode"
+          },
+          "resumed_at": {
+            "type": "string",
+            "description": "ResumedAt is when the pause was actually ended (if manually resumed)",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.Status"
+          },
+          "subscription_id": {
+            "type": "string",
+            "description": "SubscriptionID is the identifier for the subscription"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": "string"
+          }
+        },
+        "description": "Response object containing subscription pause information"
       },
       "SubscriptionPhaseCreateRequest": {
         "required": [
@@ -25966,7 +27362,10 @@
           "configuration": {
             "type": "object",
             "additionalProperties": true,
-            "description": "configuration contains type-specific configuration (e.g., target_plan_id for plan changes)"
+            "description": "configuration is the raw type-specific configuration. Deprecated: use configuration_details."
+          },
+          "configuration_details": {
+            "$ref": "#/components/schemas/ConfigurationDetails"
           },
           "created_at": {
             "type": "string",
@@ -25986,10 +27385,13 @@
             "description": "executed_at is when the schedule was executed",
             "format": "date-time"
           },
+          "execution_details": {
+            "$ref": "#/components/schemas/ExecutionDetails"
+          },
           "execution_result": {
             "type": "object",
             "additionalProperties": true,
-            "description": "execution_result contains type-specific execution result"
+            "description": "execution_result is the raw type-specific execution result. Deprecated: use execution_details."
           },
           "id": {
             "type": "string",
@@ -26227,6 +27629,9 @@
           "environment_id": {
             "type": "string"
           },
+          "external_tax_details": {
+            "$ref": "#/components/schemas/types.ExternalTaxDetails"
+          },
           "id": {
             "type": "string"
           },
@@ -26238,6 +27643,9 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "provider": {
+            "$ref": "#/components/schemas/types.TaxProvider"
           },
           "status": {
             "$ref": "#/components/schemas/types.Status"
@@ -26255,7 +27663,15 @@
             "$ref": "#/components/schemas/TaxRateResponse"
           },
           "tax_rate_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Null when an external engine calculated the tax: there is no Flexprice rate to point at."
+          },
+          "tax_transaction_id": {
+            "type": "string",
+            "description": "TaxTransactionID is the provider transaction recording the filed tax, stamped at commit."
+          },
+          "tax_transaction_type": {
+            "$ref": "#/components/schemas/types.TaxTransactionType"
           },
           "taxable_amount": {
             "type": "string"
@@ -26547,6 +27963,17 @@
           }
         }
       },
+      "TopUpCoupon": {
+        "required": [
+          "coupon_code"
+        ],
+        "type": "object",
+        "properties": {
+          "coupon_code": {
+            "type": "string"
+          }
+        }
+      },
       "TopUpWalletRequest": {
         "required": [
           "transaction_reason"
@@ -26567,6 +27994,12 @@
           },
           "checkout": {
             "$ref": "#/components/schemas/CheckoutParams"
+          },
+          "coupons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopUpCoupon"
+            }
           },
           "credits_to_add": {
             "type": "string",
@@ -26783,10 +28216,23 @@
             "type": "string",
             "description": "address_state is the updated state, province, or region name with maximum 100 characters"
           },
+          "billing_currency": {
+            "maxLength": 10,
+            "type": "string",
+            "description": "billing_currency updates the invoicing currency; send \"\" to clear it back to the charge currency"
+          },
           "contact": {
             "maxLength": 20,
             "type": "string",
             "description": "contact is the updated contact number for the customer (e.g. phone)"
+          },
+          "contact_persons": {
+            "maxItems": 5,
+            "type": "array",
+            "description": "contact_persons replaces the customer's contact persons when provided; at most one may be primary",
+            "items": {
+              "$ref": "#/components/schemas/customer.ContactPerson"
+            }
           },
           "email": {
             "type": "string",
@@ -26866,6 +28312,28 @@
           },
           "usage_reset_period": {
             "$ref": "#/components/schemas/types.EntitlementUsageResetPeriod"
+          }
+        }
+      },
+      "UpdateFXRateRequest": {
+        "type": "object",
+        "properties": {
+          "end_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "rate": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -27209,6 +28677,17 @@
             },
             "description": "Metadata for the new line item"
           },
+          "price_unit_amount": {
+            "type": "string",
+            "description": "PriceUnitAmount is the amount for a CUSTOM price unit price (FLAT_FEE/PACKAGE billing models)"
+          },
+          "price_unit_tiers": {
+            "type": "array",
+            "description": "PriceUnitTiers are the tiers for a CUSTOM price unit price (TIERED billing model)",
+            "items": {
+              "$ref": "#/components/schemas/CreatePriceTier"
+            }
+          },
           "tier_mode": {
             "$ref": "#/components/schemas/types.BillingTier"
           },
@@ -27232,7 +28711,8 @@
             "format": "date-time"
           },
           "cancel_at_period_end": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Pointer so omitting the field leaves the stored value unchanged; sending it sets the flag."
           },
           "parent_subscription_id": {
             "type": "string",
@@ -27281,11 +28761,51 @@
           }
         }
       },
+      "UpdateTenantAddress": {
+        "type": "object",
+        "properties": {
+          "address_city": {
+            "type": "string"
+          },
+          "address_country": {
+            "type": "string"
+          },
+          "address_line1": {
+            "type": "string"
+          },
+          "address_line2": {
+            "type": "string"
+          },
+          "address_postal_code": {
+            "type": "string"
+          },
+          "address_state": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateTenantBillingDetails": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/UpdateTenantAddress"
+          },
+          "email": {
+            "type": "string"
+          },
+          "help_email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          }
+        }
+      },
       "UpdateTenantRequest": {
         "type": "object",
         "properties": {
           "billing_details": {
-            "$ref": "#/components/schemas/TenantBillingDetails"
+            "$ref": "#/components/schemas/UpdateTenantBillingDetails"
           },
           "metadata": {
             "$ref": "#/components/schemas/types.Metadata"
@@ -27455,7 +28975,7 @@
             "$ref": "#/components/schemas/group.Group"
           },
           "meter": {
-            "$ref": "#/components/schemas/meter.Meter"
+            "$ref": "#/components/schemas/Meter"
           },
           "meter_id": {
             "type": "string",
@@ -27950,6 +29470,13 @@
           "amount": {
             "type": "string"
           },
+          "consumption_breakdown": {
+            "type": "array",
+            "description": "ConsumptionBreakdown is set on debits: the credits drawn from each credit batch.",
+            "items": {
+              "$ref": "#/components/schemas/types.WalletTxConsumption"
+            }
+          },
           "conversion_rate": {
             "type": "string",
             "description": "conversion_rate is the conversion rate for the transaction to the currency"
@@ -28016,6 +29543,12 @@
           },
           "reference_type": {
             "$ref": "#/components/schemas/types.WalletTxReferenceType"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "source_type": {
+            "$ref": "#/components/schemas/types.WalletTxSourceType"
           },
           "status": {
             "$ref": "#/components/schemas/types.Status"
@@ -28293,9 +29826,19 @@
             "type": "string",
             "description": "AddressState is the state of the customer's address"
           },
+          "billing_currency": {
+            "type": "string",
+            "description": "BillingCurrency is the fiat currency invoices are issued in; nil means charge currency is used as-is."
+          },
           "contact": {
             "type": "string",
             "description": "Contact is an optional contact number for the customer (e.g. phone)"
+          },
+          "contact_persons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/customer.ContactPerson"
+            }
           },
           "created_at": {
             "type": "string",
@@ -28409,6 +29952,60 @@
             "type": "string"
           },
           "unit_singular": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": "string"
+          }
+        }
+      },
+      "Meter": {
+        "type": "object",
+        "properties": {
+          "aggregation": {
+            "$ref": "#/components/schemas/meter.Aggregation"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "environment_id": {
+            "type": "string",
+            "description": "EnvironmentID is the environment identifier for the meter"
+          },
+          "event_name": {
+            "type": "string",
+            "description": "EventName is the unique identifier for the event that this meter is tracking\nIt is a mandatory field in the events table and hence being used as the primary matching field\nWe can have multiple meters tracking the same event but with different filters and aggregation"
+          },
+          "filters": {
+            "type": "array",
+            "description": "Filters define the criteria for the meter to be applied on the events before aggregation\nIt also defines the possible values on which later the charges will be applied",
+            "items": {
+              "$ref": "#/components/schemas/meter.Filter"
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "ID is the unique identifier for the meter"
+          },
+          "name": {
+            "type": "string",
+            "description": "Name is the display name of the meter"
+          },
+          "reset_usage": {
+            "$ref": "#/components/schemas/types.ResetUsage"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.Status"
+          },
+          "tenant_id": {
             "type": "string"
           },
           "updated_at": {
@@ -28611,6 +30208,9 @@
           "environment_id": {
             "type": "string"
           },
+          "fx_conversion": {
+            "$ref": "#/components/schemas/types.FxConversion"
+          },
           "id": {
             "type": "string"
           },
@@ -28733,60 +30333,6 @@
             "items": {
               "type": "string"
             }
-          }
-        }
-      },
-      "meter.Meter": {
-        "type": "object",
-        "properties": {
-          "aggregation": {
-            "$ref": "#/components/schemas/meter.Aggregation"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "created_by": {
-            "type": "string"
-          },
-          "environment_id": {
-            "type": "string",
-            "description": "EnvironmentID is the environment identifier for the meter"
-          },
-          "event_name": {
-            "type": "string",
-            "description": "EventName is the unique identifier for the event that this meter is tracking\nIt is a mandatory field in the events table and hence being used as the primary matching field\nWe can have multiple meters tracking the same event but with different filters and aggregation"
-          },
-          "filters": {
-            "type": "array",
-            "description": "Filters define the criteria for the meter to be applied on the events before aggregation\nIt also defines the possible values on which later the charges will be applied",
-            "items": {
-              "$ref": "#/components/schemas/meter.Filter"
-            }
-          },
-          "id": {
-            "type": "string",
-            "description": "ID is the unique identifier for the meter"
-          },
-          "name": {
-            "type": "string",
-            "description": "Name is the display name of the meter"
-          },
-          "reset_usage": {
-            "$ref": "#/components/schemas/types.ResetUsage"
-          },
-          "status": {
-            "$ref": "#/components/schemas/types.Status"
-          },
-          "tenant_id": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updated_by": {
-            "type": "string"
           }
         }
       },
@@ -29109,7 +30655,7 @@
             }
           },
           "meter": {
-            "$ref": "#/components/schemas/meter.Meter"
+            "$ref": "#/components/schemas/Meter"
           },
           "meter_display_name": {
             "type": "string"
@@ -29332,6 +30878,12 @@
           },
           "cadence": {
             "$ref": "#/components/schemas/types.AddonCadence"
+          },
+          "coupons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.CouponRef"
+            }
           },
           "proration_behavior": {
             "$ref": "#/components/schemas/types.ProrationBehavior"
@@ -29914,6 +31466,12 @@
       "types.CheckoutConfiguration": {
         "type": "object",
         "properties": {
+          "add_addon_batch_params": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.AddAddonParams"
+            }
+          },
           "add_addon_params": {
             "$ref": "#/components/schemas/types.AddAddonParams"
           },
@@ -30136,6 +31694,29 @@
           }
         },
         "x-speakeasy-name-override": "CouponFilter"
+      },
+      "types.CouponRef": {
+        "type": "object",
+        "properties": {
+          "association_id": {
+            "type": "string"
+          },
+          "coupon_id": {
+            "type": "string"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "price_id": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "x-speakeasy-name-override": "CouponRef"
       },
       "types.CouponType": {
         "type": "string",
@@ -30807,6 +32388,147 @@
         },
         "x-speakeasy-name-override": "ExportMetadataField"
       },
+      "types.ExternalTaxDetails": {
+        "type": "object",
+        "properties": {
+          "calculation_expires_at": {
+            "type": "string",
+            "description": "CalculationExpiresAt is when the calculation can no longer be filed, RFC3339.",
+            "format": "date-time"
+          },
+          "calculation_id": {
+            "type": "string",
+            "description": "CalculationID is the provider calculation this row was written from. Commit files it."
+          },
+          "display_name": {
+            "type": "string",
+            "description": "DisplayName is the engine's own name for the tax, such as\n\"Integrated goods and services tax (IGST)\"."
+          },
+          "jurisdiction": {
+            "$ref": "#/components/schemas/types.TaxJurisdiction"
+          },
+          "percentage": {
+            "type": "string",
+            "description": "Percentage is the resolved rate, such as \"18.0\". This is what was charged, not the\nrate that would apply if the tax were imposed."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Reference is what this row's provider transaction was filed under. It is unique across\nevery transaction on the account, so it is also the only way back to a transaction whose\nid failed to land here."
+          },
+          "reversal": {
+            "$ref": "#/components/schemas/types.TaxReversal"
+          },
+          "sourcing": {
+            "type": "string",
+            "description": "Sourcing is whether the jurisdiction followed the seller's address or the buyer's."
+          },
+          "tax_code": {
+            "type": "string",
+            "description": "TaxCode is the product tax category the engine priced against, such as txcd_10000000.\nIt belongs to the line rather than the rate, so today every row on an invoice carries\nthe account default. It only varies once tax is calculated per line item."
+          },
+          "tax_type": {
+            "type": "string",
+            "description": "TaxType is the tax family, such as vat, igst or sales_tax."
+          },
+          "taxability_reason": {
+            "type": "string",
+            "description": "TaxabilityReason is why the engine charged what it did, such as standard_rated or\nreverse_charge. Recorded, not yet rendered."
+          }
+        },
+        "x-speakeasy-name-override": "ExternalTaxDetails"
+      },
+      "types.FXRateFilter": {
+        "type": "object",
+        "properties": {
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expand": {
+            "type": "string"
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.FilterCondition"
+            }
+          },
+          "from_currency": {
+            "type": "string"
+          },
+          "fx_rate_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limit": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "scope": {
+            "$ref": "#/components/schemas/types.FXRateScope"
+          },
+          "scope_id": {
+            "type": "string"
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.SortCondition"
+            }
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.Status"
+          },
+          "to_currency": {
+            "type": "string"
+          }
+        },
+        "x-speakeasy-name-override": "FXRateFilter"
+      },
+      "types.FXRateScope": {
+        "type": "string",
+        "enum": [
+          "tenant",
+          "customer",
+          "subscription"
+        ],
+        "x-enum-varnames": [
+          "FXRateScopeTenant",
+          "FXRateScopeCustomer",
+          "FXRateScopeSubscription"
+        ],
+        "x-speakeasy-name-override": "FXRateScope"
+      },
+      "types.FXRateSource": {
+        "type": "string",
+        "enum": [
+          "fixed",
+          "market"
+        ],
+        "x-enum-varnames": [
+          "FXRateSourceFixed",
+          "FXRateSourceMarket"
+        ],
+        "x-speakeasy-name-override": "FXRateSource"
+      },
       "types.FactStatus": {
         "type": "string",
         "enum": [
@@ -30997,6 +32719,57 @@
         ],
         "x-speakeasy-name-override": "FilterOperatorType"
       },
+      "types.FxConversion": {
+        "type": "object",
+        "properties": {
+          "billing_currency": {
+            "type": "string",
+            "description": "BillingCurrency is the currency the invoice was issued in."
+          },
+          "charge_currency": {
+            "type": "string",
+            "description": "ChargeCurrency is the invoice's original (draft) currency."
+          },
+          "converted_at": {
+            "type": "string",
+            "description": "ConvertedAt is when the conversion ran.",
+            "format": "date-time"
+          },
+          "rate": {
+            "type": "string",
+            "description": "Rate is the frozen rate: billing per 1 charge unit."
+          },
+          "rate_id": {
+            "type": "string",
+            "description": "RateID is the fx_rates row used, for reference only; never read again."
+          },
+          "scope": {
+            "$ref": "#/components/schemas/types.FXRateScope"
+          },
+          "source": {
+            "$ref": "#/components/schemas/types.FxConversionSource"
+          }
+        },
+        "x-speakeasy-name-override": "FxConversion"
+      },
+      "types.FxConversionSource": {
+        "type": "object",
+        "properties": {
+          "net": {
+            "type": "string"
+          },
+          "subtotal": {
+            "type": "string"
+          },
+          "total_discount": {
+            "type": "string"
+          },
+          "total_prepaid_credits_applied": {
+            "type": "string"
+          }
+        },
+        "x-speakeasy-name-override": "FxConversionSource"
+      },
       "types.GlobalCustomField": {
         "type": "object",
         "properties": {
@@ -31145,7 +32918,9 @@
           "PRORATION",
           "MANUAL",
           "AUTO_INVOICE_THRESHOLD",
-          "WALLET_AUTO_TOPUP"
+          "WALLET_AUTO_TOPUP",
+          "SUBSCRIPTION_PAUSED",
+          "SUBSCRIPTION_RESUME"
         ],
         "x-enum-varnames": [
           "InvoiceBillingReasonSubscriptionCreate",
@@ -31156,7 +32931,9 @@
           "InvoiceBillingReasonProration",
           "InvoiceBillingReasonManual",
           "InvoiceBillingReasonAutoInvoiceThreshold",
-          "InvoiceBillingReasonWalletAutoTopup"
+          "InvoiceBillingReasonWalletAutoTopup",
+          "InvoiceBillingReasonSubscriptionPaused",
+          "InvoiceBillingReasonSubscriptionResume"
         ],
         "x-speakeasy-name-override": "InvoiceBillingReason"
       },
@@ -31465,6 +33242,12 @@
           "amount": {
             "type": "string"
           },
+          "coupons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.CouponRef"
+            }
+          },
           "effective_date": {
             "type": "string",
             "format": "date-time"
@@ -31733,7 +33516,9 @@
           "45 NET",
           "60 NET",
           "75 NET",
-          "90 NET"
+          "90 NET",
+          "END_OF_MONTH",
+          "END_OF_NEXT_MONTH"
         ],
         "x-enum-varnames": [
           "PaymentTerms15Net",
@@ -31741,7 +33526,9 @@
           "PaymentTerms45Net",
           "PaymentTerms60Net",
           "PaymentTerms75Net",
-          "PaymentTerms90Net"
+          "PaymentTerms90Net",
+          "PaymentTermsEndOfMonth",
+          "PaymentTermsEndOfNextMonth"
         ],
         "x-speakeasy-name-override": "PaymentTerms"
       },
@@ -32353,6 +34140,7 @@
           "events",
           "invoice",
           "credit_topups",
+          "wallet_debits",
           "credit_usage",
           "usage_analytics",
           "revenue_facts"
@@ -32361,6 +34149,7 @@
           "ScheduledTaskEntityTypeEvents",
           "ScheduledTaskEntityTypeInvoice",
           "ScheduledTaskEntityTypeCreditTopups",
+          "ScheduledTaskEntityTypeWalletDebits",
           "ScheduledTaskEntityTypeCreditUsage",
           "ScheduledTaskEntityTypeUsageAnalytics",
           "ScheduledTaskEntityTypeRevenueFacts"
@@ -32970,13 +34759,51 @@
         "type": "string",
         "enum": [
           "customer_exempt",
-          "no_tax_configured"
+          "no_tax_configured",
+          "reverse_charge",
+          "not_collecting",
+          "not_subject_to_tax",
+          "not_supported"
         ],
         "x-enum-varnames": [
           "TaxExemptionReasonCustomerExempt",
-          "TaxExemptionReasonNoTaxConfigured"
+          "TaxExemptionReasonNoTaxConfigured",
+          "TaxExemptionReasonReverseCharge",
+          "TaxExemptionReasonNotCollecting",
+          "TaxExemptionReasonNotSubjectToTax",
+          "TaxExemptionReasonNotSupported"
         ],
         "x-speakeasy-name-override": "TaxExemptionReasonCode"
+      },
+      "types.TaxJurisdiction": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "x-speakeasy-name-override": "TaxJurisdiction"
+      },
+      "types.TaxProvider": {
+        "type": "string",
+        "enum": [
+          "flexprice",
+          "stripe"
+        ],
+        "x-enum-varnames": [
+          "TaxProviderFlexprice",
+          "TaxProviderStripe"
+        ],
+        "x-speakeasy-name-override": "TaxProvider"
       },
       "types.TaxRateEntityType": {
         "type": "string",
@@ -32984,13 +34811,15 @@
           "customer",
           "subscription",
           "invoice",
-          "tenant"
+          "tenant",
+          "credit_note"
         ],
         "x-enum-varnames": [
           "TaxRateEntityTypeCustomer",
           "TaxRateEntityTypeSubscription",
           "TaxRateEntityTypeInvoice",
-          "TaxRateEntityTypeTenant"
+          "TaxRateEntityTypeTenant",
+          "TaxRateEntityTypeCreditNote"
         ],
         "x-speakeasy-name-override": "TaxRateEntityType"
       },
@@ -33029,6 +34858,42 @@
           "TaxRateTypePercentage"
         ],
         "x-speakeasy-name-override": "TaxRateType"
+      },
+      "types.TaxReversal": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/types.TaxReversalMode"
+          },
+          "original_transaction": {
+            "type": "string"
+          }
+        },
+        "x-speakeasy-name-override": "TaxReversal"
+      },
+      "types.TaxReversalMode": {
+        "type": "string",
+        "enum": [
+          "full",
+          "partial"
+        ],
+        "x-enum-varnames": [
+          "TaxReversalModeFull",
+          "TaxReversalModePartial"
+        ],
+        "x-speakeasy-name-override": "TaxReversalMode"
+      },
+      "types.TaxTransactionType": {
+        "type": "string",
+        "enum": [
+          "filing",
+          "reversal"
+        ],
+        "x-enum-varnames": [
+          "TaxTransactionTypeFiling",
+          "TaxTransactionTypeReversal"
+        ],
+        "x-speakeasy-name-override": "TaxTransactionType"
       },
       "types.TaxTreatment": {
         "type": "string",
@@ -33525,6 +35390,18 @@
         },
         "x-speakeasy-name-override": "WalletTransactionFilter"
       },
+      "types.WalletTxConsumption": {
+        "type": "object",
+        "properties": {
+          "credit_transaction_id": {
+            "type": "string"
+          },
+          "credits": {
+            "type": "string"
+          }
+        },
+        "x-speakeasy-name-override": "WalletTxConsumption"
+      },
       "types.WalletTxReferenceType": {
         "type": "string",
         "enum": [
@@ -33540,6 +35417,16 @@
           "WalletTxReferenceTypeInvoice"
         ],
         "x-speakeasy-name-override": "WalletTxReferenceType"
+      },
+      "types.WalletTxSourceType": {
+        "type": "string",
+        "enum": [
+          "INVOICE"
+        ],
+        "x-enum-varnames": [
+          "WalletTxSourceTypeInvoice"
+        ],
+        "x-speakeasy-name-override": "WalletTxSourceType"
       },
       "types.WalletType": {
         "type": "string",
@@ -33595,6 +35482,8 @@
           "invoice.update.voided",
           "invoice.update",
           "invoice.payment.overdue",
+          "invoice.sync.success",
+          "invoice.sync.failed",
           "wallet.credit_balance.dropped",
           "wallet.credit_balance.recovered",
           "wallet.ongoing_balance.dropped",
@@ -33657,6 +35546,8 @@
           "WebhookEventInvoiceUpdateVoided",
           "WebhookEventInvoiceUpdate",
           "WebhookEventInvoicePaymentOverdue",
+          "WebhookEventInvoiceSyncSuccess",
+          "WebhookEventInvoiceSyncFailed",
           "WebhookEventWalletCreditBalanceDropped",
           "WebhookEventWalletCreditBalanceRecovered",
           "WebhookEventWalletOngoingBalanceDropped",
@@ -34222,6 +36113,9 @@
             "type": "string",
             "format": "date-time"
           },
+          "fx_conversion": {
+            "$ref": "#/components/schemas/types.FxConversion"
+          },
           "id": {
             "type": "string"
           },
@@ -34328,6 +36222,9 @@
           "entity_type": {
             "type": "string"
           },
+          "fx_conversion": {
+            "$ref": "#/components/schemas/types.FxConversion"
+          },
           "id": {
             "type": "string"
           },
@@ -34377,6 +36274,23 @@
           },
           "subscription_line_item_id": {
             "type": "string"
+          }
+        }
+      },
+      "webhookDto.InvoiceSyncWebhookPayload": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "event_type": {
+            "$ref": "#/components/schemas/types.WebhookEventName"
+          },
+          "invoice": {
+            "$ref": "#/components/schemas/webhookDto.Invoice"
+          },
+          "provider_details": {
+            "$ref": "#/components/schemas/webhookDto.ProviderDetails"
           }
         }
       },
@@ -34570,6 +36484,20 @@
           },
           "type": {
             "$ref": "#/components/schemas/types.PriceType"
+          }
+        }
+      },
+      "webhookDto.ProviderDetails": {
+        "type": "object",
+        "properties": {
+          "hosted_invoice_url": {
+            "type": "string"
+          },
+          "invoice_id": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/types.SecretProvider"
           }
         }
       },
@@ -34940,6 +36868,9 @@
           "currency": {
             "type": "string"
           },
+          "external_tax_details": {
+            "$ref": "#/components/schemas/types.ExternalTaxDetails"
+          },
           "id": {
             "type": "string"
           },
@@ -34948,6 +36879,9 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "provider": {
+            "$ref": "#/components/schemas/types.TaxProvider"
           },
           "tax_amount": {
             "type": "string"
@@ -34960,6 +36894,9 @@
           },
           "tax_rate_id": {
             "type": "string"
+          },
+          "tax_transaction_type": {
+            "$ref": "#/components/schemas/types.TaxTransactionType"
           },
           "taxable_amount": {
             "type": "string"
@@ -35069,6 +37006,12 @@
           "amount": {
             "type": "string"
           },
+          "consumption_breakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.WalletTxConsumption"
+            }
+          },
           "credit_amount": {
             "type": "string"
           },
@@ -35102,6 +37045,12 @@
           },
           "reference_type": {
             "$ref": "#/components/schemas/types.WalletTxReferenceType"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "source_type": {
+            "$ref": "#/components/schemas/types.WalletTxSourceType"
           },
           "transaction_reason": {
             "$ref": "#/components/schemas/types.TransactionReason"

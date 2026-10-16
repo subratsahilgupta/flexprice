@@ -76,7 +76,7 @@ jobs:
       - name: Upload Semgrep SARIF
         if: always() && hashFiles('semgrep.sarif') != ''
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: semgrep.sarif
 
@@ -93,8 +93,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # Unreleased; v2.29.0 breaks on Go 1.27.2
       - name: Install gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+        run: go install github.com/securego/gosec/v2/cmd/gosec@7b1b5cebe007d62fb58eacb90fc571112939ec30
 
       # BLOCKING on high-confidence findings: scoped to -severity high
       # -confidence high so only high/high issues fail the PR. Findings (exit 1)

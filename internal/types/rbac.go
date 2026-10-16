@@ -80,6 +80,7 @@ const (
 	EntityTenant          Entity = "tenant"
 	EntityInvoice         Entity = "invoice"
 	EntityFeature         Entity = "feature"
+	EntityActivity        Entity = "activity"
 	EntityEntitlement     Entity = "entitlement"
 	EntityCreditGrant     Entity = "creditgrant"
 	EntityPayment         Entity = "payment"
@@ -100,4 +101,5 @@ const (
 	EntityCheckoutSession Entity = "checkoutsession"
 	EntityWorkflow        Entity = "workflow"
 	EntityAnalytics       Entity = "analytics"
+	EntityFXRate          Entity = "fxrate"
 )

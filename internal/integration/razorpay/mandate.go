@@ -222,7 +222,12 @@ func (a *CheckoutAdapter) CreateAuthorizationLink(
 		data["expire_by"] = req.ExpiresAt.Unix()
 	}
 
-	subReg := map[string]interface{}{"method": method}
+	// as_presented allows another debit in the same period, still capped by max_amount.
+	// A fixed frequency rejects a second charge until that window ends.
+	subReg := map[string]interface{}{
+		"method":    method,
+		"frequency": "as_presented",
+	}
 	if req.MaxAmount != nil {
 		subReg["max_amount"] = toPaise(*req.MaxAmount)
 	}

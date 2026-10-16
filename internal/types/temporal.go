@@ -57,6 +57,7 @@ const (
 	// Workflow Types - only include implemented workflows
 	TemporalCreditGrantProcessingWorkflow                  TemporalWorkflowType = "CreditGrantProcessingWorkflow"
 	TemporalSubscriptionAutoCancellationWorkflow           TemporalWorkflowType = "SubscriptionAutoCancellationWorkflow"
+	TemporalSubscriptionOverdueInvoicesWorkflow            TemporalWorkflowType = "SubscriptionOverdueInvoicesWorkflow"
 	TemporalWalletCreditExpiryWorkflow                     TemporalWorkflowType = "WalletCreditExpiryWorkflow"
 	TemporalSubscriptionBillingPeriodsWorkflow             TemporalWorkflowType = "SubscriptionBillingPeriodsWorkflow"
 	TemporalSubscriptionRenewalDueAlertsWorkflow           TemporalWorkflowType = "SubscriptionRenewalDueAlertsWorkflow"
@@ -84,6 +85,7 @@ const (
 	TemporalPrepareProcessedEventsWorkflow                 TemporalWorkflowType = "PrepareProcessedEventsWorkflow"
 	TemporalPriceSyncWorkflow                              TemporalWorkflowType = "PriceSyncWorkflow"
 	TemporalPriceSyncV2Workflow                            TemporalWorkflowType = "PriceSyncV2Workflow"
+	TemporalAddonPriceSyncWorkflow                         TemporalWorkflowType = "AddonPriceSyncWorkflow"
 	TemporalProcessInvoiceWorkflow                         TemporalWorkflowType = "ProcessInvoiceWorkflow"
 	TemporalProcessSubscriptionBillingWorkflow             TemporalWorkflowType = "ProcessSubscriptionBillingWorkflow"
 	TemporalQuickBooksCustomerSyncWorkflow                 TemporalWorkflowType = "QuickBooksCustomerSyncWorkflow"
@@ -117,6 +119,7 @@ const (
 var temporalCronWorkflowTypes = []TemporalWorkflowType{
 	TemporalCreditGrantProcessingWorkflow,
 	TemporalSubscriptionAutoCancellationWorkflow,
+	TemporalSubscriptionOverdueInvoicesWorkflow,
 	TemporalWalletCreditExpiryWorkflow,
 	TemporalSubscriptionBillingPeriodsWorkflow,
 	TemporalSubscriptionRenewalDueAlertsWorkflow,
@@ -182,6 +185,7 @@ func (w TemporalWorkflowType) Validate() error {
 		TemporalPrepareProcessedEventsWorkflow,
 		TemporalPriceSyncWorkflow,
 		TemporalPriceSyncV2Workflow,
+		TemporalAddonPriceSyncWorkflow,
 		TemporalProcessInvoiceWorkflow,
 		TemporalProcessSubscriptionBillingWorkflow,
 		TemporalQuickBooksCustomerSyncWorkflow,
@@ -223,7 +227,7 @@ func (w TemporalWorkflowType) TaskQueue() TemporalTaskQueue {
 	switch w {
 	case TemporalTaskProcessingWorkflow, TemporalSubscriptionChangeWorkflow, TemporalSubscriptionCreationWorkflow, TemporalStripeIntegrationWorkflow, TemporalHubSpotDealSyncWorkflow, TemporalHubSpotInvoiceSyncWorkflow, TemporalHubSpotQuoteSyncWorkflow, TemporalNomodInvoiceSyncWorkflow, TemporalMoyasarInvoiceSyncWorkflow, TemporalPaddleInvoiceSyncWorkflow, TemporalPaddleInvoicePullSyncWorkflow, TemporalStripeInvoiceSyncWorkflow, TemporalRazorpayInvoiceSyncWorkflow, TemporalChargebeeInvoiceSyncWorkflow, TemporalQuickBooksInvoiceSyncWorkflow, TemporalZohoBooksInvoiceSyncWorkflow, TemporalZohoBooksInvoiceMarkPaidWorkflow, TemporalTabsInvoiceSyncWorkflow, TemporalStripeCustomerSyncWorkflow, TemporalRazorpayCustomerSyncWorkflow, TemporalChargebeeCustomerSyncWorkflow, TemporalQuickBooksCustomerSyncWorkflow, TemporalNomodCustomerSyncWorkflow, TemporalPaddleCustomerSyncWorkflow, TemporalPaddleSubscriptionSyncWorkflow, TemporalWhopInvoiceSyncWorkflow, TemporalWhopInvoiceMarkPaidWorkflow:
 		return TemporalTaskQueueTask
-	case TemporalPriceSyncWorkflow, TemporalPriceSyncV2Workflow, TemporalQuickBooksPriceSyncWorkflow:
+	case TemporalPriceSyncWorkflow, TemporalPriceSyncV2Workflow, TemporalAddonPriceSyncWorkflow, TemporalQuickBooksPriceSyncWorkflow:
 		return TemporalTaskQueuePrice
 	case TemporalExecuteExportWorkflow:
 		return TemporalTaskQueueExport
@@ -293,6 +297,7 @@ func GetWorkflowsForTaskQueue(taskQueue TemporalTaskQueue) []TemporalWorkflowTyp
 		return []TemporalWorkflowType{
 			TemporalPriceSyncWorkflow,
 			TemporalPriceSyncV2Workflow,
+			TemporalAddonPriceSyncWorkflow,
 			TemporalQuickBooksPriceSyncWorkflow,
 		}
 	case TemporalTaskQueueExport:

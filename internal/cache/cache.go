@@ -98,9 +98,13 @@ const (
 	PrefixUsageAlertSchedule       = "usage_alert_schedule:v1:"
 	PrefixSettingsByKey            = "settings_by_key:v1:"
 	PrefixCostsheet                = "costsheet:v1:"
+	PrefixBillerTaxIDs             = "biller_tax_ids:v1:"
 	PrefixPriceUnit                = "price_unit:v1:"
 	PrefixWalletRealTimeBalance    = "wallet_realtime_balance:v1:"
 	PrefixWorkflowExecution        = "workflow_execution:v1:"
+	// PrefixAddonPriceSyncLock is the Redis key prefix for addon-level usage-price sync lock (used with addonID).
+	PrefixAddonPriceSyncLock = "price_sync:addon:"
+
 	// PrefixPriceSyncLock is the Redis key prefix for plan-level price sync lock (used with planID).
 	// Used by both API (acquire) and Temporal activity (release); do not change without updating both.
 	PrefixPriceSyncLock              = "price_sync:plan:"
@@ -112,6 +116,8 @@ const (
 	// FlexPrice customer (used with customerID) so concurrent callers cannot each
 	// create their own Stripe customer.
 	PrefixStripeCustomerSyncLock = "stripe:customer_sync:"
+	// PrefixCreditGrantApplyLock serializes credit grant application per customer.
+	PrefixCreditGrantApplyLock = "credit_grant:apply:"
 	// PrefixCheckoutPollLock debounces gateway reconciliation on the checkout read
 	// (used with the payment ID). Acquired and never released — TTL expiry is the window.
 	PrefixCheckoutPollLock     = "checkout:poll:"

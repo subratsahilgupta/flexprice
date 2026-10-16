@@ -31,6 +31,7 @@ type Handlers struct {
 	UsageRecord              *v1.UsageRecordHandler
 	Plan                     *v1.PlanHandler
 	Subscription             *v1.SubscriptionHandler
+	SubscriptionPause        *v1.SubscriptionPauseHandler
 	SubscriptionChange       *v1.SubscriptionChangeHandler
 	SubscriptionModification *v1.SubscriptionModificationHandler
 	InvoiceModification      *v1.InvoiceModificationHandler
@@ -39,6 +40,7 @@ type Handlers struct {
 	Tenant                   *v1.TenantHandler
 	Invoice                  *v1.InvoiceHandler
 	Feature                  *v1.FeatureHandler
+	Activity                 *v1.ActivityHandler
 	Entitlement              *v1.EntitlementHandler
 	CreditGrant              *v1.CreditGrantHandler
 	Payment                  *v1.PaymentHandler
@@ -49,6 +51,7 @@ type Handlers struct {
 	CreditNote               *v1.CreditNoteHandler
 	Refund                   *v1.RefundHandler
 	Tax                      *v1.TaxHandler
+	FXRate                   *v1.FXRateHandler
 	Coupon                   *v1.CouponHandler
 	Webhook                  *v1.WebhookHandler
 	Addon                    *v1.AddonHandler
@@ -100,6 +103,7 @@ func NewRouter(
 	// Add our custom middleware in order
 	router.Use(
 		middleware.RequestIDMiddleware,       // Generate/extract request ID first
+		middleware.RequestMetaMiddleware,     // Client IP and user agent for activity entries
 		middleware.DBWriterPinMiddleware,     // Per-request read-your-writes pin for DB routing
 		middleware.LoggingMiddleware(logger), // Use our standard logger for HTTP logging
 		middleware.CORSMiddleware,
@@ -336,6 +340,7 @@ func NewRouter(
 			addon.PUT("/:id", write(types.EntityAddon, types.ActionWrite), handlers.Addon.UpdateAddon)
 			addon.GET("/:id/entitlements", handlers.Addon.GetAddonEntitlements)
 			addon.GET("/:id/creditgrants", handlers.Addon.GetAddonCreditGrants)
+			addon.POST("/:id/sync/subscriptions", write(types.EntityAddon, types.ActionWrite), handlers.Addon.SyncAddonPrices)
 			addon.DELETE("/:id", write(types.EntityAddon, types.ActionWrite), handlers.Addon.DeleteAddon)
 		}
 
@@ -358,6 +363,8 @@ func NewRouter(
 			subscription.GET("/:id/v2", handlers.Subscription.GetSubscriptionV2)
 			subscription.POST("/:id/activate", write(types.EntitySubscription, types.ActionWrite), handlers.Subscription.ActivateDraftSubscription)
 			subscription.POST("/:id/cancel", write(types.EntitySubscription, types.ActionWrite), handlers.Subscription.CancelSubscription)
+			subscription.POST("/:id/pause", write(types.EntitySubscription, types.ActionWrite), handlers.SubscriptionPause.PauseSubscription)
+			subscription.POST("/:id/resume", write(types.EntitySubscription, types.ActionWrite), handlers.SubscriptionPause.ResumeSubscription)
 			subscription.POST("/usage", handlers.Subscription.GetUsageBySubscription)
 
 			subscription.GET("/:id/entitlements", handlers.Subscription.GetSubscriptionEntitlements)
@@ -461,6 +468,14 @@ func NewRouter(
 			feature.POST("/:id/clone", write(types.EntityFeature, types.ActionWrite), handlers.Feature.CloneFeature)
 		}
 
+		if cfg.Activity.Enabled {
+			activityRoutes := v1Private.Group("/activity")
+			{
+				activityRoutes.POST("", read(types.EntityActivity, types.ActionRead), handlers.Activity.ListActivity)
+				activityRoutes.GET("/:id", read(types.EntityActivity, types.ActionRead), handlers.Activity.GetActivity)
+			}
+		}
+
 		checkoutSessions := v1Private.Group("/checkout/sessions")
 		{
 			checkoutSessions.POST("", write(types.EntityCheckoutSession, types.ActionWrite), handlers.CheckoutSession.Create)
@@ -536,6 +551,17 @@ func NewRouter(
 			taxRates.DELETE("/:id", write(types.EntityTax, types.ActionWrite), handlers.Tax.DeleteTaxRate)
 		}
 
+		// FX rate routes. /resolve and /search are registered before /:id so the
+		// param route does not capture them.
+		fxRates := v1Private.Group("/forex")
+		{
+			fxRates.POST("", write(types.EntityFXRate, types.ActionWrite), handlers.FXRate.CreateFXRate)
+			fxRates.POST("/query", handlers.FXRate.QueryFXRates)
+			fxRates.GET("/:id", handlers.FXRate.GetFXRate)
+			fxRates.PUT("/:id", write(types.EntityFXRate, types.ActionWrite), handlers.FXRate.UpdateFXRate)
+			fxRates.DELETE("/:id", write(types.EntityFXRate, types.ActionWrite), handlers.FXRate.DeleteFXRate)
+		}
+
 		taxAssociations := tax.Group("/associations")
 		{
 			taxAssociations.POST("", write(types.EntityTax, types.ActionWrite), handlers.Tax.CreateTaxAssociation)
@@ -603,6 +629,8 @@ func NewRouter(
 		creditNotes := v1Private.Group("/creditnotes")
 		{
 			creditNotes.POST("", write(types.EntityCreditNote, types.ActionWrite), handlers.CreditNote.CreateCreditNote)
+			// Quotes the tax a credit would carry and writes nothing, so it reads like a GET.
+			creditNotes.POST("/preview", handlers.CreditNote.PreviewCreditNote)
 			creditNotes.GET("", handlers.CreditNote.ListCreditNotes)
 			creditNotes.GET("/:id", handlers.CreditNote.GetCreditNote)
 			creditNotes.POST("/:id/void", write(types.EntityCreditNote, types.ActionWrite), handlers.CreditNote.VoidCreditNote)
@@ -736,7 +764,7 @@ func NewRouter(
 
 	// Public webhook endpoints (no authentication required)
 	webhooks := v1Public.Group("/webhooks")
-	webhooks.Use(middleware.WebhookLoggingMiddleware(logger, webhookRequestRepo))
+	webhooks.Use(middleware.WebhookActorMiddleware, middleware.WebhookLoggingMiddleware(logger, webhookRequestRepo))
 	{
 		// Stripe webhook endpoint: POST /v1/webhooks/stripe/{tenant_id}/{environment_id}
 		webhooks.POST("/stripe/:tenant_id/:environment_id", handlers.Webhook.HandleStripeWebhook)
