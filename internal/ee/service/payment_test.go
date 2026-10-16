@@ -305,32 +305,71 @@ func (s *PaymentServiceSuite) TestSyncPaymentStatusFromGateway_GuardConditions()
 	}
 }
 
-func (s *PaymentServiceSuite) TestSyncPaymentStatusFromGateway_CheckoutOwnsSettlement() {
-	for _, status := range []types.PaymentStatus{types.PaymentStatusPending, types.PaymentStatusProcessing} {
-		s.Run(string(status), func() {
-			ctx := s.GetContext()
-			p := &payment.Payment{
-				ID:                "pay_checkout_" + string(status),
-				DestinationType:   types.PaymentDestinationTypeInvoice,
-				DestinationID:     s.testData.invoice.ID,
-				PaymentStatus:     status,
-				PaymentGateway:    lo.ToPtr(string(types.PaymentGatewayTypeRazorpay)),
-				GatewayTrackingID: lo.ToPtr("plink_checkout"),
-				GatewayMetadata:   types.Metadata{paymentCheckoutMarker: "true"},
-				BaseModel:         types.GetDefaultBaseModel(ctx),
+func (s *PaymentServiceSuite) TestGatewayPaymentStatus_CheckoutOwnsInvoiceSettlement() {
+	for _, checkout := range []bool{true, false} {
+		for _, status := range []types.PaymentStatus{types.PaymentStatusPending, types.PaymentStatusProcessing} {
+			name := string(status)
+			if checkout {
+				name += "_checkout"
+			} else {
+				name += "_standalone"
 			}
-			svc := s.service.(*paymentService)
-			svc.IntegrationFactory = s.GetIntegrationFactory()
-			before, err := s.GetStores().InvoiceRepo.Get(ctx, p.DestinationID)
-			s.Require().NoError(err)
-			result, err := svc.syncPaymentStatusFromGateway(ctx, p)
-			s.Require().NoError(err, "checkout payment reads must not fetch or settle through the standalone gateway sync")
-			s.Equal(p, result)
-			after, err := s.GetStores().InvoiceRepo.Get(ctx, p.DestinationID)
-			s.Require().NoError(err)
-			s.Equal(before, after)
-		})
+			s.Run(name, func() {
+				ctx := s.GetContext()
+				inv := *s.testData.invoice
+				inv.ID = "inv_sync_" + name
+				if checkout {
+					inv.InvoiceStatus = types.InvoiceStatusDraft
+				}
+				s.Require().NoError(s.GetStores().InvoiceRepo.Create(ctx, &inv))
+				p := &payment.Payment{
+					ID:              "pay_sync_" + name,
+					DestinationType: types.PaymentDestinationTypeInvoice, DestinationID: inv.ID,
+					PaymentStatus: status, Amount: inv.AmountDue, Currency: inv.Currency,
+					PaymentGateway:    lo.ToPtr(string(types.PaymentGatewayTypeRazorpay)),
+					GatewayTrackingID: lo.ToPtr("plink_checkout"),
+					BaseModel:         types.GetDefaultBaseModel(ctx),
+				}
+				if checkout {
+					p.GatewayMetadata = types.Metadata{paymentCheckoutMarker: "true"}
+				}
+				s.Require().NoError(s.GetStores().PaymentRepo.Create(ctx, p))
+				before, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
+				s.Require().NoError(err)
+				svc := s.service.(*paymentService)
+				result, err := svc.applyGatewayPaymentStatus(ctx, p, types.PaymentStatusSucceeded, "pay_captured")
+				s.Require().NoError(err)
+				s.Equal(types.PaymentStatusSucceeded, result.PaymentStatus)
+				s.Equal("pay_captured", lo.FromPtr(result.GatewayPaymentID))
+				s.NotNil(result.SucceededAt)
+				stored, err := s.GetStores().PaymentRepo.Get(ctx, p.ID)
+				s.Require().NoError(err)
+				s.Equal(types.PaymentStatusSucceeded, stored.PaymentStatus)
+				after, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
+				s.Require().NoError(err)
+				if checkout {
+					s.Equal(before, after, "syncing a checkout payment must leave its invoice untouched")
+				} else {
+					s.Equal(types.PaymentStatusSucceeded, after.PaymentStatus)
+					s.True(after.AmountPaid.Equal(inv.AmountDue))
+				}
+			})
+		}
 	}
+}
+
+func (s *PaymentServiceSuite) TestSyncPaymentStatusFromGateway_CheckoutStillFetchesGateway() {
+	ctx := s.GetContext()
+	svc := s.service.(*paymentService)
+	svc.IntegrationFactory = s.GetIntegrationFactory()
+	p := &payment.Payment{
+		ID: "pay_checkout", PaymentStatus: types.PaymentStatusPending,
+		PaymentGateway:    lo.ToPtr(string(types.PaymentGatewayTypeRazorpay)),
+		GatewayTrackingID: lo.ToPtr("plink_checkout"),
+		GatewayMetadata:   types.Metadata{paymentCheckoutMarker: "true"},
+	}
+	_, err := svc.syncPaymentStatusFromGateway(ctx, p)
+	s.Error(err, "the missing gateway connection must be consulted even for a checkout payment")
 }
 
 // TestCreatePayment_CustomerDestination_ValidatesCustomer covers the VAPT fix:

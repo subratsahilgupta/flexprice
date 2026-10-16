@@ -227,6 +227,7 @@ func (s *subscriptionService) convertTrialToFirstPaidPeriod(ctx context.Context,
 	}
 	sub.BillingAnchor = anchor
 	sub.TrialEnd = lo.ToPtr(start)
+	// The trial has ended, but activation waits for invoice settlement or the zero-amount completion hook.
 	sub.SubscriptionStatus = types.SubscriptionStatusIncomplete
 	sub.CurrentPeriodStart = start
 	sub.CurrentPeriodEnd = end

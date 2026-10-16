@@ -237,6 +237,38 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_PaidEndsTrialAndActivate
 	s.True(got.CurrentPeriodEnd.Equal(lo.FromPtr(inv.PeriodEnd)))
 }
 
+func (s *SubscriptionServiceSuite) TestTrialEndCheckout_CompletesAfterPaymentStatusSync() {
+	ctx := s.GetContext()
+	sub, sessionID, invoiceID := s.startTrialEndCheckout()
+	params := s.service.(*subscriptionService).ServiceParams
+	session, err := params.CheckoutSessionRepo.Get(ctx, sessionID)
+	s.Require().NoError(err)
+	p, err := params.PaymentRepo.Get(ctx, lo.FromPtr(session.CheckoutPaymentID))
+	s.Require().NoError(err)
+	paySvc := NewPaymentService(params).(*paymentService)
+	_, err = paySvc.applyGatewayPaymentStatus(ctx, p, types.PaymentStatusSucceeded, "pay_trial_synced")
+	s.Require().NoError(err)
+	before, err := params.InvoiceRepo.Get(ctx, invoiceID)
+	s.Require().NoError(err)
+	s.Equal(types.InvoiceStatusDraft, before.InvoiceStatus)
+	s.NotEqual(types.PaymentStatusSucceeded, before.PaymentStatus)
+	trial, err := params.SubRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.SubscriptionStatusTrialing, trial.SubscriptionStatus)
+
+	checkoutSvc := NewCheckoutSessionService(params)
+	s.Require().NoError(checkoutSvc.CompleteCheckoutSession(ctx, sessionID, &types.CheckoutProviderResult{ProviderPaymentIntentID: "pay_trial_synced"}))
+	after, err := params.SubRepo.Get(ctx, sub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.SubscriptionStatusActive, after.SubscriptionStatus)
+	s.True(after.TrialEnd.Equal(*session.Configuration.ModifySubscriptionParams.TrialEndAt))
+	inv, err := params.InvoiceRepo.Get(ctx, invoiceID)
+	s.Require().NoError(err)
+	s.Equal(types.InvoiceStatusFinalized, inv.InvoiceStatus)
+	s.Equal(types.PaymentStatusSucceeded, inv.PaymentStatus)
+	s.True(inv.AmountPaid.Equal(inv.AmountDue), "checkout must settle the invoice exactly once")
+}
+
 func (s *SubscriptionServiceSuite) TestTrialEndCheckout_DoubleCompleteIdempotent() {
 	ctx := s.GetContext()
 	sub, sessionID, _ := s.startTrialEndCheckout()
@@ -249,7 +281,7 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_DoubleCompleteIdempotent
 	// A replay stops at the session layer; a delivery that reaches apply again must not move the period.
 	err = checkoutSvc.CompleteCheckoutSession(ctx, sessionID, &types.CheckoutProviderResult{ProviderPaymentIntentID: "pi_trial_2"})
 	s.True(ierr.IsAlreadyExists(err), "replayed completion is rejected at the session layer")
-	modSvc := &subscriptionModificationService{serviceParams: params}
+	modSvc := NewSubscriptionModificationService(params).(*subscriptionModificationService)
 	s.Require().NoError(modSvc.applyTrialEndConversion(ctx, sub.ID, lo.FromPtr(first.TrialEnd)))
 
 	again, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
@@ -291,7 +323,7 @@ func (s *SubscriptionServiceSuite) TestTrialEndCheckout_ReplayAfterTimestampPers
 			before, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
 			s.Require().NoError(err)
 
-			modSvc := &subscriptionModificationService{serviceParams: subSvc.ServiceParams}
+			modSvc := NewSubscriptionModificationService(subSvc.ServiceParams).(*subscriptionModificationService)
 			err = modSvc.applyTrialEndConversion(ctx, sub.ID, start)
 			if tt.offset != 0 {
 				s.Require().Error(err)

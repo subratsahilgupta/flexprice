@@ -120,12 +120,8 @@ func (r *subscriptionRepository) Get(ctx context.Context, id string) (*domainSub
 	})
 	defer FinishSpan(span)
 
-	// Inside a transaction the cache can't see uncommitted writes and must not store them.
-	inTx := r.client.TxFromContext(ctx) != nil
-	if !inTx {
-		if cachedSub := r.GetCache(ctx, id); cachedSub != nil {
-			return cachedSub, nil
-		}
+	if cachedSub := r.GetCache(ctx, id); cachedSub != nil {
+		return cachedSub, nil
 	}
 
 	// Cache fills read the primary so a lagging replica row can't outlive the post-commit invalidation.
@@ -155,10 +151,32 @@ func (r *subscriptionRepository) Get(ctx context.Context, id string) (*domainSub
 
 	SetSpanSuccess(span)
 	subData := domainSub.GetSubscriptionFromEnt(sub)
-	if !inTx {
-		r.SetCache(ctx, subData)
-	}
+	r.SetCache(ctx, subData)
 	return subData, nil
+}
+
+func (r *subscriptionRepository) GetTimezone(ctx context.Context, id string) (string, error) {
+	span := StartRepositorySpan(ctx, "subscription", "get_timezone", map[string]interface{}{"subscription_id": id})
+	defer FinishSpan(span)
+
+	sub, err := r.client.Reader(ctx).Subscription.Query().
+		Where(
+			subscription.ID(id),
+			subscription.TenantID(types.GetTenantID(ctx)),
+			subscription.EnvironmentID(types.GetEnvironmentID(ctx)),
+			subscription.Status(string(types.StatusPublished)),
+		).
+		Select(subscription.FieldTimezone).
+		Only(ctx)
+	if err != nil {
+		SetSpanError(span, err)
+		if ent.IsNotFound(err) {
+			return "", ierr.NewError("subscription not found").WithHint("Subscription not found").Mark(ierr.ErrNotFound)
+		}
+		return "", ierr.WithError(err).WithHint("Failed to get subscription timezone").Mark(ierr.ErrDatabase)
+	}
+	SetSpanSuccess(span)
+	return sub.Timezone, nil
 }
 
 // GetForUpdate row-locks the subscription and bypasses cache (cache can't hold a lock).
@@ -1189,6 +1207,10 @@ func (r *subscriptionRepository) GetWithPauses(ctx context.Context, id string) (
 }
 
 func (r *subscriptionRepository) SetCache(ctx context.Context, sub *domainSub.Subscription) {
+	// Uncommitted rows must not become visible through the shared cache.
+	if r.client.TxFromContext(ctx) != nil {
+		return
+	}
 	span, ctx := cache.StartRedisCacheSpan(ctx, "subscription", "set", map[string]interface{}{
 		"subscription_id": sub.ID,
 	})

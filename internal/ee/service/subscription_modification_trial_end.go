@@ -105,12 +105,9 @@ func (s *subscriptionModificationService) executeTrialEndNow(
 	ctx context.Context,
 	sub *subscription.Subscription,
 ) (*dto.SubscriptionModifyResponse, error) {
-	sp := s.serviceParams
-
-	subSvc := NewSubscriptionService(sp)
 	now := time.Now().UTC()
 	sub.TrialEnd = lo.ToPtr(now)
-	invRes, err := subSvc.ProcessSingleSubscriptionTrialEnd(ctx, sub, now)
+	invRes, err := s.subscriptionService.ProcessSingleSubscriptionTrialEnd(ctx, sub, now)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +186,7 @@ func (s *subscriptionModificationService) settleTrialEndPayFirst(
 	if err != nil {
 		return nil, err
 	}
-	subResp, err := NewSubscriptionService(sp).GetSubscription(ctx, sub.ID)
+	subResp, err := s.subscriptionService.GetSubscription(ctx, sub.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -217,8 +214,7 @@ func (s *subscriptionModificationService) applyTrialEndConversion(ctx context.Co
 				WithReportableDetails(map[string]any{"subscription_id": subscriptionID, "status": sub.SubscriptionStatus}).
 				Mark(ierr.ErrInvalidOperation)
 		}
-		// Lands incomplete; the paid-invoice hook (completeTrialConversionToActive) activates it.
-		_, err = (&subscriptionService{ServiceParams: sp}).convertTrialToFirstPaidPeriod(txCtx, sub, start)
+		_, err = s.subscriptionService.convertTrialToFirstPaidPeriod(txCtx, sub, start)
 		return err
 	})
 }

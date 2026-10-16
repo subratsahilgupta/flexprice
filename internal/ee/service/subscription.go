@@ -5883,23 +5883,23 @@ func (s *subscriptionService) completeTrialConversionToActive(ctx context.Contex
 	activated := false
 	if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		// Locked, uncached read: the caller's copy may be a stale cache hit.
-		fresh, err := s.SubRepo.GetForUpdate(txCtx, sub.ID)
+		lockedSub, err := s.SubRepo.GetForUpdate(txCtx, sub.ID)
 		if err != nil {
 			return err
 		}
 		// Only the post-conversion incomplete state activates; a still-trialing sub waits for its conversion.
-		if fresh.SubscriptionStatus != types.SubscriptionStatusIncomplete {
+		if lockedSub.SubscriptionStatus != types.SubscriptionStatusIncomplete {
 			return nil
 		}
-		fresh.SubscriptionStatus = types.SubscriptionStatusActive
-		txCtx = activity.WithAction(txCtx, fresh.ID, activity.SubscriptionActivated)
-		if err := s.SubRepo.Update(txCtx, fresh); err != nil {
+		lockedSub.SubscriptionStatus = types.SubscriptionStatusActive
+		txCtx = activity.WithAction(txCtx, lockedSub.ID, activity.SubscriptionActivated)
+		if err := s.SubRepo.Update(txCtx, lockedSub); err != nil {
 			return err
 		}
-		if err := s.cascadeTrialActivationToInherited(txCtx, fresh); err != nil {
+		if err := s.cascadeTrialActivationToInherited(txCtx, lockedSub); err != nil {
 			return err
 		}
-		if err := s.processPendingCreditGrantsForSubscription(txCtx, fresh); err != nil {
+		if err := s.processPendingCreditGrantsForSubscription(txCtx, lockedSub); err != nil {
 			return err
 		}
 		activated = true

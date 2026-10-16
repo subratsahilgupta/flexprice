@@ -38,13 +38,15 @@ type SubscriptionModificationService interface {
 }
 
 type subscriptionModificationService struct {
-	serviceParams ServiceParams
+	serviceParams       ServiceParams
+	subscriptionService *subscriptionService
 }
 
 // NewSubscriptionModificationService creates a new SubscriptionModificationService.
 func NewSubscriptionModificationService(serviceParams ServiceParams) SubscriptionModificationService {
 	return &subscriptionModificationService{
-		serviceParams: serviceParams,
+		serviceParams:       serviceParams,
+		subscriptionService: NewSubscriptionService(serviceParams).(*subscriptionService),
 	}
 }
 

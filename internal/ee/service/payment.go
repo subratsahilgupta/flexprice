@@ -823,10 +823,6 @@ func (s *paymentService) PaymentExistsByGatewayPaymentID(ctx context.Context, ga
 
 // TODO: extract into a GatewayStatusSyncer when supporting more gateways or throttling
 func (s *paymentService) syncPaymentStatusFromGateway(ctx context.Context, p *payment.Payment) (*payment.Payment, error) {
-	// Checkout completion owns fulfillment before invoice reconciliation and activation.
-	if p.GatewayMetadata[paymentCheckoutMarker] == "true" {
-		return p, nil
-	}
 	if p.PaymentStatus != types.PaymentStatusPending && p.PaymentStatus != types.PaymentStatusProcessing {
 		return p, nil
 	}
@@ -877,13 +873,17 @@ func (s *paymentService) syncPaymentStatusFromGateway(ctx context.Context, p *pa
 		return p, err
 	}
 
+	return s.applyGatewayPaymentStatus(ctx, p, newStatus, backfillGatewayPaymentID)
+}
+
+func (s *paymentService) applyGatewayPaymentStatus(ctx context.Context, p *payment.Payment, newStatus types.PaymentStatus, backfillGatewayPaymentID string) (*payment.Payment, error) {
 	if newStatus == "" || newStatus == p.PaymentStatus {
 		return p, nil
 	}
 
 	s.Logger.Info(ctx, "gateway status differs from DB, applying transition",
 		"payment_id", p.ID,
-		"gateway", gateway,
+		"gateway", lo.FromPtr(p.PaymentGateway),
 		"db_status", p.PaymentStatus,
 		"new_status", newStatus,
 	)
@@ -909,7 +909,8 @@ func (s *paymentService) syncPaymentStatusFromGateway(ctx context.Context, p *pa
 		return p, err
 	}
 
-	if newStatus == types.PaymentStatusSucceeded && p.DestinationType == types.PaymentDestinationTypeInvoice {
+	// Checkout applies the requested change before reconciling its invoice.
+	if newStatus == types.PaymentStatusSucceeded && p.DestinationType == types.PaymentDestinationTypeInvoice && p.GatewayMetadata[paymentCheckoutMarker] != "true" {
 		invoiceSvc := NewInvoiceService(s.ServiceParams)
 		if err := invoiceSvc.ReconcilePaymentStatus(ctx, p.DestinationID, types.PaymentStatusSucceeded, &p.Amount); err != nil {
 			s.Logger.Error(ctx, "failed to reconcile invoice after gateway sync",
