@@ -173,6 +173,16 @@ clickhouse:
   dial_timeout: 0s
   read_timeout: 0s
 
+reports:
+  # Empty database or username disables reports.
+  # Login must allow setting changes.
+  database: ""
+  username: ""
+  password: ""
+  max_execution_seconds: 30
+  max_result_rows: 10000
+  max_rows_to_read: 0
+
 postgres:
   host: 127.0.0.1 # For local mode
   # Will be overridden by FLEXPRICE_POSTGRES_HOST env var in Docker

@@ -203,6 +203,7 @@ func main() {
 			repository.NewCheckoutSessionRepository,
 			repository.NewRawEventRepository,
 			repository.NewAnalyticsViewRepository,
+			repository.NewReportsRepository,
 			repository.NewRevenueFactRepository,
 
 			// PubSub

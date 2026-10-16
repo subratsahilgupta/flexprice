@@ -26,7 +26,7 @@ func ResolveVariables(def *ViewDefinition, supplied map[string][]string) (*Resol
 	if err != nil {
 		return nil, err
 	}
-	rv := &ResolvedView{Shape: def.Shape, Metrics: def.Metrics, Dimensions: def.Dimensions, Sort: def.Sort, Limit: def.Limit}
+	rv := &ResolvedView{Family: def.Family, Shape: def.Shape, Metrics: def.Metrics, Dimensions: def.Dimensions, Sort: def.Sort, Limit: def.Limit}
 
 	for _, f := range def.Filters {
 		if f == nil {

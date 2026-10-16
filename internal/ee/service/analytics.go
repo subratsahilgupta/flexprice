@@ -39,12 +39,18 @@ func (s *analyticsService) ExecuteView(ctx context.Context, def *analytics.ViewD
 	if err != nil {
 		return nil, err
 	}
+	if rv.Family == types.FamilyBilling {
+		return s.executeBilling(ctx, rv)
+	}
+	return s.executeUsage(ctx, rv)
+}
 
+func (s *analyticsService) executeUsage(ctx context.Context, rv *analytics.ResolvedView) (*dto.AnalyticsQueryResult, error) {
 	if err := analytics.ValidateDimensions(rv.Dimensions); err != nil {
 		return nil, err
 	}
 
-	// keep multi-meter results distinguishable by adding meter_id as a dimension
+	// keep meters distinguishable
 	if !slices.Contains(rv.Dimensions, "meter_id") {
 		dims := make([]string, len(rv.Dimensions), len(rv.Dimensions)+1)
 		copy(dims, rv.Dimensions)
@@ -59,6 +65,37 @@ func (s *analyticsService) ExecuteView(ctx context.Context, def *analytics.ViewD
 	default:
 		return nil, ierr.NewErrorf("unsupported shape %q", rv.Shape).Mark(ierr.ErrValidation)
 	}
+}
+
+func (s *analyticsService) executeBilling(ctx context.Context, rv *analytics.ResolvedView) (*dto.AnalyticsQueryResult, error) {
+	if s.ReportsRepo == nil || !s.ReportsRepo.Enabled() {
+		return nil, ierr.NewError("financial reports are not enabled").
+			WithHint("Financial reports are not configured for this deployment").
+			Mark(ierr.ErrPermissionDenied)
+	}
+	out, err := s.ReportsRepo.RunReport(ctx, rv, types.GetTenantID(ctx), types.GetEnvironmentID(ctx))
+	if err != nil {
+		if s.Logger != nil {
+			s.Logger.Error(ctx, "billing analytics execution failed", "error", err)
+		}
+		return nil, err
+	}
+	rows := out.Rows
+	if rows == nil {
+		rows = [][]string{}
+	}
+
+	res := dto.AnalyticsQueryResult{Rows: rows, Meta: dto.AnalyticsQueryMeta{QuerySource: "billing"}}
+	for _, c := range out.Columns {
+		res.Columns = append(res.Columns, dto.NewAnalyticsColumn(c.Name, c.Type, c.Role, ""))
+	}
+	if rv.Shape == types.ShapeBreakdown {
+		if err := sortBreakdownRows(&res, rv.Sort); err != nil {
+			return nil, err
+		}
+		truncateRows(&res, rv.Limit)
+	}
+	return &res, nil
 }
 
 // executeBreakdown translates + executes a breakdown view through

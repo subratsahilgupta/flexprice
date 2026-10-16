@@ -34,6 +34,7 @@ type Configuration struct {
 	// local cluster — consumed AND always written. See infrastructure/docs/GCP-CUTOVER-STEPWISE.md.
 	KafkaSecondary         *KafkaConfig                 `mapstructure:"kafka_secondary" validate:"omitempty"`
 	ClickHouse             ClickHouseConfig             `validate:"required"`
+	Reports                ReportsConfig                `mapstructure:"reports" validate:"omitempty"`
 	Logging                LoggingConfig                `validate:"required"`
 	Postgres               PostgresConfig               `validate:"required"`
 	Otel                   OtelConfig                   `validate:"omitempty"`
@@ -610,6 +611,20 @@ type ClickHouseConfig struct {
 	Password       string `mapstructure:"password" validate:"required"`
 	Database       string `mapstructure:"database" validate:"required"`
 	MaxMemoryUsage int64  `mapstructure:"max_memory_usage" validate:"required"`
+}
+
+// ReportsConfig is the reports ClickHouse login.
+type ReportsConfig struct {
+	Database            string `mapstructure:"database"`
+	Username            string `mapstructure:"username"`
+	Password            string `mapstructure:"password"`
+	MaxExecutionSeconds int    `mapstructure:"max_execution_seconds"`
+	MaxResultRows       int    `mapstructure:"max_result_rows"`
+	MaxRowsToRead       int64  `mapstructure:"max_rows_to_read"`
+}
+
+func (c ReportsConfig) Enabled() bool {
+	return c.Database != "" && c.Username != ""
 }
 
 type LoggingConfig struct {

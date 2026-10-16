@@ -10,7 +10,27 @@ type Shape string
 const (
 	ShapeTimeseries Shape = "timeseries"
 	ShapeBreakdown  Shape = "breakdown"
+	ShapeScalar     Shape = "scalar"
 )
+
+// Family selects the view's compiler.
+type Family string
+
+const (
+	FamilyUsage   Family = "usage"
+	FamilyBilling Family = "billing"
+)
+
+func (f Family) Validate() error {
+	switch f {
+	case "", FamilyUsage, FamilyBilling:
+		return nil
+	default:
+		return ierr.NewErrorf("invalid family %q", f).
+			WithHint("family must be one of: usage, billing").
+			Mark(ierr.ErrValidation)
+	}
+}
 
 // Grain is the timeseries bucketing granularity. It is the wire-facing enum;
 // ToWindowSize maps it onto the engine's internal WindowSize.
@@ -80,6 +100,11 @@ type Metric string
 const (
 	MetricUsageQuantity Metric = "usage_quantity"
 	MetricEventCount    Metric = "event_count"
+)
+
+// Billing family metrics.
+const (
+	MetricInvoiceTotal Metric = "invoice_total"
 )
 
 func (m Metric) Validate() error {
