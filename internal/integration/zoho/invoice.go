@@ -224,9 +224,10 @@ func (s *InvoiceService) buildInvoiceRequest(ctx context.Context, flexInvoice *i
 
 	reqPayload.AccountID = strings.TrimSpace(flexCustomer.Metadata[zohoReceivableAccountKey])
 	reqPayload.PlaceOfSupply = types.TaxMetadataFromMap(flexCustomer.Metadata).PlaceOfSupply()
+	serviceStart, serviceEnd := flexInvoice.ResolveServicePeriod(isSyncableLineItem)
 	// Ordered least to most specific: Zoho keeps the last write to a given field.
 	reqPayload.CustomFields = append(globalCustomFields(settings),
-		servicePeriodCustomFields(settings, flexInvoice.PeriodStart, flexInvoice.PeriodEnd)...)
+		servicePeriodCustomFields(settings, serviceStart, serviceEnd)...)
 	reqPayload.CustomFields = append(reqPayload.CustomFields,
 		metadataCustomFields(settings, flexInvoice.Metadata, flexCustomer.Metadata)...)
 
@@ -499,7 +500,7 @@ func (s *InvoiceService) buildLineItems(ctx context.Context, flexInvoice *invoic
 	lineItemIDToChildCustomer := make(map[string]string)
 	for _, li := range flexInvoice.LineItems {
 		// skip line items that are not syncable
-		if li == nil || li.Amount.IsZero() || li.PriceID == nil {
+		if !isSyncableLineItem(li) || li.PriceID == nil {
 			continue
 		}
 
@@ -559,7 +560,7 @@ func (s *InvoiceService) buildLineItems(ctx context.Context, flexInvoice *invoic
 
 	out := make([]InvoiceLineItem, 0, len(inputs))
 	for _, li := range flexInvoice.LineItems {
-		if li == nil || li.Amount.IsZero() {
+		if !isSyncableLineItem(li) {
 			continue
 		}
 		qty, rate := s.normalizeRateAndQuantity(li, settings, flexInvoice.BillingPeriod)
@@ -578,6 +579,10 @@ func (s *InvoiceService) buildLineItems(ctx context.Context, flexInvoice *invoic
 		})
 	}
 	return out, nil
+}
+
+func isSyncableLineItem(li *invoice.InvoiceLineItem) bool {
+	return li != nil && !li.Amount.IsZero()
 }
 
 func (s *InvoiceService) totalLineItemDiscount(lineItems []InvoiceLineItem) decimal.Decimal {
