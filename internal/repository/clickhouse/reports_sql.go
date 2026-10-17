@@ -1,0 +1,167 @@
+package clickhouse
+
+import (
+	"fmt"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+
+	"github.com/flexprice/flexprice/internal/domain/analytics"
+	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/types"
+)
+
+// reportQuery is compiled SQL plus parameters.
+type reportQuery struct {
+	SQL     string
+	Params  map[string]string
+	Columns []analytics.ReportColumn
+	// TopN: LIMIT is the view limit.
+	TopN bool
+}
+
+const (
+	chEpoch      = "toDateTime64(0, 6)"
+	chTimeLayout = "2006-01-02 15:04:05.000000"
+)
+
+var chIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+var billingGrainFn = map[types.Grain]string{
+	"":               "toStartOfDay",
+	types.GrainDay:   "toStartOfDay",
+	types.GrainWeek:  "toMonday",
+	types.GrainMonth: "toStartOfMonth",
+}
+
+func lookupBillingMetric(m types.Metric) (*analytics.BillingMetric, *billingSQL, bool) {
+	bm, ok := analytics.LookupBillingMetric(m)
+	if !ok {
+		return nil, nil, false
+	}
+	sq, ok := billingSQLs[m]
+	return bm, sq, ok
+}
+
+func buildBillingQuery(rv *analytics.ResolvedView, db, tenantID, environmentID string, maxRows int) (*reportQuery, error) {
+	if tenantID == "" || environmentID == "" {
+		return nil, ierr.NewError("tenant and environment are required").Mark(ierr.ErrPermissionDenied)
+	}
+	if !chIdentifier.MatchString(db) {
+		return nil, ierr.NewErrorf("invalid reports database %q", db).Mark(ierr.ErrSystem)
+	}
+	if rv == nil || len(rv.Metrics) != 1 {
+		return nil, ierr.NewError("billing views take exactly one metric").Mark(ierr.ErrValidation)
+	}
+	bm, sq, ok := lookupBillingMetric(rv.Metrics[0])
+	if !ok {
+		return nil, ierr.NewErrorf("unknown billing metric %q", rv.Metrics[0]).Mark(ierr.ErrValidation)
+	}
+	grainFn, ok := billingGrainFn[rv.Time.Grain]
+	if !ok {
+		return nil, ierr.NewErrorf("grain %q not supported for billing", rv.Time.Grain).Mark(ierr.ErrValidation)
+	}
+
+	dims := slices.Clone(rv.Dimensions)
+	if bm.Currency && !slices.Contains(dims, "currency") {
+		dims = append(dims, "currency")
+	}
+
+	params := map[string]string{
+		"tenant_id":      tenantID,
+		"environment_id": environmentID,
+		"from":           rv.Time.From.UTC().Format(chTimeLayout),
+		"to":             rv.Time.To.UTC().Format(chTimeLayout),
+	}
+	timeExpr := fmt.Sprintf("nullIf(%s, %s)", sq.TimeCol, chEpoch)
+
+	var selects, groups []string
+	var cols []analytics.ReportColumn
+	if rv.Shape == types.ShapeTimeseries {
+		selects = append(selects, fmt.Sprintf("ifNull(formatDateTime(toDateTime(%s(%s, 'UTC'), 'UTC'), '%%Y-%%m-%%dT%%H:%%i:%%SZ'), '') AS bucket", grainFn, timeExpr))
+		groups = append(groups, "bucket")
+		cols = append(cols, analytics.ReportColumn{Name: "bucket", Type: types.ColumnTypeDatetime, Role: types.ColumnRoleDimension})
+	}
+	for _, d := range dims {
+		if !slices.Contains(bm.Dimensions, d) {
+			return nil, ierr.NewErrorf("illegal dimension %q for metric %q", d, bm.Metric).Mark(ierr.ErrValidation)
+		}
+		selects = append(selects, fmt.Sprintf("ifNull(toString(%s), '') AS d_%s", sq.dimExpr(d), d))
+		groups = append(groups, "d_"+d)
+		cols = append(cols, analytics.ReportColumn{Name: d, Type: types.ColumnTypeString, Role: types.ColumnRoleDimension})
+	}
+	selects = append(selects, fmt.Sprintf("ifNull(toString(%s), '') AS m_value", sq.Measure))
+	cols = append(cols, analytics.ReportColumn{Name: string(bm.Metric), Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric})
+
+	where := []string{
+		"tenant_id = {tenant_id:String}",
+		"environment_id = {environment_id:String}",
+		"_peerdb_is_deleted = 0",
+		"status = '" + string(types.StatusPublished) + "'",
+	}
+	where = append(where, sq.Where...)
+	where = append(where,
+		timeExpr+" >= toDateTime64({from:String}, 6, 'UTC')",
+		timeExpr+" < toDateTime64({to:String}, 6, 'UTC')",
+	)
+	for i, f := range rv.Filters {
+		if f == nil {
+			continue
+		}
+		if !slices.Contains(bm.Dimensions, f.Field) {
+			return nil, ierr.NewErrorf("illegal filter field %q for metric %q", f.Field, bm.Metric).Mark(ierr.ErrValidation)
+		}
+		if len(f.Value) == 0 {
+			where = append(where, "1 = 0")
+			continue
+		}
+		placeholders := make([]string, len(f.Value))
+		for j, v := range f.Value {
+			name := fmt.Sprintf("f%d_%d", i, j)
+			params[name] = v
+			placeholders[j] = "{" + name + ":String}"
+		}
+		where = append(where, fmt.Sprintf("%s IN (%s)", sq.dimExpr(f.Field), strings.Join(placeholders, ", ")))
+	}
+
+	var b strings.Builder
+	b.WriteString("SELECT " + strings.Join(selects, ", "))
+	b.WriteString(" FROM " + db + "." + sq.Table + " FINAL")
+	b.WriteString(" WHERE " + strings.Join(where, " AND "))
+	if len(groups) > 0 {
+		b.WriteString(" GROUP BY " + strings.Join(groups, ", "))
+	}
+	if rv.Shape == types.ShapeBreakdown {
+		b.WriteString(" ORDER BY " + sq.Measure + " DESC")
+	} else if len(groups) > 0 {
+		b.WriteString(" ORDER BY " + strings.Join(groups, ", "))
+	}
+	topN := billingTopN(rv, bm.Metric)
+	switch {
+	case topN && maxRows > 0:
+		b.WriteString(" LIMIT " + strconv.Itoa(min(rv.Limit, maxRows)))
+	case topN:
+		b.WriteString(" LIMIT " + strconv.Itoa(rv.Limit))
+	case maxRows > 0:
+		// One extra row detects overflow.
+		b.WriteString(" LIMIT " + strconv.Itoa(maxRows+1))
+	}
+
+	return &reportQuery{SQL: b.String(), Params: params, Columns: cols, TopN: topN}, nil
+}
+
+// billingTopN: SQL order equals view order.
+func billingTopN(rv *analytics.ResolvedView, metric types.Metric) bool {
+	if rv.Shape != types.ShapeBreakdown || rv.Limit <= 0 {
+		return false
+	}
+	switch len(rv.Sort) {
+	case 0:
+		return true
+	case 1:
+		s := rv.Sort[0]
+		return s != nil && s.Field == string(metric) && s.Dir == types.SortDirectionDesc
+	}
+	return false
+}
