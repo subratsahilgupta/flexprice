@@ -138,12 +138,13 @@ func (r *Reporter) run(ctx context.Context) {
 
 func (r *Reporter) base() map[string]any {
 	p := map[string]any{
-		"instance_id": r.instanceID,
-		"version":     buildinfo.Version,
-		"git_sha":     buildinfo.GitSHA,
-		"region":      r.cfg.Logging.Region,
-		"os":          runtime.GOOS,
-		"arch":        runtime.GOARCH,
+		"instance_id":   r.instanceID,
+		"version":       buildinfo.Version,
+		"git_sha":       buildinfo.GitSHA,
+		"build_variant": buildinfo.BuildVariant,
+		"region":        r.cfg.Logging.Region,
+		"os":            runtime.GOOS,
+		"arch":          runtime.GOARCH,
 	}
 	if l := r.cfg.Telemetry.InstallLabel; l != "" {
 		p["install_label"] = l
