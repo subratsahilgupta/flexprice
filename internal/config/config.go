@@ -39,6 +39,7 @@ type Configuration struct {
 	Postgres               PostgresConfig               `validate:"required"`
 	Otel                   OtelConfig                   `validate:"omitempty"`
 	Pyroscope              PyroscopeConfig              `validate:"required"`
+	Telemetry              TelemetryConfig              `mapstructure:"telemetry" validate:"omitempty"`
 	Event                  EventConfig                  `validate:"required"`
 	DynamoDB               DynamoDBConfig               `validate:"required"`
 	Temporal               TemporalConfig               `validate:"required"`
@@ -842,6 +843,14 @@ type PyroscopeConfig struct {
 	ProfileTypes    []string `mapstructure:"profile_types"`
 	SampleRate      uint32   `mapstructure:"sample_rate" default:"100"`
 	DisableGCRuns   bool     `mapstructure:"disable_gc_runs" default:"false"`
+}
+
+type TelemetryConfig struct {
+	Disabled     bool   `mapstructure:"disabled"`
+	APIKey       string `mapstructure:"api_key"`
+	Host         string `mapstructure:"host"`
+	DryRun       bool   `mapstructure:"dry_run"`
+	InstallLabel string `mapstructure:"install_label"`
 }
 
 type TemporalConfig struct {
