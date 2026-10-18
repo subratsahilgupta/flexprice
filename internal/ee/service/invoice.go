@@ -870,6 +870,11 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 		return nil, skipped, err
 	}
 
+	// Period-end computation also runs for zero-value invoices and after rollover has advanced the subscription.
+	if computed {
+		s.saveCompletedCycleUsageCheckpoints(ctx, inv)
+	}
+
 	// Notify draft-stage listeners (currently just Tabs sync) that the invoice changed. Skip when
 	// nothing actually happened (concurrent finalize/void raced us) or when the invoice landed on
 	// SKIPPED — zero-amount invoices are never synced downstream, so there's nothing to notify.
