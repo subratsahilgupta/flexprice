@@ -41,6 +41,7 @@ type Reporter struct {
 	cloud      string
 	cloudOnce  sync.Once
 	cancel     context.CancelFunc
+	done       chan struct{}
 }
 
 func NewReporter(cfg *config.Configuration, db postgres.IClient, log *logger.Logger) *Reporter {
@@ -73,12 +74,21 @@ func RegisterHooks(lc fx.Lifecycle, r *Reporter) {
 			r.log.Infow("telemetry on, set FLEXPRICE_TELEMETRY_DISABLED=true to opt out")
 			runCtx, cancel := context.WithCancel(context.Background())
 			r.cancel = cancel
-			go r.run(runCtx)
+			r.done = make(chan struct{})
+			go func() {
+				defer close(r.done)
+				r.run(runCtx)
+			}()
 			return nil
 		},
-		OnStop: func(context.Context) error {
-			if r.cancel != nil {
-				r.cancel()
+		OnStop: func(ctx context.Context) error {
+			if r.cancel == nil {
+				return nil
+			}
+			r.cancel()
+			select {
+			case <-r.done:
+			case <-ctx.Done():
 			}
 			return nil
 		},
@@ -142,6 +152,9 @@ func (r *Reporter) base() map[string]any {
 }
 
 func (r *Reporter) heartbeat(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	p := r.base()
 	p["process_id"] = r.processID
 	p["role"] = string(r.cfg.Deployment.Mode)
@@ -152,6 +165,9 @@ func (r *Reporter) heartbeat(ctx context.Context) {
 }
 
 func (r *Reporter) snapshot(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
 	p := r.base()
 	if err := r.addCounts(ctx, p); err != nil {
 		r.log.Debugw("telemetry snapshot skipped", "error", err)
