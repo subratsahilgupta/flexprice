@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/flexprice/flexprice/ent/environment"
@@ -37,19 +38,24 @@ type Reporter struct {
 	http       *http.Client
 	processID  string
 	instanceID string
+	cloud      string
+	cloudOnce  sync.Once
 	cancel     context.CancelFunc
 }
 
 func NewReporter(cfg *config.Configuration, db postgres.IClient, log *logger.Logger) *Reporter {
 	hostname, _ := os.Hostname()
-	return &Reporter{
+	r := &Reporter{
 		cfg:        cfg,
 		db:         db,
 		log:        log,
 		http:       &http.Client{Timeout: 5 * time.Second},
 		processID:  uuid.NewString(),
 		instanceID: hash("flexprice-instance", hostname),
+		cloud:      "unknown",
 	}
+	go r.cloudOnce.Do(func() { r.cloud = probeCloud() })
+	return r
 }
 
 func (r *Reporter) FireOnce(ctx context.Context) {
@@ -144,6 +150,7 @@ func (r *Reporter) heartbeat(ctx context.Context) {
 	p["process_id"] = r.processID
 	p["role"] = string(r.cfg.Deployment.Mode)
 	p["platform"] = detectPlatform()
+	p["cloud"] = r.cloud
 	p["num_cpu"] = runtime.NumCPU()
 	r.send(ctx, "flexprice_install_heartbeat", r.instanceID, p)
 }
@@ -154,7 +161,6 @@ func (r *Reporter) snapshot(ctx context.Context) {
 		r.log.Debugw("telemetry snapshot skipped", "error", err)
 		return
 	}
-	// Same-day retries and replicas collapse to one event.
 	p["$insert_id"] = hash(r.instanceID, "snapshot", time.Now().UTC().Format("2006-01-02"))
 	r.send(ctx, "flexprice_install_snapshot", r.instanceID, p)
 }
@@ -244,6 +250,70 @@ func bucket(n int) string {
 		return "100k-1M"
 	}
 	return "1M+"
+}
+
+func probeCloud() string {
+	var vendor strings.Builder
+	for _, f := range []string{"sys_vendor", "product_name"} {
+		if b, err := os.ReadFile("/sys/class/dmi/id/" + f); err == nil {
+			vendor.Write(b)
+		}
+	}
+	if v := strings.ToLower(vendor.String()); v != "" {
+		switch {
+		case strings.Contains(v, "amazon"):
+			return "aws"
+		case strings.Contains(v, "google"):
+			return "gcp"
+		case strings.Contains(v, "microsoft"):
+			return "azure"
+		}
+	}
+
+	type candidate struct {
+		name    string
+		url     string
+		headers map[string]string
+	}
+	candidates := []candidate{
+		{"aws", "http://169.254.169.254/latest/meta-data/", nil},
+		{"gcp", "http://169.254.169.254/computeMetadata/v1/", map[string]string{"Metadata-Flavor": "Google"}},
+		{"azure", "http://169.254.169.254/metadata/instance", map[string]string{"Metadata": "true"}},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	winner := make(chan string, len(candidates))
+	client := &http.Client{Timeout: 2 * time.Second}
+
+	for _, c := range candidates {
+		c := c
+		go func() {
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
+			if err != nil {
+				return
+			}
+			for k, v := range c.headers {
+				req.Header.Set(k, v)
+			}
+			resp, err := client.Do(req)
+			if err != nil {
+				return
+			}
+			resp.Body.Close()
+			if resp.StatusCode < 500 {
+				winner <- c.name
+			}
+		}()
+	}
+
+	select {
+	case cloud := <-winner:
+		return cloud
+	case <-ctx.Done():
+		return "unknown"
+	}
 }
 
 func detectPlatform() string {
