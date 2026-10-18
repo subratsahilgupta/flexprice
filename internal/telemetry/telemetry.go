@@ -68,10 +68,10 @@ func RegisterHooks(lc fx.Lifecycle, r *Reporter) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			if reason := r.disabledReason(); reason != "" {
-				r.log.Infow("telemetry off", "reason", reason)
+				r.log.Info(ctx, "telemetry off", "reason", reason)
 				return nil
 			}
-			r.log.Infow("telemetry on, set FLEXPRICE_TELEMETRY_DISABLED=true to opt out")
+			r.log.Info(ctx, "telemetry on, set FLEXPRICE_TELEMETRY_DISABLED=true to opt out")
 			runCtx, cancel := context.WithCancel(context.Background())
 			r.cancel = cancel
 			r.done = make(chan struct{})
@@ -170,7 +170,7 @@ func (r *Reporter) snapshot(ctx context.Context) {
 
 	p := r.base()
 	if err := r.addCounts(ctx, p); err != nil {
-		r.log.Debugw("telemetry snapshot skipped", "error", err)
+		r.log.Debug(ctx, "telemetry snapshot skipped", "error", err)
 		return
 	}
 	p["$insert_id"] = hash(r.instanceID, "snapshot", time.Now().UTC().Format("2006-01-02"))
@@ -214,7 +214,7 @@ var eventRoutes = map[string]string{
 func (r *Reporter) send(ctx context.Context, event string, _ string, props map[string]any) {
 	if r.cfg.Telemetry.DryRun {
 		b, _ := json.Marshal(props)
-		r.log.Infow("telemetry dry-run", "event", event, "payload", string(b))
+		r.log.Info(ctx, "telemetry dry-run", "event", event, "payload", string(b))
 		return
 	}
 	b, err := json.Marshal(props)
@@ -237,11 +237,11 @@ func (r *Reporter) send(ctx context.Context, event string, _ string, props map[s
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := r.http.Do(req)
 	if err != nil {
-		r.log.Debugw("telemetry send failed", "event", event, "error", err)
+		r.log.Debug(ctx, "telemetry send failed", "event", event, "error", err)
 		return
 	}
 	defer resp.Body.Close()
-	r.log.Debugw("telemetry sent", "event", event, "status", resp.StatusCode)
+	r.log.Debug(ctx, "telemetry sent", "event", event, "status", resp.StatusCode)
 }
 
 func hash(parts ...string) string {
