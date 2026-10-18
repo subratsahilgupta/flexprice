@@ -52,7 +52,7 @@ func NewReporter(cfg *config.Configuration, db postgres.IClient, log *logger.Log
 		log:        log,
 		http:       &http.Client{Timeout: 5 * time.Second},
 		processID:  uuid.NewString(),
-		instanceID: hash("flexprice-instance", hostname),
+		instanceID: hostname,
 		cloud:      "unknown",
 	}
 	go r.cloudOnce.Do(func() { r.cloud = probeCloud() })
