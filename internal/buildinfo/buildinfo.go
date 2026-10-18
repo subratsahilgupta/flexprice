@@ -4,5 +4,5 @@ package buildinfo
 var (
 	Version      = "dev"
 	GitSHA       = "unknown"
-	BuildVariant = "OSS"
+	BuildVariant = "Enterprise"
 )
