@@ -847,7 +847,6 @@ type PyroscopeConfig struct {
 
 type TelemetryConfig struct {
 	Disabled     bool   `mapstructure:"disabled"`
-	APIKey       string `mapstructure:"api_key"`
 	Host         string `mapstructure:"host"`
 	DryRun       bool   `mapstructure:"dry_run"`
 	InstallLabel string `mapstructure:"install_label"`

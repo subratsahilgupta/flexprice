@@ -91,10 +91,6 @@ func (r *Reporter) disabledReason() string {
 		return "FLEXPRICE_TELEMETRY_DISABLED"
 	case isTruthy(os.Getenv("DO_NOT_TRACK")):
 		return "DO_NOT_TRACK"
-	case r.cfg.Telemetry.APIKey == "":
-		return "no api key configured"
-	case r.cfg.Telemetry.Host == "":
-		return "no host configured"
 	}
 	return ""
 }
@@ -194,26 +190,31 @@ func (r *Reporter) addCounts(ctx context.Context, p map[string]any) error {
 	return nil
 }
 
-func (r *Reporter) send(ctx context.Context, event, distinctID string, props map[string]any) {
-	props["$process_person_profile"] = false
-	body := map[string]any{
-		"api_key":     r.cfg.Telemetry.APIKey,
-		"event":       event,
-		"distinct_id": distinctID,
-		"properties":  props,
-	}
+var eventRoutes = map[string]string{
+	"flexprice_install_heartbeat": "/v1/heartbeat",
+	"flexprice_install_snapshot":  "/v1/snapshot",
+}
+
+func (r *Reporter) send(ctx context.Context, event string, _ string, props map[string]any) {
 	if r.cfg.Telemetry.DryRun {
-		body["api_key"] = "<redacted>"
-		b, _ := json.Marshal(body)
-		r.log.Infow("telemetry dry run", "payload", string(b))
+		b, _ := json.Marshal(props)
+		r.log.Infow("telemetry dry-run", "event", event, "payload", string(b))
 		return
 	}
-	b, err := json.Marshal(body)
+	b, err := json.Marshal(props)
 	if err != nil {
 		return
 	}
-	host := strings.TrimRight(r.cfg.Telemetry.Host, "/")
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, host+"/capture/", bytes.NewReader(b))
+	path := eventRoutes[event]
+	if path == "" {
+		return
+	}
+	host := r.cfg.Telemetry.Host
+	if host == "" {
+		host = "https://telemetry.flexprice.io"
+	}
+	host = strings.TrimRight(host, "/")
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, host+path, bytes.NewReader(b))
 	if err != nil {
 		return
 	}
