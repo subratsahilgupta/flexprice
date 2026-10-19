@@ -37,6 +37,10 @@ func (s *checkoutSessionService) executeCheckoutAction(ctx context.Context, sess
 		result.CreateSubscriptionResult.PaymentID = payResp.ID
 		session.CheckoutInvoiceID = &invResp.ID
 		session.CheckoutPaymentID = &payResp.ID
+		// A gateway that charges inside the call can webhook before it returns.
+		if err := s.CheckoutSessionRepo.Update(ctx, session); err != nil {
+			return err
+		}
 
 		// Contact the payment gateway and get the hosted checkout URL.
 		providerResult, err := s.callCheckoutProvider(ctx, session, payResp)
@@ -54,7 +58,21 @@ func (s *checkoutSessionService) executeCheckoutAction(ctx context.Context, sess
 			Mark(ierr.ErrValidation)
 	}
 
-	return s.CheckoutSessionRepo.Update(ctx, session)
+	return s.savePendingSession(ctx, session)
+}
+
+// savePendingSession keeps a session the webhook already finished instead of failing on it.
+func (s *checkoutSessionService) savePendingSession(ctx context.Context, session *domainCheckout.CheckoutSession) error {
+	err := s.CheckoutSessionRepo.Update(ctx, session)
+	if !ierr.IsNotFound(err) {
+		return err
+	}
+	current, getErr := s.CheckoutSessionRepo.Get(ctx, session.ID)
+	if getErr != nil || !current.CheckoutStatus.IsTerminal() {
+		return err
+	}
+	*session = *current
+	return nil
 }
 
 // callCheckoutProvider contacts the payment gateway, tightens ExpiresAt if the provider URL
