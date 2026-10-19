@@ -242,6 +242,11 @@ func (i *Invoice) GetRemainingAmount() decimal.Decimal {
 	return i.AmountDue.Sub(i.AmountPaid)
 }
 
+// IsPaid reports whether the invoice is fully settled, including overpaid.
+func (i *Invoice) IsPaid() bool {
+	return i.PaymentStatus == types.PaymentStatusSucceeded || i.PaymentStatus == types.PaymentStatusOverpaid
+}
+
 // ResolveServicePeriod returns the coverage envelope of this invoice's selected line items.
 // A nil include selects all items. The end stays exclusive; invalid periods are ignored.
 func (i *Invoice) ResolveServicePeriod(include func(*InvoiceLineItem) bool) (start, end *time.Time) {

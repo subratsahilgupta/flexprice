@@ -1904,6 +1904,14 @@ func (s *invoiceService) SyncInvoiceToStripeIfEnabled(ctx context.Context, invoi
 		return err
 	}
 
+	// Stripe finalizes with auto-advance, so syncing a paid invoice would make Stripe collect it again.
+	if inv.IsPaid() {
+		s.Logger.Info(ctx, "invoice already paid, skipping Stripe sync",
+			"invoice_id", inv.ID,
+			"payment_status", inv.PaymentStatus)
+		return nil
+	}
+
 	// Keep Stripe sync working for both subscription and non-subscription invoices.
 	// For invoices without subscription context, default to send_invoice.
 	sub := &subscription.Subscription{
