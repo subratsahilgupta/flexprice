@@ -168,6 +168,9 @@ type ServiceParams struct {
 	// in main — a plain constructor here would import that package back into
 	// this one. Nil skips the hooks (facts not wired in this deployment).
 	RevenueFacts interfaces.RevenueService
+
+	// SelfBilling provisions new tenants on Flexprice Cloud. Injected in main to avoid an import cycle; a no-op unless configured.
+	SelfBilling interfaces.SelfBillingHook
 }
 
 // Common service params

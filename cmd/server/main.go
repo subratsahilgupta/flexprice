@@ -22,6 +22,7 @@ import (
 	"github.com/flexprice/flexprice/internal/ee/service"
 	adminsvc "github.com/flexprice/flexprice/internal/ee/service/admin"
 	"github.com/flexprice/flexprice/internal/ee/service/revenue"
+	"github.com/flexprice/flexprice/internal/ee/service/selfbilling"
 	"github.com/flexprice/flexprice/internal/httpclient"
 	integrationevents "github.com/flexprice/flexprice/internal/integration/events"
 	"github.com/flexprice/flexprice/internal/kafka"
@@ -240,6 +241,7 @@ func main() {
 
 	// Service layer
 	opts = append(opts,
+		serviceParamsProviders(),
 		fx.Provide(
 			// Services
 			// Integration factory must be provided before service params
@@ -250,12 +252,6 @@ func main() {
 			provideStorageResolver,
 			syncExport.NewExportService,
 			fx.Annotate(service.NewServiceParams, fx.ResultTags(`name:"base"`)),
-			// revenue.New builds from the BASE params (it never calls the
-			// invoice hooks itself); enrichServiceParams then hands every
-			// other service a copy carrying it, closing the hook loop
-			// without importing the revenue package from the service layer.
-			fx.Annotate(revenue.New, fx.ParamTags(`name:"base"`)),
-			fx.Annotate(enrichServiceParams, fx.ParamTags(`name:"base"`, ``)),
 			service.NewOAuthService,
 			service.NewTenantService,
 			service.NewAuthService,
@@ -850,9 +846,20 @@ func provideActivityPubSub(
 	return types.ActivityPubSub{PubSub: pubSub}
 }
 
-// enrichServiceParams returns the ServiceParams the rest of the app consumes:
-// the base params plus the revenue-facts service the invoice hooks call.
-func enrichServiceParams(base service.ServiceParams, revenueFacts interfaces.RevenueService) service.ServiceParams {
+// serviceParamsProviders build the ServiceParams every service consumes from the base params.
+// revenue.New and self-billing build from the base params, so the service layer never imports them.
+func serviceParamsProviders() fx.Option {
+	return fx.Provide(
+		fx.Annotate(revenue.New, fx.ParamTags(`name:"base"`)),
+		fx.Annotate(selfbilling.New, fx.ParamTags(`name:"base"`)),
+		fx.Annotate(enrichServiceParams, fx.ParamTags(`name:"base"`, ``, ``)),
+	)
+}
+
+// enrichServiceParams returns the ServiceParams the rest of the app consumes: the base params plus
+// the revenue-facts service the invoice hooks call and the self-billing hook.
+func enrichServiceParams(base service.ServiceParams, revenueFacts interfaces.RevenueService, selfBilling selfbilling.Service) service.ServiceParams {
 	base.RevenueFacts = revenueFacts
+	base.SelfBilling = selfBilling
 	return base
 }
