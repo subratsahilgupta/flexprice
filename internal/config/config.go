@@ -886,7 +886,7 @@ type SecretsConfig struct {
 	EncryptionKey string `mapstructure:"encryption_key" validate:"required"`
 }
 
-// BillingConfig points this region at the Flexprice billing tenant in Mumbai.
+// BillingConfig points this region at the Flexprice billing tenant on Flexprice Cloud.
 // TenantID/EnvironmentID are set only where that tenant is local; the remote fields are set wherever self-billing runs.
 type BillingConfig struct {
 	TenantID      string `mapstructure:"tenant_id" validate:"omitempty"`
@@ -899,9 +899,23 @@ type BillingConfig struct {
 	DashboardURL  string `mapstructure:"dashboard_url"`
 }
 
-// IsSelfBillingEnabled reports whether this deployment bills its tenants through Mumbai.
+// IsSelfBillingEnabled reports whether this deployment bills its tenants through Flexprice Cloud.
 func (c BillingConfig) IsSelfBillingEnabled() bool {
-	return c.Enabled && c.Region != "" && c.APIHost != "" && c.APIKey != "" && c.PlanID != "" && c.DashboardURL != ""
+	return c.Enabled &&
+		c.Region != "" &&
+		c.APIKey != "" &&
+		c.PlanID != "" &&
+		c.DashboardURL != "" &&
+		c.hasSecureAPIHost()
+}
+
+// hasSecureAPIHost reports whether APIHost is an https URL; plain http is allowed only for localhost.
+func (c BillingConfig) hasSecureAPIHost() bool {
+	u, err := url.Parse(strings.TrimSpace(c.APIHost))
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return u.Scheme == "https" || (u.Scheme == "http" && isLoopbackHost(u.Hostname()))
 }
 
 // IsBillingTenant reports whether tenantID is the local billing tenant, which never bills itself.
