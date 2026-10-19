@@ -33,6 +33,8 @@ const (
 	metaTaxID      = "tax_id"
 
 	summaryInvoiceLimit = 12
+
+	usageEventSource = "self_billing"
 )
 
 type remoteClient struct {
@@ -259,6 +261,24 @@ func (c *remoteClient) Summary(ctx context.Context, extID string) (*remoteSummar
 	return out, nil
 }
 
+func (c *remoteClient) IngestBulk(ctx context.Context, events []usageEvent) error {
+	req := sdktypes.BulkIngestEventRequest{
+		Events: lo.Map(events, func(e usageEvent, _ int) sdktypes.IngestEventRequest {
+			return sdktypes.IngestEventRequest{
+				EventID:            lo.ToPtr(e.id),
+				EventName:          e.name,
+				ExternalCustomerID: e.extID,
+				Properties:         e.properties,
+				Source:             lo.ToPtr(usageEventSource),
+				Timestamp:          lo.ToPtr(e.timestamp.UTC().Format(time.RFC3339)),
+			}
+		}),
+	}
+
+	_, err := c.sdk.Events.IngestEventsBulk(ctx, req)
+	return cloudErr(err)
+}
+
 // toRemoteSubscription maps the SDK subscription onto local types; Flexprice Cloud shares our status values.
 func toRemoteSubscription(s *sdktypes.SubscriptionResponse) *remoteSubscription {
 	return &remoteSubscription{
@@ -313,6 +333,7 @@ var errRemote = cockroach.New("flexprice cloud call failed")
 func isRemoteFailure(err error) bool { return cockroach.Is(err, errRemote) }
 
 // cloudErr classifies a Flexprice Cloud SDK failure; the SDK error stays in the chain.
+// A 401 or 403 is our own credential fault, so it reads as unavailable rather than as the caller's mistake.
 func cloudErr(err error) error {
 	if err == nil {
 		return nil
@@ -327,7 +348,7 @@ func cloudErr(err error) error {
 		kind = ierr.ErrNotFound
 	case status == http.StatusConflict:
 		kind = ierr.ErrAlreadyExists
-	case status >= 400 && status < 500:
+	case status >= 400 && status < 500 && status != http.StatusUnauthorized && status != http.StatusForbidden:
 		kind = ierr.ErrValidation
 	default:
 		kind = ierr.ErrHTTPClient

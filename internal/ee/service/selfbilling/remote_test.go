@@ -32,6 +32,7 @@ const (
 	pathCustomerUsage        = "/customers/usage"     // as GetCustomerUsageSummary builds it
 	pathCustomerPortal       = "/customers/portal/"   // as CreateCustomerPortalSession builds it
 	pathCheckoutSessions     = "/checkout/sessions/"  // as GetCheckoutSession builds it
+	pathEventsBulk           = "/events/bulk"         // as IngestEventsBulk builds it
 )
 
 // notFoundBody is the JSON error envelope the Flexprice API returns for a 404.
@@ -61,6 +62,7 @@ type fakeCloud struct {
 	modifications []map[string]any // ExecuteSubscriptionModify request bodies
 	cancelled     []string
 	portals       []string
+	bulkIngests   []map[string]any // IngestEventsBulk request bodies
 }
 
 func newFakeCloud(existing map[string]string) *fakeCloud {
@@ -172,6 +174,13 @@ func (f *fakeCloud) handler(t *testing.T) http.Handler {
 			f.subscriptions = append(f.subscriptions, body)
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sub_new"})
+
+		case r.Method == http.MethodPost && r.URL.Path == pathEventsBulk:
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			f.bulkIngests = append(f.bulkIngests, body)
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{"message": "accepted"})
 
 		default:
 			t.Errorf("unexpected call %s %s", r.Method, r.URL.String())
@@ -359,6 +368,18 @@ func TestRemoteClient_MapsCloudErrors(t *testing.T) {
 			wantHint: "customer exists",
 		},
 		{
+			name:     "json_401_is_http_client",
+			resp:     cannedResponse{http.StatusUnauthorized, `{"code":"unauthorized","message":"invalid api key","http_status_code":401}`},
+			wantKind: ierr.IsHTTPClient,
+			wantHint: "Flexprice Cloud is unavailable",
+		},
+		{
+			name:     "json_403_is_http_client",
+			resp:     cannedResponse{http.StatusForbidden, `{"code":"forbidden","message":"forbidden","http_status_code":403}`},
+			wantKind: ierr.IsHTTPClient,
+			wantHint: "Flexprice Cloud is unavailable",
+		},
+		{
 			name:     "json_500_is_http_client",
 			resp:     cannedResponse{http.StatusInternalServerError, `{"code":"internal_error","message":"boom","http_status_code":500}`},
 			wantKind: ierr.IsHTTPClient,
@@ -388,7 +409,9 @@ func TestCloudErr(t *testing.T) {
 	}{
 		{"not_found", sdkerrors.NewAPIError("x", http.StatusNotFound, "", nil), ierr.IsNotFound},
 		{"conflict", sdkerrors.NewAPIError("x", http.StatusConflict, `{"message":"exists"}`, nil), ierr.IsAlreadyExists},
-		{"unauthorized_is_validation", sdkerrors.NewAPIError("x", http.StatusUnauthorized, `{"message":"bad key"}`, nil), ierr.IsValidation},
+		{"bad_request_is_validation", sdkerrors.NewAPIError("x", http.StatusBadRequest, `{"message":"bad input"}`, nil), ierr.IsValidation},
+		{"unauthorized_is_http_client", sdkerrors.NewAPIError("x", http.StatusUnauthorized, `{"message":"bad key"}`, nil), ierr.IsHTTPClient},
+		{"forbidden_is_http_client", sdkerrors.NewAPIError("x", http.StatusForbidden, `{"message":"no access"}`, nil), ierr.IsHTTPClient},
 		{"server_error_is_http_client", sdkerrors.NewAPIError("x", http.StatusBadGateway, "", nil), ierr.IsHTTPClient},
 		{"transport_error_is_http_client", errors.New("dial tcp: connection refused"), ierr.IsHTTPClient},
 	}
@@ -705,4 +728,44 @@ func TestRemoteClient_SummaryInvoices(t *testing.T) {
 			assert.True(t, got.usage.Features[0].IsEnabled)
 		})
 	}
+}
+
+func TestRemoteClient_IngestBulk(t *testing.T) {
+	f := newFakeCloud(map[string]string{})
+	c := newTestRemoteClient(t, f)
+	hour := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+
+	err := c.IngestBulk(context.Background(), []usageEvent{
+		{
+			id:         "evt:in:t1:env_1:2026100109",
+			name:       "events_ingested",
+			extID:      "in:t1",
+			timestamp:  hour,
+			properties: map[string]string{"count": "3"},
+		},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, f.bulkIngests, 1)
+	events := f.bulkIngests[0]["events"].([]any)
+	require.Len(t, events, 1)
+	assert.Equal(t, map[string]any{
+		"event_id":             "evt:in:t1:env_1:2026100109",
+		"event_name":           "events_ingested",
+		"external_customer_id": "in:t1",
+		"properties":           map[string]any{"count": "3"},
+		"source":               "self_billing",
+		"timestamp":            "2026-10-01T09:00:00Z",
+	}, events[0])
+}
+
+func TestRemoteClient_IngestBulkMapsCloudErrors(t *testing.T) {
+	f := newFakeCloud(map[string]string{})
+	f.failAll = &cannedResponse{http.StatusInternalServerError, `{"code":"internal_error","message":"boom","http_status_code":500}`}
+	c := newTestRemoteClient(t, f)
+
+	err := c.IngestBulk(context.Background(), []usageEvent{{id: "evt:1", name: "events_ingested", extID: "in:t1"}})
+	require.Error(t, err)
+	assert.True(t, ierr.IsHTTPClient(err), "got %v", err)
+	assert.True(t, isRemoteFailure(err))
 }

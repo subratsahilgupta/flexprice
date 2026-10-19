@@ -38,6 +38,9 @@ type billingClient interface {
 
 	// Summary returns the customer's subscription, recent invoices and usage.
 	Summary(ctx context.Context, extID string) (*remoteSummary, error)
+
+	// IngestBulk sends usage events; Flexprice Cloud drops a re-sent event ID as a duplicate.
+	IngestBulk(ctx context.Context, events []usageEvent) error
 }
 
 type customerInput struct {
@@ -101,6 +104,14 @@ type remoteInvoice struct {
 	currency      string
 	dueDate       *time.Time
 	pdfURL        string
+}
+
+type usageEvent struct {
+	id         string
+	name       string
+	extID      string
+	timestamp  time.Time
+	properties map[string]string
 }
 
 func externalID(region, tenantID string) string {

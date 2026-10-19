@@ -37,6 +37,9 @@ type fakeClient struct {
 	trialCheckoutErr error
 	portalExtIDs     []string
 
+	ingested  [][]usageEvent // one entry per IngestBulk call
+	ingestErr error
+
 	// freeFirstPeriod makes StartTrialEndCheckout end the trial with nothing to collect; the subscription turns active.
 	freeFirstPeriod bool
 
@@ -150,6 +153,17 @@ func (f *fakeClient) Summary(_ context.Context, extID string) (*remoteSummary, e
 		return sum, f.err
 	}
 	return &remoteSummary{subscription: f.subs[extID]}, f.err
+}
+
+func (f *fakeClient) IngestBulk(_ context.Context, events []usageEvent) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.ingestErr != nil {
+		return f.ingestErr
+	}
+	f.ingested = append(f.ingested, events)
+	return nil
 }
 
 // recordingClient records the context provisioning ran with, signals each call, and can panic.
