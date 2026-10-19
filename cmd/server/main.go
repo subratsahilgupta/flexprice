@@ -206,6 +206,8 @@ func main() {
 			repository.NewAnalyticsViewRepository,
 			repository.NewReportsRepository,
 			repository.NewRevenueFactRepository,
+			repository.NewSelfBillingClickHouseRepository,
+			repository.NewSelfBillingPostgresRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
