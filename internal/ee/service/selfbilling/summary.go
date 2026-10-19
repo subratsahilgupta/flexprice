@@ -24,8 +24,14 @@ func (s *selfBillingService) Summary(ctx context.Context, tenantID string) (_ *d
 		return nil, err
 	}
 
+	// The billing page also reconciles, so a payment whose checkout poll never ran (closed tab, portal payment) still activates.
+	status, err := s.updateTenantStatus(ctx, t, remote.subscription)
+	if err != nil {
+		return nil, err
+	}
+
 	out := &dto.SelfBillingSummaryResponse{
-		Status:   t.InternalStatus,
+		Status:   status,
 		Invoices: lo.Map(remote.invoices, toSelfBillingInvoice),
 		Usage:    remote.usage,
 	}

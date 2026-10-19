@@ -41,6 +41,40 @@ func TestSummary_MapsSubscriptionAndInvoices(t *testing.T) {
 	assert.Equal(t, "12.5", got.Invoices[0].Total.String())
 }
 
+func TestSummary_ReconcilesTenantStatus(t *testing.T) {
+	tests := []struct {
+		name       string
+		current    types.TenantInternalStatus
+		subStatus  types.SubscriptionStatus
+		wantStatus types.TenantInternalStatus
+		wantProd   bool
+	}{
+		{"paid_while_away_activates", types.TenantInternalStatusTrialing, types.SubscriptionStatusActive, types.TenantInternalStatusActive, true},
+		{"paid_in_portal_restores_suspended", types.TenantInternalStatusSuspended, types.SubscriptionStatusActive, types.TenantInternalStatusActive, true},
+		{"unpaid_trial_end_suspends", types.TenantInternalStatusTrialing, types.SubscriptionStatusIncomplete, types.TenantInternalStatusSuspended, false},
+		{"trialing_unchanged", types.TenantInternalStatusTrialing, types.SubscriptionStatusTrialing, types.TenantInternalStatusTrialing, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fc := newFakeClient()
+			s, d := newTestService(fc)
+			seedTenant(t, d, "t1", tt.current)
+			fc.summaries["us:t1"] = &remoteSummary{
+				subscription: &remoteSubscription{id: "sub1", status: tt.subStatus},
+			}
+
+			got, err := s.Summary(tenantCtx("t1"), "t1")
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantStatus, got.Status)
+
+			stored, err := d.tenants.GetByID(tenantCtx("t1"), "t1")
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantStatus, stored.InternalStatus)
+			assert.Equal(t, tt.wantProd, productionEnvs(t, d, "t1") == 1)
+		})
+	}
+}
+
 func TestSummary_NoSubscriptionHasEmptyInvoices(t *testing.T) {
 	s, d := newTestService(newFakeClient())
 	seedTenant(t, d, "t1", types.TenantInternalStatusTrialing)

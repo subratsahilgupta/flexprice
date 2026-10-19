@@ -9,53 +9,41 @@ import (
 	"github.com/flexprice/flexprice/internal/utils"
 )
 
-type decision struct {
-	next      types.TenantInternalStatus
-	changed   bool
-	provision bool
-}
-
-// decide maps the Flexprice Cloud subscription onto the local status. Active tenants are never auto-suspended.
-func decide(local types.TenantInternalStatus, remote *remoteSubscription) decision {
-	keep := decision{next: local}
-	if remote == nil {
-		keep.provision = local == types.TenantInternalStatusTrialing
-		return keep
+// targetStatus is the status a tenant should have for its Flexprice Cloud subscription.
+// A paid subscription activates the tenant, a trial that ended unpaid or was cancelled suspends it,
+// and an active tenant is never suspended automatically.
+func targetStatus(current types.TenantInternalStatus, sub *remoteSubscription) types.TenantInternalStatus {
+	if sub == nil {
+		return current
 	}
 
-	switch remote.status {
+	switch sub.status {
 	case types.SubscriptionStatusActive:
-		if local == types.TenantInternalStatusActive {
-			return keep
-		}
-		return decision{next: types.TenantInternalStatusActive, changed: true}
+		return types.TenantInternalStatusActive
 
 	case types.SubscriptionStatusIncomplete, types.SubscriptionStatusCancelled:
-		if local != types.TenantInternalStatusTrialing {
-			return keep
+		if current == types.TenantInternalStatusTrialing {
+			return types.TenantInternalStatusSuspended
 		}
-		return decision{next: types.TenantInternalStatusSuspended, changed: true}
-
-	default:
-		return keep
 	}
+	return current
 }
 
-// updateTenantStatus moves the tenant to the status decide allows; an active tenant always gets a production environment. Safe to repeat.
-func (s *selfBillingService) updateTenantStatus(ctx context.Context, t *tenant.Tenant, remote *remoteSubscription) (types.TenantInternalStatus, error) {
+// updateTenantStatus moves the tenant to its target status; an active tenant always gets a production environment. Safe to repeat.
+func (s *selfBillingService) updateTenantStatus(ctx context.Context, t *tenant.Tenant, sub *remoteSubscription) (types.TenantInternalStatus, error) {
 	ctx = types.SetTenantID(ctx, t.ID)
 
-	d := decide(t.InternalStatus, remote)
-	if d.changed {
-		updated := tenant.NewBuilder(t).WithInternalStatus(d.next).Build()
+	next := targetStatus(t.InternalStatus, sub)
+	if next != t.InternalStatus {
+		updated := tenant.NewBuilder(t).WithInternalStatus(next).Build()
 		if err := s.TenantRepo.Update(ctx, updated); err != nil {
 			return "", err
 		}
-		s.Logger.Info(ctx, "self-billing tenant status updated", "tenant_id", t.ID, "from", t.InternalStatus, "to", d.next)
+		s.Logger.Info(ctx, "self-billing tenant status updated", "tenant_id", t.ID, "from", t.InternalStatus, "to", next)
 	}
 
-	if d.next != types.TenantInternalStatusActive {
-		return d.next, nil
+	if next != types.TenantInternalStatusActive {
+		return next, nil
 	}
 
 	if err := s.raiseProductionLimit(ctx); err != nil {
@@ -64,7 +52,7 @@ func (s *selfBillingService) updateTenantStatus(ctx context.Context, t *tenant.T
 	if err := s.ensureProductionEnv(ctx); err != nil {
 		return "", err
 	}
-	return d.next, nil
+	return next, nil
 }
 
 // raiseProductionLimit allows at least one production environment and keeps a higher limit.

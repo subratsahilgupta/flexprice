@@ -2,6 +2,7 @@ package selfbilling
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -37,6 +38,9 @@ type Service interface {
 
 	// PortalSession opens the customer portal for the tenant's own Flexprice Cloud customer.
 	PortalSession(ctx context.Context, tenantID string) (*dto.SelfBillingPortalResponse, error)
+
+	// RunHourly pushes the closed hours' usage to Flexprice Cloud, then syncs every tenant's status from it.
+	RunHourly(ctx context.Context) error
 }
 
 type selfBillingService struct {
@@ -122,6 +126,21 @@ func (s *selfBillingService) provision(ctx context.Context, tenantID, name, emai
 		return err
 	}
 	return s.client.StartTrial(ctx, in.extID)
+}
+
+// RunHourly syncs statuses even when the usage push fails, and returns both errors joined.
+func (s *selfBillingService) RunHourly(ctx context.Context) error {
+	if !s.enabled() {
+		return nil
+	}
+
+	pushErr := s.pushUsage(ctx, time.Now())
+	if pushErr != nil {
+		s.Logger.Error(ctx, "self-billing usage push failed", "error", pushErr)
+	}
+
+	syncErr := s.syncStatuses(ctx)
+	return errors.Join(pushErr, syncErr)
 }
 
 // logRemoteFailure logs a Flexprice Cloud failure once, at the handler-facing method that returns it.

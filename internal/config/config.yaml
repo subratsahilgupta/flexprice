@@ -409,6 +409,7 @@ billing:
   plan_id: ""
   dashboard_url: ""
   payment_provider: "stripe"
+  usage_lookback_hours: 6
 
 s3:
   enabled: false
