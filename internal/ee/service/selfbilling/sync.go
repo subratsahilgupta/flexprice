@@ -47,7 +47,8 @@ func (s *selfBillingService) syncTenant(ctx context.Context, tenantID string) er
 		return err
 	}
 
-	if decide(t.InternalStatus, remote).provision {
+	// A trialing tenant without a subscription missed provisioning at signup, so retry it.
+	if remote == nil && t.InternalStatus == types.TenantInternalStatusTrialing {
 		return s.provision(ctx, t.ID, t.Name, t.BillingDetails.Email)
 	}
 

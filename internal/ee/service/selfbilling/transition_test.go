@@ -15,40 +15,35 @@ import (
 
 var activeSub = &remoteSubscription{id: "sub_us:t1", status: types.SubscriptionStatusActive}
 
-func TestDecide(t *testing.T) {
+func TestTargetStatus(t *testing.T) {
 	sub := func(status types.SubscriptionStatus) *remoteSubscription {
 		return &remoteSubscription{id: "s", status: status}
 	}
 	trialing, active, suspended := types.TenantInternalStatusTrialing, types.TenantInternalStatusActive, types.TenantInternalStatusSuspended
 
 	tests := []struct {
-		name          string
-		local         types.TenantInternalStatus
-		remote        *remoteSubscription
-		wantNext      types.TenantInternalStatus
-		wantChanged   bool
-		wantProvision bool
+		name    string
+		current types.TenantInternalStatus
+		sub     *remoteSubscription
+		want    types.TenantInternalStatus
 	}{
-		{"no_remote_trialing_provisions", trialing, nil, trialing, false, true},
-		{"no_remote_active_left_alone", active, nil, active, false, false},
-		{"no_remote_suspended_left_alone", suspended, nil, suspended, false, false},
-		{"remote_trialing_stays", trialing, sub(types.SubscriptionStatusTrialing), trialing, false, false},
-		{"remote_active_activates_trialing", trialing, sub(types.SubscriptionStatusActive), active, true, false},
-		{"remote_active_restores_suspended", suspended, sub(types.SubscriptionStatusActive), active, true, false},
-		{"remote_active_active_noop", active, sub(types.SubscriptionStatusActive), active, false, false},
-		{"incomplete_trialing_suspends", trialing, sub(types.SubscriptionStatusIncomplete), suspended, true, false},
-		{"cancelled_trialing_suspends", trialing, sub(types.SubscriptionStatusCancelled), suspended, true, false},
-		{"never_auto_suspend_active_cancelled", active, sub(types.SubscriptionStatusCancelled), active, false, false},
-		{"never_auto_suspend_active_incomplete", active, sub(types.SubscriptionStatusIncomplete), active, false, false},
-		{"suspended_cancelled_stays", suspended, sub(types.SubscriptionStatusCancelled), suspended, false, false},
-		{"paused_ignored", trialing, sub(types.SubscriptionStatusPaused), trialing, false, false},
+		{"no_subscription_keeps_trialing", trialing, nil, trialing},
+		{"no_subscription_keeps_active", active, nil, active},
+		{"no_subscription_keeps_suspended", suspended, nil, suspended},
+		{"trialing_subscription_keeps_trialing", trialing, sub(types.SubscriptionStatusTrialing), trialing},
+		{"paid_activates_trialing", trialing, sub(types.SubscriptionStatusActive), active},
+		{"paid_restores_suspended", suspended, sub(types.SubscriptionStatusActive), active},
+		{"paid_keeps_active", active, sub(types.SubscriptionStatusActive), active},
+		{"unpaid_trial_end_suspends", trialing, sub(types.SubscriptionStatusIncomplete), suspended},
+		{"cancelled_trial_suspends", trialing, sub(types.SubscriptionStatusCancelled), suspended},
+		{"active_never_suspended_on_cancel", active, sub(types.SubscriptionStatusCancelled), active},
+		{"active_never_suspended_on_unpaid", active, sub(types.SubscriptionStatusIncomplete), active},
+		{"suspended_stays_on_cancel", suspended, sub(types.SubscriptionStatusCancelled), suspended},
+		{"paused_ignored", trialing, sub(types.SubscriptionStatusPaused), trialing},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := decide(tt.local, tt.remote)
-			assert.Equal(t, tt.wantNext, d.next)
-			assert.Equal(t, tt.wantChanged, d.changed)
-			assert.Equal(t, tt.wantProvision, d.provision)
+			assert.Equal(t, tt.want, targetStatus(tt.current, tt.sub))
 		})
 	}
 }

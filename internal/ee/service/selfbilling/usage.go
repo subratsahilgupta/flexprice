@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	maxBulkEvents = 1000
+	maxBulkEvents = 100
 
 	eventNameEventsIngested = "events_ingested"
 	eventNameInvoiceValue   = "invoice_value"

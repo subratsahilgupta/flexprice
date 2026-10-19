@@ -139,7 +139,8 @@ func (s *selfBillingService) RunHourly(ctx context.Context) error {
 		s.Logger.Error(ctx, "self-billing usage push failed", "error", pushErr)
 	}
 
-	return errors.Join(pushErr, s.syncStatuses(ctx))
+	syncErr := s.syncStatuses(ctx)
+	return errors.Join(pushErr, syncErr)
 }
 
 // logRemoteFailure logs a Flexprice Cloud failure once, at the handler-facing method that returns it.
