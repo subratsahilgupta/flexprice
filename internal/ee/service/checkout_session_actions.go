@@ -45,6 +45,9 @@ func (s *checkoutSessionService) executeCheckoutAction(ctx context.Context, sess
 		// Contact the payment gateway and get the hosted checkout URL.
 		providerResult, err := s.callCheckoutProvider(ctx, session, payResp)
 		if err != nil {
+			if s.completedDuringProviderCall(ctx, session) {
+				return nil
+			}
 			return err
 		}
 		s.recordGatewayHandles(ctx, payResp.ID, providerResult)
@@ -73,6 +76,17 @@ func (s *checkoutSessionService) savePendingSession(ctx context.Context, session
 	}
 	*session = *current
 	return nil
+}
+
+// completedDuringProviderCall loads a session the webhook completed although the provider
+// call failed, such as a charge that went through before the call timed out.
+func (s *checkoutSessionService) completedDuringProviderCall(ctx context.Context, session *domainCheckout.CheckoutSession) bool {
+	current, err := s.CheckoutSessionRepo.Get(ctx, session.ID)
+	if err != nil || current.CheckoutStatus != types.CheckoutStatusCompleted {
+		return false
+	}
+	*session = *current
+	return true
 }
 
 // callCheckoutProvider contacts the payment gateway, tightens ExpiresAt if the provider URL

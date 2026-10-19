@@ -895,6 +895,9 @@ func (s *checkoutSessionService) fulfillCheckoutSession(
 
 	providerResult, err := s.callCheckoutProvider(ctx, session, payResp)
 	if err != nil {
+		if s.completedDuringProviderCall(ctx, session) {
+			return nil
+		}
 		return err
 	}
 	s.recordGatewayHandles(ctx, payResp.ID, providerResult)

@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -56,9 +57,16 @@ func (s *InMemoryCheckoutSessionStore) Get(ctx context.Context, id string) (*dom
 // stored record races every concurrent reader and hides writes that were never saved.
 //
 // The struct copy is not enough on its own — the JSONB fields are pointers, so two
-// readers would still share whatever they point at.
+// readers would still share whatever they point at. Configuration is copied through JSON,
+// as it is stored.
 func cloneCheckoutSession(stored *domainCheckout.CheckoutSession) *domainCheckout.CheckoutSession {
 	session := *stored
+	if raw, err := json.Marshal(stored.Configuration); err == nil {
+		var cfg domainCheckout.JSONBCheckoutConfiguration
+		if json.Unmarshal(raw, &cfg) == nil {
+			session.Configuration = cfg
+		}
+	}
 	if stored.ProviderResult != nil {
 		pr := *stored.ProviderResult
 		session.ProviderResult = &pr

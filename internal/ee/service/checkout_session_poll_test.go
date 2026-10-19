@@ -44,6 +44,8 @@ type fakeCheckoutProvider struct {
 	charged bool
 	// onCharge runs inside TryAutoChargingSavedMethod, standing in for a webhook that beats the response.
 	onCharge func(req interfaces.AuthorizationLinkRequest)
+	// chargeErr fails the charge call after onCharge, as a timeout after the gateway charged would.
+	chargeErr error
 }
 
 func (f *fakeCheckoutProvider) FetchPaymentState(
@@ -89,6 +91,9 @@ func (f *fakeCheckoutProvider) TryAutoChargingSavedMethod(_ context.Context, req
 	}
 	if f.onCharge != nil {
 		f.onCharge(req)
+	}
+	if f.chargeErr != nil {
+		return nil, false, f.chargeErr
 	}
 	return &interfaces.CheckoutProviderResponse{ProviderSessionID: "order_charged"}, true, nil
 }
@@ -943,4 +948,43 @@ func (s *CheckoutPollSuite) TestFulfil_WebhookDuringProviderCall() {
 	stored, err := s.GetStores().CheckoutSessionRepo.Get(ctx, session.ID)
 	s.Require().NoError(err)
 	s.Equal(types.CheckoutStatusCompleted, stored.CheckoutStatus, "a completed session must not be reset to pending")
+}
+
+// A charge can go through and be webhooked even though our call to the gateway then fails.
+// Only a session the webhook completed may turn that error into success.
+func (s *CheckoutPollSuite) TestFulfil_ProviderErrorAfterCharge() {
+	tests := []struct {
+		name           string
+		webhookArrives bool
+		wantErr        bool
+		want           types.CheckoutStatus
+	}{
+		{"webhook completed the session", true, false, types.CheckoutStatusCompleted},
+		{"no webhook keeps the error", false, true, types.CheckoutStatusInitiated},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			ctx := s.GetContext()
+			s.provider.charged = true
+			s.provider.chargeErr = ierr.NewError("gateway timeout").Mark(ierr.ErrHTTPClient)
+			s.provider.onCharge = nil
+			session, inv := s.seedAutoChargeSession()
+			if tt.webhookArrives {
+				s.provider.onCharge = func(req interfaces.AuthorizationLinkRequest) {
+					s.Require().NoError(s.svc.CompleteCheckoutSession(ctx, session.ID, nil))
+				}
+			}
+
+			err := s.svc.fulfillCheckoutSession(ctx, session, inv)
+
+			if tt.wantErr {
+				s.Require().Error(err)
+			} else {
+				s.Require().NoError(err)
+			}
+			stored, getErr := s.GetStores().CheckoutSessionRepo.Get(ctx, session.ID)
+			s.Require().NoError(getErr)
+			s.Equal(tt.want, stored.CheckoutStatus)
+		})
+	}
 }
