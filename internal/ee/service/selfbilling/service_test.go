@@ -6,14 +6,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/ee/service"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	sdkerrors "github.com/flexprice/go-sdk/v2/models/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 // fakeClient is an in-memory Flexprice Cloud keyed by customer external ID.
@@ -23,8 +28,20 @@ type fakeClient struct {
 	customers     map[string]bool
 	legacyExtIDs  map[string]string // extID -> legacyExtID passed to EnsureCustomer
 	subs          map[string]*remoteSubscription
+	checkouts     map[string]*remoteCheckout
+	summaries     map[string]*remoteSummary
 	trialsStarted int
 	err           error
+
+	trialCheckouts   int
+	trialCheckoutErr error
+	portalExtIDs     []string
+
+	// freeFirstPeriod makes StartTrialEndCheckout end the trial with nothing to collect; the subscription turns active.
+	freeFirstPeriod bool
+
+	// staleAfterTrialEnd leaves the subscription unchanged after a free trial end, as a lagging read would.
+	staleAfterTrialEnd bool
 }
 
 func newFakeClient() *fakeClient {
@@ -32,6 +49,8 @@ func newFakeClient() *fakeClient {
 		customers:    map[string]bool{},
 		legacyExtIDs: map[string]string{},
 		subs:         map[string]*remoteSubscription{},
+		checkouts:    map[string]*remoteCheckout{},
+		summaries:    map[string]*remoteSummary{},
 	}
 }
 
@@ -61,6 +80,76 @@ func (f *fakeClient) LatestSubscription(_ context.Context, extID string) (*remot
 	defer f.mu.Unlock()
 
 	return f.subs[extID], f.err
+}
+
+func (f *fakeClient) UpdateBillingDetails(context.Context, string, billingDetails) error {
+	return f.err
+}
+
+func (f *fakeClient) StartTrialEndCheckout(_ context.Context, in checkoutInput) (*remoteCheckout, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.trialCheckouts++
+	if f.trialCheckoutErr != nil {
+		return nil, f.trialCheckoutErr
+	}
+
+	if f.freeFirstPeriod {
+		if sub, ok := f.subs[in.extID]; ok && !f.staleAfterTrialEnd {
+			sub.status = types.SubscriptionStatusActive
+		}
+		return &remoteCheckout{status: types.CheckoutStatusCompleted, extID: in.extID, terminal: true}, f.err
+	}
+
+	co := &remoteCheckout{
+		id:     "cs_" + in.subscriptionID,
+		status: types.CheckoutStatusPending,
+		url:    "https://checkout.test/" + in.subscriptionID,
+		extID:  in.extID,
+	}
+	f.checkouts[co.id] = co
+	return co, f.err
+}
+
+func (f *fakeClient) GetCheckout(_ context.Context, id string) (*remoteCheckout, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	co, ok := f.checkouts[id]
+	if !ok {
+		return nil, ierr.NewErrorf("checkout session %s not found", id).Mark(ierr.ErrNotFound)
+	}
+	return co, f.err
+}
+
+func (f *fakeClient) CancelCheckout(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if co, ok := f.checkouts[id]; ok {
+		co.status = types.CheckoutStatusFailed
+		co.terminal = true
+	}
+	return f.err
+}
+
+func (f *fakeClient) PortalSession(_ context.Context, extID string) (*portalSession, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.portalExtIDs = append(f.portalExtIDs, extID)
+	return &portalSession{url: "https://portal.test"}, f.err
+}
+
+func (f *fakeClient) Summary(_ context.Context, extID string) (*remoteSummary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if sum, ok := f.summaries[extID]; ok {
+		return sum, f.err
+	}
+	return &remoteSummary{subscription: f.subs[extID]}, f.err
 }
 
 // recordingClient records the context provisioning ran with, signals each call, and can panic.
@@ -103,12 +192,25 @@ func (f *fakeClient) hasCustomer(extID string) bool {
 	return f.customers[extID]
 }
 
+type testDeps struct {
+	tenants  *testutil.InMemoryTenantStore
+	envs     *testutil.InMemoryEnvironmentStore
+	settings *testutil.InMemorySettingsStore
+}
+
 // newTestService returns a service with self-billing enabled against client.
-func newTestService(client billingClient) (*selfBillingService, *testutil.InMemoryTenantStore) {
-	tenants := testutil.NewInMemoryTenantStore()
+func newTestService(client billingClient) (*selfBillingService, *testDeps) {
+	d := &testDeps{
+		tenants:  testutil.NewInMemoryTenantStore(),
+		envs:     testutil.NewInMemoryEnvironmentStore(),
+		settings: testutil.NewInMemorySettingsStore(),
+	}
+
 	params := service.ServiceParams{
-		Logger:     logger.NewNoopLogger(),
-		TenantRepo: tenants,
+		Logger:          logger.NewNoopLogger(),
+		TenantRepo:      d.tenants,
+		EnvironmentRepo: d.envs,
+		SettingsRepo:    d.settings,
 		Config: &config.Configuration{Billing: config.BillingConfig{
 			Enabled:      true,
 			Region:       "us",
@@ -119,11 +221,28 @@ func newTestService(client billingClient) (*selfBillingService, *testutil.InMemo
 		}},
 	}
 
+	settings := service.NewSettingsService(params)
 	s := &selfBillingService{
 		ServiceParams: params,
 		client:        client,
+		settings:      settings,
+		envs:          service.NewEnvironmentService(d.envs, service.NewEnvAccessService(params.Config), settings, params),
 	}
-	return s, tenants
+	return s, d
+}
+
+func seedTenant(t *testing.T, d *testDeps, id string, status types.TenantInternalStatus) {
+	t.Helper()
+	require.NoError(t, d.tenants.Create(context.Background(), &tenant.Tenant{
+		ID:             id,
+		Name:           id,
+		Status:         types.StatusPublished,
+		InternalStatus: status,
+	}))
+}
+
+func tenantCtx(id string) context.Context {
+	return types.SetTenantID(context.Background(), id)
 }
 
 func TestNew_DisabledIsNoop(t *testing.T) {
@@ -136,12 +255,38 @@ func TestNew_DisabledIsNoop(t *testing.T) {
 	assert.NotPanics(t, func() {
 		svc.OnTenantCreated(context.Background(), "tenant_1", "Acme", "a@acme.io")
 	})
+
+	ctx := context.Background()
+	calls := map[string]func() error{
+		"start_checkout": func() error {
+			_, err := svc.StartCheckout(ctx, "tenant_1", dto.SelfBillingCheckoutRequest{})
+			return err
+		},
+		"poll_checkout": func() error {
+			_, err := svc.PollCheckout(ctx, "tenant_1", "cs_1")
+			return err
+		},
+		"cancel_checkout": func() error {
+			return svc.CancelCheckout(ctx, "tenant_1", "cs_1")
+		},
+		"summary": func() error {
+			_, err := svc.Summary(ctx, "tenant_1")
+			return err
+		},
+		"portal_session": func() error {
+			_, err := svc.PortalSession(ctx, "tenant_1")
+			return err
+		},
+	}
+	for name, call := range calls {
+		err := call()
+		assert.True(t, ierr.IsNotFound(err), "%s: got %v", name, err)
+	}
 }
 
 func TestStatus_Enabled(t *testing.T) {
-	s, tenants := newTestService(newFakeClient())
-	seeded := &tenant.Tenant{ID: "t1", Name: "Acme", InternalStatus: types.TenantInternalStatusTrialing}
-	require.NoError(t, tenants.Create(context.Background(), seeded))
+	s, d := newTestService(newFakeClient())
+	seedTenant(t, d, "t1", types.TenantInternalStatusTrialing)
 
 	st, err := s.Status(context.Background(), "t1")
 	require.NoError(t, err)
@@ -236,4 +381,39 @@ func TestOnTenantCreated_PanicIsRecovered(t *testing.T) {
 
 	require.Eventually(t, func() bool { return len(rc.called) == 1 }, 2*time.Second, 5*time.Millisecond)
 	assert.Equal(t, 0, rc.trials())
+}
+
+// failingClient fails the call under test with a Flexprice Cloud error.
+type failingClient struct {
+	*fakeClient
+	err error
+}
+
+func (f *failingClient) PortalSession(context.Context, string) (*portalSession, error) {
+	return nil, f.err
+}
+
+func TestLogRemoteFailure_LogsOnlyFlexpriceCloudErrors(t *testing.T) {
+	remoteErr := cloudErr(sdkerrors.NewAPIError("boom", 500, "", nil))
+	localErr := ierr.NewError("tenant not found").Mark(ierr.ErrNotFound)
+
+	tests := []struct {
+		name       string
+		err        error
+		wantLogged int
+	}{
+		{"remote_failure_logged_once", remoteErr, 1},
+		{"local_not_found_not_logged", localErr, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			core, logs := observer.New(zap.ErrorLevel)
+			s, _ := newTestService(&failingClient{fakeClient: newFakeClient(), err: tt.err})
+			s.Logger = logger.NewFromSugared(zap.New(core).Sugar())
+
+			_, err := s.PortalSession(tenantCtx("t1"), "t1")
+			require.Error(t, err)
+			assert.Equal(t, tt.wantLogged, logs.Len())
+		})
+	}
 }

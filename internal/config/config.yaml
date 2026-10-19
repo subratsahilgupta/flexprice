@@ -408,6 +408,7 @@ billing:
   api_key: ""
   plan_id: ""
   dashboard_url: ""
+  payment_provider: "stripe"
 
 s3:
   enabled: false

@@ -897,6 +897,9 @@ type BillingConfig struct {
 	APIKey        string `mapstructure:"api_key"`
 	PlanID        string `mapstructure:"plan_id"`
 	DashboardURL  string `mapstructure:"dashboard_url"`
+
+	// PaymentProvider is the provider of Flexprice Cloud's trial-end checkout; empty means stripe.
+	PaymentProvider types.CheckoutPaymentProvider `mapstructure:"payment_provider"`
 }
 
 // IsSelfBillingEnabled reports whether this deployment bills its tenants through Flexprice Cloud.
@@ -906,7 +909,16 @@ func (c BillingConfig) IsSelfBillingEnabled() bool {
 		c.APIKey != "" &&
 		c.PlanID != "" &&
 		c.DashboardURL != "" &&
+		c.CheckoutProvider().Validate() == nil &&
 		c.hasSecureAPIHost()
+}
+
+// CheckoutProvider returns the configured checkout payment provider, defaulting to stripe.
+func (c BillingConfig) CheckoutProvider() types.CheckoutPaymentProvider {
+	if c.PaymentProvider == "" {
+		return types.CheckoutPaymentProviderStripe
+	}
+	return c.PaymentProvider
 }
 
 // hasSecureAPIHost reports whether APIHost is an https URL; plain http is allowed only for localhost.
