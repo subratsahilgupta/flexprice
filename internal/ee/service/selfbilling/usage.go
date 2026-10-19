@@ -15,13 +15,16 @@ const (
 	eventNameEventsIngested = "events_ingested"
 	eventNameInvoiceValue   = "invoice_value"
 
+	// usageSettleDelay lets an hour's late commits and replica lag land before it is sent; a sent hour is never corrected.
+	usageSettleDelay = 15 * time.Minute
+
 	// eventHourFormat keys an event to its UTC hour, so a re-sent hour reuses the same event ID.
 	eventHourFormat = "2006010215"
 )
 
-// pushUsage re-sends the closed hours [floor(now)-lookback, floor(now)); deterministic IDs make Flexprice Cloud drop repeats.
+// pushUsage re-sends the settled hours [to-lookback, to), to = floor(now-settle delay); deterministic IDs make Flexprice Cloud drop repeats.
 func (s *selfBillingService) pushUsage(ctx context.Context, now time.Time) error {
-	to := now.UTC().Truncate(time.Hour)
+	to := now.UTC().Add(-usageSettleDelay).Truncate(time.Hour)
 	from := to.Add(-s.Config.Billing.UsageLookback())
 	region := s.Config.Billing.Region
 

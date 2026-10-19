@@ -25,15 +25,18 @@ func allIngested(f *fakeClient) []usageEvent {
 func TestPushUsage_Window(t *testing.T) {
 	tests := []struct {
 		name     string
+		now      time.Time
 		lookback int
 		hour     time.Time
 		want     bool
 	}{
-		{"open_hour_not_sent", 0, time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC), false},
-		{"last_closed_hour_sent", 0, time.Date(2026, 10, 1, 11, 0, 0, 0, time.UTC), true},
-		{"oldest_hour_in_default_lookback_sent", 0, time.Date(2026, 10, 1, 6, 0, 0, 0, time.UTC), true},
-		{"hour_before_default_lookback_not_sent", 0, time.Date(2026, 10, 1, 5, 0, 0, 0, time.UTC), false},
-		{"configured_lookback_widens_window", 12, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), true},
+		{"open_hour_not_sent", usageNow, 0, time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC), false},
+		{"last_closed_hour_sent", usageNow, 0, time.Date(2026, 10, 1, 11, 0, 0, 0, time.UTC), true},
+		{"oldest_hour_in_default_lookback_sent", usageNow, 0, time.Date(2026, 10, 1, 6, 0, 0, 0, time.UTC), true},
+		{"hour_before_default_lookback_not_sent", usageNow, 0, time.Date(2026, 10, 1, 5, 0, 0, 0, time.UTC), false},
+		{"configured_lookback_widens_window", usageNow, 12, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), true},
+		{"just_closed_hour_waits_to_settle", time.Date(2026, 10, 1, 12, 5, 0, 0, time.UTC), 0, time.Date(2026, 10, 1, 11, 0, 0, 0, time.UTC), false},
+		{"settled_hour_sent", time.Date(2026, 10, 1, 12, 15, 0, 0, time.UTC), 0, time.Date(2026, 10, 1, 11, 0, 0, 0, time.UTC), true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -47,7 +50,7 @@ func TestPushUsage_Window(t *testing.T) {
 				Count:         1,
 			})
 
-			require.NoError(t, s.pushUsage(context.Background(), usageNow))
+			require.NoError(t, s.pushUsage(context.Background(), tt.now))
 			assert.Equal(t, tt.want, len(allIngested(fc)) == 1)
 		})
 	}
