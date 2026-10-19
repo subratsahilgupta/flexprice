@@ -14,6 +14,13 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+// recordingHook records each tenant handed to self-billing as "tenant|name|email".
+type recordingHook struct{ calls []string }
+
+func (h *recordingHook) OnTenantCreated(_ context.Context, tenantID, name, email string) {
+	h.calls = append(h.calls, tenantID+"|"+name+"|"+email)
+}
+
 type AuthServiceSuite struct {
 	testutil.BaseServiceTestSuite
 	authService AuthService
