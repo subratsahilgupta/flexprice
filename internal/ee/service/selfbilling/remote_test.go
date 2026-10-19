@@ -179,6 +179,11 @@ func (f *fakeCloud) handler(t *testing.T) http.Handler {
 
 func newTestRemoteClient(t *testing.T, f *fakeCloud) *remoteClient {
 	t.Helper()
+	return newTestRemoteClientWith(t, f, config.BillingConfig{})
+}
+
+func newTestRemoteClientWith(t *testing.T, f *fakeCloud, extra config.BillingConfig) *remoteClient {
+	t.Helper()
 	srv := httptest.NewServer(f.handler(t))
 	t.Cleanup(srv.Close)
 	return newRemoteClient(config.BillingConfig{
@@ -186,6 +191,8 @@ func newTestRemoteClient(t *testing.T, f *fakeCloud) *remoteClient {
 		APIHost: srv.URL,
 		APIKey:  "sk",
 		PlanID:  "plan_1",
+
+		PaymentProvider: extra.PaymentProvider,
 	})
 }
 
@@ -514,6 +521,31 @@ func TestStartTrialEndCheckout(t *testing.T) {
 			checkout := body["checkout"].(map[string]any)
 			assert.Equal(t, "trial_end:sub_1", checkout["idempotency_key"])
 			assert.Equal(t, "in:t1", checkout["metadata"].(map[string]any)[metaExternalID])
+		})
+	}
+}
+
+func TestStartTrialEndCheckout_SendsConfiguredProvider(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider types.CheckoutPaymentProvider
+		want     string
+	}{
+		{"default_is_stripe", "", "stripe"},
+		{"configured_provider", types.CheckoutPaymentProviderRazorpay, "razorpay"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFakeCloud(map[string]string{})
+			f.modify = &cannedResponse{http.StatusOK, `{"subscription":{"id":"sub_1"}}`}
+			c := newTestRemoteClientWith(t, f, config.BillingConfig{PaymentProvider: tt.provider})
+
+			_, err := c.StartTrialEndCheckout(context.Background(), checkoutInput{extID: "in:t1", subscriptionID: "sub_1"})
+			require.NoError(t, err)
+
+			require.Len(t, f.modifications, 1)
+			checkout := f.modifications[0]["checkout"].(map[string]any)
+			assert.Equal(t, tt.want, checkout["payment_provider"])
 		})
 	}
 }

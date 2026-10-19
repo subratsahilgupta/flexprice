@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	cockroach "github.com/cockroachdb/errors"
 	"github.com/flexprice/flexprice/internal/config"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -26,9 +27,6 @@ const (
 	trialCurrency      = "usd"
 	trialBillingPeriod = sdktypes.BillingPeriodMonthly
 
-	// checkoutProvider is the payment provider Flexprice Cloud's self-serve checkout is configured with.
-	checkoutProvider = sdktypes.CheckoutPaymentProvider(types.CheckoutPaymentProviderStripe)
-
 	// metaExternalID tags a checkout session with the customer it belongs to.
 	metaExternalID = "self_billing_external_id"
 	metaTaxID      = "tax_id"
@@ -37,8 +35,9 @@ const (
 )
 
 type remoteClient struct {
-	sdk    *flexprice.Flexprice
-	planID string
+	sdk      *flexprice.Flexprice
+	planID   string
+	provider sdktypes.CheckoutPaymentProvider
 }
 
 func newRemoteClient(cfg config.BillingConfig) *remoteClient {
@@ -49,8 +48,9 @@ func newRemoteClient(cfg config.BillingConfig) *remoteClient {
 	)
 
 	return &remoteClient{
-		sdk:    sdk,
-		planID: cfg.PlanID,
+		sdk:      sdk,
+		planID:   cfg.PlanID,
+		provider: sdktypes.CheckoutPaymentProvider(cfg.CheckoutProvider()),
 	}
 }
 
@@ -168,7 +168,7 @@ func (c *remoteClient) StartTrialEndCheckout(ctx context.Context, in checkoutInp
 		Type:           sdktypes.SubscriptionModifyTypeTrialEnd,
 		TrialEndParams: &sdktypes.SubModifyTrialEndRequest{Action: sdktypes.TrialEndActionImmediate},
 		Checkout: &sdktypes.CheckoutParams{
-			PaymentProvider: checkoutProvider,
+			PaymentProvider: c.provider,
 			SuccessURL:      lo.ToPtr(in.successURL),
 			FailureURL:      lo.ToPtr(in.failureURL),
 			Metadata:        map[string]string{metaExternalID: in.extID},
@@ -297,6 +297,12 @@ func toRemoteInvoice(inv sdktypes.InvoiceResponse) (remoteInvoice, error) {
 	}, nil
 }
 
+// errRemote marks errors that came from a Flexprice Cloud call.
+var errRemote = cockroach.New("flexprice cloud call failed")
+
+// isRemoteFailure reports whether err came from a Flexprice Cloud call.
+func isRemoteFailure(err error) bool { return cockroach.Is(err, errRemote) }
+
 // cloudErr classifies a Flexprice Cloud SDK failure; the SDK error stays in the chain.
 func cloudErr(err error) error {
 	if err == nil {
@@ -323,10 +329,11 @@ func cloudErr(err error) error {
 		hint = "Flexprice Cloud rejected the request"
 	}
 
-	return ierr.WithError(err).
+	marked := ierr.WithError(err).
 		WithMessagef("flexprice cloud call failed with status %d", status).
 		WithHint(hint).
 		Mark(kind)
+	return cockroach.Mark(marked, errRemote)
 }
 
 // remoteMessage returns the user-facing message in a Flexprice Cloud error body, if any.

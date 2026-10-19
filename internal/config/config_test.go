@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -187,6 +188,8 @@ func TestBillingConfig_IsSelfBillingEnabled(t *testing.T) {
 		{"http localhost", with(func(c *BillingConfig) { c.APIHost = "http://localhost:8080/v1" }), true},
 		{"http 127.0.0.1", with(func(c *BillingConfig) { c.APIHost = "http://127.0.0.1:8080/v1" }), true},
 		{"http ::1", with(func(c *BillingConfig) { c.APIHost = "http://[::1]:8080/v1" }), true},
+		{"explicit provider", with(func(c *BillingConfig) { c.PaymentProvider = types.CheckoutPaymentProviderRazorpay }), true},
+		{"unknown provider", with(func(c *BillingConfig) { c.PaymentProvider = "paypal" }), false},
 		{"legacy only", BillingConfig{TenantID: "t_billing", EnvironmentID: "env"}, false},
 	}
 	for _, tt := range tests {
@@ -194,6 +197,11 @@ func TestBillingConfig_IsSelfBillingEnabled(t *testing.T) {
 			assert.Equal(t, tt.want, tt.cfg.IsSelfBillingEnabled())
 		})
 	}
+}
+
+func TestBillingConfig_CheckoutProvider(t *testing.T) {
+	assert.Equal(t, types.CheckoutPaymentProviderStripe, BillingConfig{}.CheckoutProvider())
+	assert.Equal(t, types.CheckoutPaymentProviderChargebee, BillingConfig{PaymentProvider: types.CheckoutPaymentProviderChargebee}.CheckoutProvider())
 }
 
 func TestBillingConfig_IsBillingTenant(t *testing.T) {

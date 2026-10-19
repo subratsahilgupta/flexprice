@@ -16,7 +16,9 @@ const (
 )
 
 // StartCheckout only checks out a trialing subscription; an active one activates and an incomplete one pays in the portal.
-func (s *selfBillingService) StartCheckout(ctx context.Context, tenantID string, req dto.SelfBillingCheckoutRequest) (*dto.SelfBillingCheckoutResponse, error) {
+func (s *selfBillingService) StartCheckout(ctx context.Context, tenantID string, req dto.SelfBillingCheckoutRequest) (_ *dto.SelfBillingCheckoutResponse, err error) {
+	defer func() { s.logRemoteFailure(ctx, "start_checkout", tenantID, err) }()
+
 	if !s.enabled() {
 		return nil, errDisabled
 	}
@@ -94,7 +96,9 @@ func (s *selfBillingService) StartCheckout(ctx context.Context, tenantID string,
 }
 
 // PollCheckout activates on a completed checkout only while the Flexprice Cloud subscription is active.
-func (s *selfBillingService) PollCheckout(ctx context.Context, tenantID, checkoutID string) (*dto.SelfBillingCheckoutResponse, error) {
+func (s *selfBillingService) PollCheckout(ctx context.Context, tenantID, checkoutID string) (_ *dto.SelfBillingCheckoutResponse, err error) {
+	defer func() { s.logRemoteFailure(ctx, "poll_checkout", tenantID, err) }()
+
 	if !s.enabled() {
 		return nil, errDisabled
 	}
@@ -124,7 +128,9 @@ func (s *selfBillingService) PollCheckout(ctx context.Context, tenantID, checkou
 	return toCheckoutResponse(co, t.InternalStatus), nil
 }
 
-func (s *selfBillingService) CancelCheckout(ctx context.Context, tenantID, checkoutID string) error {
+func (s *selfBillingService) CancelCheckout(ctx context.Context, tenantID, checkoutID string) (err error) {
+	defer func() { s.logRemoteFailure(ctx, "cancel_checkout", tenantID, err) }()
+
 	if !s.enabled() {
 		return errDisabled
 	}

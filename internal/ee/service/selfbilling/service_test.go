@@ -14,8 +14,11 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	sdkerrors "github.com/flexprice/go-sdk/v2/models/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 // fakeClient is an in-memory Flexprice Cloud keyed by customer external ID.
@@ -378,4 +381,39 @@ func TestOnTenantCreated_PanicIsRecovered(t *testing.T) {
 
 	require.Eventually(t, func() bool { return len(rc.called) == 1 }, 2*time.Second, 5*time.Millisecond)
 	assert.Equal(t, 0, rc.trials())
+}
+
+// failingClient fails the call under test with a Flexprice Cloud error.
+type failingClient struct {
+	*fakeClient
+	err error
+}
+
+func (f *failingClient) PortalSession(context.Context, string) (*portalSession, error) {
+	return nil, f.err
+}
+
+func TestLogRemoteFailure_LogsOnlyFlexpriceCloudErrors(t *testing.T) {
+	remoteErr := cloudErr(sdkerrors.NewAPIError("boom", 500, "", nil))
+	localErr := ierr.NewError("tenant not found").Mark(ierr.ErrNotFound)
+
+	tests := []struct {
+		name       string
+		err        error
+		wantLogged int
+	}{
+		{"remote_failure_logged_once", remoteErr, 1},
+		{"local_not_found_not_logged", localErr, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			core, logs := observer.New(zap.ErrorLevel)
+			s, _ := newTestService(&failingClient{fakeClient: newFakeClient(), err: tt.err})
+			s.Logger = logger.NewFromSugared(zap.New(core).Sugar())
+
+			_, err := s.PortalSession(tenantCtx("t1"), "t1")
+			require.Error(t, err)
+			assert.Equal(t, tt.wantLogged, logs.Len())
+		})
+	}
 }

@@ -123,3 +123,11 @@ func (s *selfBillingService) provision(ctx context.Context, tenantID, name, emai
 	}
 	return s.client.StartTrial(ctx, in.extID)
 }
+
+// logRemoteFailure logs a Flexprice Cloud failure once, at the handler-facing method that returns it.
+func (s *selfBillingService) logRemoteFailure(ctx context.Context, op, tenantID string, err error) {
+	if !isRemoteFailure(err) {
+		return
+	}
+	s.Logger.Error(ctx, "self-billing call to flexprice cloud failed", "error", err, "operation", op, "tenant_id", tenantID)
+}
