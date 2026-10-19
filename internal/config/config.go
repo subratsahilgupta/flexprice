@@ -900,6 +900,19 @@ type BillingConfig struct {
 
 	// PaymentProvider is the provider of Flexprice Cloud's trial-end checkout; empty means stripe.
 	PaymentProvider types.CheckoutPaymentProvider `mapstructure:"payment_provider"`
+
+	// UsageLookbackHours is how many closed hours each usage push re-sends, so a missed run is recovered.
+	UsageLookbackHours int `mapstructure:"usage_lookback_hours" default:"6"`
+}
+
+const defaultUsageLookback = 6 * time.Hour
+
+// UsageLookback is the usage push window length; a non-positive setting falls back to 6 hours.
+func (c BillingConfig) UsageLookback() time.Duration {
+	if c.UsageLookbackHours <= 0 {
+		return defaultUsageLookback
+	}
+	return time.Duration(c.UsageLookbackHours) * time.Hour
 }
 
 // IsSelfBillingEnabled reports whether this deployment bills its tenants through Flexprice Cloud.

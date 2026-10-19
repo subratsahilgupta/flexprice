@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/stretchr/testify/assert"
@@ -202,6 +203,23 @@ func TestBillingConfig_IsSelfBillingEnabled(t *testing.T) {
 func TestBillingConfig_CheckoutProvider(t *testing.T) {
 	assert.Equal(t, types.CheckoutPaymentProviderStripe, BillingConfig{}.CheckoutProvider())
 	assert.Equal(t, types.CheckoutPaymentProviderChargebee, BillingConfig{PaymentProvider: types.CheckoutPaymentProviderChargebee}.CheckoutProvider())
+}
+
+func TestBillingConfig_UsageLookback(t *testing.T) {
+	tests := []struct {
+		name  string
+		hours int
+		want  time.Duration
+	}{
+		{"unset_defaults_to_6h", 0, 6 * time.Hour},
+		{"configured", 12, 12 * time.Hour},
+		{"negative_defaults_to_6h", -1, 6 * time.Hour},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, BillingConfig{UsageLookbackHours: tt.hours}.UsageLookback())
+		})
+	}
 }
 
 func TestBillingConfig_IsBillingTenant(t *testing.T) {
