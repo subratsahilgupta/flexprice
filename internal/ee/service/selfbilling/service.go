@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	domainsb "github.com/flexprice/flexprice/internal/domain/selfbilling"
 	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/interfaces"
@@ -27,22 +26,12 @@ type Service interface {
 
 type selfBillingService struct {
 	service.ServiceParams
-	client   billingClient // nil when disabled
-	envs     service.EnvironmentService
-	settings service.SettingsService
-	events   domainsb.EventCountRepository
-	invoices domainsb.InvoiceValueRepository
+	client billingClient // nil when disabled
 }
 
-// NewService builds the self-billing service; it is a no-op unless billing config enables self-billing.
-func NewService(
-	params service.ServiceParams,
-	envs service.EnvironmentService,
-	settings service.SettingsService,
-	events domainsb.EventCountRepository,
-	invoices domainsb.InvoiceValueRepository,
-) Service {
-	s := &selfBillingService{ServiceParams: params, envs: envs, settings: settings, events: events, invoices: invoices}
+// New builds the self-billing service; every method is a no-op unless billing config enables self-billing.
+func New(params service.ServiceParams) Service {
+	s := &selfBillingService{ServiceParams: params}
 	if params.Config != nil && params.Config.Billing.IsSelfBillingEnabled() {
 		s.client = newRemoteClient(params.Config.Billing)
 	}

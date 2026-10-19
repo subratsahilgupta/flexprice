@@ -26,9 +26,7 @@ func newTestService(t *testing.T, fc *fakeClient) (*selfBillingService, *testDep
 		Enabled: true, Region: "us", APIHost: "https://mumbai.test/v1", APIKey: "sk", PlanID: "plan_1", DashboardURL: "https://us.app.test",
 	}}
 	params := service.ServiceParams{Logger: logger.NewNoopLogger(), Config: cfg, TenantRepo: d.tenants, EnvironmentRepo: d.envs, SettingsRepo: d.settings}
-	settings := service.NewSettingsService(params)
-	envs := service.NewEnvironmentService(d.envs, nil, settings, params)
-	return &selfBillingService{ServiceParams: params, client: fc, envs: envs, settings: settings}, d
+	return &selfBillingService{ServiceParams: params, client: fc}, d
 }
 
 func seedTenant(t *testing.T, d *testDeps, id string, status types.TenantInternalStatus) {

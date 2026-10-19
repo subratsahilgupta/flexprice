@@ -848,25 +848,15 @@ func provideActivityPubSub(
 func serviceParamsProviders() fx.Option {
 	return fx.Provide(
 		fx.Annotate(revenue.New, fx.ParamTags(`name:"base"`)),
-		fx.Annotate(provideSelfBillingService, fx.ParamTags(`name:"base"`, ``, ``, ``)),
+		fx.Annotate(selfbilling.New, fx.ParamTags(`name:"base"`)),
 		fx.Annotate(enrichServiceParams, fx.ParamTags(`name:"base"`, ``, ``)),
 	)
 }
 
 // enrichServiceParams returns the ServiceParams the rest of the app consumes: the base params plus
-// the revenue-facts service the invoice hooks call and, when configured, the self-billing hook.
+// the revenue-facts service the invoice hooks call and the self-billing hook.
 func enrichServiceParams(base service.ServiceParams, revenueFacts interfaces.RevenueService, selfBilling selfbilling.Service) service.ServiceParams {
 	base.RevenueFacts = revenueFacts
-	if selfBilling.Enabled() {
-		base.SelfBilling = selfBilling
-	}
+	base.SelfBilling = selfBilling
 	return base
-}
-
-// provideSelfBillingService builds self-billing from the base params; a no-op unless billing is fully configured.
-// The store handles are for its cross-tenant repositories, which are not wired yet.
-func provideSelfBillingService(base service.ServiceParams, _ *logger.Logger, _ postgres.IClient, _ *clickhouse.ClickHouseStore) selfbilling.Service {
-	settings := service.NewSettingsService(base)
-	envs := service.NewEnvironmentService(base.EnvironmentRepo, service.NewEnvAccessService(base.Config), settings, base)
-	return selfbilling.NewService(base, envs, settings, nil, nil)
 }

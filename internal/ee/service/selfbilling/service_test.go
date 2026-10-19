@@ -18,7 +18,7 @@ func TestExternalID(t *testing.T) {
 }
 
 func TestNewService_DisabledIsNoop(t *testing.T) {
-	svc := NewService(service.ServiceParams{Logger: logger.NewNoopLogger(), Config: &config.Configuration{}}, nil, nil, nil, nil)
+	svc := New(service.ServiceParams{Logger: logger.NewNoopLogger(), Config: &config.Configuration{}})
 	assert.False(t, svc.Enabled())
 	st, err := svc.Status(context.Background(), "tenant_1")
 	require.NoError(t, err)

@@ -135,10 +135,8 @@ func (s *authService) SignUp(ctx context.Context, req *dto.SignUpRequest) (*dto.
 		return nil, err
 	}
 
-	// Only after the commit: provisioning calls the billing tenant, and a rollback could not recall it.
-	if s.SelfBilling != nil {
-		s.SelfBilling.OnTenantCreated(ctx, newTenant.ID, newTenant.Name, req.Email)
-	}
+	// Only after the commit: provisioning calls Flexprice Cloud, and a rollback could not recall it.
+	s.SelfBilling.OnTenantCreated(ctx, newTenant.ID, newTenant.Name, req.Email)
 
 	return response, nil
 }

@@ -79,10 +79,8 @@ func (s *tenantService) CreateTenant(ctx context.Context, req admindto.CreateTen
 		return nil, err
 	}
 
-	// Only after the commit: provisioning calls the billing tenant, and a rollback could not recall it.
-	if s.SelfBilling != nil {
-		s.SelfBilling.OnTenantCreated(ctx, tenantID, newTenant.Name, req.Email)
-	}
+	// Only after the commit: provisioning calls Flexprice Cloud, and a rollback could not recall it.
+	s.SelfBilling.OnTenantCreated(ctx, tenantID, newTenant.Name, req.Email)
 
 	s.Logger.Info(ctx, "created tenant", "tenant_id", tenantID, "user_id", userID, "production", req.CreateProduction)
 	return admindto.NewCreateTenantResponse(dto.NewTenantResponse(newTenant), owner, envs), nil

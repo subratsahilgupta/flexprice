@@ -134,6 +134,7 @@ func newTenantTestDeps(t *testing.T) *tenantTestDeps {
 		UserRepo:        d.users,
 		TenantRepo:      d.tenants,
 		EnvironmentRepo: d.environments,
+		SelfBilling:     &recordingSelfBilling{},
 	}
 	return d
 }
@@ -159,7 +160,7 @@ func (r *recordingSelfBilling) OnTenantCreated(_ context.Context, tenantID, name
 	r.calls = append(r.calls, tenantID+"|"+name+"|"+email)
 }
 
-// withSelfBilling turns self-billing on, as the hosted cloud does, so new tenants become billing customers.
+// withSelfBilling records every tenant handed to self-billing.
 func (d *tenantTestDeps) withSelfBilling() *recordingSelfBilling {
 	hook := &recordingSelfBilling{}
 	d.params.SelfBilling = hook

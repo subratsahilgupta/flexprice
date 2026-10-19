@@ -37,6 +37,7 @@ func (s *AuthServiceSuite) setupService() {
 	pubSub := testutil.NewInMemoryPubSub()
 
 	s.authService = NewAuthService(ServiceParams{
+		SelfBilling:                  &recordingHook{},
 		Logger:                       s.GetLogger(),
 		Config:                       s.GetConfig(),
 		DB:                           s.GetDB(),
@@ -325,7 +326,7 @@ func (s *AuthServiceSuite) TestSignUpProvisionsSelfBillingAfterCommit() {
 		s.Run(tc.name, func() {
 			s.BaseServiceTestSuite.ClearStores()
 			svc := s.authService.(*authService)
-			original := svc.authProvider
+			original, originalHook := svc.authProvider, svc.SelfBilling
 			svc.authProvider = &fakeSupabaseProvider{
 				claims:    &auth.Claims{UserID: "user_1", Email: "owner@acme.io"},
 				confirmed: true,
@@ -335,7 +336,7 @@ func (s *AuthServiceSuite) TestSignUpProvisionsSelfBillingAfterCommit() {
 			svc.SelfBilling = hook
 			defer func() {
 				svc.authProvider = original
-				svc.SelfBilling = nil
+				svc.SelfBilling = originalHook
 			}()
 
 			resp, err := svc.SignUp(s.GetContext(), &dto.SignUpRequest{
