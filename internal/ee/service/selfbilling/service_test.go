@@ -4,10 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/ee/service"
-	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,14 +17,10 @@ func TestExternalID(t *testing.T) {
 
 func TestNewService_DisabledIsNoop(t *testing.T) {
 	svc := New(service.ServiceParams{Logger: logger.NewNoopLogger(), Config: &config.Configuration{}})
-	assert.False(t, svc.Enabled())
 	st, err := svc.Status(context.Background(), "tenant_1")
 	require.NoError(t, err)
 	assert.False(t, st.Enabled)
 	svc.OnTenantCreated(context.Background(), "tenant_1", "Acme", "a@acme.io")
-	require.NoError(t, svc.RunHourly(context.Background()))
-	_, err = svc.StartCheckout(context.Background(), "tenant_1", dto.SelfBillingCheckoutRequest{})
-	assert.ErrorIs(t, err, errDisabled)
 }
 
 func TestOnTenantCreated_Provisions(t *testing.T) {
@@ -58,11 +52,4 @@ func TestOnTenantCreated_Provisions(t *testing.T) {
 			assert.Equal(t, tt.wantLegacyID, fc.legacyExtIDs["us:"+tt.tenantID])
 		})
 	}
-}
-
-func TestFakeClient_GetCheckoutUnknownIsNotFound(t *testing.T) {
-	_, err := newFakeClient().GetCheckout(context.Background(), "cs_missing")
-	require.Error(t, err)
-	assert.True(t, ierr.IsNotFound(err))
-	assert.NotErrorIs(t, err, errDisabled)
 }

@@ -5,23 +5,13 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/ee/service"
-	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/interfaces"
 )
-
-var errDisabled = ierr.NewError("self-billing is not enabled").Mark(ierr.ErrNotFound)
 
 // Service bills this region's tenants through the Flexprice billing tenant in Mumbai.
 type Service interface {
 	interfaces.SelfBillingHook
-	Enabled() bool
 	Status(ctx context.Context, tenantID string) (*dto.SelfBillingStatusResponse, error)
-	StartCheckout(ctx context.Context, tenantID string, req dto.SelfBillingCheckoutRequest) (*dto.SelfBillingCheckoutResponse, error)
-	PollCheckout(ctx context.Context, tenantID, checkoutID string) (*dto.SelfBillingCheckoutResponse, error)
-	CancelCheckout(ctx context.Context, tenantID, checkoutID string) error
-	Summary(ctx context.Context, tenantID string) (*dto.SelfBillingSummaryResponse, error)
-	PortalSession(ctx context.Context, tenantID string) (*dto.SelfBillingPortalResponse, error)
-	RunHourly(ctx context.Context) error
 }
 
 type selfBillingService struct {
@@ -38,12 +28,12 @@ func New(params service.ServiceParams) Service {
 	return s
 }
 
-func (s *selfBillingService) Enabled() bool { return s.client != nil }
+func (s *selfBillingService) enabled() bool { return s.client != nil }
 
 func (s *selfBillingService) region() string { return s.Config.Billing.Region }
 
 func (s *selfBillingService) Status(ctx context.Context, tenantID string) (*dto.SelfBillingStatusResponse, error) {
-	if !s.Enabled() {
+	if !s.enabled() {
 		return &dto.SelfBillingStatusResponse{Enabled: false}, nil
 	}
 	t, err := s.TenantRepo.GetByID(ctx, tenantID)
@@ -54,7 +44,7 @@ func (s *selfBillingService) Status(ctx context.Context, tenantID string) (*dto.
 }
 
 func (s *selfBillingService) OnTenantCreated(ctx context.Context, tenantID, name, email string) {
-	if !s.Enabled() || s.Config.Billing.IsBillingTenant(tenantID) {
+	if !s.enabled() || s.Config.Billing.IsBillingTenant(tenantID) {
 		return
 	}
 	if err := s.provision(ctx, tenantID, name, email); err != nil {
@@ -77,42 +67,3 @@ func (s *selfBillingService) provision(ctx context.Context, tenantID, name, emai
 	}
 	return s.client.StartTrial(ctx, in.extID)
 }
-
-var errNotImplemented = ierr.NewError("not implemented").Mark(ierr.ErrInternal)
-
-func (s *selfBillingService) StartCheckout(context.Context, string, dto.SelfBillingCheckoutRequest) (*dto.SelfBillingCheckoutResponse, error) {
-	if !s.Enabled() {
-		return nil, errDisabled
-	}
-	return nil, errNotImplemented
-}
-
-func (s *selfBillingService) PollCheckout(context.Context, string, string) (*dto.SelfBillingCheckoutResponse, error) {
-	if !s.Enabled() {
-		return nil, errDisabled
-	}
-	return nil, errNotImplemented
-}
-
-func (s *selfBillingService) CancelCheckout(context.Context, string, string) error {
-	if !s.Enabled() {
-		return errDisabled
-	}
-	return errNotImplemented
-}
-
-func (s *selfBillingService) Summary(context.Context, string) (*dto.SelfBillingSummaryResponse, error) {
-	if !s.Enabled() {
-		return nil, errDisabled
-	}
-	return nil, errNotImplemented
-}
-
-func (s *selfBillingService) PortalSession(context.Context, string) (*dto.SelfBillingPortalResponse, error) {
-	if !s.Enabled() {
-		return nil, errDisabled
-	}
-	return nil, errNotImplemented
-}
-
-func (s *selfBillingService) RunHourly(context.Context) error { return nil }

@@ -9,17 +9,9 @@ import (
 	"github.com/flexprice/flexprice/internal/config"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	flexprice "github.com/flexprice/go-sdk/v2"
-	sdkdtos "github.com/flexprice/go-sdk/v2/models/dtos"
 	sdkerrors "github.com/flexprice/go-sdk/v2/models/errors"
 	sdktypes "github.com/flexprice/go-sdk/v2/models/types"
 	"github.com/samber/lo"
-	"github.com/shopspring/decimal"
-)
-
-const (
-	stripeProvider      = sdktypes.CheckoutPaymentProvider("stripe")
-	summaryInvoiceLimit = 12
-	metaTaxID           = "tax_id"
 )
 
 type remoteClient struct {
@@ -120,135 +112,6 @@ func (c *remoteClient) LatestSubscription(ctx context.Context, extID string) (*r
 
 func toRemoteSubscription(s *sdktypes.SubscriptionResponse) *remoteSubscription {
 	return &remoteSubscription{id: lo.FromPtr(s.ID), status: string(lo.FromPtr(s.SubscriptionStatus)), trialEnd: s.TrialEnd}
-}
-
-// UpdateBillingDetails sets the address and tax ID; Mumbai replaces metadata wholesale, so existing keys are merged in.
-func (c *remoteClient) UpdateBillingDetails(ctx context.Context, extID string, d billingDetails) error {
-	var metadata map[string]string
-	if d.taxID != "" {
-		cust, err := c.sdk.Customers.GetCustomerByExternalID(ctx, extID)
-		if err != nil {
-			return err
-		}
-		metadata = lo.Assign(cust.CustomerResponse.GetMetadata(), map[string]string{metaTaxID: d.taxID})
-	}
-	_, err := c.sdk.Customers.UpdateCustomer(ctx, sdktypes.UpdateCustomerRequest{
-		Name:              lo.EmptyableToPtr(d.name),
-		Email:             lo.EmptyableToPtr(d.email),
-		AddressLine1:      lo.EmptyableToPtr(d.line1),
-		AddressLine2:      lo.EmptyableToPtr(d.line2),
-		AddressCity:       lo.EmptyableToPtr(d.city),
-		AddressState:      lo.EmptyableToPtr(d.state),
-		AddressCountry:    lo.EmptyableToPtr(d.country),
-		AddressPostalCode: lo.EmptyableToPtr(d.postalCode),
-		Metadata:          metadata,
-	}, nil, lo.ToPtr(extID))
-	return err
-}
-
-func (c *remoteClient) StartTrialEndCheckout(ctx context.Context, in checkoutInput) (*remoteCheckout, error) {
-	resp, err := c.sdk.Subscriptions.ExecuteSubscriptionModify(ctx, in.subscriptionID, sdktypes.ExecuteSubscriptionModifyRequest{
-		Type:           sdktypes.SubscriptionModifyTypeTrialEnd,
-		TrialEndParams: &sdktypes.SubModifyTrialEndRequest{Action: sdktypes.TrialEndActionImmediate},
-		Checkout: &sdktypes.CheckoutParams{
-			PaymentProvider: stripeProvider,
-			SuccessURL:      lo.ToPtr(in.successURL),
-			FailureURL:      lo.ToPtr(in.failureURL),
-			Metadata:        map[string]string{metaExternalID: in.extID},
-			IdempotencyKey:  lo.ToPtr("trial_end:" + in.subscriptionID),
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	cs := resp.SubscriptionModifyResponse.CheckoutSession
-	if cs == nil { // $0 first period: Mumbai ended the trial with nothing to collect
-		return &remoteCheckout{status: string(sdktypes.CheckoutStatusCompleted), terminal: true, extID: in.extID}, nil
-	}
-	return toRemoteCheckout(cs), nil
-}
-
-func (c *remoteClient) GetCheckout(ctx context.Context, id string) (*remoteCheckout, error) {
-	resp, err := c.sdk.Checkout.GetCheckoutSession(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	return toRemoteCheckout(resp.CheckoutSessionResponse), nil
-}
-
-func (c *remoteClient) CancelCheckout(ctx context.Context, id string) error {
-	_, err := c.sdk.Checkout.CancelCheckoutSession(ctx, id)
-	return err
-}
-
-func toRemoteCheckout(cs *sdktypes.CheckoutSessionResponse) *remoteCheckout {
-	co := &remoteCheckout{
-		id:       lo.FromPtr(cs.ID),
-		status:   string(lo.FromPtr(cs.CheckoutStatus)),
-		terminal: lo.FromPtr(cs.Terminal),
-		extID:    cs.Metadata[metaExternalID],
-	}
-	if cs.PaymentAction != nil {
-		co.url = lo.FromPtr(cs.PaymentAction.URL)
-	}
-	return co
-}
-
-// errPortalSDKPending is returned until Task 17 swaps in the generated go-sdk portal call.
-var errPortalSDKPending = ierr.NewError("billing portal needs a newer go-sdk").
-	WithHint("Bump github.com/flexprice/go-sdk/v2 to the release that includes createCustomerPortalSession").
-	Mark(ierr.ErrInternal)
-
-func (c *remoteClient) PortalSession(context.Context, string) (*portalSession, error) {
-	return nil, errPortalSDKPending
-}
-
-func (c *remoteClient) Summary(ctx context.Context, extID string) (*remoteSummary, error) {
-	sub, err := c.LatestSubscription(ctx, extID)
-	if err != nil {
-		return nil, err
-	}
-	invs, err := c.sdk.Invoices.QueryInvoice(ctx, sdktypes.InvoiceFilter{ExternalCustomerID: lo.ToPtr(extID), Limit: lo.ToPtr(int64(summaryInvoiceLimit))})
-	if err != nil {
-		return nil, err
-	}
-	usage, err := c.sdk.Customers.GetCustomerUsageSummary(ctx, sdkdtos.GetCustomerUsageSummaryRequest{CustomerLookupKey: lo.ToPtr(extID)})
-	if err != nil {
-		return nil, err
-	}
-	out := &remoteSummary{subscription: sub, usage: usage.CustomerUsageSummaryResponse}
-	for _, i := range invs.ListInvoicesResponse.Items {
-		total := decimal.Zero
-		if t := lo.FromPtr(i.Total); t != "" {
-			total, err = decimal.NewFromString(t)
-			if err != nil {
-				return nil, ierr.WithError(err).
-					WithMessagef("billing invoice %s has an unparseable total %q", lo.FromPtr(i.ID), t).
-					WithHint("The billing invoice total could not be read").
-					Mark(ierr.ErrInternal)
-			}
-		}
-		out.invoices = append(out.invoices, remoteInvoice{
-			id: lo.FromPtr(i.ID), number: lo.FromPtr(i.InvoiceNumber),
-			status: string(lo.FromPtr(i.InvoiceStatus)), paymentStatus: string(lo.FromPtr(i.PaymentStatus)),
-			currency: lo.FromPtr(i.Currency), pdfURL: lo.FromPtr(i.InvoicePdfURL), total: total, dueDate: i.DueDate,
-		})
-	}
-	return out, nil
-}
-
-func (c *remoteClient) IngestBulk(ctx context.Context, events []usageEvent) error {
-	_, err := c.sdk.Events.IngestEventsBulk(ctx, sdktypes.BulkIngestEventRequest{Events: lo.Map(events, func(e usageEvent, _ int) sdktypes.IngestEventRequest {
-		return sdktypes.IngestEventRequest{
-			EventID:            lo.ToPtr(e.id),
-			EventName:          e.name,
-			ExternalCustomerID: e.extID,
-			Properties:         e.properties,
-			Source:             lo.ToPtr("self_billing"),
-			Timestamp:          lo.ToPtr(e.timestamp.UTC().Format(time.RFC3339)),
-		}
-	})})
-	return err
 }
 
 // isNotFound reports whether an SDK call failed with HTTP 404, whichever error type the SDK used for it.

@@ -2,7 +2,6 @@ package config
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -27,9 +26,6 @@ func TestBillingConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { assert.Equal(t, tt.want, tt.cfg.IsSelfBillingEnabled()) })
 	}
-	assert.Equal(t, 6*time.Hour, BillingConfig{}.UsageLookback(), "default")
-	assert.Equal(t, 12*time.Hour, BillingConfig{UsageLookbackHours: 12}.UsageLookback())
-	assert.Equal(t, 6*time.Hour, BillingConfig{UsageLookbackHours: -1}.UsageLookback())
 	assert.True(t, BillingConfig{TenantID: "t_b"}.IsBillingTenant("t_b"))
 	assert.False(t, BillingConfig{}.IsBillingTenant(""))
 	assert.False(t, BillingConfig{TenantID: "t_b"}.IsBillingTenant("t_x"))

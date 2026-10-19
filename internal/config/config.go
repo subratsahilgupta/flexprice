@@ -897,18 +897,6 @@ type BillingConfig struct {
 	APIKey        string `mapstructure:"api_key"`
 	PlanID        string `mapstructure:"plan_id"`
 	DashboardURL  string `mapstructure:"dashboard_url"`
-	// UsageLookbackHours is how many closed hours each usage run re-sends; it recovers missed runs.
-	UsageLookbackHours int `mapstructure:"usage_lookback_hours" default:"6"`
-}
-
-const defaultUsageLookback = 6 * time.Hour
-
-// UsageLookback is the usage window length; non-positive values fall back to 6 hours.
-func (c BillingConfig) UsageLookback() time.Duration {
-	if c.UsageLookbackHours <= 0 {
-		return defaultUsageLookback
-	}
-	return time.Duration(c.UsageLookbackHours) * time.Hour
 }
 
 // IsSelfBillingEnabled reports whether this deployment bills its tenants through Mumbai.
