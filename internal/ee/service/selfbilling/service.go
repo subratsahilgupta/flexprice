@@ -21,8 +21,8 @@ type Service interface {
 
 type selfBillingService struct {
 	service.ServiceParams
-	client billingClient    // nil when disabled
-	spawn  func(run func()) // runs detached work; nil means a goroutine
+
+	client billingClient // nil when disabled
 }
 
 // New builds the self-billing service; every method is a no-op unless billing config enables self-billing.
@@ -57,7 +57,7 @@ func (s *selfBillingService) OnTenantCreated(ctx context.Context, tenantID, name
 	}
 
 	detached := context.WithoutCancel(ctx)
-	s.detach(func() {
+	go func() {
 		ctx, cancel := context.WithTimeout(detached, provisionTimeout)
 		defer cancel()
 
@@ -70,15 +70,7 @@ func (s *selfBillingService) OnTenantCreated(ctx context.Context, tenantID, name
 		if err := s.provision(ctx, tenantID, name, email); err != nil {
 			s.Logger.Error(ctx, "self-billing provisioning failed", "error", err, "tenant_id", tenantID)
 		}
-	})
-}
-
-func (s *selfBillingService) detach(run func()) {
-	if s.spawn != nil {
-		s.spawn(run)
-		return
-	}
-	go run()
+	}()
 }
 
 // provision ensures the Flexprice Cloud customer and starts its trial when it has no self-serve subscription yet.

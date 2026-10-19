@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/tenant"
@@ -62,24 +63,47 @@ func (f *fakeClient) LatestSubscription(_ context.Context, extID string) (*remot
 	return f.subs[extID], f.err
 }
 
-// recordingClient records the context provisioning ran with and can panic on the first call.
+// recordingClient records the context provisioning ran with, signals each call, and can panic.
 type recordingClient struct {
 	*fakeClient
+	called      chan struct{}
 	ctxErr      error
 	hasDeadline bool
 	panic       bool
 }
 
+func newRecordingClient() *recordingClient {
+	return &recordingClient{fakeClient: newFakeClient(), called: make(chan struct{}, 1)}
+}
+
 func (r *recordingClient) EnsureCustomer(ctx context.Context, in customerInput) error {
+	r.fakeClient.mu.Lock()
 	r.ctxErr = ctx.Err()
 	_, r.hasDeadline = ctx.Deadline()
+	r.fakeClient.mu.Unlock()
+
+	r.called <- struct{}{}
 	if r.panic {
 		panic("flexprice cloud client blew up")
 	}
 	return r.fakeClient.EnsureCustomer(ctx, in)
 }
 
-// newTestService returns an enabled service whose detached provisioning runs inline.
+// trials returns the number of trials started so far.
+func (f *fakeClient) trials() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.trialsStarted
+}
+
+// hasCustomer reports whether the customer was ensured.
+func (f *fakeClient) hasCustomer(extID string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.customers[extID]
+}
+
+// newTestService returns a service with self-billing enabled against client.
 func newTestService(client billingClient) (*selfBillingService, *testutil.InMemoryTenantStore) {
 	tenants := testutil.NewInMemoryTenantStore()
 	params := service.ServiceParams{
@@ -98,7 +122,6 @@ func newTestService(client billingClient) (*selfBillingService, *testutil.InMemo
 	s := &selfBillingService{
 		ServiceParams: params,
 		client:        client,
-		spawn:         func(run func()) { run() },
 	}
 	return s, tenants
 }
@@ -126,7 +149,7 @@ func TestStatus_Enabled(t *testing.T) {
 	assert.Equal(t, types.TenantInternalStatusTrialing, st.Status)
 }
 
-func TestOnTenantCreated_Provisions(t *testing.T) {
+func TestProvision(t *testing.T) {
 	tests := []struct {
 		name          string
 		tenantID      string
@@ -149,11 +172,6 @@ func TestOnTenantCreated_Provisions(t *testing.T) {
 			wantCustomer: true,
 		},
 		{
-			name:          "billing_tenant_skipped",
-			tenantID:      "t_billing",
-			billingTenant: "t_billing",
-		},
-		{
 			name:          "billing_tenant_region_looks_up_legacy_bare_id",
 			tenantID:      "t1",
 			billingTenant: "t_billing",
@@ -171,41 +189,51 @@ func TestOnTenantCreated_Provisions(t *testing.T) {
 				fc.subs["us:"+tt.tenantID] = &remoteSubscription{id: "old", status: types.SubscriptionStatusActive}
 			}
 
-			s.OnTenantCreated(context.Background(), tt.tenantID, "Acme", "a@acme.io")
+			require.NoError(t, s.provision(context.Background(), tt.tenantID, "Acme", "a@acme.io"))
 
 			assert.Equal(t, tt.wantCustomer, fc.customers["us:"+tt.tenantID])
-			assert.Equal(t, tt.wantTrial, fc.trialsStarted == 1)
+			assert.Equal(t, tt.wantTrial, fc.trials() == 1)
 			assert.Equal(t, tt.wantLegacyID, fc.legacyExtIDs["us:"+tt.tenantID])
 		})
 	}
 }
 
-func TestOnTenantCreated_RunsDetached(t *testing.T) {
-	rc := &recordingClient{fakeClient: newFakeClient()}
+func TestOnTenantCreated_BillingTenantSkipped(t *testing.T) {
+	rc := newRecordingClient()
 	s, _ := newTestService(rc)
-	var pending func()
-	s.spawn = func(run func()) { pending = run }
+	s.Config.Billing.TenantID = "t_billing"
+
+	s.OnTenantCreated(context.Background(), "t_billing", "Acme", "a@acme.io")
+
+	assert.Never(t, func() bool { return len(rc.called) > 0 }, 50*time.Millisecond, 10*time.Millisecond)
+}
+
+func TestOnTenantCreated_RunsDetached(t *testing.T) {
+	rc := newRecordingClient()
+	s, _ := newTestService(rc)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	s.OnTenantCreated(ctx, "t1", "Acme", "a@acme.io")
-	require.NotNil(t, pending, "provisioning is handed off, not run inline")
-	assert.False(t, rc.customers["us:t1"], "the caller is not blocked on Flexprice Cloud")
-
 	cancel() // the request finishing must not abort provisioning
-	pending()
+	s.OnTenantCreated(ctx, "t1", "Acme", "a@acme.io")
 
-	assert.True(t, rc.customers["us:t1"])
-	assert.Equal(t, 1, rc.trialsStarted)
+	require.Eventually(t, func() bool { return rc.trials() == 1 }, 2*time.Second, 5*time.Millisecond)
+	assert.True(t, rc.hasCustomer("us:t1"))
+
+	rc.fakeClient.mu.Lock()
+	defer rc.fakeClient.mu.Unlock()
 	require.NoError(t, rc.ctxErr)
 	assert.True(t, rc.hasDeadline, "provisioning runs under its own timeout")
 }
 
 func TestOnTenantCreated_PanicIsRecovered(t *testing.T) {
-	rc := &recordingClient{fakeClient: newFakeClient(), panic: true}
+	rc := newRecordingClient()
+	rc.panic = true
 	s, _ := newTestService(rc)
 
 	assert.NotPanics(t, func() {
 		s.OnTenantCreated(context.Background(), "t1", "Acme", "a@acme.io")
 	})
-	assert.Equal(t, 0, rc.trialsStarted)
+
+	require.Eventually(t, func() bool { return len(rc.called) == 1 }, 2*time.Second, 5*time.Millisecond)
+	assert.Equal(t, 0, rc.trials())
 }
