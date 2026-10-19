@@ -210,6 +210,7 @@ type testDeps struct {
 	tenants  *testutil.InMemoryTenantStore
 	envs     *testutil.InMemoryEnvironmentStore
 	settings *testutil.InMemorySettingsStore
+	usage    *testutil.InMemorySelfBillingStore
 }
 
 // newTestService returns a service with self-billing enabled against client.
@@ -218,6 +219,7 @@ func newTestService(client billingClient) (*selfBillingService, *testDeps) {
 		tenants:  testutil.NewInMemoryTenantStore(),
 		envs:     testutil.NewInMemoryEnvironmentStore(),
 		settings: testutil.NewInMemorySettingsStore(),
+		usage:    testutil.NewInMemorySelfBillingStore(),
 	}
 
 	params := service.ServiceParams{
@@ -225,6 +227,10 @@ func newTestService(client billingClient) (*selfBillingService, *testDeps) {
 		TenantRepo:      d.tenants,
 		EnvironmentRepo: d.envs,
 		SettingsRepo:    d.settings,
+
+		SelfBillingClickHouseRepo: d.usage,
+		SelfBillingPostgresRepo:   d.usage,
+
 		Config: &config.Configuration{Billing: config.BillingConfig{
 			Enabled:      true,
 			Region:       "us",
