@@ -9,6 +9,7 @@ import (
 	"time"
 
 	cockroach "github.com/cockroachdb/errors"
+	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -175,6 +176,9 @@ func (c *remoteClient) StartTrialEndCheckout(ctx context.Context, in checkoutInp
 			IdempotencyKey:  lo.ToPtr("trial_end:" + in.subscriptionID),
 		},
 	})
+	if id := conflictCheckoutID(err); id != "" {
+		return c.GetCheckout(ctx, id)
+	}
 	if err != nil {
 		return nil, cloudErr(err)
 	}
@@ -236,9 +240,14 @@ func (c *remoteClient) Summary(ctx context.Context, extID string) (*remoteSummar
 		return nil, cloudErr(err)
 	}
 
+	usageSummary, err := toUsageSummary(usage.CustomerUsageSummaryResponse)
+	if err != nil {
+		return nil, err
+	}
+
 	out := &remoteSummary{
 		subscription: sub,
-		usage:        usage.CustomerUsageSummaryResponse,
+		usage:        usageSummary,
 	}
 	for _, inv := range invoices.ListInvoicesResponse.Items {
 		mapped, err := toRemoteInvoice(inv)
@@ -362,6 +371,24 @@ func remoteMessage(err error) string {
 		return ""
 	}
 	return strings.TrimSpace(parsed.Message)
+}
+
+// toUsageSummary reads the SDK's usage summary back into the API's own DTO, since Flexprice Cloud serves that same shape.
+func toUsageSummary(in *sdktypes.CustomerUsageSummaryResponse) (*dto.CustomerUsageSummaryResponse, error) {
+	if in == nil {
+		return nil, nil
+	}
+
+	raw, err := json.Marshal(in)
+	if err != nil {
+		return nil, ierr.WithError(err).WithHint("Flexprice Cloud returned an unreadable usage summary").Mark(ierr.ErrInternal)
+	}
+
+	var out dto.CustomerUsageSummaryResponse
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, ierr.WithError(err).WithHint("Flexprice Cloud returned an unreadable usage summary").Mark(ierr.ErrInternal)
+	}
+	return &out, nil
 }
 
 // conflictCheckoutID returns the open checkout session ID a Flexprice Cloud 409 body names, if any.

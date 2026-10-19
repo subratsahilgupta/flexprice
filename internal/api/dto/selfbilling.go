@@ -39,9 +39,6 @@ type SelfBillingCheckoutResponse struct {
 	Status     types.CheckoutStatus `json:"status"`
 	Terminal   bool                 `json:"terminal"`
 
-	// PayInPortal means the trial already ended unpaid; URL opens the customer portal to pay the open invoice.
-	PayInPortal bool `json:"pay_in_portal,omitempty"`
-
 	Tenant types.TenantInternalStatus `json:"tenant_status"`
 }
 
@@ -59,11 +56,11 @@ type SelfBillingInvoice struct {
 
 // SelfBillingSummaryResponse is the tenant's billing page: status, subscription, invoices and usage.
 type SelfBillingSummaryResponse struct {
-	Status             types.TenantInternalStatus `json:"status"`
-	SubscriptionStatus types.SubscriptionStatus   `json:"subscription_status,omitempty"`
-	TrialEndsAt        *time.Time                 `json:"trial_ends_at,omitempty"`
-	Invoices           []SelfBillingInvoice       `json:"invoices"`
-	Usage              any                        `json:"usage,omitempty"`
+	Status             types.TenantInternalStatus    `json:"status"`
+	SubscriptionStatus types.SubscriptionStatus      `json:"subscription_status,omitempty"`
+	TrialEndsAt        *time.Time                    `json:"trial_ends_at,omitempty"`
+	Invoices           []SelfBillingInvoice          `json:"invoices"`
+	Usage              *CustomerUsageSummaryResponse `json:"usage,omitempty"`
 }
 
 // SelfBillingPortalResponse is a short-lived customer portal link.

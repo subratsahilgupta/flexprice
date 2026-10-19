@@ -24089,10 +24089,6 @@ const docTemplate = `{
                 "checkout_id": {
                     "type": "string"
                 },
-                "pay_in_portal": {
-                    "description": "PayInPortal means the trial already ended unpaid; URL opens the customer portal to pay the open invoice.",
-                    "type": "boolean"
-                },
                 "status": {
                     "$ref": "#/definitions/types.CheckoutStatus"
                 },
@@ -24176,7 +24172,9 @@ const docTemplate = `{
                 "trial_ends_at": {
                     "type": "string"
                 },
-                "usage": {}
+                "usage": {
+                    "$ref": "#/definitions/CustomerUsageSummaryResponse"
+                }
             }
         },
         "SourceUsageItem": {

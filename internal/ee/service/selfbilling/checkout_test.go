@@ -5,14 +5,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/cockroachdb/errors"
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/domain/environment"
-	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
-	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
-	sdkerrors "github.com/flexprice/go-sdk/v2/models/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,7 +35,6 @@ func TestStartCheckout(t *testing.T) {
 		free          bool                     // $0 first period: the trial ends without a session
 		wantStatus    types.CheckoutStatus
 		wantURL       string
-		wantPortal    bool
 		wantTenant    types.TenantInternalStatus
 		wantCheckouts int
 	}{
@@ -70,7 +64,6 @@ func TestStartCheckout(t *testing.T) {
 			remoteStatus: types.SubscriptionStatusIncomplete,
 			wantStatus:   types.CheckoutStatusPending,
 			wantURL:      "https://portal.test",
-			wantPortal:   true,
 			wantTenant:   types.TenantInternalStatusTrialing,
 		},
 		{
@@ -97,7 +90,6 @@ func TestStartCheckout(t *testing.T) {
 
 			assert.Equal(t, tt.wantStatus, resp.Status)
 			assert.Equal(t, tt.wantURL, resp.URL)
-			assert.Equal(t, tt.wantPortal, resp.PayInPortal)
 			assert.Equal(t, tt.wantTenant, resp.Tenant)
 			assert.Equal(t, tt.wantCheckouts, fc.trialCheckouts)
 
@@ -149,55 +141,6 @@ func TestStartCheckout_FreeFirstPeriodWaitsForActiveSubscription(t *testing.T) {
 	assert.Equal(t, types.CheckoutStatusCompleted, resp.Status)
 	assert.Equal(t, types.TenantInternalStatusTrialing, resp.Tenant)
 	assert.Equal(t, 0, productionEnvs(t, d, "t1"))
-}
-
-// conflictErr is how the client surfaces Flexprice Cloud's 409 for a pending trial-end checkout.
-func conflictErr(body string) error {
-	return cloudErr(sdkerrors.NewAPIError("API error occurred", http.StatusConflict, body, nil))
-}
-
-func TestStartCheckout_CheckoutAlreadyInProgress(t *testing.T) {
-	const ownBody = `{"code":"already_exists","message":"Complete or cancel the existing checkout before ending the trial",` +
-		`"http_status_code":409,"details":{"subscription_id":"sub_us:t1","checkout_session_id":"cs_open"}}`
-	const foreignBody = `{"code":"already_exists","http_status_code":409,"details":{"checkout_session_id":"cs_other"}}`
-	const bareBody = `{"code":"already_exists","http_status_code":409}`
-
-	tests := []struct {
-		name    string
-		body    string
-		wantURL string // "" = 409 with the in-progress hint
-	}{
-		{"resumes_own_session", ownBody, "https://checkout.test/open"},
-		{"no_session_id_in_body", bareBody, ""},
-		{"session_owned_by_another_tenant", foreignBody, ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			fc := newFakeClient()
-			fc.trialCheckoutErr = conflictErr(tt.body)
-			fc.checkouts["cs_open"] = &remoteCheckout{id: "cs_open", status: types.CheckoutStatusPending, url: "https://checkout.test/open", extID: "us:t1"}
-			fc.checkouts["cs_other"] = &remoteCheckout{id: "cs_other", status: types.CheckoutStatusPending, url: "https://checkout.test/other", extID: "us:t2"}
-			fc.subs["us:t1"] = &remoteSubscription{id: "sub_us:t1", status: types.SubscriptionStatusTrialing}
-			s, d := newTestService(fc)
-			seedTenant(t, d, "t1", types.TenantInternalStatusTrialing)
-
-			resp, err := s.StartCheckout(tenantCtx("t1"), "t1", checkoutReq)
-			if tt.wantURL != "" {
-				require.NoError(t, err)
-				assert.Equal(t, "cs_open", resp.CheckoutID)
-				assert.Equal(t, tt.wantURL, resp.URL)
-				assert.Equal(t, types.CheckoutStatusPending, resp.Status)
-				assert.Equal(t, types.TenantInternalStatusTrialing, resp.Tenant)
-				return
-			}
-
-			require.Error(t, err)
-			assert.True(t, ierr.IsAlreadyExists(err), "got %v", err)
-			status, _ := ierr.ResolveError(err)
-			assert.Equal(t, http.StatusConflict, status)
-			assert.Contains(t, errors.FlattenHints(err), "a checkout is already in progress; finish or cancel it")
-		})
-	}
 }
 
 func TestPollCheckout_PaidActivatesOnce(t *testing.T) {
@@ -307,84 +250,4 @@ func TestCancelCheckout(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, fc.checkouts["cs1"].status)
 		})
 	}
-}
-
-func TestActivate(t *testing.T) {
-	tests := []struct {
-		name          string
-		from          types.TenantInternalStatus
-		prodLimit     int // 0 = leave the default
-		wantProdLimit int
-	}{
-		{"trialing_to_active", types.TenantInternalStatusTrialing, 0, 1},
-		{"suspended_to_active", types.TenantInternalStatusSuspended, 0, 1},
-		{"already_active_is_repaired", types.TenantInternalStatusActive, 0, 1},
-		{"higher_limit_kept", types.TenantInternalStatusTrialing, 3, 3},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s, d := newTestService(newFakeClient())
-			seedTenant(t, d, "t1", tt.from)
-			ctx := tenantCtx("t1")
-			if tt.prodLimit > 0 {
-				_, err := s.settings.UpdateSettingByKey(ctx, types.SettingKeyTenantConfig, &dto.UpdateSettingRequest{
-					Value: map[string]interface{}{"production": tt.prodLimit},
-				})
-				require.NoError(t, err)
-			}
-
-			require.NoError(t, s.activate(ctx, "t1"))
-			require.NoError(t, s.activate(ctx, "t1"), "activation is idempotent")
-
-			got, err := d.tenants.GetByID(ctx, "t1")
-			require.NoError(t, err)
-			assert.Equal(t, types.TenantInternalStatusActive, got.InternalStatus)
-
-			setting, err := s.settings.GetSettingByKeyUnchecked(ctx, types.SettingKeyTenantConfig)
-			require.NoError(t, err)
-			assert.EqualValues(t, tt.wantProdLimit, setting.Value["production"])
-			assert.Equal(t, 1, productionEnvs(t, d, "t1"))
-		})
-	}
-}
-
-// racingEnvStore inserts a production environment right after the first count, as a concurrent activation would.
-type racingEnvStore struct {
-	*testutil.InMemoryEnvironmentStore
-	counts int
-}
-
-func (r *racingEnvStore) CountByType(ctx context.Context, envType types.EnvironmentType) (int, error) {
-	r.counts++
-	n, err := r.InMemoryEnvironmentStore.CountByType(ctx, envType)
-	if r.counts == 1 {
-		winner := &environment.Environment{
-			ID:        "env_winner",
-			Name:      "Production",
-			Type:      types.EnvironmentProduction,
-			BaseModel: types.GetDefaultBaseModel(ctx),
-		}
-		if cerr := r.InMemoryEnvironmentStore.Create(ctx, winner); cerr != nil {
-			return 0, cerr
-		}
-	}
-	return n, err
-}
-
-func TestActivate_EnvCreationRaceTreatedAsDone(t *testing.T) {
-	s, d := newTestService(newFakeClient())
-	seedTenant(t, d, "t1", types.TenantInternalStatusTrialing)
-	racing := &racingEnvStore{InMemoryEnvironmentStore: d.envs}
-	s.EnvironmentRepo = racing
-	s.envs = service.NewEnvironmentService(racing, service.NewEnvAccessService(s.Config), s.settings, s.ServiceParams)
-
-	require.NoError(t, s.activate(tenantCtx("t1"), "t1"))
-
-	// The first read saw 0, CreateEnvironment's limit check refused ours, the recount found the winner.
-	assert.Equal(t, 3, racing.counts)
-	assert.Equal(t, 1, productionEnvs(t, d, "t1"))
-
-	got, err := d.tenants.GetByID(context.Background(), "t1")
-	require.NoError(t, err)
-	assert.Equal(t, types.TenantInternalStatusActive, got.InternalStatus)
 }

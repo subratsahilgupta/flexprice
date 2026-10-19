@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -23,7 +24,7 @@ type billingClient interface {
 	// UpdateBillingDetails sets the customer's address and tax ID, keeping its other metadata.
 	UpdateBillingDetails(ctx context.Context, extID string, details billingDetails) error
 
-	// StartTrialEndCheckout gates the trial's end behind a configured checkout provider on Flexprice cloud.
+	// StartTrialEndCheckout gates the trial's end behind a configured checkout provider on Flexprice Cloud, resuming an open one.
 	StartTrialEndCheckout(ctx context.Context, in checkoutInput) (*remoteCheckout, error)
 
 	// GetCheckout returns a checkout session by ID.
@@ -88,9 +89,7 @@ type portalSession struct {
 type remoteSummary struct {
 	subscription *remoteSubscription
 	invoices     []remoteInvoice
-
-	// usage is the Flexprice Cloud usage summary, passed through to the dashboard.
-	usage any
+	usage        *dto.CustomerUsageSummaryResponse
 }
 
 type remoteInvoice struct {

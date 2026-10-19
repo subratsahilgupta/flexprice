@@ -141,7 +141,10 @@ func (f *fakeCloud) handler(t *testing.T) http.Handler {
 			_ = json.NewEncoder(w).Encode(map[string]any{"items": f.invoices})
 
 		case r.Method == http.MethodGet && r.URL.Path == pathCustomerUsage:
-			_ = json.NewEncoder(w).Encode(map[string]any{})
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"customer_id": "cust_1",
+				"features":    []map[string]any{{"current_usage": "12.5", "is_enabled": true}},
+			})
 
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, pathCustomerPortal):
 			ext := strings.TrimPrefix(r.URL.Path, pathCustomerPortal)
@@ -550,15 +553,43 @@ func TestStartTrialEndCheckout_SendsConfiguredProvider(t *testing.T) {
 	}
 }
 
-func TestStartTrialEndCheckout_ConflictKeepsSessionID(t *testing.T) {
-	f := newFakeCloud(map[string]string{})
-	f.modify = &cannedResponse{http.StatusConflict, `{"code":"already_exists","http_status_code":409,"details":{"checkout_session_id":"cs_open"}}`}
-	c := newTestRemoteClient(t, f)
+func TestStartTrialEndCheckout_Conflict(t *testing.T) {
+	tests := []struct {
+		name   string
+		body   string
+		wantID string // "" = the 409 is returned
+	}{
+		{
+			name:   "resumes_open_session",
+			body:   `{"code":"already_exists","http_status_code":409,"details":{"checkout_session_id":"cs_open"}}`,
+			wantID: "cs_open",
+		},
+		{
+			name: "no_session_id_returns_conflict",
+			body: `{"code":"already_exists","message":"Complete or cancel the existing checkout","http_status_code":409}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFakeCloud(map[string]string{})
+			f.modify = &cannedResponse{http.StatusConflict, tt.body}
+			f.checkouts["cs_open"] = cannedResponse{http.StatusOK, `{"id":"cs_open","checkout_status":"pending","payment_action":{"url":"https://checkout.test/open"},"metadata":{"` + metaExternalID + `":"in:t1"}}`}
+			c := newTestRemoteClient(t, f)
 
-	_, err := c.StartTrialEndCheckout(context.Background(), checkoutInput{extID: "in:t1", subscriptionID: "sub_1"})
-	require.Error(t, err)
-	assert.True(t, ierr.IsAlreadyExists(err), "got %v", err)
-	assert.Equal(t, "cs_open", conflictCheckoutID(err))
+			co, err := c.StartTrialEndCheckout(context.Background(), checkoutInput{extID: "in:t1", subscriptionID: "sub_1"})
+			if tt.wantID == "" {
+				require.Error(t, err)
+				assert.True(t, ierr.IsAlreadyExists(err), "got %v", err)
+				assert.Contains(t, cockroach.FlattenHints(err), "Complete or cancel the existing checkout")
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantID, co.id)
+			assert.Equal(t, "https://checkout.test/open", co.url)
+			assert.Equal(t, types.CheckoutStatusPending, co.status)
+		})
+	}
 }
 
 func TestGetCheckout_MapsCloudErrors(t *testing.T) {
@@ -666,6 +697,12 @@ func TestRemoteClient_SummaryInvoices(t *testing.T) {
 			assert.Equal(t, tt.wantTotal, got.invoices[0].total.String())
 			assert.Equal(t, types.InvoiceStatusFinalized, got.invoices[0].status)
 			assert.Equal(t, types.PaymentStatusPending, got.invoices[0].paymentStatus)
+
+			require.NotNil(t, got.usage)
+			assert.Equal(t, "cust_1", got.usage.CustomerID)
+			require.Len(t, got.usage.Features, 1)
+			assert.Equal(t, "12.5", got.usage.Features[0].CurrentUsage.String())
+			assert.True(t, got.usage.Features[0].IsEnabled)
 		})
 	}
 }

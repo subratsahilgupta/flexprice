@@ -26247,10 +26247,6 @@
           "checkout_id": {
             "type": "string"
           },
-          "pay_in_portal": {
-            "type": "boolean",
-            "description": "PayInPortal means the trial already ended unpaid; URL opens the customer portal to pay the open invoice."
-          },
           "status": {
             "$ref": "#/components/schemas/types.CheckoutStatus"
           },
@@ -26338,7 +26334,7 @@
             "format": "date-time"
           },
           "usage": {
-            "type": "object"
+            "$ref": "#/components/schemas/CustomerUsageSummaryResponse"
           }
         }
       },
