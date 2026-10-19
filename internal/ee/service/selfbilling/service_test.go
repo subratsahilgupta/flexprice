@@ -2,12 +2,14 @@ package selfbilling
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
+	domainsb "github.com/flexprice/flexprice/internal/domain/selfbilling"
 	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -302,6 +304,8 @@ func TestNew_DisabledIsNoop(t *testing.T) {
 		err := call()
 		assert.True(t, ierr.IsNotFound(err), "%s: got %v", name, err)
 	}
+
+	assert.NoError(t, svc.RunHourly(ctx), "the hourly run is a no-op while disabled")
 }
 
 func TestStatus_Enabled(t *testing.T) {
@@ -434,6 +438,79 @@ func TestLogRemoteFailure_LogsOnlyFlexpriceCloudErrors(t *testing.T) {
 			_, err := s.PortalSession(tenantCtx("t1"), "t1")
 			require.Error(t, err)
 			assert.Equal(t, tt.wantLogged, logs.Len())
+		})
+	}
+}
+
+// listFailingTenantStore fails List so the status sync errors.
+type listFailingTenantStore struct {
+	*testutil.InMemoryTenantStore
+	err error
+}
+
+func (s *listFailingTenantStore) List(context.Context) ([]*tenant.Tenant, error) {
+	return nil, s.err
+}
+
+func TestRunHourly(t *testing.T) {
+	pushErr := errors.New("flexprice cloud down")
+	syncErr := errors.New("tenants unavailable")
+
+	tests := []struct {
+		name       string
+		pushErr    error
+		syncErr    error
+		wantErrs   []error
+		wantActive bool
+	}{
+		{
+			name:       "push_and_sync_succeed",
+			wantActive: true,
+		},
+		{
+			name:       "push_failure_still_syncs",
+			pushErr:    pushErr,
+			wantErrs:   []error{pushErr},
+			wantActive: true,
+		},
+		{
+			name:     "both_failures_joined",
+			pushErr:  pushErr,
+			syncErr:  syncErr,
+			wantErrs: []error{pushErr, syncErr},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fc := newFakeClient()
+			fc.ingestErr = tt.pushErr
+			s, d := newTestService(fc)
+			seedTenant(t, d, "t1", types.TenantInternalStatusTrialing)
+			fc.subs["us:t1"] = activeSub
+
+			// One closed hour of usage, so the push reaches the client.
+			d.usage.AddEvents(&domainsb.TenantHourEvents{
+				TenantID:      "t1",
+				EnvironmentID: "env_1",
+				Hour:          time.Now().UTC().Truncate(time.Hour).Add(-time.Hour),
+				Count:         1,
+			})
+			if tt.syncErr != nil {
+				s.TenantRepo = &listFailingTenantStore{
+					InMemoryTenantStore: d.tenants,
+					err:                 tt.syncErr,
+				}
+			}
+
+			err := s.RunHourly(context.Background())
+
+			if len(tt.wantErrs) == 0 {
+				require.NoError(t, err)
+			}
+			for _, want := range tt.wantErrs {
+				assert.ErrorIs(t, err, want)
+			}
+			assert.Equal(t, tt.wantActive, tenantStatus(t, d, "t1") == types.TenantInternalStatusActive)
 		})
 	}
 }
