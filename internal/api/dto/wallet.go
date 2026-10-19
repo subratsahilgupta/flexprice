@@ -333,7 +333,7 @@ type TopUpWalletRequest struct {
 	// ex 2025-01-01 00:00:00 UTC
 	ExpiryDateUTC *time.Time `json:"expiry_date_utc,omitempty"`
 	// effective_date is stored as the credit transaction's created_at.
-	// Omit to use the current time. Debits consume credits created before their time reference.
+	// Omit to use the current time. Must not be in the future.
 	EffectiveDate *time.Time `json:"effective_date,omitempty"`
 	// priority is the priority of the transaction
 	// lower number means higher priority
@@ -421,6 +421,11 @@ func (r *TopUpWalletRequest) Validate() error {
 	}
 
 	if r.EffectiveDate != nil {
+		if r.EffectiveDate.After(time.Now().UTC()) {
+			return ierr.NewError("effective_date cannot be in the future").
+				WithHint("Effective date must be now or in the past").
+				Mark(ierr.ErrValidation)
+		}
 		expiry := r.ExpiryDateUTC
 		if expiry == nil {
 			expiry = types.ParseYYYYMMDDToDate(r.ExpiryDate)

@@ -838,42 +838,32 @@ func (s *WalletServiceSuite) TestTopUpWallet_EffectiveDate_DebitConsumesBackdate
 	s.Empty(debit.Metadata["requested_at"])
 }
 
-func (s *WalletServiceSuite) TestTopUpWallet_EffectiveDate_FutureGrantNotConsumable() {
+func (s *WalletServiceSuite) TestTopUpWallet_EffectiveDate_RejectedWhenInTheFuture() {
 	s.freshWallet()
 	effective := time.Now().UTC().Add(24 * time.Hour)
-	resp, err := s.service.TopUpWallet(s.GetContext(), s.testData.wallet.ID, &dto.TopUpWalletRequest{
+	_, err := s.service.TopUpWallet(s.GetContext(), s.testData.wallet.ID, &dto.TopUpWalletRequest{
 		CreditsToAdd:      decimal.NewFromInt(20),
 		TransactionReason: types.TransactionReasonFreeCredit,
 		IdempotencyKey:    lo.ToPtr("effective_date_future"),
 		EffectiveDate:     &effective,
 	})
-	s.NoError(err)
-
-	err = s.service.DebitWallet(s.GetContext(), &wallet.WalletOperation{
-		WalletID:          s.testData.wallet.ID,
-		Type:              types.TransactionTypeDebit,
-		CreditAmount:      decimal.NewFromInt(5),
-		TransactionReason: types.TransactionReasonInvoicePayment,
-		IdempotencyKey:    "effective_date_future_debit",
-	})
 	s.Error(err)
-	s.Contains(err.Error(), "insufficient balance")
-
-	grant, err := s.GetStores().WalletRepo.GetTransactionByID(s.GetContext(), resp.WalletTransaction.ID)
-	s.NoError(err)
-	s.True(decimal.NewFromInt(20).Equal(grant.CreditsAvailable))
+	s.Contains(err.Error(), "effective_date cannot be in the future")
 }
 
 func (s *WalletServiceSuite) TestTopUpWallet_EffectiveDate_RejectedWhenNotBeforeExpiry() {
 	s.freshWallet()
-	expiry := time.Now().UTC().Add(48 * time.Hour)
+	expiryDay := time.Now().UTC().Add(-48 * time.Hour)
+	y, m, d := expiryDay.Date()
+	expiryInt := y*10000 + int(m)*100 + d
+	expiry := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 	for _, effective := range []time.Time{expiry, expiry.Add(time.Hour)} {
 		_, err := s.service.TopUpWallet(s.GetContext(), s.testData.wallet.ID, &dto.TopUpWalletRequest{
 			CreditsToAdd:      decimal.NewFromInt(1),
 			TransactionReason: types.TransactionReasonFreeCredit,
 			IdempotencyKey:    lo.ToPtr(effective.Format(time.RFC3339Nano)),
 			EffectiveDate:     &effective,
-			ExpiryDateUTC:     &expiry,
+			ExpiryDate:        &expiryInt,
 		})
 		s.Error(err)
 		s.Contains(err.Error(), "effective_date must be before the credit expiry")
@@ -882,13 +872,14 @@ func (s *WalletServiceSuite) TestTopUpWallet_EffectiveDate_RejectedWhenNotBefore
 
 func (s *WalletServiceSuite) TestTopUpWallet_EffectiveDate_RejectedWhenNotBeforeBonusExpiry() {
 	s.freshWallet()
-	bonusExpiry := time.Now().UTC().Add(48 * time.Hour)
+	bonusExpiry := time.Now().UTC().Add(-48 * time.Hour)
+	effective := bonusExpiry.Add(time.Hour)
 	_, err := s.service.TopUpWallet(s.GetContext(), s.testData.wallet.ID, &dto.TopUpWalletRequest{
 		CreditsToAdd:              decimal.NewFromInt(10),
 		BonusCreditsToAdd:         lo.ToPtr(decimal.NewFromInt(5)),
 		TransactionReason:         types.TransactionReasonPurchasedCreditDirect,
 		IdempotencyKey:            lo.ToPtr("effective_date_bonus_expiry"),
-		EffectiveDate:             &bonusExpiry,
+		EffectiveDate:             &effective,
 		BonusCreditsExpiryDateUTC: &bonusExpiry,
 	})
 	s.Error(err)
