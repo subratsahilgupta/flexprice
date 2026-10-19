@@ -853,6 +853,7 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 		Priority:          req.Priority,
 		BonusCreditAmount: req.BonusCreditsToAdd,
 		BonusExpiryDate:   req.BonusCreditsExpiryDateUTC,
+		EffectiveDate:     req.EffectiveDate,
 		SourceType:        req.SourceType,
 		SourceID:          req.SourceID,
 	}
@@ -1064,6 +1065,7 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 		if txMetadata == nil {
 			txMetadata = types.Metadata{}
 		}
+		txMetadata = withRecordedAt(txMetadata, req.EffectiveDate)
 
 		tx := &wallet.Transaction{
 			ID:                  types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION),
@@ -1086,7 +1088,7 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 			Currency:            w.Currency,
 			TopupConversionRate: lo.ToPtr(w.TopupConversionRate),
 			ExpiryDate:          lo.Ternary(req.ExpiryDateUTC != nil, req.ExpiryDateUTC, types.ParseYYYYMMDDToDate(req.ExpiryDate)),
-			BaseModel:           types.GetDefaultBaseModel(ctx),
+			BaseModel:           baseModelAt(ctx, req.EffectiveDate),
 		}
 
 		// Compute credits available for the transaction
@@ -1136,7 +1138,7 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 				Currency:            w.Currency,
 				TopupConversionRate: lo.ToPtr(w.TopupConversionRate),
 				ExpiryDate:          req.BonusCreditsExpiryDateUTC,
-				BaseModel:           types.GetDefaultBaseModel(ctx),
+				BaseModel:           baseModelAt(ctx, req.EffectiveDate),
 			}
 
 			bonusTx.CreditsAvailable, err = bonusTx.ComputeCreditsAvailable()
@@ -2519,6 +2521,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 		}
 
 		finalBalance = s.GetCurrencyAmountFromCredits(newCreditBalance, w.ConversionRate)
+		metadata = withRecordedAt(metadata, req.EffectiveDate)
 
 		// Step 5: Create transaction record
 		tx = &wallet.Transaction{
@@ -2544,7 +2547,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			SourceType:           req.SourceType,
 			SourceID:             req.SourceID,
 			ConsumptionBreakdown: consumedCredits,
-			BaseModel:            types.GetDefaultBaseModel(ctx),
+			BaseModel:            baseModelAt(ctx, req.EffectiveDate),
 		}
 
 		// Compute credits available for the transaction
@@ -2591,7 +2594,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 				EnvironmentID:       types.GetEnvironmentID(ctx),
 				TopupConversionRate: lo.ToPtr(w.TopupConversionRate),
 				ExpiryDate:          req.BonusExpiryDate,
-				BaseModel:           types.GetDefaultBaseModel(ctx),
+				BaseModel:           baseModelAt(ctx, req.EffectiveDate),
 			}
 			bonusTx.CreditsAvailable, err = bonusTx.ComputeCreditsAvailable()
 			if err != nil {
@@ -4576,4 +4579,29 @@ func (s *walletService) getWalletRealtimeBalanceFromCache(ctx context.Context, w
 	}
 
 	return balance
+}
+
+// baseModelAt dates the credit grant. created_at is what debit eligibility uses.
+func baseModelAt(ctx context.Context, at *time.Time) types.BaseModel {
+	base := types.GetDefaultBaseModel(ctx)
+	if at != nil {
+		effective := at.UTC()
+		base.CreatedAt = effective
+		base.UpdatedAt = effective
+	}
+	return base
+}
+
+// withRecordedAt records the requested effective date and the real insert time.
+func withRecordedAt(metadata types.Metadata, at *time.Time) types.Metadata {
+	if at == nil {
+		return metadata
+	}
+	stamped := make(types.Metadata, len(metadata)+2)
+	for k, v := range metadata {
+		stamped[k] = v
+	}
+	stamped["requested_effective_date"] = at.UTC().Format(time.RFC3339Nano)
+	stamped["requested_at"] = time.Now().UTC().Format(time.RFC3339Nano)
+	return stamped
 }
