@@ -2,13 +2,18 @@ package selfbilling
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/ee/service"
 	"github.com/flexprice/flexprice/internal/interfaces"
 )
 
-// Service bills this region's tenants through the Flexprice billing tenant in Mumbai.
+// provisionTimeout bounds the detached provisioning of a new tenant on Flexprice Cloud.
+const provisionTimeout = 2 * time.Minute
+
+// Service bills this region's tenants through Flexprice Cloud.
 type Service interface {
 	interfaces.SelfBillingHook
 	Status(ctx context.Context, tenantID string) (*dto.SelfBillingStatusResponse, error)
@@ -16,7 +21,8 @@ type Service interface {
 
 type selfBillingService struct {
 	service.ServiceParams
-	client billingClient // nil when disabled
+	client billingClient    // nil when disabled
+	spawn  func(run func()) // runs detached work; nil means a goroutine
 }
 
 // New builds the self-billing service; every method is a no-op unless billing config enables self-billing.
@@ -28,14 +34,15 @@ func New(params service.ServiceParams) Service {
 	return s
 }
 
-func (s *selfBillingService) enabled() bool { return s.client != nil }
-
-func (s *selfBillingService) region() string { return s.Config.Billing.Region }
+func (s *selfBillingService) enabled() bool {
+	return s.client != nil
+}
 
 func (s *selfBillingService) Status(ctx context.Context, tenantID string) (*dto.SelfBillingStatusResponse, error) {
 	if !s.enabled() {
 		return &dto.SelfBillingStatusResponse{Enabled: false}, nil
 	}
+
 	t, err := s.TenantRepo.GetByID(ctx, tenantID)
 	if err != nil {
 		return nil, err
@@ -43,26 +50,52 @@ func (s *selfBillingService) Status(ctx context.Context, tenantID string) (*dto.
 	return &dto.SelfBillingStatusResponse{Enabled: true, Status: t.InternalStatus}, nil
 }
 
+// OnTenantCreated provisions the tenant in the background so signup never waits on Flexprice Cloud.
 func (s *selfBillingService) OnTenantCreated(ctx context.Context, tenantID, name, email string) {
 	if !s.enabled() || s.Config.Billing.IsBillingTenant(tenantID) {
 		return
 	}
-	if err := s.provision(ctx, tenantID, name, email); err != nil {
-		s.Logger.Error(ctx, "self-billing provisioning failed", "error", err, "tenant_id", tenantID)
-	}
+
+	detached := context.WithoutCancel(ctx)
+	s.detach(func() {
+		ctx, cancel := context.WithTimeout(detached, provisionTimeout)
+		defer cancel()
+
+		defer func() {
+			if r := recover(); r != nil {
+				s.Logger.Error(ctx, "self-billing provisioning panicked", "error", fmt.Errorf("panic: %v", r), "tenant_id", tenantID)
+			}
+		}()
+
+		if err := s.provision(ctx, tenantID, name, email); err != nil {
+			s.Logger.Error(ctx, "self-billing provisioning failed", "error", err, "tenant_id", tenantID)
+		}
+	})
 }
 
-// provision ensures the billing customer and starts its trial when it has no self-serve subscription yet.
+func (s *selfBillingService) detach(run func()) {
+	if s.spawn != nil {
+		s.spawn(run)
+		return
+	}
+	go run()
+}
+
+// provision ensures the Flexprice Cloud customer and starts its trial when it has no self-serve subscription yet.
 func (s *selfBillingService) provision(ctx context.Context, tenantID, name, email string) error {
-	in := customerInput{extID: externalID(s.region(), tenantID), name: name, email: email, tenantID: tenantID}
+	in := customerInput{
+		extID:    externalID(s.Config.Billing.Region, tenantID),
+		name:     name,
+		email:    email,
+		tenantID: tenantID,
+	}
+
+	// Customers made by the removed in-process path are keyed by the bare tenant ID.
 	if s.Config.Billing.TenantID != "" {
-		in.legacyExtID = tenantID // Mumbai customers created by the removed in-process path
+		in.legacyExtID = tenantID
 	}
+
 	if err := s.client.EnsureCustomer(ctx, in); err != nil {
-		return err
-	}
-	sub, err := s.client.LatestSubscription(ctx, in.extID)
-	if err != nil || sub != nil {
 		return err
 	}
 	return s.client.StartTrial(ctx, in.extID)
