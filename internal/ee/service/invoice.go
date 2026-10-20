@@ -1905,7 +1905,8 @@ func (s *invoiceService) SyncInvoiceToStripeIfEnabled(ctx context.Context, invoi
 	}
 
 	// Stripe finalizes with auto-advance, so syncing a paid invoice would make Stripe collect it again.
-	if inv.IsPaid() {
+	if inv.PaymentStatus == types.PaymentStatusSucceeded ||
+		inv.PaymentStatus == types.PaymentStatusOverpaid {
 		s.Logger.Info(ctx, "invoice already paid, skipping Stripe sync",
 			"invoice_id", inv.ID,
 			"payment_status", inv.PaymentStatus)

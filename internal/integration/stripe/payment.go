@@ -1641,7 +1641,8 @@ func (s *PaymentService) IsFlexPriceInvoicePaid(ctx context.Context, invoiceID s
 	if err != nil {
 		return false, err
 	}
-	return inv.IsPaid(), nil
+	return inv.PaymentStatus == types.PaymentStatusSucceeded ||
+		inv.PaymentStatus == types.PaymentStatusOverpaid, nil
 }
 
 // ProcessExternalStripePayment processes a payment that was made directly in Stripe (external to FlexPrice)
