@@ -273,7 +273,12 @@ func (e *stripeTaxEngine) TaxIdentifiers(ctx context.Context, customerID string)
 		cacheClient.ForceCacheSet(ctx, cacheKey, biller, cache.ExpiryBillerTaxIDs)
 	}
 
-	stripeCustomerID, err := e.stripeCustomerID(ctx, customerID)
+	// Rendering only reads, so a customer never synced to Stripe is not created here.
+	stripeIntegration, err := e.IntegrationFactory.GetStripeIntegration(ctx)
+	if err != nil {
+		return biller, nil, err
+	}
+	stripeCustomerID, err := stripeIntegration.CustomerSvc.GetStripeCustomerID(ctx, customerID, NewCustomerService(e.ServiceParams))
 	if err != nil {
 		return biller, nil, err
 	}
@@ -450,25 +455,17 @@ func stripeExemptionReason(breakdown []*stripe.TaxCalculationLineItemTaxBreakdow
 	return first
 }
 
+// stripeCustomerID creates the Stripe customer on demand, since the customer.created sync is asynchronous
+// and may not have run yet (or is turned off) when a new subscription's first invoice is taxed.
 func (e *stripeTaxEngine) stripeCustomerID(ctx context.Context, customerID string) (string, error) {
-	filter := types.NewNoLimitEntityIntegrationMappingFilter()
-	filter.EntityID = customerID
-	filter.EntityType = types.IntegrationEntityTypeCustomer
-	filter.ProviderTypes = []string{string(types.SecretProviderStripe)}
-
-	mappings, err := e.EntityIntegrationMappingRepo.List(ctx, filter)
+	stripeIntegration, err := e.IntegrationFactory.GetStripeIntegration(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	for _, mapping := range mappings {
-		if mapping.ProviderEntityID != "" {
-			return mapping.ProviderEntityID, nil
-		}
+	customers := NewCustomerService(e.ServiceParams)
+	if _, err := stripeIntegration.CustomerSvc.EnsureCustomerSyncedToStripe(ctx, customerID, customers); err != nil {
+		return "", err
 	}
-
-	return "", ierr.NewError("customer is not synced to stripe").
-		WithHint("The customer must exist in Stripe before tax can be calculated for them").
-		WithReportableDetails(map[string]any{"customer_id": customerID}).
-		Mark(ierr.ErrNotFound)
+	return stripeIntegration.CustomerSvc.GetStripeCustomerID(ctx, customerID, customers)
 }
