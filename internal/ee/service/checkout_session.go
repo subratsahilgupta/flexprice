@@ -889,13 +889,19 @@ func (s *checkoutSessionService) fulfillCheckoutSession(
 	}
 	session.CheckoutInvoiceID = &inv.ID
 	session.CheckoutPaymentID = &payResp.ID
+	if err := s.CheckoutSessionRepo.Update(ctx, session); err != nil {
+		return err
+	}
 
 	providerResult, err := s.callCheckoutProvider(ctx, session, payResp)
 	if err != nil {
+		if s.completedDuringProviderCall(ctx, session) {
+			return nil
+		}
 		return err
 	}
 	s.recordGatewayHandles(ctx, payResp.ID, providerResult)
 	session.ProviderResult = (*domainCheckout.JSONBCheckoutProviderResult)(providerResult)
 	session.CheckoutStatus = types.CheckoutStatusPending
-	return s.CheckoutSessionRepo.Update(ctx, session)
+	return s.savePendingSession(ctx, session)
 }
