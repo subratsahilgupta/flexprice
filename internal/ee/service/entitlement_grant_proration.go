@@ -28,6 +28,7 @@ const (
 	grantProrationSourceAddonAttach        grantProrationSource = "addon_attach"
 	grantProrationSourceAddonDetach        grantProrationSource = "addon_detach"
 	grantProrationSourceAddonsModify       grantProrationSource = "addons_modify"
+	grantProrationSourcePlanChange         grantProrationSource = "plan_change"
 	// Not an addon change: an entitlement was deleted outright.
 	grantProrationSourceEntitlementGone grantProrationSource = "entitlement_deleted"
 )
@@ -210,7 +211,7 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 
 	// A feature with both directions names its pooled row twice.
 	closedByID, err := grantSvc.CloseEntitlementGrants(ctx, lo.UniqBy(lo.Compact(toClose),
-		func(g *entitlementgrant.EntitlementGrant) string { return g.ID }), at)
+		func(g *entitlementgrant.EntitlementGrant) string { return g.ID }), at, false)
 	if err != nil {
 		return err
 	}
@@ -240,11 +241,22 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 		// and the predecessor's unspent balance carries. Whether a config still funds the
 		// feature is irrelevant: quota already granted belongs to the customer for the rest of
 		// the cycle, so it carries even when the config that bought it is the one leaving.
+		quota := grantToAdd.Quota
 		predecessorGrant := lo.FirstOrEmpty(liveByFeature[featureID])
 		if closed := closedByID[predecessorGrant.GetID()]; closed != nil {
+			carried, _ := closed.Remaining()
+			quota = quota.Add(carried)
 			req.Closed = closed
 			req.New = entitlementgrant.NewEntitlementGrantBuilder(grantToAdd).
+				WithQuota(quota).
 				WithWindow(closed.ValidTo, grantToAdd.ValidTo).
+				Build()
+		} else {
+			for _, ec := range surviving {
+				quota = quota.Add(lo.FromPtr(ec.GrantQuota))
+			}
+			req.New = entitlementgrant.NewEntitlementGrantBuilder(grantToAdd).
+				WithQuota(quota).
 				Build()
 		}
 
@@ -257,12 +269,13 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 			continue
 		}
 
-		// Zero delta: the successor's quota is whatever the closed window had left.
+		// The successor carries whatever quota the closed window had left.
+		quota, _ := closed.Remaining()
 		reqs = append(reqs, OpenFeatureBasedEntitlementGrantsRequest{
 			FeatureID: featureID,
 			Closed:    closed,
 			New: entitlementgrant.NewEntitlementGrantBuilder(pooled).
-				WithQuota(decimal.Zero).
+				WithQuota(quota).
 				WithWindow(closed.ValidTo, pooled.ValidTo).
 				WithMetadata(types.Metadata{
 					"proration_source":   cfg.origin().String(),
