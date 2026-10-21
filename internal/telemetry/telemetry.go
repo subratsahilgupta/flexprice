@@ -8,7 +8,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/buildinfo"
@@ -23,8 +23,7 @@ type Reporter struct {
 	log        *logger.Logger
 	http       *http.Client
 	instanceID string
-	cloud      string
-	cloudOnce  sync.Once
+	cloud      atomic.Value // string
 }
 
 func NewReporter(cfg *config.Configuration, log *logger.Logger) *Reporter {
@@ -34,9 +33,9 @@ func NewReporter(cfg *config.Configuration, log *logger.Logger) *Reporter {
 		log:        log,
 		http:       &http.Client{Timeout: 5 * time.Second},
 		instanceID: hostname,
-		cloud:      "unknown",
 	}
-	go r.cloudOnce.Do(func() { r.cloud = probeCloud() })
+	r.cloud.Store("unknown")
+	go r.cloud.Store(probeCloud())
 	return r
 }
 
@@ -85,7 +84,7 @@ func (r *Reporter) init(ctx context.Context) {
 		"arch":          runtime.GOARCH,
 		"role":          string(r.cfg.Deployment.Mode),
 		"platform":      detectPlatform(),
-		"cloud":         r.cloud,
+		"cloud":         r.cloud.Load(),
 		"num_cpu":       runtime.NumCPU(),
 	}
 	if l := r.cfg.Telemetry.InstallLabel; l != "" {
@@ -93,7 +92,7 @@ func (r *Reporter) init(ctx context.Context) {
 	}
 	p["$set"] = map[string]any{
 		"version": buildinfo.Version, "git_sha": buildinfo.GitSHA, "build_variant": buildinfo.BuildVariant,
-		"region": r.cfg.Logging.Region, "os": runtime.GOOS, "arch": runtime.GOARCH, "cloud": r.cloud,
+		"region": r.cfg.Logging.Region, "os": runtime.GOOS, "arch": runtime.GOARCH, "cloud": r.cloud.Load(),
 	}
 	r.send(ctx, "flexprice_install_init", p)
 }
@@ -178,11 +177,29 @@ func probeCloud() string {
 		name    string
 		url     string
 		headers map[string]string
+		match   func(*http.Response) bool
 	}
 	candidates := []candidate{
-		{"aws", "http://169.254.169.254/latest/meta-data/", nil},
-		{"gcp", "http://169.254.169.254/computeMetadata/v1/", map[string]string{"Metadata-Flavor": "Google"}},
-		{"azure", "http://169.254.169.254/metadata/instance", map[string]string{"Metadata": "true"}},
+		{
+			name: "aws", url: "http://169.254.169.254/latest/meta-data/",
+			match: func(r *http.Response) bool {
+				return r.StatusCode == http.StatusOK || (r.StatusCode == http.StatusUnauthorized && strings.HasPrefix(r.Header.Get("Server"), "EC2ws"))
+			},
+		},
+		{
+			name: "gcp", url: "http://169.254.169.254/computeMetadata/v1/",
+			headers: map[string]string{"Metadata-Flavor": "Google"},
+			match: func(r *http.Response) bool {
+				return r.StatusCode == http.StatusOK && r.Header.Get("Metadata-Flavor") == "Google"
+			},
+		},
+		{
+			name: "azure", url: "http://169.254.169.254/metadata/instance?api-version=2021-02-01",
+			headers: map[string]string{"Metadata": "true"},
+			match: func(r *http.Response) bool {
+				return r.StatusCode == http.StatusOK
+			},
+		},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -205,8 +222,8 @@ func probeCloud() string {
 			if err != nil {
 				return
 			}
-			resp.Body.Close()
-			if resp.StatusCode < 500 {
+			defer resp.Body.Close()
+			if c.match(resp) {
 				winner <- c.name
 			}
 		}()
