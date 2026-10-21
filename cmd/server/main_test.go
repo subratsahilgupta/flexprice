@@ -6,13 +6,16 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/ee/service"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/temporal/client"
 	"github.com/flexprice/flexprice/internal/temporal/models"
 	temporalservice "github.com/flexprice/flexprice/internal/temporal/service"
+	"github.com/stretchr/testify/assert"
 	"go.temporal.io/api/serviceerror"
 	sdkclient "go.temporal.io/sdk/client"
+	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
 
@@ -71,5 +74,42 @@ func TestProvideAdminHandlersBuildsEveryHandler(t *testing.T) {
 		if handlers.Field(i).IsNil() {
 			t.Errorf("provideAdminHandlers leaves %s nil", handlers.Type().Field(i).Name)
 		}
+	}
+}
+
+// TestServiceParamsProviders boots the providers on the base params alone, as main's graph supplies them.
+func TestServiceParamsProviders(t *testing.T) {
+	tests := []struct {
+		name    string
+		billing config.BillingConfig
+	}{
+		{"billing_not_configured", config.BillingConfig{}},
+		{"billing_configured", config.BillingConfig{
+			Enabled:      true,
+			Region:       "us",
+			APIHost:      "https://billing.example.com/v1",
+			APIKey:       "sk_test",
+			PlanID:       "plan_free",
+			DashboardURL: "https://app.example.com",
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base := service.ServiceParams{
+				Config: &config.Configuration{Billing: tt.billing},
+				Logger: logger.NewNoopLogger(),
+			}
+
+			var params service.ServiceParams
+			app := fxtest.New(t,
+				fx.Supply(fx.Annotated{Name: "base", Target: base}),
+				serviceParamsProviders(),
+				fx.Populate(&params),
+			)
+			app.RequireStart().RequireStop()
+
+			assert.NotNil(t, params.RevenueFacts)
+			assert.NotNil(t, params.SelfBilling, "self-billing is always wired; it is a no-op unless configured")
+		})
 	}
 }

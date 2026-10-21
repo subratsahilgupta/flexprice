@@ -43,6 +43,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/revenuefact"
 	"github.com/flexprice/flexprice/internal/domain/scheduledtask"
 	"github.com/flexprice/flexprice/internal/domain/secret"
+	domainsb "github.com/flexprice/flexprice/internal/domain/selfbilling"
 	"github.com/flexprice/flexprice/internal/domain/settings"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	domainsystemevent "github.com/flexprice/flexprice/internal/domain/systemevent"
@@ -327,6 +328,14 @@ func NewReportsRepository(cfg *config.Configuration, log *logger.Logger) (domain
 
 func NewRevenueFactRepository(p RepositoryParams) revenuefact.Repository {
 	return entRepo.NewRevenueFactRepository(p.EntClient, p.Logger)
+}
+
+func NewSelfBillingClickHouseRepository(p RepositoryParams) domainsb.ClickHouseRepository {
+	return clickhouseRepo.NewSelfBillingRepository(p.ClickHouseDB, p.Logger)
+}
+
+func NewSelfBillingPostgresRepository(p RepositoryParams) domainsb.PostgresRepository {
+	return entRepo.NewSelfBillingRepository(p.EntClient, p.Logger)
 }
 
 func NewEventDeletionRequestRepository(p RepositoryParams) events.DeletionRequestRepository {
