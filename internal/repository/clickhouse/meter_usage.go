@@ -37,6 +37,9 @@ func NewMeterUsageRepository(store *clickhouse.ClickHouseStore, logger *logger.L
 // insertTimeout caps each batch insert; without it the driver uses the caller's much longer deadline.
 const insertTimeout = 30 * time.Second
 
+// groupKeySeparator joins a row's group-by values into one map key; NUL never occurs in a value.
+const groupKeySeparator = "\x00"
+
 // BulkInsertMeterUsage inserts meter usage records in batches of 100
 func (r *MeterUsageRepository) BulkInsertMeterUsage(ctx context.Context, records []*events.MeterUsage) error {
 	span := StartRepositorySpan(ctx, "meter_usage", "bulk_insert", map[string]interface{}{
@@ -766,6 +769,7 @@ func (r *MeterUsageRepository) GetDetailedAnalytics(ctx context.Context, params 
 	defer rows.Close()
 
 	var results []*events.MeterUsageDetailedResult
+	byGroup := make(map[string]*events.MeterUsageDetailedResult)
 
 	for rows.Next() {
 		result := &events.MeterUsageDetailedResult{
@@ -826,15 +830,7 @@ func (r *MeterUsageRepository) GetDetailedAnalytics(ctx context.Context, params 
 			}
 		}
 
-		if params.WindowSize != "" {
-			points, err := r.getDetailedAnalyticsPoints(ctx, params, result, groupByResult)
-			if err != nil {
-				SetSpanError(span, err)
-				return nil, err
-			}
-			result.Points = points
-		}
-
+		byGroup[strings.Join(groupByTargets, groupKeySeparator)] = result
 		results = append(results, result)
 	}
 
@@ -845,42 +841,58 @@ func (r *MeterUsageRepository) GetDetailedAnalytics(ctx context.Context, params 
 			Mark(ierr.ErrDatabase)
 	}
 
+	if params.WindowSize != "" {
+		if err := r.getDetailedAnalyticsPoints(ctx, params, groupByResult, byGroup); err != nil {
+			SetSpanError(span, err)
+			return nil, err
+		}
+	}
+
 	SetSpanSuccess(span)
 	return results, nil
 }
 
-// getDetailedAnalyticsPoints fetches time-series breakdown for a single group result.
+// getDetailedAnalyticsPoints fetches the time-series points of every group in one query
+// and appends each point to its group in byGroup.
 func (r *MeterUsageRepository) getDetailedAnalyticsPoints(
 	ctx context.Context,
 	params *events.MeterUsageDetailedAnalyticsParams,
-	result *events.MeterUsageDetailedResult,
 	groupByResult *DetailedGroupByResult,
-) ([]events.MeterUsageDetailedPoint, error) {
-	query, args := r.qb.BuildDetailedPointsQuery(params, result, groupByResult)
+	byGroup map[string]*events.MeterUsageDetailedResult,
+) error {
+	query, args := r.qb.BuildDetailedPointsQuery(params, groupByResult)
 	if query == "" {
-		return nil, nil
+		return nil
 	}
 
 	rows, err := r.store.GetConn().Query(ctx, query, args...)
 	if err != nil {
-		return nil, ierr.WithError(err).
+		return ierr.WithError(err).
 			WithHint("Failed to query detailed meter usage analytics points").
 			Mark(ierr.ErrDatabase)
 	}
 	defer rows.Close()
 
-	var points []events.MeterUsageDetailedPoint
+	var p events.MeterUsageDetailedPoint
+	groupValues := make([]string, len(groupByResult.Columns))
+	scanArgs := make([]interface{}, 0, len(groupValues)+6)
+	for i := range groupValues {
+		scanArgs = append(scanArgs, &groupValues[i])
+	}
+	scanArgs = append(scanArgs, &p.WindowStart, &p.TotalUsage, &p.MaxUsage, &p.LatestUsage, &p.CountUniqueUsage, &p.EventCount)
+
 	for rows.Next() {
-		var p events.MeterUsageDetailedPoint
-		if err := rows.Scan(&p.WindowStart, &p.TotalUsage, &p.MaxUsage, &p.LatestUsage, &p.CountUniqueUsage, &p.EventCount); err != nil {
-			return nil, ierr.WithError(err).
+		if err := rows.Scan(scanArgs...); err != nil {
+			return ierr.WithError(err).
 				WithHint("Failed to scan detailed meter usage analytics point").
 				Mark(ierr.ErrDatabase)
 		}
-		points = append(points, p)
+		if result, ok := byGroup[strings.Join(groupValues, groupKeySeparator)]; ok {
+			result.Points = append(result.Points, p)
+		}
 	}
 
-	return points, nil
+	return rows.Err()
 }
 
 // joinSelect joins select columns with comma+newline for readability
