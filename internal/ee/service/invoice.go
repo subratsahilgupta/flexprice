@@ -890,7 +890,10 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 
 	// Period-end computation also runs for zero-value invoices and after rollover has advanced the subscription.
 	if computed {
-		s.saveCompletedCycleUsageCheckpoints(ctx, inv)
+		if err := s.saveCompletedCycleUsageCheckpoints(ctx, inv); err != nil {
+			s.Logger.Error(ctx, "saving usage checkpoints failed; reads use the preceding checkpoint",
+				"subscription_id", *inv.SubscriptionID, "invoice_id", inv.ID, "error", err)
+		}
 	}
 
 	// Notify draft-stage listeners (currently just Tabs sync) that the invoice changed. Skip when
@@ -913,6 +916,26 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 	}
 
 	return inv, skipped, nil
+}
+
+func (s *invoiceService) saveCompletedCycleUsageCheckpoints(ctx context.Context, inv *invoice.Invoice) error {
+	if s.MeterUsageCheckpointRepo == nil || inv == nil || inv.InvoiceType != types.InvoiceTypeSubscription ||
+		inv.SubscriptionID == nil || inv.PeriodStart == nil || inv.PeriodEnd == nil ||
+		inv.PeriodEnd.After(time.Now().UTC()) || types.InvoiceBillingReason(inv.BillingReason) != types.InvoiceBillingReasonSubscriptionCycle {
+		return nil
+	}
+	sub, err := s.SubRepo.Get(ctx, *inv.SubscriptionID)
+	if err != nil {
+		return err
+	}
+	subscriptionForInvoicePeriod := *sub
+	subscriptionForInvoicePeriod.CurrentPeriodStart = *inv.PeriodStart
+	items, err := s.SubscriptionLineItemRepo.ListBySubscription(ctx, &subscriptionForInvoicePeriod)
+	if err != nil {
+		return err
+	}
+	subscriptionForInvoicePeriod.LineItems = items
+	return NewMeterUsageService(s.ServiceParams).SaveUsageCheckpointsForSubscription(ctx, &subscriptionForInvoicePeriod, *inv.PeriodEnd, lo.ToPtr(inv.ID))
 }
 
 // getInvoiceWithLineItems fetches an invoice and populates its LineItems from the dedicated repo.
