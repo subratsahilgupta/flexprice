@@ -410,6 +410,8 @@ billing:
   dashboard_url: ""
   payment_provider: "stripe"
   usage_lookback_hours: 6
+  # Zapier catch hook for self-billing Slack alerts (FLEXPRICE_BILLING_ZAPIER_WEBHOOK_URL)
+  zapier_webhook_url: ""
 
 s3:
   enabled: false

@@ -86,10 +86,10 @@ func (c *remoteClient) EnsureCustomer(ctx context.Context, in customerInput) err
 }
 
 // StartTrial re-checks the subscription right before creating it, since CreateSubscription takes no idempotency key.
-func (c *remoteClient) StartTrial(ctx context.Context, extID string) error {
+func (c *remoteClient) StartTrial(ctx context.Context, extID string) (bool, error) {
 	sub, err := c.LatestSubscription(ctx, extID)
 	if err != nil || sub != nil {
-		return err
+		return false, err
 	}
 
 	_, err = c.sdk.Subscriptions.CreateSubscription(ctx, sdktypes.CreateSubscriptionRequest{
@@ -98,7 +98,10 @@ func (c *remoteClient) StartTrial(ctx context.Context, extID string) error {
 		Currency:           trialCurrency,
 		BillingPeriod:      trialBillingPeriod,
 	})
-	return cloudErr(err)
+	if err != nil {
+		return false, cloudErr(err)
+	}
+	return true, nil
 }
 
 func (c *remoteClient) LatestSubscription(ctx context.Context, extID string) (*remoteSubscription, error) {

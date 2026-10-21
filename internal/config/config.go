@@ -903,6 +903,9 @@ type BillingConfig struct {
 
 	// UsageLookbackHours is how many closed hours each usage push re-sends, so a missed run is recovered.
 	UsageLookbackHours int `mapstructure:"usage_lookback_hours" default:"6"`
+
+	// ZapierWebhookURL receives self-billing lifecycle alerts for Slack; empty disables them.
+	ZapierWebhookURL string `mapstructure:"zapier_webhook_url"`
 }
 
 const defaultUsageLookback = 6 * time.Hour

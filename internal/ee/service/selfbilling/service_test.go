@@ -2,8 +2,12 @@ package selfbilling
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -68,16 +72,16 @@ func (f *fakeClient) EnsureCustomer(_ context.Context, in customerInput) error {
 	return f.err
 }
 
-func (f *fakeClient) StartTrial(_ context.Context, extID string) error {
+func (f *fakeClient) StartTrial(_ context.Context, extID string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	if f.subs[extID] != nil {
-		return f.err
+		return false, f.err
 	}
 	f.trialsStarted++
 	f.subs[extID] = &remoteSubscription{id: "sub_" + extID, status: types.SubscriptionStatusTrialing}
-	return f.err
+	return f.err == nil, f.err
 }
 
 func (f *fakeClient) LatestSubscription(_ context.Context, extID string) (*remoteSubscription, error) {
@@ -253,6 +257,48 @@ func newTestService(client billingClient) (*selfBillingService, *testDeps) {
 	return s, d
 }
 
+// alertSink is a Zapier catch hook that records every alert posted to it.
+type alertSink struct {
+	mu     sync.Mutex
+	alerts []alert
+}
+
+// newAlertSink points the service's Zapier webhook at a recording test server.
+func newAlertSink(t *testing.T, s *selfBillingService) *alertSink {
+	t.Helper()
+	sink := &alertSink{}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var a alert
+		if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		sink.mu.Lock()
+		sink.alerts = append(sink.alerts, a)
+		sink.mu.Unlock()
+	}))
+	t.Cleanup(srv.Close)
+
+	s.Config.Billing.ZapierWebhookURL = srv.URL
+	return sink
+}
+
+func (k *alertSink) received() []alert {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return append([]alert(nil), k.alerts...)
+}
+
+// waitFor waits until want alerts arrived and no more follow.
+func (k *alertSink) waitFor(t *testing.T, want int) []alert {
+	t.Helper()
+	require.Eventually(t, func() bool { return len(k.received()) >= want }, 2*time.Second, 5*time.Millisecond)
+	assert.Never(t, func() bool { return len(k.received()) > want }, 50*time.Millisecond, 10*time.Millisecond)
+	return k.received()
+}
+
 func seedTenant(t *testing.T, d *testDeps, id string, status types.TenantInternalStatus) {
 	t.Helper()
 	require.NoError(t, d.tenants.Create(context.Background(), &tenant.Tenant{
@@ -327,12 +373,14 @@ func TestProvision(t *testing.T) {
 		wantCustomer  bool
 		wantTrial     bool
 		wantLegacyID  string
+		wantAlert     bool
 	}{
 		{
 			name:         "new_tenant_gets_customer_and_trial",
 			tenantID:     "t1",
 			wantCustomer: true,
 			wantTrial:    true,
+			wantAlert:    true,
 		},
 		{
 			name:         "existing_subscription_no_second_trial",
@@ -347,12 +395,14 @@ func TestProvision(t *testing.T) {
 			wantCustomer:  true,
 			wantTrial:     true,
 			wantLegacyID:  "t1",
+			wantAlert:     true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fc := newFakeClient()
 			s, _ := newTestService(fc)
+			sink := newAlertSink(t, s)
 			s.Config.Billing.TenantID = tt.billingTenant
 			if tt.existingSub {
 				fc.subs["us:"+tt.tenantID] = &remoteSubscription{id: "old", status: types.SubscriptionStatusActive}
@@ -363,8 +413,48 @@ func TestProvision(t *testing.T) {
 			assert.Equal(t, tt.wantCustomer, fc.customers["us:"+tt.tenantID])
 			assert.Equal(t, tt.wantTrial, fc.trials() == 1)
 			assert.Equal(t, tt.wantLegacyID, fc.legacyExtIDs["us:"+tt.tenantID])
+
+			if !tt.wantAlert {
+				assert.Empty(t, sink.waitFor(t, 0))
+				return
+			}
+
+			got := sink.waitFor(t, 1)
+			assert.Equal(t, alertTrialStarted, got[0].Event)
+			assert.Equal(t, tt.tenantID, got[0].TenantID)
+			assert.Equal(t, "Acme", got[0].TenantName)
+			assert.Equal(t, "us", got[0].Region)
+			assert.Empty(t, got[0].FromStatus)
+			assert.False(t, got[0].OccurredAt.IsZero())
 		})
 	}
+}
+
+func TestNotify_EmptyURLSendsNothing(t *testing.T) {
+	fc := newFakeClient()
+	s, _ := newTestService(fc)
+	sink := newAlertSink(t, s)
+	s.Config.Billing.ZapierWebhookURL = ""
+
+	require.NoError(t, s.provision(context.Background(), "t1", "Acme", "a@acme.io"))
+
+	assert.Equal(t, 1, fc.trials())
+	assert.Empty(t, sink.waitFor(t, 0))
+}
+
+func TestNotify_RejectedAlertNeverFailsCaller(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	s, _ := newTestService(newFakeClient())
+	s.Config.Billing.ZapierWebhookURL = srv.URL
+
+	require.NoError(t, s.provision(context.Background(), "t1", "Acme", "a@acme.io"))
+	require.Eventually(t, func() bool { return hits.Load() == 1 }, 2*time.Second, 5*time.Millisecond)
 }
 
 func TestOnTenantCreated_BillingTenantSkipped(t *testing.T) {

@@ -2,18 +2,46 @@ package selfbilling
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/httpclient"
 	"github.com/flexprice/flexprice/internal/interfaces"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
-// provisionTimeout bounds the detached provisioning of a new tenant on Flexprice Cloud.
-const provisionTimeout = 2 * time.Minute
+const (
+	// provisionTimeout bounds the detached provisioning of a new tenant on Flexprice Cloud.
+	provisionTimeout = 2 * time.Minute
+
+	// alertTimeout bounds the detached delivery of one Zapier alert.
+	alertTimeout = 30 * time.Second
+)
+
+type alertEvent string
+
+const (
+	alertTrialStarted    alertEvent = "trial_started"
+	alertTenantActivated alertEvent = "tenant_activated"
+	alertTenantSuspended alertEvent = "tenant_suspended"
+)
+
+// alert is the JSON body posted to the Zapier catch hook.
+type alert struct {
+	Event      alertEvent                 `json:"event"`
+	TenantID   string                     `json:"tenant_id"`
+	TenantName string                     `json:"tenant_name"`
+	Region     string                     `json:"region"`
+	FromStatus types.TenantInternalStatus `json:"from_status,omitempty"`
+	ToStatus   types.TenantInternalStatus `json:"to_status,omitempty"`
+	OccurredAt time.Time                  `json:"occurred_at"`
+}
 
 var errDisabled = ierr.NewError("self-billing is not enabled").
 	WithHint("Self-billing is not enabled for this deployment").
@@ -125,7 +153,62 @@ func (s *selfBillingService) provision(ctx context.Context, tenantID, name, emai
 	if err := s.client.EnsureCustomer(ctx, in); err != nil {
 		return err
 	}
-	return s.client.StartTrial(ctx, in.extID)
+
+	created, err := s.client.StartTrial(ctx, in.extID)
+	if err != nil {
+		return err
+	}
+
+	if created {
+		s.notify(ctx, alert{
+			Event:      alertTrialStarted,
+			TenantID:   tenantID,
+			TenantName: name,
+		})
+	}
+	return nil
+}
+
+// notify posts the alert to the Zapier webhook in the background; delivery failures are only logged.
+func (s *selfBillingService) notify(ctx context.Context, a alert) {
+	url := s.Config.Billing.ZapierWebhookURL
+	if url == "" {
+		return
+	}
+
+	a.Region = s.Config.Billing.Region
+	a.OccurredAt = time.Now().UTC()
+
+	detached := context.WithoutCancel(ctx)
+	go func() {
+		ctx, cancel := context.WithTimeout(detached, alertTimeout)
+		defer cancel()
+
+		defer func() {
+			if r := recover(); r != nil {
+				s.Logger.Error(ctx, "self-billing alert panicked", "error", fmt.Errorf("panic: %v", r), "event", a.Event, "tenant_id", a.TenantID)
+			}
+		}()
+
+		body, err := json.Marshal(a)
+		if err != nil {
+			s.Logger.Error(ctx, "failed to marshal self-billing alert", "error", err, "event", a.Event, "tenant_id", a.TenantID)
+			return
+		}
+
+		_, err = httpclient.NewDefaultClient().Send(ctx, &httpclient.Request{
+			Method: http.MethodPost,
+			URL:    url,
+			Body:   body,
+		})
+		if httpErr, ok := httpclient.IsHTTPError(err); ok {
+			s.Logger.Info(ctx, "self-billing alert rejected by Zapier", "status_code", httpErr.StatusCode, "event", a.Event, "tenant_id", a.TenantID)
+			return
+		}
+		if err != nil {
+			s.Logger.Error(ctx, "failed to send self-billing alert", "error", err, "event", a.Event, "tenant_id", a.TenantID)
+		}
+	}()
 }
 
 // RunHourly syncs statuses even when the usage push fails, and returns both errors joined.
