@@ -32,37 +32,27 @@ type ReportCatalogEntry struct {
 
 var reportCatalog = []ReportCatalogEntry{
 	{
-		Key:          types.MetricInvoiceTotal,
-		Name:         "Total billing",
-		Description:  "Finalized invoice totals by billing period",
-		Category:     types.ReportCategoryBilling,
-		Kind:         types.ReportKindFlow,
-		ValueType:    types.ReportValueTypeMoney,
-		Improvement:  types.ImprovementHigher,
-		Shapes:       []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
-		DefaultShape: types.ShapeTimeseries,
-		Dimensions: []ReportDimension{
-			{Key: "customer_id", Label: "Customer"},
-			{Key: "invoice_type", Label: "Invoice type"},
-		},
+		Key:             types.MetricInvoiceTotal,
+		Name:            "Total billing",
+		Description:     "Finalized invoice totals by billing period",
+		Category:        types.ReportCategoryBilling,
+		Kind:            types.ReportKindFlow,
+		ValueType:       types.ReportValueTypeMoney,
+		Improvement:     types.ImprovementHigher,
+		DefaultShape:    types.ShapeTimeseries,
 		Grains:          []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
 		SupportsCompare: true,
 		VariantLabel:    "Billing period",
 	},
 	{
-		Key:          types.MetricInvoiceTotalIssued,
-		Name:         "Total billing (invoice date)",
-		Description:  "Finalized invoice totals by invoice date",
-		Category:     types.ReportCategoryBilling,
-		Kind:         types.ReportKindFlow,
-		ValueType:    types.ReportValueTypeMoney,
-		Improvement:  types.ImprovementHigher,
-		Shapes:       []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
-		DefaultShape: types.ShapeTimeseries,
-		Dimensions: []ReportDimension{
-			{Key: "customer_id", Label: "Customer"},
-			{Key: "invoice_type", Label: "Invoice type"},
-		},
+		Key:             types.MetricInvoiceTotalIssued,
+		Name:            "Total billing (invoice date)",
+		Description:     "Finalized invoice totals by invoice date",
+		Category:        types.ReportCategoryBilling,
+		Kind:            types.ReportKindFlow,
+		ValueType:       types.ReportValueTypeMoney,
+		Improvement:     types.ImprovementHigher,
+		DefaultShape:    types.ShapeTimeseries,
 		Grains:          []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
 		SupportsCompare: true,
 		VariantOf:       types.MetricInvoiceTotal,
@@ -75,7 +65,6 @@ var reportCatalog = []ReportCatalogEntry{
 		Category:     types.ReportCategoryReceivables,
 		Kind:         types.ReportKindSnapshot,
 		ValueType:    types.ReportValueTypeMoney,
-		Shapes:       []types.Shape{types.ShapeScalar},
 		DefaultShape: types.ShapeScalar,
 	},
 	{
@@ -85,25 +74,16 @@ var reportCatalog = []ReportCatalogEntry{
 		Category:     types.ReportCategoryReceivables,
 		Kind:         types.ReportKindSnapshot,
 		ValueType:    types.ReportValueTypeMoney,
-		Shapes:       []types.Shape{types.ShapeBreakdown},
 		DefaultShape: types.ShapeBreakdown,
-		Dimensions: []ReportDimension{
-			{Key: "aging_bucket", Label: "Aging bucket"},
-			{Key: "customer_id", Label: "Customer"},
-		},
 	},
 	{
-		Key:          types.MetricDaysToPay,
-		Name:         "Days to pay",
-		Description:  "Average days from issue to payment for paid invoices",
-		Category:     types.ReportCategoryReceivables,
-		Kind:         types.ReportKindRatio,
-		ValueType:    types.ReportValueTypeDays,
-		Shapes:       []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
-		DefaultShape: types.ShapeTimeseries,
-		Dimensions: []ReportDimension{
-			{Key: "customer_id", Label: "Customer"},
-		},
+		Key:             types.MetricDaysToPay,
+		Name:            "Days to pay",
+		Description:     "Average days from issue to payment for paid invoices",
+		Category:        types.ReportCategoryReceivables,
+		Kind:            types.ReportKindRatio,
+		ValueType:       types.ReportValueTypeDays,
+		DefaultShape:    types.ShapeTimeseries,
 		Grains:          []types.Grain{types.GrainWeek, types.GrainMonth},
 		SupportsCompare: true,
 	},
@@ -115,7 +95,6 @@ var reportCatalog = []ReportCatalogEntry{
 		Kind:         types.ReportKindRatio,
 		ValueType:    types.ReportValueTypeMoney,
 		Improvement:  types.ImprovementHigher,
-		Shapes:       []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
 		DefaultShape: types.ShapeTimeseries,
 		Grains:       []types.Grain{types.GrainMonth},
 		VariantLabel: "Billed",
@@ -128,42 +107,32 @@ var reportCatalog = []ReportCatalogEntry{
 		Kind:         types.ReportKindRatio,
 		ValueType:    types.ReportValueTypeMoney,
 		Improvement:  types.ImprovementHigher,
-		Shapes:       []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
 		DefaultShape: types.ShapeTimeseries,
 		Grains:       []types.Grain{types.GrainMonth},
 		VariantOf:    types.MetricARPU,
 		VariantLabel: "Paid",
 	},
 	{
-		Key:          types.MetricCreditConsumption,
-		Name:         "Credit consumption",
-		Description:  "Wallet credits applied to invoices",
-		Category:     types.ReportCategoryCredits,
-		Kind:         types.ReportKindFlow,
-		ValueType:    types.ReportValueTypeMoney,
-		Improvement:  types.ImprovementHigher,
-		Shapes:       []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
-		DefaultShape: types.ShapeTimeseries,
-		Dimensions: []ReportDimension{
-			{Key: "customer_id", Label: "Customer"},
-		},
+		Key:             types.MetricCreditConsumption,
+		Name:            "Credit consumption",
+		Description:     "Wallet credits applied to invoices",
+		Category:        types.ReportCategoryCredits,
+		Kind:            types.ReportKindFlow,
+		ValueType:       types.ReportValueTypeMoney,
+		Improvement:     types.ImprovementHigher,
+		DefaultShape:    types.ShapeTimeseries,
 		Grains:          []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
 		SupportsCompare: true,
 	},
 	{
-		Key:          types.MetricCreditTopups,
-		Name:         "Credit top-ups",
-		Description:  "Purchased, free and subscription credit grants",
-		Category:     types.ReportCategoryCredits,
-		Kind:         types.ReportKindFlow,
-		ValueType:    types.ReportValueTypeMoney,
-		Improvement:  types.ImprovementHigher,
-		Shapes:       []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
-		DefaultShape: types.ShapeTimeseries,
-		Dimensions: []ReportDimension{
-			{Key: "transaction_reason", Label: "Reason"},
-			{Key: "customer_id", Label: "Customer"},
-		},
+		Key:             types.MetricCreditTopups,
+		Name:            "Credit top-ups",
+		Description:     "Purchased, free and subscription credit grants",
+		Category:        types.ReportCategoryCredits,
+		Kind:            types.ReportKindFlow,
+		ValueType:       types.ReportValueTypeMoney,
+		Improvement:     types.ImprovementHigher,
+		DefaultShape:    types.ShapeTimeseries,
 		Grains:          []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
 		SupportsCompare: true,
 	},
@@ -175,7 +144,6 @@ var reportCatalog = []ReportCatalogEntry{
 		Kind:         types.ReportKindFlow,
 		ValueType:    types.ReportValueTypeMoney,
 		Improvement:  types.ImprovementHigher,
-		Shapes:       []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
 		DefaultShape: types.ShapeTimeseries,
 		Grains:       []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
 		VariantLabel: "Billing period",
@@ -188,7 +156,6 @@ var reportCatalog = []ReportCatalogEntry{
 		Kind:         types.ReportKindFlow,
 		ValueType:    types.ReportValueTypeMoney,
 		Improvement:  types.ImprovementHigher,
-		Shapes:       []types.Shape{types.ShapeScalar, types.ShapeTimeseries},
 		DefaultShape: types.ShapeTimeseries,
 		Grains:       []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
 		VariantOf:    types.MetricNetBilling,
@@ -202,7 +169,6 @@ var reportCatalog = []ReportCatalogEntry{
 		Kind:         types.ReportKindRatio,
 		ValueType:    types.ReportValueTypeCount,
 		Improvement:  types.ImprovementHigher,
-		Shapes:       []types.Shape{types.ShapeScalar},
 		DefaultShape: types.ShapeScalar,
 	},
 	{
@@ -212,21 +178,32 @@ var reportCatalog = []ReportCatalogEntry{
 		Category:     types.ReportCategoryUsage,
 		Kind:         types.ReportKindFlow,
 		ValueType:    types.ReportValueTypeCount,
-		Shapes:       []types.Shape{types.ShapeTimeseries, types.ShapeBreakdown},
 		DefaultShape: types.ShapeTimeseries,
-		Dimensions: []ReportDimension{
-			{Key: "meter_id", Label: "Meter"},
-		},
 		Grains:       []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
 		MaxRangeDays: 7,
 	},
 }
 
+var dimensionLabels = map[string]string{
+	"customer_id":        "Customer",
+	"invoice_type":       "Invoice type",
+	"aging_bucket":       "Aging bucket",
+	"transaction_reason": "Reason",
+	"meter_id":           "Meter",
+}
+
+// Shapes and dimensions come from the billing metric.
 func ReportCatalog() []ReportCatalogEntry {
 	out := make([]ReportCatalogEntry, len(reportCatalog))
 	for i, e := range reportCatalog {
-		e.Shapes = slices.Clone(e.Shapes)
-		e.Dimensions = slices.Clone(e.Dimensions)
+		bm := billingMetrics[e.Key]
+		e.Shapes = slices.Clone(bm.Shapes)
+		e.Dimensions = nil
+		for _, d := range bm.Dimensions {
+			if label, ok := dimensionLabels[d]; ok {
+				e.Dimensions = append(e.Dimensions, ReportDimension{Key: d, Label: label})
+			}
+		}
 		e.Grains = slices.Clone(e.Grains)
 		out[i] = e
 	}
