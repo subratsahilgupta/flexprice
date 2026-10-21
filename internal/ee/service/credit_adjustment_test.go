@@ -395,3 +395,39 @@ func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_FiatInvoic
 	s.True(decimal.NewFromInt(30).Equal(inv.LineItems[0].PrepaidCreditsApplied))
 	s.Nil(inv.LineItems[0].CustomCurrency, "no denomination is created for a fiat invoice")
 }
+
+func TestUsageNet(t *testing.T) {
+	usage := lo.ToPtr(string(types.PRICE_TYPE_USAGE))
+	fixed := lo.ToPtr(string(types.PRICE_TYPE_FIXED))
+	line := func(priceType *string, amount, discount int64) *invoice.InvoiceLineItem {
+		return &invoice.InvoiceLineItem{PriceType: priceType, Amount: decimal.NewFromInt(amount), LineItemDiscount: decimal.NewFromInt(discount)}
+	}
+
+	tests := []struct {
+		name  string
+		lines []*invoice.InvoiceLineItem
+		want  int64
+	}{
+		{"negative line offsets positive", []*invoice.InvoiceLineItem{line(usage, 50, 0), line(usage, -45, 0)}, 5},
+		{"discounts reduce the net", []*invoice.InvoiceLineItem{line(usage, 50, 10), line(usage, -20, 0)}, 20},
+		{"fixed lines are ignored", []*invoice.InvoiceLineItem{line(usage, 50, 0), line(fixed, 20, 0), line(usage, -45, 0)}, 5},
+		{"net negative floors at zero", []*invoice.InvoiceLineItem{line(usage, 100, 0), line(usage, -130, 0)}, 0},
+		{
+			"reads the custom-currency denomination",
+			[]*invoice.InvoiceLineItem{{
+				PriceType:      usage,
+				Amount:         decimal.NewFromInt(5),
+				CustomCurrency: &types.CustomCurrencyLineItem{Amount: decimal.NewFromInt(50)},
+			}},
+			50,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := usageNet(&invoice.Invoice{LineItems: tt.lines})
+			if !got.Equal(decimal.NewFromInt(tt.want)) {
+				t.Fatalf("usageNet = %s, want %d", got, tt.want)
+			}
+		})
+	}
+}

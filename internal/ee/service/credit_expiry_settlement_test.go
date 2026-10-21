@@ -1157,3 +1157,38 @@ func (s *CreditExpiryInvoiceRaceSuite) TestFinalizationHold_SafetyCap() {
 	inv, _ := s.finalizationCase(settlementFinalizationHold + 10*time.Minute)
 	s.True(s.finalizationDue(inv.ID))
 }
+
+func (s *CreditExpiryInvoiceRaceSuite) TestExpirySettlement_NegativeLinesOffsetBeforeFinalization() {
+	ctx := s.GetContext()
+	boundary := time.Now().UTC().Add(-3 * time.Hour)
+	sub, start := s.rolledSubscription("subs_signed_expiry", boundary)
+	tx := s.seedGrant("wtxn_signed_expiry", decimal.NewFromInt(50), start, boundary)
+	inv := s.draftWithAppliedCredits("inv_signed_expiry", decimal.Zero, 50, -45)
+	inv.SubscriptionID = lo.ToPtr(sub.ID)
+	inv.BillingReason = string(types.InvoiceBillingReasonSubscriptionCycle)
+	inv.PeriodStart, inv.PeriodEnd = lo.ToPtr(start), lo.ToPtr(boundary)
+	inv.LastComputedAt = lo.ToPtr(boundary.Add(15 * time.Minute))
+	s.Require().NoError(s.GetStores().InvoiceRepo.Update(ctx, inv))
+
+	result, err := s.walletService.ExpireCredits(ctx, tx.ID)
+	s.Require().NoError(err)
+	s.True(decimal.NewFromInt(5).Equal(result.Applied), "applied %s", result.Applied)
+	s.True(result.Expired)
+	expired := s.walletTransactions(types.TransactionReasonCreditExpired)
+	s.Require().Len(expired, 1)
+	s.True(decimal.NewFromInt(45).Equal(expired[0].CreditAmount))
+	adjustments := s.walletTransactions(types.TransactionReasonCreditAdjustment)
+	s.Require().Len(adjustments, 1)
+	s.True(decimal.NewFromInt(5).Equal(adjustments[0].CreditAmount))
+	s.True(s.creditsAvailable(tx.ID).IsZero())
+
+	settled, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
+	s.Require().NoError(err)
+	s.True(decimal.NewFromInt(5).Equal(settled.TotalPrepaidCreditsApplied))
+	final, err := s.creditAdjustment.ApplyCreditsToInvoice(ctx, settled)
+	s.Require().NoError(err)
+	s.True(decimal.NewFromInt(5).Equal(final.TotalPrepaidCreditsApplied))
+	s.True(decimal.NewFromInt(5).Equal(lineCredits(settled)))
+	s.True(settled.Total.IsZero())
+	s.Len(s.walletTransactions(types.TransactionReasonCreditAdjustment), 1, "finalization must not debit again")
+}
