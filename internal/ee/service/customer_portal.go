@@ -390,14 +390,9 @@ func (s *customerPortalService) GetPropertyValues(ctx context.Context, req dto.P
 		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
 	}
 
-	props, err := s.usageProperties(ctx)
-	if err != nil {
+	// Same checks as grouping and filtering, quantity keys included.
+	if err := s.validatePropertyKeys(ctx, dto.PortalAnalyticsRequest{FeatureIDs: req.FeatureIDs, PropertyFilters: map[string][]string{req.Key: nil}}); err != nil {
 		return nil, err
-	}
-	if !visiblePropertyKey(req.Key, props, nil) {
-		return nil, ierr.NewError("property key is not available").
-			WithHintf("property key %q is not available", req.Key).
-			Mark(ierr.ErrValidation)
 	}
 
 	values, err := NewMeterUsageService(s.ServiceParams).GetPropertyValues(ctx, &events.PropertyLookupParams{

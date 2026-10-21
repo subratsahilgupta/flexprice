@@ -42,7 +42,8 @@ type PortalCostAnalyticsRequest struct {
 	StartTime  time.Time `json:"start_time" binding:"required" example:"2024-01-01T00:00:00Z"`
 	EndTime    time.Time `json:"end_time" binding:"required" example:"2024-01-31T23:59:59Z"`
 	// Expand specifies which related entities to include. Supported values: "meter", "price"
-	Expand          []string            `json:"expand,omitempty" example:"meter,price"`
+	Expand []string `json:"expand,omitempty" example:"meter,price"`
+	// PropertyFilters filters usage events by property key and values, e.g. {"region": ["us-east-1"]}
 	PropertyFilters map[string][]string `json:"property_filters,omitempty"`
 }
 

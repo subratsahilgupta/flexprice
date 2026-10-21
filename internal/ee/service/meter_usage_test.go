@@ -5202,7 +5202,7 @@ func (s *MeterUsageServiceSuite) TestGetGroupablePropertyKeys() {
 	ext := s.customer.ExternalID
 	s.insertMeterUsageWithProps(ctx, s.meterAPI.ID, ext, "", ts, 1, map[string]interface{}{"region": "us", "model": "a", "tokens": 5})
 	s.insertMeterUsageWithProps(ctx, s.meterAPI.ID, ext, "", ts, 1, map[string]interface{}{"region": "eu", "model": "b"})
-	s.insertMeterUsageWithProps(ctx, s.meterAPI.ID, ext, "", ts, 1, map[string]interface{}{"region": "eu"})
+	s.insertMeterUsageWithProps(ctx, s.meterAPI.ID, ext, "", ts, 1, map[string]interface{}{"region": "eu", "plan-tier": "pro"})
 	s.insertMeterUsageWithProps(ctx, "meter_other", ext, "", ts, 1, map[string]interface{}{"zone": "z1"})
 	s.insertMeterUsageWithProps(ctx, s.meterAPI.ID, "ext_cust_2", "", ts, 1, map[string]interface{}{"secret": "x"})
 
@@ -5211,7 +5211,7 @@ func (s *MeterUsageServiceSuite) TestGetGroupablePropertyKeys() {
 		featureIDs []string
 		want       []string
 	}{
-		{name: "meters with usage, quantity key dropped", want: []string{"region", "model", "zone"}},
+		{name: "meters with usage, quantity and unusable keys dropped", want: []string{"region", "model", "zone"}},
 		{name: "scoped to feature", featureIDs: []string{"feat_other"}, want: []string{"zone"}},
 		{name: "unknown feature", featureIDs: []string{"feat_missing"}, want: []string{}},
 	}
@@ -5254,6 +5254,7 @@ func (s *MeterUsageServiceSuite) TestGetPropertyValues() {
 		{name: "default limit, non-string and empty values dropped", key: "region", want: []string{"us-east", "us-west", "eu"}},
 		{name: "prefix", key: "region", prefix: "us-", want: []string{"us-east", "us-west"}},
 		{name: "limit", key: "region", limit: 1, want: []string{"us-east"}},
+		{name: "negative limit uses the default", key: "region", limit: -1, want: []string{"us-east", "us-west", "eu"}},
 		{name: "unknown feature", key: "region", featureIDs: []string{"feat_missing"}, want: []string{}},
 		{name: "invalid key", key: "region'; DROP", wantErr: true},
 	}

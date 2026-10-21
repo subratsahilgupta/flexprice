@@ -1,7 +1,6 @@
 package service
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -2948,13 +2947,14 @@ func (s *meterUsageService) GetGroupablePropertyKeys(ctx context.Context, params
 		return nil, err
 	}
 
+	// Keys outside the "properties.<key>" pattern can't be grouped or filtered, so they aren't offered.
 	return lo.Filter(propertyKeys, func(key string, _ int) bool {
 		_, ok := quantityKeys[key]
-		return !ok
+		return !ok && analyticsGroupByPropertyName.MatchString(key)
 	}), nil
 }
 
-// GetPropertyValues defaults the limit to defaultPropertyValuesLimit.
+// GetPropertyValues defaults a missing or negative limit to defaultPropertyValuesLimit.
 func (s *meterUsageService) GetPropertyValues(ctx context.Context, params *events.PropertyLookupParams) ([]string, error) {
 	if params == nil {
 		return nil, ierr.NewError("params are required").Mark(ierr.ErrValidation)
@@ -2964,7 +2964,9 @@ func (s *meterUsageService) GetPropertyValues(ctx context.Context, params *event
 			WithHintf("property key %q is not valid", params.Key).
 			Mark(ierr.ErrValidation)
 	}
-	params.Limit = cmp.Or(params.Limit, defaultPropertyValuesLimit)
+	if params.Limit <= 0 {
+		params.Limit = defaultPropertyValuesLimit
+	}
 
 	if err := s.resolvePropertyLookupMeters(ctx, params); err != nil {
 		return nil, err
