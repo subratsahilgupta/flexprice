@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -52,15 +51,6 @@ func (a *AddonActivities) SyncAddonPrices(ctx context.Context, input SyncAddonPr
 	ctx = types.SetTenantID(ctx, input.TenantID)
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
 	ctx = types.SetUserID(ctx, input.UserID)
-
-	lockKey := cache.PrefixAddonPriceSyncLock + input.AddonID
-	defer func() {
-		if err := cache.ReleaseLockByKey(ctx, lockKey); err != nil {
-			a.logger.Error(ctx, "addon_price_sync_lock_release_failed", "addon_id", input.AddonID, "lock_key", lockKey, "error", err)
-			return
-		}
-		a.logger.Info(ctx, "addon_price_sync_lock_released", "addon_id", input.AddonID, "lock_key", lockKey)
-	}()
 
 	result, err := a.addonService.SyncAddonPrices(ctx, input.AddonID)
 	if err != nil {
