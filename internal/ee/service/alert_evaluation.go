@@ -384,16 +384,13 @@ func (s *alertService) refreshEntitlementGrantUsage(
 	}
 
 	meterUsageSvc := NewMeterUsageService(s.ServiceParams)
-	if g.Measure == types.EntitlementGrantMeasureQuantity && keepsRunningAggregate(m) {
-		return meterUsageSvc.GetCheckpointedUsage(ctx, CheckpointedUsageRequest{
-			CustomerID: sub.CustomerID, ExternalCustomerIDs: extCustomerIDs,
-			MeterID: m.ID, AggregationType: m.Aggregation.Type, Until: end,
-		})
-	}
-	if !end.After(g.ValidFrom) {
-		return decimal.Zero, nil
-	}
 	if g.Measure == types.EntitlementGrantMeasureQuantity {
+		if keepsRunningAggregate(m) {
+			return meterUsageSvc.GetCheckpointedUsage(ctx, CheckpointedUsageRequest{
+				CustomerID: sub.CustomerID, ExternalCustomerIDs: extCustomerIDs,
+				MeterID: m.ID, AggregationType: m.Aggregation.Type, Until: end,
+			})
+		}
 		usage, err := meterUsageSvc.GetUsageTotal(ctx, &dto.UsageTotalRequest{
 			TenantID:            g.TenantID,
 			EnvironmentID:       g.EnvironmentID,
