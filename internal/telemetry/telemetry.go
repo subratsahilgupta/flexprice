@@ -86,6 +86,8 @@ func (r *Reporter) disabledReason() string {
 		return "FLEXPRICE_TELEMETRY_DISABLED"
 	case isTruthy(os.Getenv("DO_NOT_TRACK")):
 		return "DO_NOT_TRACK"
+	case !r.cfg.Telemetry.Enabled:
+		return "telemetry is opt-in, set FLEXPRICE_TELEMETRY_ENABLED=true to enable"
 	}
 	return ""
 }
