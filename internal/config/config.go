@@ -939,7 +939,16 @@ func (c BillingConfig) CheckoutProvider() types.CheckoutPaymentProvider {
 
 // hasSecureAPIHost reports whether APIHost is an https URL; plain http is allowed only for localhost.
 func (c BillingConfig) hasSecureAPIHost() bool {
-	u, err := url.Parse(strings.TrimSpace(c.APIHost))
+	return isSecureURL(c.APIHost)
+}
+
+// HasSecureZapierWebhookURL reports whether ZapierWebhookURL is an https URL; plain http is allowed only for localhost.
+func (c BillingConfig) HasSecureZapierWebhookURL() bool {
+	return isSecureURL(c.ZapierWebhookURL)
+}
+
+func isSecureURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Host == "" {
 		return false
 	}

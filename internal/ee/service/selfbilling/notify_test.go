@@ -122,3 +122,16 @@ func TestNotify_FailureLogsNeverCarryTheHookURL(t *testing.T) {
 		})
 	}
 }
+
+func TestNotify_InsecureHookIsRefused(t *testing.T) {
+	core, logs := observer.New(zap.ErrorLevel)
+	s, _ := newTestService(newFakeClient())
+	s.Logger = logger.NewFromSugared(zap.New(core).Sugar())
+	s.Config.Billing.ZapierWebhookURL = "http://hooks.example.com/hooks/catch/123/s3cr3t/"
+
+	s.notify(context.Background(), alert{Event: alertTrialStarted, TenantID: "t1"})
+
+	require.Equal(t, 1, logs.Len(), "refused synchronously, before any request")
+	entry := logs.All()[0]
+	assert.NotContains(t, entry.Message+fmt.Sprint(entry.ContextMap()), "s3cr3t")
+}
