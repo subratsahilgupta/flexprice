@@ -99,8 +99,10 @@ func (r *Reporter) init(ctx context.Context) {
 
 // ReportEvent fires a lightweight ping for a real system event consumed off
 // the webhook topic. Called from the webhook handler's processMessage, right
-// after cascade — never blocks delivery, never retried.
-func (r *Reporter) ReportEvent(ctx context.Context, eventName string) {
+// after cascade — never blocks delivery, never retried. Sends the event's
+// full payload for now while we evaluate on staging what's actually in it;
+// may need a per-event-type allowlist before this reaches prod installs.
+func (r *Reporter) ReportEvent(ctx context.Context, event *types.WebhookEvent) {
 	if reason := r.disabledReason(); reason != "" {
 		return
 	}
@@ -110,7 +112,8 @@ func (r *Reporter) ReportEvent(ctx context.Context, eventName string) {
 	p := map[string]any{
 		"tenant_id":      types.GetTenantID(ctx),
 		"environment_id": types.GetEnvironmentID(ctx),
-		"event_name":     eventName,
+		"event_name":     event.EventName,
+		"event_payload":  json.RawMessage(event.Payload),
 	}
 	r.send(ctx, "flexprice_system_event", p)
 }

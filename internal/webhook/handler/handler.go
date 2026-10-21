@@ -259,7 +259,7 @@ func (h *handler) processMessage(ctx context.Context, msg *message.Message) erro
 	}
 
 	if h.telemetry != nil {
-		h.telemetry.ReportEvent(ctx, string(event.EventName))
+		h.telemetry.ReportEvent(ctx, &event)
 	}
 
 	return nil
