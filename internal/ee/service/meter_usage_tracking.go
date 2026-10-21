@@ -291,7 +291,7 @@ func (s *meterUsageTrackingService) processBulkMessage(ctx context.Context, msg 
 
 		// Ahead of the dedup lock: a held event must take no lock. The whole batch
 		// is held, and the deferred release above returns the locks it already took.
-		if s.deletionWindow.IsSuppressed(ctx, evt.ExternalCustomerID, evt.Timestamp) {
+		if s.deletionWindow != nil && s.deletionWindow.IsSuppressed(ctx, evt.ExternalCustomerID, evt.Timestamp) {
 			s.Logger.Error(ctx, "holding bulk meter usage batch: a deletion is in progress for this customer and period",
 				"error", types.ErrEventDeletionInProgress,
 				"event_id", evt.ID,
@@ -447,7 +447,7 @@ func (s *meterUsageTrackingService) processEvent(ctx context.Context, event *eve
 	// Ahead of everything else: a suppressed event fires no rejected-event
 	// webhook, publishes nothing to the analytics sink, runs no post-insert side
 	// effects and acquires no dedup lock.
-	if s.deletionWindow.IsSuppressed(ctx, event.ExternalCustomerID, event.Timestamp) {
+	if s.deletionWindow != nil && s.deletionWindow.IsSuppressed(ctx, event.ExternalCustomerID, event.Timestamp) {
 		s.Logger.Error(ctx, "holding event: a deletion is in progress for this customer and period",
 			"error", types.ErrEventDeletionInProgress,
 			"event_id", event.ID,

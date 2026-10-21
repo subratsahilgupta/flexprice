@@ -184,7 +184,7 @@ func (s *eventConsumptionService) processBulkMessage(ctx context.Context, msg *m
 		}
 		// The whole batch is held: one Kafka message cannot be part-acknowledged,
 		// and writing the rest would duplicate them on every redelivery.
-		if s.deletionWindow.IsSuppressed(ctx, evt.ExternalCustomerID, evt.Timestamp) {
+		if s.deletionWindow != nil && s.deletionWindow.IsSuppressed(ctx, evt.ExternalCustomerID, evt.Timestamp) {
 			s.Logger.Error(ctx, "holding bulk event batch: a deletion is in progress for this customer and period",
 				"error", types.ErrEventDeletionInProgress,
 				"event_id", evt.ID,
@@ -364,7 +364,7 @@ func (s *eventConsumptionService) processMessage(ctx context.Context, msg *messa
 		"timestamp", event.Timestamp,
 	)
 
-	if s.deletionWindow.IsSuppressed(ctx, event.ExternalCustomerID, event.Timestamp) {
+	if s.deletionWindow != nil && s.deletionWindow.IsSuppressed(ctx, event.ExternalCustomerID, event.Timestamp) {
 		s.Logger.Error(ctx, "holding event: a deletion is in progress for this customer and period",
 			"error", types.ErrEventDeletionInProgress,
 			"event_id", event.ID,
