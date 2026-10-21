@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -250,4 +251,23 @@ func TestCancelCheckout(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, fc.checkouts["cs1"].status)
 		})
 	}
+}
+
+func TestPollCheckout_PaidButStillConvertingNeverSuspends(t *testing.T) {
+	fc := newFakeClient()
+	s, d := newTestService(fc)
+	seedTenant(t, d, "t1", types.TenantInternalStatusTrialing)
+
+	// The trial expired long ago, so only the mid-conversion guard keeps the tenant from being suspended.
+	expired := time.Now().Add(-48 * time.Hour)
+	fc.checkouts["cs1"] = &remoteCheckout{id: "cs1", status: types.CheckoutStatusCompleted, terminal: true, extID: "us:t1"}
+	fc.subs["us:t1"] = &remoteSubscription{id: "sub_us:t1", status: types.SubscriptionStatusTrialing, trialEnd: &expired}
+
+	resp, err := s.PollCheckout(tenantCtx("t1"), "t1", "cs1")
+	require.NoError(t, err)
+	assert.Equal(t, types.TenantInternalStatusTrialing, resp.Tenant)
+
+	got, err := d.tenants.GetByID(context.Background(), "t1")
+	require.NoError(t, err)
+	assert.Equal(t, types.TenantInternalStatusTrialing, got.InternalStatus)
 }

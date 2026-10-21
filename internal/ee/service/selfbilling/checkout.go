@@ -155,9 +155,12 @@ func (s *selfBillingService) checkoutResponse(ctx context.Context, t *tenant.Ten
 			return nil, err
 		}
 
-		status, err = s.updateTenantStatus(ctx, t, sub)
-		if err != nil {
-			return nil, err
+		// A paid checkout whose subscription still reads trialing is mid-conversion, not an expired trial.
+		if sub == nil || sub.status != types.SubscriptionStatusTrialing {
+			status, err = s.updateTenantStatus(ctx, t, sub)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
