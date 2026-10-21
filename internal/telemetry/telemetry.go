@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -27,6 +28,7 @@ type Reporter struct {
 	instanceID string
 	cloud      atomic.Value // string
 	inflight   chan struct{}
+	wg         sync.WaitGroup
 }
 
 func NewReporter(cfg *config.Configuration, log *logger.Logger) *Reporter {
@@ -60,6 +62,19 @@ func RegisterHooks(lc fx.Lifecycle, r *Reporter) {
 			case <-time.After(2 * time.Second):
 			}
 			r.init(ctx)
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			done := make(chan struct{})
+			go func() {
+				r.wg.Wait()
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-ctx.Done():
+				r.log.Debug(ctx, "telemetry shutdown: stop context expired with events still in flight")
+			}
 			return nil
 		},
 	})
@@ -121,9 +136,10 @@ func (r *Reporter) init(ctx context.Context) {
 // the webhook topic. Called from the webhook handler's processMessage, right
 // after cascade. Dispatches off the caller's goroutine so a stalled collector
 // never delays webhook delivery; capped by inflight so a persistent stall
-// can't pile up unbounded goroutines. Sends the event's full payload for now
-// while we evaluate on staging what's actually in it; may need a per-event-
-// type allowlist before this reaches prod installs.
+// can't pile up unbounded goroutines, and tracked on wg so OnStop can drain
+// it before the process exits. Sends the event's full payload for now while
+// we evaluate on staging what's actually in it; may need a per-event-type
+// allowlist before this reaches prod installs.
 func (r *Reporter) ReportEvent(ctx context.Context, event *types.WebhookEvent) {
 	if reason := r.disabledReason(); reason != "" {
 		return
@@ -142,7 +158,9 @@ func (r *Reporter) ReportEvent(ctx context.Context, event *types.WebhookEvent) {
 		r.log.Debug(ctx, "telemetry event dropped, too many in flight")
 		return
 	}
+	r.wg.Add(1)
 	go func() {
+		defer r.wg.Done()
 		defer func() { <-r.inflight }()
 		sendCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
