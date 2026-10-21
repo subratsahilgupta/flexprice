@@ -421,6 +421,10 @@ func (s *customerPortalService) GetCostAnalytics(ctx context.Context, req dto.Po
 		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
 	}
 
+	if err := s.validatePropertyKeys(ctx, dto.PortalAnalyticsRequest{FeatureIDs: req.FeatureIDs, PropertyFilters: req.PropertyFilters}); err != nil {
+		return nil, err
+	}
+
 	// Convert dashboard request to internal request with customer ID injected
 	internalReq := req.ToInternalRequest(externalCustomerID)
 
