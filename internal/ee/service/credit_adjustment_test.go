@@ -196,6 +196,48 @@ func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_SkipsNonUs
 	s.Empty(debits, "no wallets should be debited when invoice has no usage items")
 }
 
+func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_CappedAtNetUsage() {
+	svc := s.getServiceImpl()
+
+	usage := s.createLineItemForCalculation(decimal.NewFromInt(50), nil, decimal.Zero)
+	compute := s.createLineItemForCalculation(decimal.RequireFromString("0.5"), nil, decimal.Zero)
+	fixed := s.createLineItemForCalculation(decimal.NewFromInt(20), lo.ToPtr(string(types.PRICE_TYPE_FIXED)), decimal.Zero)
+	refund := s.createLineItemForCalculation(decimal.NewFromInt(-45), nil, decimal.Zero)
+	inv := s.createInvoiceForCalculation("inv_net_cap", "USD", []*invoice.InvoiceLineItem{usage, compute, fixed, refund})
+
+	wallets := []*wallet.Wallet{
+		s.createWalletForCalculation("wallet_1", "USD", decimal.NewFromInt(100)),
+	}
+
+	debits, err := svc.CalculateCreditAdjustments(inv, wallets)
+	s.Require().NoError(err)
+
+	// Net usage = 50 + 0.5 - 45 = 5.5; the fixed fee and the refunded usage stay uncovered.
+	s.True(decimal.RequireFromString("5.5").Equal(debits["wallet_1"]), "debit %s", debits["wallet_1"])
+	s.True(decimal.RequireFromString("5.5").Equal(usage.PrepaidCreditsApplied))
+	s.True(compute.PrepaidCreditsApplied.IsZero())
+	s.True(fixed.PrepaidCreditsApplied.IsZero())
+	s.True(refund.PrepaidCreditsApplied.IsZero())
+}
+
+func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_NegativeNetUsageAppliesNothing() {
+	svc := s.getServiceImpl()
+
+	usage := s.createLineItemForCalculation(decimal.NewFromInt(100), nil, decimal.Zero)
+	refund := s.createLineItemForCalculation(decimal.NewFromInt(-130), nil, decimal.Zero)
+	inv := s.createInvoiceForCalculation("inv_net_negative", "USD", []*invoice.InvoiceLineItem{usage, refund})
+
+	wallets := []*wallet.Wallet{
+		s.createWalletForCalculation("wallet_1", "USD", decimal.NewFromInt(100)),
+	}
+
+	debits, err := svc.CalculateCreditAdjustments(inv, wallets)
+	s.Require().NoError(err)
+
+	s.Empty(debits)
+	s.True(usage.PrepaidCreditsApplied.IsZero())
+}
+
 func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_MultipleWalletsConsumedInOrder() {
 	svc := s.getServiceImpl()
 
