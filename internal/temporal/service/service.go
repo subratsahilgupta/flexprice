@@ -442,8 +442,7 @@ func (s *temporalService) ExecuteWorkflow(ctx context.Context, workflowType type
 
 	// Execute workflow using existing StartWorkflow method
 	run, err := s.StartWorkflow(ctx, options, workflowType, input)
-	var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
-	if stderrors.As(err, &alreadyStarted) {
+	if _, ok := stderrors.AsType[*serviceerror.WorkflowExecutionAlreadyStarted](err); ok {
 		return nil, errors.WithError(err).
 			WithHint("A workflow is already running for this entity. Try again once it finishes.").
 			WithReportableDetails(map[string]interface{}{"workflow_id": workflowID}).
