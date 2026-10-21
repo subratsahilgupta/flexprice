@@ -273,12 +273,7 @@ func (e *stripeTaxEngine) TaxIdentifiers(ctx context.Context, customerID string)
 		cacheClient.ForceCacheSet(ctx, cacheKey, biller, cache.ExpiryBillerTaxIDs)
 	}
 
-	// Rendering only reads, so a customer never synced to Stripe is not created here.
-	stripeIntegration, err := e.IntegrationFactory.GetStripeIntegration(ctx)
-	if err != nil {
-		return biller, nil, err
-	}
-	stripeCustomerID, err := stripeIntegration.CustomerSvc.GetStripeCustomerID(ctx, customerID, NewCustomerService(e.ServiceParams))
+	stripeCustomerID, err := e.stripeCustomerID(ctx, customerID)
 	if err != nil {
 		return biller, nil, err
 	}
@@ -474,8 +469,9 @@ func (e *stripeTaxEngine) stripeCustomerID(ctx context.Context, customerID strin
 		return stripeIntegration.CustomerSvc.GetStripeCustomerID(ctx, customerID, customers)
 	}
 
-	if _, err := stripeIntegration.CustomerSvc.EnsureCustomerSyncedToStripe(ctx, customerID, customers); err != nil {
+	synced, err := stripeIntegration.CustomerSvc.EnsureCustomerSyncedToStripe(ctx, customerID, customers)
+	if err != nil {
 		return "", err
 	}
-	return stripeIntegration.CustomerSvc.GetStripeCustomerID(ctx, customerID, customers)
+	return synced.Customer.Metadata["stripe_customer_id"], nil
 }
