@@ -433,19 +433,19 @@ func (s *temporalService) ExecuteWorkflow(ctx context.Context, workflowType type
 	}
 
 	workflowID := s.generateWorkflowID(workflowType, input)
-	_, exclusive := exclusiveWorkflowIDKeys[workflowType]
 	options := models.StartWorkflowOptions{
-		ID:                                       workflowID,
-		TaskQueue:                                workflowType.TaskQueueName(),
-		WorkflowExecutionErrorWhenAlreadyStarted: exclusive,
+		ID:        workflowID,
+		TaskQueue: workflowType.TaskQueueName(),
+		// Only fixed IDs (exclusiveWorkflowIDKeys) can collide; fail loudly instead of attaching to the open run.
+		WorkflowExecutionErrorWhenAlreadyStarted: true,
 	}
 
 	// Execute workflow using existing StartWorkflow method
 	run, err := s.StartWorkflow(ctx, options, workflowType, input)
 	var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
-	if exclusive && stderrors.As(err, &alreadyStarted) {
+	if stderrors.As(err, &alreadyStarted) {
 		return nil, errors.WithError(err).
-			WithHint("A sync is already running for this entity. Try again once it finishes.").
+			WithHint("A workflow is already running for this entity. Try again once it finishes.").
 			WithReportableDetails(map[string]interface{}{"workflow_id": workflowID}).
 			Mark(errors.ErrAlreadyExists)
 	}
@@ -478,9 +478,8 @@ func (s *temporalService) ExecuteWorkflowWithDelay(ctx context.Context, workflow
 }
 
 // exclusiveWorkflowIDKeys lists workflow types that allow one open run per entity. Their ID is fixed
-// (no UUID suffix), so Temporal rejects a start while a run is open. Types sharing a key share the lock.
+// (no UUID suffix), so Temporal rejects a start while a run is open.
 var exclusiveWorkflowIDKeys = map[types.TemporalWorkflowType]string{
-	types.TemporalPriceSyncWorkflow:      "price_sync_plan",
 	types.TemporalPriceSyncV2Workflow:    "price_sync_plan",
 	types.TemporalAddonPriceSyncWorkflow: "price_sync_addon",
 }
@@ -500,7 +499,7 @@ func (s *temporalService) generateWorkflowID(workflowType types.TemporalWorkflow
 // for deterministic workflow ID generation. Returns empty string if no context ID is applicable.
 func (s *temporalService) extractWorkflowContextID(workflowType types.TemporalWorkflowType, params interface{}) string {
 	switch workflowType {
-	case types.TemporalPriceSyncWorkflow, types.TemporalPriceSyncV2Workflow:
+	case types.TemporalPriceSyncV2Workflow:
 		if input, ok := params.(models.PriceSyncWorkflowInput); ok {
 			return input.PlanID
 		}

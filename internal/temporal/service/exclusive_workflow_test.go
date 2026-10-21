@@ -33,8 +33,7 @@ func TestExecuteWorkflowExclusiveID(t *testing.T) {
 		wantID        string
 		wantErrOnOpen bool
 	}{
-		{"plan price sync", types.TemporalPriceSyncWorkflow, "plan_1", "wf_price_sync_plan_plan_1", true},
-		{"plan price sync v2 shares the plan id", types.TemporalPriceSyncV2Workflow, "plan_1", "wf_price_sync_plan_plan_1", true},
+		{"plan price sync", types.TemporalPriceSyncV2Workflow, "plan_1", "wf_price_sync_plan_plan_1", true},
 		{"addon price sync", types.TemporalAddonPriceSyncWorkflow, "addon_1", "wf_price_sync_addon_addon_1", true},
 	}
 	for _, tt := range tests {
