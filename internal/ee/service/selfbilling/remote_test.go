@@ -509,6 +509,42 @@ func TestUpdateBillingDetails_PreservesMetadata(t *testing.T) {
 	}
 }
 
+func TestUpdateBillingDetails_AddressSentWhole(t *testing.T) {
+	tests := []struct {
+		name        string
+		details     billingDetails
+		wantAddress bool
+	}{
+		{
+			name:        "empty_parts_sent_to_clear_stale_values",
+			details:     billingDetails{name: "Acme", line1: "1 Main St", city: "Pune", country: "IN"},
+			wantAddress: true,
+		},
+		{
+			name:    "no_address_leaves_it_untouched",
+			details: billingDetails{name: "Acme"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFakeCloud(map[string]string{"in:t1": "cust_1"})
+			c := newTestRemoteClient(t, f)
+
+			require.NoError(t, c.UpdateBillingDetails(context.Background(), "in:t1", tt.details))
+
+			require.Len(t, f.updates, 1)
+			for _, field := range []string{"address_line1", "address_line2", "address_city", "address_state", "address_country", "address_postal_code"} {
+				_, sent := f.updates[0][field]
+				assert.Equal(t, tt.wantAddress, sent, field)
+			}
+			if tt.wantAddress {
+				assert.Equal(t, "", f.updates[0]["address_line2"])
+				assert.Equal(t, "", f.updates[0]["address_state"])
+			}
+		})
+	}
+}
+
 func TestStartTrialEndCheckout(t *testing.T) {
 	const pendingBody = `{"checkout_session":{"id":"cs_1","checkout_status":"pending","terminal":false,` +
 		`"metadata":{"self_billing_external_id":"in:t1"},"payment_action":{"url":"https://pay.test/cs_1"}}}`
