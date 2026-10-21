@@ -18,12 +18,15 @@ import (
 	"go.uber.org/fx"
 )
 
+const maxInflightEvents = 50
+
 type Reporter struct {
 	cfg        *config.Configuration
 	log        *logger.Logger
 	http       *http.Client
 	instanceID string
 	cloud      atomic.Value // string
+	inflight   chan struct{}
 }
 
 func NewReporter(cfg *config.Configuration, log *logger.Logger) *Reporter {
@@ -33,9 +36,9 @@ func NewReporter(cfg *config.Configuration, log *logger.Logger) *Reporter {
 		log:        log,
 		http:       &http.Client{Timeout: 5 * time.Second},
 		instanceID: hostname,
+		inflight:   make(chan struct{}, maxInflightEvents),
 	}
 	r.cloud.Store("unknown")
-	go r.cloud.Store(probeCloud())
 	return r
 }
 
@@ -47,6 +50,15 @@ func RegisterHooks(lc fx.Lifecycle, r *Reporter) {
 				return nil
 			}
 			r.log.Info(ctx, "telemetry on, set FLEXPRICE_TELEMETRY_DISABLED=true to opt out")
+			cloudDone := make(chan struct{})
+			go func() {
+				r.cloud.Store(probeCloud())
+				close(cloudDone)
+			}()
+			select {
+			case <-cloudDone:
+			case <-time.After(2 * time.Second):
+			}
 			r.init(ctx)
 			return nil
 		},
@@ -75,7 +87,7 @@ func (r *Reporter) init(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	p := map[string]any{
+	fields := map[string]any{
 		"version":       buildinfo.Version,
 		"git_sha":       buildinfo.GitSHA,
 		"build_variant": buildinfo.BuildVariant,
@@ -89,27 +101,33 @@ func (r *Reporter) init(ctx context.Context) {
 		"num_cpu":       runtime.NumCPU(),
 	}
 	if l := r.cfg.Telemetry.InstallLabel; l != "" {
-		p["install_label"] = l
+		fields["install_label"] = l
 	}
-	p["$set"] = map[string]any{
-		"version": buildinfo.Version, "git_sha": buildinfo.GitSHA, "build_variant": buildinfo.BuildVariant,
-		"env": r.cfg.Logging.Environment, "region": r.cfg.Logging.Region,
-		"os": runtime.GOOS, "arch": runtime.GOARCH, "cloud": r.cloud.Load(),
+
+	set := make(map[string]any, len(fields))
+	for k, v := range fields {
+		set[k] = v
 	}
+
+	p := make(map[string]any, len(fields)+1)
+	for k, v := range fields {
+		p[k] = v
+	}
+	p["$set"] = set
 	r.send(ctx, "flexprice_install_init", p)
 }
 
 // ReportEvent fires a lightweight ping for a real system event consumed off
 // the webhook topic. Called from the webhook handler's processMessage, right
-// after cascade — never blocks delivery, never retried. Sends the event's
-// full payload for now while we evaluate on staging what's actually in it;
-// may need a per-event-type allowlist before this reaches prod installs.
+// after cascade. Dispatches off the caller's goroutine so a stalled collector
+// never delays webhook delivery; capped by inflight so a persistent stall
+// can't pile up unbounded goroutines. Sends the event's full payload for now
+// while we evaluate on staging what's actually in it; may need a per-event-
+// type allowlist before this reaches prod installs.
 func (r *Reporter) ReportEvent(ctx context.Context, event *types.WebhookEvent) {
 	if reason := r.disabledReason(); reason != "" {
 		return
 	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
 
 	p := map[string]any{
 		"tenant_id":      types.GetTenantID(ctx),
@@ -117,7 +135,19 @@ func (r *Reporter) ReportEvent(ctx context.Context, event *types.WebhookEvent) {
 		"event_name":     event.EventName,
 		"event_payload":  json.RawMessage(event.Payload),
 	}
-	r.send(ctx, "flexprice_system_event", p)
+
+	select {
+	case r.inflight <- struct{}{}:
+	default:
+		r.log.Debug(ctx, "telemetry event dropped, too many in flight")
+		return
+	}
+	go func() {
+		defer func() { <-r.inflight }()
+		sendCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		r.send(sendCtx, "flexprice_system_event", p)
+	}()
 }
 
 var eventRoutes = map[string]string{
