@@ -13,6 +13,7 @@ import (
 	adminapi "github.com/flexprice/flexprice/internal/api/admin"
 	adminv1 "github.com/flexprice/flexprice/internal/api/admin/v1"
 	v1 "github.com/flexprice/flexprice/internal/api/v1"
+	"github.com/flexprice/flexprice/internal/buildinfo"
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/config"
@@ -33,6 +34,7 @@ import (
 	kafkaPubsub "github.com/flexprice/flexprice/internal/pubsub/kafka"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
 	"github.com/flexprice/flexprice/internal/pyroscope"
+	"github.com/flexprice/flexprice/internal/telemetry"
 	"github.com/flexprice/flexprice/internal/rbac"
 	"github.com/flexprice/flexprice/internal/repository"
 	"github.com/flexprice/flexprice/internal/storage"
@@ -107,6 +109,7 @@ func main() {
 			// Monitoring
 			tracing.NewService,
 			pyroscope.NewPyroscopeService,
+			telemetry.NewReporter,
 
 			// Cache
 			cache.InitializeInMemoryCache,
@@ -347,6 +350,7 @@ func main() {
 			tracing.RegisterHooks,
 			repository.InitTracing,
 			pyroscope.RegisterHooks,
+			telemetry.RegisterHooks,
 			activity.Install,
 			initIntegrationFactory,
 			startServer,
@@ -631,6 +635,8 @@ func startServer(
 	if mode == "" {
 		mode = types.ModeLocal
 	}
+
+	log.Infow("starting flexprice", "mode", mode, "version", buildinfo.Version, "git_sha", buildinfo.GitSHA)
 
 	switch mode {
 	case types.ModeLocal:
