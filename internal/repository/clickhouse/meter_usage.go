@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -39,6 +40,9 @@ const insertTimeout = 30 * time.Second
 
 // groupKeySeparator joins a row's group-by values into one map key; NUL never occurs in a value.
 const groupKeySeparator = "\x00"
+
+// propertyKeysSampleRows is the number of latest rows sampled per meter for property keys.
+const propertyKeysSampleRows = 10000
 
 // BulkInsertMeterUsage inserts meter usage records in batches of 100
 func (r *MeterUsageRepository) BulkInsertMeterUsage(ctx context.Context, records []*events.MeterUsage) error {
@@ -1309,4 +1313,77 @@ func (r *MeterUsageRepository) GetEventsByEventIDAndExternalCustomerID(ctx conte
 
 	SetSpanSuccess(span)
 	return &usage, nil
+}
+
+// GetPropertyKeys samples the latest rows of each meter and returns the keys by merged count, highest first.
+func (r *MeterUsageRepository) GetPropertyKeys(ctx context.Context, params *events.PropertyLookupParams) ([]string, error) {
+	if params == nil {
+		return nil, ierr.NewError("params are required").Mark(ierr.ErrValidation)
+	}
+	if len(params.MeterIDs) == 0 {
+		return nil, nil
+	}
+
+	span := StartRepositorySpan(ctx, "meter_usage", "get_property_keys", map[string]interface{}{
+		"external_customer_id": params.ExternalCustomerID,
+		"meter_count":          len(params.MeterIDs),
+	})
+	defer FinishSpan(span)
+
+	query := fmt.Sprintf(`
+		SELECT key, count() AS seen
+		FROM (
+			SELECT properties FROM meter_usage
+			WHERE tenant_id = ? AND environment_id = ? AND external_customer_id = ?
+				AND meter_id = ? AND timestamp >= ? AND timestamp < ?
+			ORDER BY timestamp DESC
+			LIMIT %d
+		)
+		ARRAY JOIN JSONExtractKeys(properties) AS key
+		GROUP BY key
+		SETTINGS max_memory_usage = 96636764160
+	`, propertyKeysSampleRows)
+
+	counts := make(map[string]uint64)
+	for _, meterID := range params.MeterIDs {
+		rows, err := r.store.GetConn().Query(ctx, query,
+			params.TenantID, params.EnvironmentID, params.ExternalCustomerID, meterID, params.StartTime, params.EndTime)
+		if err != nil {
+			SetSpanError(span, err)
+			return nil, ierr.WithError(err).
+				WithHint("Failed to query property keys").
+				Mark(ierr.ErrDatabase)
+		}
+		for rows.Next() {
+			var key string
+			var seen uint64
+			if err := rows.Scan(&key, &seen); err != nil {
+				rows.Close()
+				SetSpanError(span, err)
+				return nil, ierr.WithError(err).
+					WithHint("Failed to scan property key row").
+					Mark(ierr.ErrDatabase)
+			}
+			counts[key] += seen
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			SetSpanError(span, err)
+			return nil, ierr.WithError(err).
+				WithHint("Error iterating property key rows").
+				Mark(ierr.ErrDatabase)
+		}
+	}
+
+	keys := lo.Keys(counts)
+	sort.Slice(keys, func(i, j int) bool {
+		if counts[keys[i]] != counts[keys[j]] {
+			return counts[keys[i]] > counts[keys[j]]
+		}
+		return keys[i] < keys[j]
+	})
+
+	SetSpanSuccess(span)
+	return keys, nil
 }

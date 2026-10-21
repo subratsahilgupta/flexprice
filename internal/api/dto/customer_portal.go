@@ -57,6 +57,13 @@ func (r *PortalCostAnalyticsRequest) ToInternalRequest(externalCustomerID string
 	}
 }
 
+// PortalPropertyKeysRequest asks for the property keys in the portal customer's usage
+type PortalPropertyKeysRequest struct {
+	FeatureIDs []string  `json:"feature_ids,omitempty" example:"feat_123,feat_456"`
+	StartTime  time.Time `json:"start_time" binding:"required" example:"2024-01-01T00:00:00Z"`
+	EndTime    time.Time `json:"end_time" binding:"required" example:"2024-01-31T23:59:59Z"`
+}
+
 // PortalPaginatedRequest represents a paginated request from the customer portal
 type PortalPaginatedRequest struct {
 	Page  int `form:"page" json:"page" example:"1"`

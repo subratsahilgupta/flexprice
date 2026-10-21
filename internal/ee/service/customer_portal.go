@@ -9,7 +9,6 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/auth"
 	"github.com/flexprice/flexprice/internal/domain/events"
-	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -44,6 +43,8 @@ type CustomerPortalService interface {
 	GetAnalytics(ctx context.Context, req dto.PortalAnalyticsRequest) (*dto.GetUsageAnalyticsResponse, error)
 	// GetCostAnalytics returns cost analytics for the portal customer
 	GetCostAnalytics(ctx context.Context, req dto.PortalCostAnalyticsRequest) (*dto.GetDetailedCostAnalyticsResponse, error)
+	// GetGroupablePropertyKeys returns the property keys portal users may group or filter usage by
+	GetGroupablePropertyKeys(ctx context.Context, req dto.PortalPropertyKeysRequest) (*dto.PropertyKeysResponse, error)
 	// GetUsageSummary returns usage summary for the portal customer
 	GetUsageSummary(ctx context.Context, req dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error)
 	// GetPortalConfig returns the customer portal configuration for the current tenant/environment
@@ -348,6 +349,34 @@ func (s *customerPortalService) GetAnalytics(ctx context.Context, req dto.Portal
 	})
 }
 
+// GetGroupablePropertyKeys returns the visible property keys in the portal customer's usage
+func (s *customerPortalService) GetGroupablePropertyKeys(ctx context.Context, req dto.PortalPropertyKeysRequest) (*dto.PropertyKeysResponse, error) {
+	if types.GetCustomerID(ctx) == "" {
+		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
+	}
+
+	props, err := s.usageProperties(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	keys, err := NewMeterUsageService(s.ServiceParams).GetGroupablePropertyKeys(ctx, &events.PropertyLookupParams{
+		TenantID:           types.GetTenantID(ctx),
+		EnvironmentID:      types.GetEnvironmentID(ctx),
+		ExternalCustomerID: types.GetExternalCustomerID(ctx),
+		FeatureIDs:         req.FeatureIDs,
+		StartTime:          req.StartTime,
+		EndTime:            req.EndTime,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &dto.PropertyKeysResponse{
+		Keys: lo.Filter(keys, func(key string, _ int) bool { return visiblePropertyKey(key, props, nil) }),
+	}, nil
+}
+
 // GetCostAnalytics returns cost analytics for the portal customer
 func (s *customerPortalService) GetCostAnalytics(ctx context.Context, req dto.PortalCostAnalyticsRequest) (*dto.GetDetailedCostAnalyticsResponse, error) {
 	customerID := types.GetCustomerID(ctx)
@@ -459,22 +488,16 @@ func (s *customerPortalService) validatePropertyKeys(ctx context.Context, req dt
 		return nil
 	}
 
-	cfg, err := GetSetting[types.CustomerPortalConfig](&settingsService{ServiceParams: s.ServiceParams}, ctx, types.SettingKeyCustomerPortalConfig)
+	props, err := s.usageProperties(ctx)
 	if err != nil {
 		return err
-	}
-	var props *types.CustomerPortalUsageProperties
-	if cfg.AnalyticsConfig != nil {
-		props = cfg.AnalyticsConfig.UsageProperties
 	}
 
 	var meterIDs []string
 	if len(req.FeatureIDs) > 0 {
-		features, err := s.FeatureRepo.ListByIDs(ctx, req.FeatureIDs)
-		if err != nil {
+		if meterIDs, err = featureMeterIDs(ctx, s.FeatureRepo, req.FeatureIDs); err != nil {
 			return err
 		}
-		meterIDs = lo.Uniq(lo.FilterMap(features, func(f *feature.Feature, _ int) (string, bool) { return f.MeterID, f.MeterID != "" }))
 	} else {
 		meters, err := s.MeterRepo.List(ctx, types.NewNoLimitMeterFilter())
 		if err != nil {
@@ -495,6 +518,18 @@ func (s *customerPortalService) validatePropertyKeys(ctx context.Context, req dt
 		}
 	}
 	return nil
+}
+
+// usageProperties returns the tenant's portal usage-property config, or nil when unset.
+func (s *customerPortalService) usageProperties(ctx context.Context) (*types.CustomerPortalUsageProperties, error) {
+	cfg, err := GetSetting[types.CustomerPortalConfig](&settingsService{ServiceParams: s.ServiceParams}, ctx, types.SettingKeyCustomerPortalConfig)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.AnalyticsConfig == nil {
+		return nil, nil
+	}
+	return cfg.AnalyticsConfig.UsageProperties, nil
 }
 
 // visiblePropertyKey reports whether portal users may group or filter by the property key.

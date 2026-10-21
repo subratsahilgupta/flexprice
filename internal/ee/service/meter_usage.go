@@ -68,6 +68,9 @@ type MeterUsageService interface {
 	// DebugEvent powers GET /events/:id — reports processing status and
 	// per-lookup diagnostics for a single event under the meter-usage pipeline.
 	DebugEvent(ctx context.Context, externalCustomerID, eventID string, window events.TimeRange) (*dto.GetEventByIDResponse, error)
+
+	// GetGroupablePropertyKeys returns the property keys in the customer's usage, most seen first, without quantity keys.
+	GetGroupablePropertyKeys(ctx context.Context, params *events.PropertyLookupParams) ([]string, error)
 }
 
 type meterUsageService struct {
@@ -1139,16 +1142,11 @@ func (s *meterUsageService) GetDetailedAnalytics(ctx context.Context, params *ev
 	// Resolve FeatureIDs → MeterIDs. Fail closed so an unresolvable feature
 	// list doesn't silently broaden to "all meters".
 	if len(params.FeatureIDs) > 0 && len(params.MeterIDs) == 0 {
-		features, err := s.FeatureRepo.ListByIDs(ctx, params.FeatureIDs)
+		meterIDs, err := featureMeterIDs(ctx, s.FeatureRepo, params.FeatureIDs)
 		if err != nil {
 			return nil, ierr.NewError("failed to resolve feature IDs to meter IDs").Mark(ierr.ErrDatabase)
 		}
-		for _, f := range features {
-			if f.MeterID != "" {
-				params.MeterIDs = append(params.MeterIDs, f.MeterID)
-			}
-		}
-		params.MeterIDs = lo.Uniq(params.MeterIDs)
+		params.MeterIDs = meterIDs
 		if len(params.MeterIDs) == 0 {
 			return &dto.GetUsageAnalyticsResponse{
 				TotalCost: decimal.Zero,
@@ -2920,6 +2918,55 @@ func rollupBucketPoints(
 
 // ensure meterUsageService implements MeterUsageService
 var _ MeterUsageService = (*meterUsageService)(nil)
+
+// GetGroupablePropertyKeys scopes to the features' meters, or to the meters with usage in the window when none are given.
+func (s *meterUsageService) GetGroupablePropertyKeys(ctx context.Context, params *events.PropertyLookupParams) ([]string, error) {
+	if params == nil {
+		return nil, ierr.NewError("params are required").Mark(ierr.ErrValidation)
+	}
+
+	var err error
+	if len(params.FeatureIDs) > 0 {
+		params.MeterIDs, err = featureMeterIDs(ctx, s.FeatureRepo, params.FeatureIDs)
+	} else {
+		params.MeterIDs, err = s.repo.GetDistinctMeterIDs(ctx, &events.MeterUsageQueryParams{
+			TenantID:           params.TenantID,
+			EnvironmentID:      params.EnvironmentID,
+			ExternalCustomerID: params.ExternalCustomerID,
+			StartTime:          params.StartTime,
+			EndTime:            params.EndTime,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(params.MeterIDs) == 0 {
+		return []string{}, nil
+	}
+
+	propertyKeys, err := s.repo.GetPropertyKeys(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	quantityKeys, err := quantityPropertyKeys(ctx, s.MeterRepo, params.MeterIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	return lo.Filter(propertyKeys, func(key string, _ int) bool {
+		_, ok := quantityKeys[key]
+		return !ok
+	}), nil
+}
+
+// featureMeterIDs returns the distinct meter IDs of the given features.
+func featureMeterIDs(ctx context.Context, featureRepo feature.Repository, featureIDs []string) ([]string, error) {
+	features, err := featureRepo.ListByIDs(ctx, featureIDs)
+	if err != nil {
+		return nil, err
+	}
+	return lo.Uniq(lo.FilterMap(features, func(f *feature.Feature, _ int) (string, bool) { return f.MeterID, f.MeterID != "" })), nil
+}
 
 // quantityPropertyKeys returns the property keys that hold quantities for the given meters'
 // events, across every meter sharing those event names.

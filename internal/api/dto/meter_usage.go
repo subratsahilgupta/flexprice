@@ -258,3 +258,28 @@ func ToMeterUsageDetailedAnalyticsResponse(results []*events.MeterUsageDetailedR
 	}
 	return &MeterUsageDetailedAnalyticsResponse{Items: items}
 }
+
+// MeterUsagePropertyKeysRequest is the request for POST /v1/meter-usage/properties
+type MeterUsagePropertyKeysRequest struct {
+	ExternalCustomerID string    `json:"external_customer_id" validate:"required" binding:"required" example:"cust_123"`
+	FeatureIDs         []string  `json:"feature_ids,omitempty" example:"feat_abc,feat_def"`
+	StartTime          time.Time `json:"start_time" validate:"required" binding:"required" example:"2024-01-01T00:00:00Z"`
+	EndTime            time.Time `json:"end_time" validate:"required" binding:"required" example:"2024-02-01T00:00:00Z"`
+}
+
+// ToParams converts the DTO to domain property lookup params
+func (r *MeterUsagePropertyKeysRequest) ToParams(tenantID, environmentID string) *events.PropertyLookupParams {
+	return &events.PropertyLookupParams{
+		TenantID:           tenantID,
+		EnvironmentID:      environmentID,
+		ExternalCustomerID: r.ExternalCustomerID,
+		FeatureIDs:         r.FeatureIDs,
+		StartTime:          r.StartTime,
+		EndTime:            r.EndTime,
+	}
+}
+
+// PropertyKeysResponse lists property keys, most seen first.
+type PropertyKeysResponse struct {
+	Keys []string `json:"keys"`
+}

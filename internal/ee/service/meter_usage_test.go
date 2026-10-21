@@ -5186,6 +5186,50 @@ func (s *MeterUsageServiceSuite) TestQuantityPropertyKeys() {
 	s.ElementsMatch([]string{"tokens", "input_tokens", "output_tokens"}, lo.Keys(keys))
 }
 
+func (s *MeterUsageServiceSuite) TestGetGroupablePropertyKeys() {
+	ctx := s.GetContext()
+	for _, m := range []*meter.Meter{
+		{ID: "meter_tokens", EventName: "api_call", Aggregation: meter.Aggregation{Type: types.AggregationSum, Field: "tokens"}},
+		{ID: "meter_other", EventName: "other", Aggregation: meter.Aggregation{Type: types.AggregationSum}},
+	} {
+		m.BaseModel = types.GetDefaultBaseModel(ctx)
+		s.NoError(s.GetStores().MeterRepo.CreateMeter(ctx, m))
+	}
+	s.NoError(s.GetStores().FeatureRepo.Create(ctx, &feature.Feature{ID: "feat_other", MeterID: "meter_other", BaseModel: types.GetDefaultBaseModel(ctx)}))
+
+	ts := s.periodStart.Add(time.Hour)
+	ext := s.customer.ExternalID
+	s.insertMeterUsageWithProps(ctx, s.meterAPI.ID, ext, "", ts, 1, map[string]interface{}{"region": "us", "model": "a", "tokens": 5})
+	s.insertMeterUsageWithProps(ctx, s.meterAPI.ID, ext, "", ts, 1, map[string]interface{}{"region": "eu", "model": "b"})
+	s.insertMeterUsageWithProps(ctx, s.meterAPI.ID, ext, "", ts, 1, map[string]interface{}{"region": "eu"})
+	s.insertMeterUsageWithProps(ctx, "meter_other", ext, "", ts, 1, map[string]interface{}{"zone": "z1"})
+	s.insertMeterUsageWithProps(ctx, s.meterAPI.ID, "ext_cust_2", "", ts, 1, map[string]interface{}{"secret": "x"})
+
+	tests := []struct {
+		name       string
+		featureIDs []string
+		want       []string
+	}{
+		{name: "meters with usage, quantity key dropped", want: []string{"region", "model", "zone"}},
+		{name: "scoped to feature", featureIDs: []string{"feat_other"}, want: []string{"zone"}},
+		{name: "unknown feature", featureIDs: []string{"feat_missing"}, want: []string{}},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			keys, err := s.svc.GetGroupablePropertyKeys(ctx, &events.PropertyLookupParams{
+				TenantID:           types.GetTenantID(ctx),
+				EnvironmentID:      types.GetEnvironmentID(ctx),
+				ExternalCustomerID: ext,
+				FeatureIDs:         tt.featureIDs,
+				StartTime:          s.periodStart,
+				EndTime:            s.periodEnd,
+			})
+			s.NoError(err)
+			s.Equal(tt.want, keys)
+		})
+	}
+}
+
 func TestVisiblePropertyKey(t *testing.T) {
 	quantityKeys := map[string]struct{}{"tokens": {}}
 	tests := []struct {

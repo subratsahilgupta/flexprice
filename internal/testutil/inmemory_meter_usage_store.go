@@ -1191,5 +1191,36 @@ func (s *InMemoryMeterUsageStore) GetDailyUsageByMeter(_ context.Context, params
 	return byMeter, nil
 }
 
+// GetPropertyKeys counts property keys over all matching records; test data is too small to need sampling.
+func (s *InMemoryMeterUsageStore) GetPropertyKeys(_ context.Context, params *events.PropertyLookupParams) ([]string, error) {
+	if params == nil {
+		return nil, ierr.NewError("params are required").Mark(ierr.ErrValidation)
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	counts := make(map[string]uint64)
+	for _, r := range s.records {
+		if r.TenantID != params.TenantID || r.EnvironmentID != params.EnvironmentID ||
+			r.ExternalCustomerID != params.ExternalCustomerID || !lo.Contains(params.MeterIDs, r.MeterID) ||
+			r.Timestamp.Before(params.StartTime) || !r.Timestamp.Before(params.EndTime) {
+			continue
+		}
+		for key := range r.Properties {
+			counts[key]++
+		}
+	}
+
+	keys := lo.Keys(counts)
+	sort.Slice(keys, func(i, j int) bool {
+		if counts[keys[i]] != counts[keys[j]] {
+			return counts[keys[i]] > counts[keys[j]]
+		}
+		return keys[i] < keys[j]
+	})
+	return keys, nil
+}
+
 // Ensure interface compliance
 var _ events.MeterUsageRepository = (*InMemoryMeterUsageStore)(nil)
