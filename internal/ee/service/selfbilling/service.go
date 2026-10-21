@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/interfaces"
@@ -91,6 +92,36 @@ func (s *selfBillingService) OnTenantCreated(ctx context.Context, tenantID, name
 		return
 	}
 
+	s.runDetached(ctx, "provisioning", tenantID, func(ctx context.Context) error {
+		return s.provision(ctx, tenantID, name, email)
+	})
+}
+
+// OnTenantBillingDetailsUpdated copies the tenant's name and address to its Flexprice Cloud customer in the
+// background; checkout saves the address too, so a failure here is only logged.
+func (s *selfBillingService) OnTenantBillingDetailsUpdated(ctx context.Context, t *tenant.Tenant) {
+	if !s.enabled() || s.Config.Billing.IsBillingTenant(t.ID) {
+		return
+	}
+
+	address := t.BillingDetails.Address
+	details := billingDetails{
+		name:       t.Name,
+		line1:      address.Line1,
+		line2:      address.Line2,
+		city:       address.City,
+		state:      address.State,
+		country:    address.Country,
+		postalCode: address.PostalCode,
+	}
+
+	s.runDetached(ctx, "billing details sync", t.ID, func(ctx context.Context) error {
+		return s.client.UpdateBillingDetails(ctx, s.extID(t.ID), details)
+	})
+}
+
+// runDetached runs fn after the request returns, bounded by provisionTimeout; failures and panics are logged.
+func (s *selfBillingService) runDetached(ctx context.Context, op, tenantID string, fn func(context.Context) error) {
 	detached := context.WithoutCancel(ctx)
 	go func() {
 		ctx, cancel := context.WithTimeout(detached, provisionTimeout)
@@ -98,12 +129,12 @@ func (s *selfBillingService) OnTenantCreated(ctx context.Context, tenantID, name
 
 		defer func() {
 			if r := recover(); r != nil {
-				s.Logger.Error(ctx, "self-billing provisioning panicked", "error", fmt.Errorf("panic: %v", r), "tenant_id", tenantID)
+				s.Logger.Error(ctx, "self-billing background task panicked", "error", fmt.Errorf("panic: %v", r), "operation", op, "tenant_id", tenantID)
 			}
 		}()
 
-		if err := s.provision(ctx, tenantID, name, email); err != nil {
-			s.Logger.Error(ctx, "self-billing provisioning failed", "error", err, "tenant_id", tenantID)
+		if err := fn(ctx); err != nil {
+			s.Logger.Error(ctx, "self-billing background task failed", "error", err, "operation", op, "tenant_id", tenantID)
 		}
 	}()
 }

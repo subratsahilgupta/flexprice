@@ -39,6 +39,8 @@ type fakeClient struct {
 	trialCheckoutErr error
 	portalExtIDs     []string
 
+	billingUpdates map[string]billingDetails // extID -> last details passed to UpdateBillingDetails
+
 	ingested  [][]usageEvent // one entry per IngestBulk call
 	ingestErr error
 
@@ -56,7 +58,17 @@ func newFakeClient() *fakeClient {
 		subs:         map[string]*remoteSubscription{},
 		checkouts:    map[string]*remoteCheckout{},
 		summaries:    map[string]*remoteSummary{},
+
+		billingUpdates: map[string]billingDetails{},
 	}
+}
+
+func (f *fakeClient) billingUpdate(extID string) (billingDetails, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	d, ok := f.billingUpdates[extID]
+	return d, ok
 }
 
 func (f *fakeClient) EnsureCustomer(_ context.Context, in customerInput) error {
@@ -87,7 +99,11 @@ func (f *fakeClient) LatestSubscription(_ context.Context, extID string) (*remot
 	return f.subs[extID], f.err
 }
 
-func (f *fakeClient) UpdateBillingDetails(context.Context, string, billingDetails) error {
+func (f *fakeClient) UpdateBillingDetails(_ context.Context, extID string, details billingDetails) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.billingUpdates[extID] = details
 	return f.err
 }
 
@@ -529,6 +545,57 @@ func TestRunHourly(t *testing.T) {
 				assert.ErrorIs(t, err, want)
 			}
 			assert.Equal(t, tt.wantActive, tenantStatus(t, d, "t1") == types.TenantInternalStatusActive)
+		})
+	}
+}
+
+func TestOnTenantBillingDetailsUpdated(t *testing.T) {
+	acme := &tenant.Tenant{
+		ID:   "t1",
+		Name: "Acme Inc",
+		BillingDetails: tenant.TenantBillingDetails{
+			Email: "billing@acme.io",
+			Address: tenant.TenantAddress{
+				Line1:      "1 Main St",
+				City:       "Bengaluru",
+				State:      "KA",
+				PostalCode: "560001",
+				Country:    "IN",
+			},
+		},
+	}
+
+	tests := []struct {
+		name          string
+		billingTenant string
+		wantPushed    bool
+	}{
+		{"pushes_name_and_address", "", true},
+		{"billing_tenant_skipped", "t1", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fc := newFakeClient()
+			s, _ := newTestService(fc)
+			s.Config.Billing.TenantID = tt.billingTenant
+
+			s.OnTenantBillingDetailsUpdated(context.Background(), acme)
+
+			if !tt.wantPushed {
+				assert.Never(t, func() bool { _, ok := fc.billingUpdate("us:t1"); return ok }, 50*time.Millisecond, 10*time.Millisecond)
+				return
+			}
+
+			require.Eventually(t, func() bool { _, ok := fc.billingUpdate("us:t1"); return ok }, 2*time.Second, 5*time.Millisecond)
+			got, _ := fc.billingUpdate("us:t1")
+			assert.Equal(t, billingDetails{
+				name:       "Acme Inc",
+				line1:      "1 Main St",
+				city:       "Bengaluru",
+				state:      "KA",
+				postalCode: "560001",
+				country:    "IN",
+			}, got, "the email stays the signup email")
 		})
 	}
 }
