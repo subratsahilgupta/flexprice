@@ -22,12 +22,13 @@ COPY . .
 ARG TARGETARCH
 ARG VERSION=dev
 ARG GIT_SHA=unknown
+ARG BUILD_VARIANT=Enterprise
 ENV CGO_ENABLED=0 \
     GOOS=linux
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     BI=github.com/flexprice/flexprice/internal/buildinfo && \
-    GOARCH=$TARGETARCH go build -ldflags="-w -s -X ${BI}.Version=${VERSION} -X ${BI}.GitSHA=${GIT_SHA}" -trimpath -o server ./cmd/server && \
+    GOARCH=$TARGETARCH go build -ldflags="-w -s -X ${BI}.Version=${VERSION} -X ${BI}.GitSHA=${GIT_SHA} -X ${BI}.BuildVariant=${BUILD_VARIANT}" -trimpath -o server ./cmd/server && \
     GOARCH=$TARGETARCH go build -ldflags="-w -s" -trimpath -o migrate ./cmd/migrate
 
 # dbmate stage

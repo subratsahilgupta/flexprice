@@ -104,7 +104,7 @@ func (r *Reporter) init(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	fields := map[string]any{
+	p := map[string]any{
 		"version":       buildinfo.Version,
 		"git_sha":       buildinfo.GitSHA,
 		"build_variant": buildinfo.BuildVariant,
@@ -118,19 +118,18 @@ func (r *Reporter) init(ctx context.Context) {
 		"num_cpu":       runtime.NumCPU(),
 	}
 	if l := r.cfg.Telemetry.InstallLabel; l != "" {
-		fields["install_label"] = l
+		p["install_label"] = l
 	}
 
-	set := make(map[string]any, len(fields))
-	for k, v := range fields {
+	// $set is PostHog's own nested key: a copy of every build/host field,
+	// persisted as a person property against distinct_id so later
+	// system_event pings can inherit it without resending.
+	set := make(map[string]any, len(p))
+	for k, v := range p {
 		set[k] = v
 	}
-
-	p := make(map[string]any, len(fields)+1)
-	for k, v := range fields {
-		p[k] = v
-	}
 	p["$set"] = set
+
 	r.send(ctx, "flexprice_install_init", p)
 }
 
