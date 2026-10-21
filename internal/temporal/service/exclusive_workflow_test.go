@@ -23,7 +23,7 @@ func (c *recordingClient) StartWorkflow(_ context.Context, options models.StartW
 	return nil, c.err
 }
 
-func TestExecuteWorkflowSingletonID(t *testing.T) {
+func TestExecuteWorkflowExclusiveID(t *testing.T) {
 	ctx := types.SetEnvironmentID(types.SetTenantID(context.Background(), "tenant_1"), "env_1")
 
 	tests := []struct {
@@ -51,7 +51,7 @@ func TestExecuteWorkflowSingletonID(t *testing.T) {
 	}
 }
 
-func TestExecuteWorkflowSingletonAlreadyRunning(t *testing.T) {
+func TestExecuteWorkflowExclusiveAlreadyRunning(t *testing.T) {
 	ctx := types.SetEnvironmentID(types.SetTenantID(context.Background(), "tenant_1"), "env_1")
 	tc := &recordingClient{err: serviceerror.NewWorkflowExecutionAlreadyStarted("running", "", "run_1")}
 	svc := newTestService(tc, nil)

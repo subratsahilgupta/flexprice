@@ -433,42 +433,23 @@ func (s *temporalService) ExecuteWorkflow(ctx context.Context, workflowType type
 	}
 
 	workflowID := s.generateWorkflowID(workflowType, input)
-	singletonID := singletonWorkflowID(workflowType, input)
-	if singletonID != "" {
-		workflowID = singletonID
-	}
+	_, exclusive := exclusiveWorkflowIDKeys[workflowType]
 	options := models.StartWorkflowOptions{
 		ID:                                       workflowID,
 		TaskQueue:                                workflowType.TaskQueueName(),
-		WorkflowExecutionErrorWhenAlreadyStarted: singletonID != "",
+		WorkflowExecutionErrorWhenAlreadyStarted: exclusive,
 	}
 
 	// Execute workflow using existing StartWorkflow method
 	run, err := s.StartWorkflow(ctx, options, workflowType, input)
 	var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
-	if singletonID != "" && stderrors.As(err, &alreadyStarted) {
+	if exclusive && stderrors.As(err, &alreadyStarted) {
 		return nil, errors.WithError(err).
 			WithHint("A sync is already running for this entity. Try again once it finishes.").
 			WithReportableDetails(map[string]interface{}{"workflow_id": workflowID}).
 			Mark(errors.ErrAlreadyExists)
 	}
 	return run, err
-}
-
-// singletonWorkflowID returns a fixed per-entity workflow ID. Temporal rejects a start while a run
-// with that ID is open, so it acts as the per-entity lock. Returns "" for every other workflow.
-func singletonWorkflowID(workflowType types.TemporalWorkflowType, params interface{}) string {
-	switch workflowType {
-	case types.TemporalPriceSyncWorkflow, types.TemporalPriceSyncV2Workflow:
-		if input, ok := params.(models.PriceSyncWorkflowInput); ok && input.PlanID != "" {
-			return fmt.Sprintf("%s_price_sync_plan_%s", types.UUID_PREFIX_WORKFLOW, input.PlanID)
-		}
-	case types.TemporalAddonPriceSyncWorkflow:
-		if input, ok := params.(models.AddonPriceSyncWorkflowInput); ok && input.AddonID != "" {
-			return fmt.Sprintf("%s_price_sync_addon_%s", types.UUID_PREFIX_WORKFLOW, input.AddonID)
-		}
-	}
-	return ""
 }
 
 func (s *temporalService) ExecuteWorkflowWithDelay(ctx context.Context, workflowType types.TemporalWorkflowType, params interface{}, delaySeconds int) (models.WorkflowRun, error) {
@@ -496,8 +477,19 @@ func (s *temporalService) ExecuteWorkflowWithDelay(ctx context.Context, workflow
 	return s.StartWorkflow(ctx, options, workflowType, input)
 }
 
+// exclusiveWorkflowIDKeys lists workflow types that allow one open run per entity. Their ID is fixed
+// (no UUID suffix), so Temporal rejects a start while a run is open. Types sharing a key share the lock.
+var exclusiveWorkflowIDKeys = map[types.TemporalWorkflowType]string{
+	types.TemporalPriceSyncWorkflow:      "price_sync_plan",
+	types.TemporalPriceSyncV2Workflow:    "price_sync_plan",
+	types.TemporalAddonPriceSyncWorkflow: "price_sync_addon",
+}
+
 func (s *temporalService) generateWorkflowID(workflowType types.TemporalWorkflowType, params interface{}) string {
 	contextID := s.extractWorkflowContextID(workflowType, params)
+	if key, ok := exclusiveWorkflowIDKeys[workflowType]; ok && contextID != "" {
+		return fmt.Sprintf("%s_%s_%s", types.UUID_PREFIX_WORKFLOW, key, contextID)
+	}
 	if contextID != "" {
 		return types.GenerateWorkflowIDWithContext(workflowType.String(), contextID)
 	}
@@ -508,6 +500,10 @@ func (s *temporalService) generateWorkflowID(workflowType types.TemporalWorkflow
 // for deterministic workflow ID generation. Returns empty string if no context ID is applicable.
 func (s *temporalService) extractWorkflowContextID(workflowType types.TemporalWorkflowType, params interface{}) string {
 	switch workflowType {
+	case types.TemporalPriceSyncWorkflow, types.TemporalPriceSyncV2Workflow:
+		if input, ok := params.(models.PriceSyncWorkflowInput); ok {
+			return input.PlanID
+		}
 	case types.TemporalProcessSubscriptionBillingWorkflow:
 		// Extract subscription ID from ProcessSubscriptionBillingWorkflowInput
 		if input, ok := params.(subscriptionModels.ProcessSubscriptionBillingWorkflowInput); ok {
