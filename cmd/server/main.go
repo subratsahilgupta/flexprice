@@ -205,6 +205,8 @@ func main() {
 			repository.NewAnalyticsViewRepository,
 			repository.NewReportsRepository,
 			repository.NewRevenueFactRepository,
+			repository.NewEventDeletionRequestRepository,
+			repository.NewEventDeletionLogRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
@@ -270,12 +272,14 @@ func main() {
 			adminsvc.NewDLQService,
 			service.NewMeterService,
 			service.NewEventService,
+			service.NewEventDeletionWindowService,
 			service.NewEventConsumptionService,
 			service.NewRawEventsReprocessingService,
 			service.NewRawEventConsumptionService,
 			service.NewCostSheetUsageTrackingService,
 			service.NewMeterUsageTrackingService,
 			service.NewMeterUsageService,
+			service.NewEventDeletionService,
 			service.NewCheckoutSessionService,
 			service.NewPriceService,
 			service.NewPriceUnitService,
@@ -423,6 +427,7 @@ func provideHandlers(
 	dashboardService service.DashboardService,
 	workflowService service.WorkflowService,
 	meterUsageService service.MeterUsageService,
+	eventDeletionService service.EventDeletionService,
 	checkoutSessionService service.CheckoutSessionService,
 	geminiPricingService service.GeminiPricingService,
 	webhookService *webhook.WebhookService,
@@ -430,7 +435,7 @@ func provideHandlers(
 	revenueService interfaces.RevenueService,
 ) api.Handlers {
 	return api.Handlers{
-		Events:                   v1.NewEventsHandler(eventService, rawEventsReprocessingService, rawEventConsumptionService, meterUsageService, cfg, logger),
+		Events:                   v1.NewEventsHandler(eventService, rawEventsReprocessingService, rawEventConsumptionService, meterUsageService, eventDeletionService, cfg, logger),
 		Meter:                    v1.NewMeterHandler(meterService, logger),
 		Auth:                     v1.NewAuthHandler(cfg, authService, logger),
 		User:                     v1.NewUserHandler(userService, logger),

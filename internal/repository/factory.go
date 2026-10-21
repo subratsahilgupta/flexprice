@@ -7,6 +7,7 @@ import (
 	domainActivity "github.com/flexprice/flexprice/internal/domain/activity"
 	"github.com/flexprice/flexprice/internal/domain/addon"
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
+	"github.com/flexprice/flexprice/internal/domain/addonpricesync"
 	"github.com/flexprice/flexprice/internal/domain/alert"
 	"github.com/flexprice/flexprice/internal/domain/alertlogs"
 	domainAnalytics "github.com/flexprice/flexprice/internal/domain/analytics"
@@ -35,7 +36,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/payment"
 	"github.com/flexprice/flexprice/internal/domain/paymentmethod"
 	"github.com/flexprice/flexprice/internal/domain/plan"
-	"github.com/flexprice/flexprice/internal/domain/addonpricesync"
 	"github.com/flexprice/flexprice/internal/domain/planpricesync"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/priceunit"
@@ -327,4 +327,12 @@ func NewReportsRepository(cfg *config.Configuration, log *logger.Logger) (domain
 
 func NewRevenueFactRepository(p RepositoryParams) revenuefact.Repository {
 	return entRepo.NewRevenueFactRepository(p.EntClient, p.Logger)
+}
+
+func NewEventDeletionRequestRepository(p RepositoryParams) events.DeletionRequestRepository {
+	return entRepo.NewEventDeletionRequestRepository(p.EntClient, p.Logger)
+}
+
+func NewEventDeletionLogRepository(p RepositoryParams) events.DeletedEventsLogRepository {
+	return clickhouseRepo.NewEventDeletionLogRepository(p.ClickHouseDB, p.Logger)
 }

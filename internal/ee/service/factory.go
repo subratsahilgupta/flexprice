@@ -137,6 +137,8 @@ type ServiceParams struct {
 	ReportsRepo                  domainAnalytics.ReportsRepository
 	RevenueFactRepo              revenuefact.Repository
 	ActivityRepo                 domainActivity.Repository
+	EventDeletionRequestRepo     events.DeletionRequestRepository
+	EventDeletionLogRepo         events.DeletedEventsLogRepository
 
 	// Publishers
 	EventPublisher   publisher.EventPublisher
@@ -246,6 +248,8 @@ func NewServiceParams(
 	reportsRepo domainAnalytics.ReportsRepository,
 	revenueFactRepo revenuefact.Repository,
 	activityRepo domainActivity.Repository,
+	eventDeletionRequestRepo events.DeletionRequestRepository,
+	eventDeletionLogRepo events.DeletedEventsLogRepository,
 ) ServiceParams {
 	return ServiceParams{
 		Logger:                       logger,
@@ -322,5 +326,7 @@ func NewServiceParams(
 		ReportsRepo:                  reportsRepo,
 		RevenueFactRepo:              revenueFactRepo,
 		ActivityRepo:                 activityRepo,
+		EventDeletionRequestRepo:     eventDeletionRequestRepo,
+		EventDeletionLogRepo:         eventDeletionLogRepo,
 	}
 }

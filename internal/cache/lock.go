@@ -8,10 +8,24 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"github.com/samber/lo"
 )
 
 type Locker interface {
 	AcquireLock(ctx context.Context, key string, ttl time.Duration) (Lock, error)
+}
+
+// KeyReleaser drops lock keys whoever holds them. Neither existing path can:
+// Lock.Release deletes only if the key still holds the token its own AcquireLock
+// minted, and RedisCache.Delete prefixes the key with Redis.KeyPrefix while
+// AcquireLock writes it raw, so the two address different keys.
+//
+// Bulk event deletion clears the per-event deduplication locks for the ids it
+// deleted, which a consumer process took, so a re-ingest under the same id
+// inside the dedup window is not skipped. Kept off Locker so implementations
+// that never release a key they do not hold need not carry the method.
+type KeyReleaser interface {
+	ReleaseKeys(ctx context.Context, keys ...string) error
 }
 
 type Lock interface {
@@ -132,4 +146,21 @@ func (l *redisLock) Release(ctx context.Context) error {
 	).Result()
 
 	return err
+}
+
+// ReleaseKeys unlinks the given lock keys whoever holds them. Detached from ctx
+// cancellation for the same reason as Release.
+func (l *redisLocker) ReleaseKeys(ctx context.Context, keys ...string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+
+	for _, chunk := range lo.Chunk(keys, 1000) {
+		if err := l.client.Unlink(ctx, chunk...).Err(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
