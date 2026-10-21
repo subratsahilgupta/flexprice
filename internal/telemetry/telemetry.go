@@ -3,8 +3,6 @@ package telemetry
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -13,55 +11,33 @@ import (
 	"sync"
 	"time"
 
-	"github.com/flexprice/flexprice/ent/environment"
-	"github.com/flexprice/flexprice/ent/invoice"
-	"github.com/flexprice/flexprice/ent/plan"
-	"github.com/flexprice/flexprice/ent/tenant"
 	"github.com/flexprice/flexprice/internal/buildinfo"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/logger"
-	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/google/uuid"
 	"go.uber.org/fx"
-)
-
-const (
-	heartbeatEvery = time.Hour
-	snapshotEvery  = 24 * time.Hour
 )
 
 type Reporter struct {
 	cfg        *config.Configuration
-	db         postgres.IClient
 	log        *logger.Logger
 	http       *http.Client
-	processID  string
 	instanceID string
 	cloud      string
 	cloudOnce  sync.Once
-	cancel     context.CancelFunc
-	done       chan struct{}
 }
 
-func NewReporter(cfg *config.Configuration, db postgres.IClient, log *logger.Logger) *Reporter {
+func NewReporter(cfg *config.Configuration, log *logger.Logger) *Reporter {
 	hostname, _ := os.Hostname()
 	r := &Reporter{
 		cfg:        cfg,
-		db:         db,
 		log:        log,
 		http:       &http.Client{Timeout: 5 * time.Second},
-		processID:  uuid.NewString(),
 		instanceID: hostname,
 		cloud:      "unknown",
 	}
 	go r.cloudOnce.Do(func() { r.cloud = probeCloud() })
 	return r
-}
-
-func (r *Reporter) FireOnce(ctx context.Context) {
-	r.heartbeat(ctx)
-	r.snapshot(ctx)
 }
 
 func RegisterHooks(lc fx.Lifecycle, r *Reporter) {
@@ -72,24 +48,7 @@ func RegisterHooks(lc fx.Lifecycle, r *Reporter) {
 				return nil
 			}
 			r.log.Info(ctx, "telemetry on, set FLEXPRICE_TELEMETRY_DISABLED=true to opt out")
-			runCtx, cancel := context.WithCancel(context.Background())
-			r.cancel = cancel
-			r.done = make(chan struct{})
-			go func() {
-				defer close(r.done)
-				r.run(runCtx)
-			}()
-			return nil
-		},
-		OnStop: func(ctx context.Context) error {
-			if r.cancel == nil {
-				return nil
-			}
-			r.cancel()
-			select {
-			case <-r.done:
-			case <-ctx.Done():
-			}
+			r.init(ctx)
 			return nil
 		},
 	})
@@ -110,109 +69,61 @@ func isTruthy(s string) bool {
 	return s == "1" || s == "true"
 }
 
-func (r *Reporter) run(ctx context.Context) {
-	sendsSnapshot := r.cfg.Deployment.Mode == types.ModeAPI || r.cfg.Deployment.Mode == types.ModeLocal
+// init fires once per process start, carrying every static build/host field.
+// Per-event pings after this only ever send instance_id + tenant/env/event
+// name — PostHog joins them to this $set payload by distinct_id.
+func (r *Reporter) init(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 
-	r.heartbeat(ctx)
-	if sendsSnapshot {
-		r.snapshot(ctx)
-	}
-
-	hb := time.NewTicker(heartbeatEvery)
-	defer hb.Stop()
-	snap := time.NewTicker(snapshotEvery)
-	defer snap.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-hb.C:
-			r.heartbeat(ctx)
-		case <-snap.C:
-			if sendsSnapshot {
-				r.snapshot(ctx)
-			}
-		}
-	}
-}
-
-func (r *Reporter) base() map[string]any {
 	p := map[string]any{
-		"instance_id":   r.instanceID,
 		"version":       buildinfo.Version,
 		"git_sha":       buildinfo.GitSHA,
 		"build_variant": buildinfo.BuildVariant,
 		"region":        r.cfg.Logging.Region,
 		"os":            runtime.GOOS,
 		"arch":          runtime.GOARCH,
+		"role":          string(r.cfg.Deployment.Mode),
+		"platform":      detectPlatform(),
+		"cloud":         r.cloud,
+		"num_cpu":       runtime.NumCPU(),
 	}
 	if l := r.cfg.Telemetry.InstallLabel; l != "" {
 		p["install_label"] = l
 	}
-	return p
+	p["$set"] = map[string]any{
+		"version": buildinfo.Version, "git_sha": buildinfo.GitSHA, "build_variant": buildinfo.BuildVariant,
+		"region": r.cfg.Logging.Region, "os": runtime.GOOS, "arch": runtime.GOARCH, "cloud": r.cloud,
+	}
+	r.send(ctx, "flexprice_install_init", p)
 }
 
-func (r *Reporter) heartbeat(ctx context.Context) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	p := r.base()
-	p["process_id"] = r.processID
-	p["role"] = string(r.cfg.Deployment.Mode)
-	p["platform"] = detectPlatform()
-	p["cloud"] = r.cloud
-	p["num_cpu"] = runtime.NumCPU()
-	r.send(ctx, "flexprice_install_heartbeat", r.instanceID, p)
-}
-
-func (r *Reporter) snapshot(ctx context.Context) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	p := r.base()
-	if err := r.addCounts(ctx, p); err != nil {
-		r.log.Debug(ctx, "telemetry snapshot skipped", "error", err)
+// ReportEvent fires a lightweight ping for a real system event consumed off
+// the webhook topic. Called from the webhook handler's processMessage, right
+// after cascade — never blocks delivery, never retried.
+func (r *Reporter) ReportEvent(ctx context.Context, eventName string) {
+	if reason := r.disabledReason(); reason != "" {
 		return
 	}
-	p["$insert_id"] = hash(r.instanceID, "snapshot", time.Now().UTC().Format("2006-01-02"))
-	r.send(ctx, "flexprice_install_snapshot", r.instanceID, p)
-}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 
-func (r *Reporter) addCounts(ctx context.Context, p map[string]any) error {
-	c := r.db.Reader(ctx)
-	pub := string(types.StatusPublished)
-	since := time.Now().Add(-30 * 24 * time.Hour)
-
-	tenants, err := c.Tenant.Query().Where(tenant.StatusEQ(pub)).Count(ctx)
-	if err != nil {
-		return err
+	p := map[string]any{
+		"tenant_id":      types.GetTenantID(ctx),
+		"environment_id": types.GetEnvironmentID(ctx),
+		"event_name":     eventName,
 	}
-	envs, err := c.Environment.Query().Where(environment.StatusEQ(pub)).Count(ctx)
-	if err != nil {
-		return err
-	}
-	plans, err := c.Plan.Query().Where(plan.StatusEQ(pub)).Count(ctx)
-	if err != nil {
-		return err
-	}
-	invoices, err := c.Invoice.Query().Where(invoice.StatusEQ(pub), invoice.CreatedAtGT(since)).Count(ctx)
-	if err != nil {
-		return err
-	}
-
-	p["tenant_count"] = tenants
-	p["environments"] = bucket(envs)
-	p["plans"] = bucket(plans)
-	p["invoices_30d"] = bucket(invoices)
-	return nil
+	r.send(ctx, "flexprice_system_event", p)
 }
 
 var eventRoutes = map[string]string{
-	"flexprice_install_heartbeat": "/v1/heartbeat",
-	"flexprice_install_snapshot":  "/v1/snapshot",
+	"flexprice_install_init": "/v1/init",
+	"flexprice_system_event": "/v1/event",
 }
 
-func (r *Reporter) send(ctx context.Context, event string, _ string, props map[string]any) {
+func (r *Reporter) send(ctx context.Context, event string, props map[string]any) {
+	props["instance_id"] = r.instanceID
+
 	if r.cfg.Telemetry.DryRun {
 		b, _ := json.Marshal(props)
 		r.log.Info(ctx, "telemetry dry-run", "event", event, "payload", string(b))
@@ -243,31 +154,6 @@ func (r *Reporter) send(ctx context.Context, event string, _ string, props map[s
 	}
 	defer resp.Body.Close()
 	r.log.Debug(ctx, "telemetry sent", "event", event, "status", resp.StatusCode)
-}
-
-func hash(parts ...string) string {
-	sum := sha256.Sum256([]byte(strings.Join(parts, ":")))
-	return hex.EncodeToString(sum[:])
-}
-
-func bucket(n int) string {
-	switch {
-	case n <= 0:
-		return "0"
-	case n < 10:
-		return "1-10"
-	case n < 100:
-		return "10-100"
-	case n < 1_000:
-		return "100-1k"
-	case n < 10_000:
-		return "1k-10k"
-	case n < 100_000:
-		return "10k-100k"
-	case n < 1_000_000:
-		return "100k-1M"
-	}
-	return "1M+"
 }
 
 func probeCloud() string {
