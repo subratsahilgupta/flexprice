@@ -259,9 +259,10 @@ func ToMeterUsageDetailedAnalyticsResponse(results []*events.MeterUsageDetailedR
 	return &MeterUsageDetailedAnalyticsResponse{Items: items}
 }
 
-// MeterUsagePropertyKeysRequest is the request for POST /v1/meter-usage/properties
+// MeterUsagePropertyKeysRequest is the request for POST /v1/meter-usage/properties.
+// Without external_customer_id, it looks across the whole environment.
 type MeterUsagePropertyKeysRequest struct {
-	ExternalCustomerID string    `json:"external_customer_id" validate:"required" binding:"required" example:"cust_123"`
+	ExternalCustomerID string    `json:"external_customer_id,omitempty" example:"cust_123"`
 	FeatureIDs         []string  `json:"feature_ids,omitempty" example:"feat_abc,feat_def"`
 	StartTime          time.Time `json:"start_time" validate:"required" binding:"required" example:"2024-01-01T00:00:00Z"`
 	EndTime            time.Time `json:"end_time" validate:"required" binding:"required" example:"2024-02-01T00:00:00Z"`

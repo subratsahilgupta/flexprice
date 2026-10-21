@@ -1330,24 +1330,30 @@ func (r *MeterUsageRepository) GetPropertyKeys(ctx context.Context, params *even
 	})
 	defer FinishSpan(span)
 
+	// Without a customer, the sort key doesn't order rows by timestamp, so any rows are sampled instead of the latest.
+	customerScope, order := "", ""
+	args := []interface{}{params.TenantID, params.EnvironmentID}
+	if params.ExternalCustomerID != "" {
+		customerScope, order = "AND external_customer_id = ?", "ORDER BY timestamp DESC"
+		args = append(args, params.ExternalCustomerID)
+	}
 	query := fmt.Sprintf(`
 		SELECT key, count() AS seen
 		FROM (
 			SELECT properties FROM meter_usage
-			WHERE tenant_id = ? AND environment_id = ? AND external_customer_id = ?
+			WHERE tenant_id = ? AND environment_id = ? %s
 				AND meter_id = ? AND timestamp >= ? AND timestamp < ?
-			ORDER BY timestamp DESC
+			%s
 			LIMIT %d
 		)
 		ARRAY JOIN JSONExtractKeys(properties) AS key
 		GROUP BY key
 		SETTINGS max_memory_usage = 96636764160
-	`, propertyKeysSampleRows)
+	`, customerScope, order, propertyKeysSampleRows)
 
 	counts := make(map[string]uint64)
 	for _, meterID := range params.MeterIDs {
-		rows, err := r.store.GetConn().Query(ctx, query,
-			params.TenantID, params.EnvironmentID, params.ExternalCustomerID, meterID, params.StartTime, params.EndTime)
+		rows, err := r.store.GetConn().Query(ctx, query, append(args, meterID, params.StartTime, params.EndTime)...)
 		if err != nil {
 			SetSpanError(span, err)
 			return nil, ierr.WithError(err).

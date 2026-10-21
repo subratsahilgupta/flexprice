@@ -353,13 +353,17 @@ func (s *customerPortalService) GetAnalytics(ctx context.Context, req dto.Portal
 
 // GetGroupablePropertyKeys returns the visible property keys in the portal customer's usage
 func (s *customerPortalService) GetGroupablePropertyKeys(ctx context.Context, req dto.PortalPropertyKeysRequest) (*dto.PropertyKeysResponse, error) {
-	if types.GetCustomerID(ctx) == "" {
+	// An empty external customer ID would widen the lookup to the whole tenant.
+	if types.GetCustomerID(ctx) == "" || types.GetExternalCustomerID(ctx) == "" {
 		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
 	}
 
 	props, err := s.usageProperties(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if props == nil || !props.Enabled {
+		return &dto.PropertyKeysResponse{Keys: []string{}}, nil
 	}
 
 	keys, err := NewMeterUsageService(s.ServiceParams).GetGroupablePropertyKeys(ctx, &events.PropertyLookupParams{
@@ -381,7 +385,8 @@ func (s *customerPortalService) GetGroupablePropertyKeys(ctx context.Context, re
 
 // GetPropertyValues rejects keys hidden from portal users
 func (s *customerPortalService) GetPropertyValues(ctx context.Context, req dto.PortalPropertyValuesRequest) (*dto.PropertyValuesResponse, error) {
-	if types.GetCustomerID(ctx) == "" {
+	// An empty external customer ID would widen the lookup to the whole tenant.
+	if types.GetCustomerID(ctx) == "" || types.GetExternalCustomerID(ctx) == "" {
 		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
 	}
 
@@ -578,8 +583,8 @@ func visiblePropertyKey(key string, cfg *types.CustomerPortalUsageProperties, qu
 		return false
 	}
 
-	if cfg == nil {
-		return true
+	if cfg == nil || !cfg.Enabled {
+		return false
 	}
 	if len(cfg.AllowedKeys) > 0 && !slices.Contains(cfg.AllowedKeys, key) {
 		return false

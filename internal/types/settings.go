@@ -330,8 +330,9 @@ type CustomerPortalAnalyticsConfig struct {
 }
 
 // CustomerPortalUsageProperties controls which event property keys portal users can group and filter by.
-// When AllowedKeys is set, only those keys are visible; HiddenKeys are always hidden.
+// Off unless Enabled. When AllowedKeys is set, only those keys are visible; HiddenKeys are always hidden.
 type CustomerPortalUsageProperties struct {
+	Enabled     bool     `json:"enabled"`
 	AllowedKeys []string `json:"allowed_keys,omitempty"`
 	HiddenKeys  []string `json:"hidden_keys,omitempty"`
 }

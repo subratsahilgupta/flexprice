@@ -5288,13 +5288,15 @@ func TestVisiblePropertyKey(t *testing.T) {
 		cfg  *types.CustomerPortalUsageProperties
 		want bool
 	}{
-		{name: "no config", key: "region", want: true},
-		{name: "quantity key", key: "tokens", want: false},
-		{name: "quantity key even if allowed", key: "tokens", cfg: &types.CustomerPortalUsageProperties{AllowedKeys: []string{"tokens"}}, want: false},
-		{name: "hidden", key: "region", cfg: &types.CustomerPortalUsageProperties{HiddenKeys: []string{"region"}}, want: false},
-		{name: "not in allowed", key: "region", cfg: &types.CustomerPortalUsageProperties{AllowedKeys: []string{"model"}}, want: false},
-		{name: "in allowed", key: "model", cfg: &types.CustomerPortalUsageProperties{AllowedKeys: []string{"model"}}, want: true},
-		{name: "allowed and hidden", key: "model", cfg: &types.CustomerPortalUsageProperties{AllowedKeys: []string{"model"}, HiddenKeys: []string{"model"}}, want: false},
+		{name: "no config", key: "region", want: false},
+		{name: "disabled", key: "region", cfg: &types.CustomerPortalUsageProperties{}, want: false},
+		{name: "enabled", key: "region", cfg: &types.CustomerPortalUsageProperties{Enabled: true}, want: true},
+		{name: "quantity key", key: "tokens", cfg: &types.CustomerPortalUsageProperties{Enabled: true}, want: false},
+		{name: "quantity key even if allowed", key: "tokens", cfg: &types.CustomerPortalUsageProperties{Enabled: true, AllowedKeys: []string{"tokens"}}, want: false},
+		{name: "hidden", key: "region", cfg: &types.CustomerPortalUsageProperties{Enabled: true, HiddenKeys: []string{"region"}}, want: false},
+		{name: "not in allowed", key: "region", cfg: &types.CustomerPortalUsageProperties{Enabled: true, AllowedKeys: []string{"model"}}, want: false},
+		{name: "in allowed", key: "model", cfg: &types.CustomerPortalUsageProperties{Enabled: true, AllowedKeys: []string{"model"}}, want: true},
+		{name: "allowed and hidden", key: "model", cfg: &types.CustomerPortalUsageProperties{Enabled: true, AllowedKeys: []string{"model"}, HiddenKeys: []string{"model"}}, want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

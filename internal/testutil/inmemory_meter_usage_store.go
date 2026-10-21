@@ -1240,7 +1240,7 @@ func (s *InMemoryMeterUsageStore) GetPropertyValues(_ context.Context, params *e
 
 func matchPropertyLookup(r *events.MeterUsage, params *events.PropertyLookupParams) bool {
 	return r.TenantID == params.TenantID && r.EnvironmentID == params.EnvironmentID &&
-		r.ExternalCustomerID == params.ExternalCustomerID && lo.Contains(params.MeterIDs, r.MeterID) &&
+		(params.ExternalCustomerID == "" || r.ExternalCustomerID == params.ExternalCustomerID) && lo.Contains(params.MeterIDs, r.MeterID) &&
 		!r.Timestamp.Before(params.StartTime) && r.Timestamp.Before(params.EndTime)
 }
 
