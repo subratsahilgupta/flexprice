@@ -1,6 +1,7 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -28,6 +29,9 @@ import (
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
+
+// defaultPropertyValuesLimit is the number of property values returned when the request sets no limit.
+const defaultPropertyValuesLimit = 50
 
 // ---------------------------------------------------------------------------
 // Service interface + constructor
@@ -71,6 +75,9 @@ type MeterUsageService interface {
 
 	// GetGroupablePropertyKeys returns the property keys in the customer's usage, most seen first, without quantity keys.
 	GetGroupablePropertyKeys(ctx context.Context, params *events.PropertyLookupParams) ([]string, error)
+
+	// GetPropertyValues returns the key's values in the customer's usage, most seen first.
+	GetPropertyValues(ctx context.Context, params *events.PropertyLookupParams) ([]string, error)
 }
 
 type meterUsageService struct {
@@ -2919,25 +2926,13 @@ func rollupBucketPoints(
 // ensure meterUsageService implements MeterUsageService
 var _ MeterUsageService = (*meterUsageService)(nil)
 
-// GetGroupablePropertyKeys scopes to the features' meters, or to the meters with usage in the window when none are given.
+// GetGroupablePropertyKeys drops the meters' quantity keys, which users can't group by.
 func (s *meterUsageService) GetGroupablePropertyKeys(ctx context.Context, params *events.PropertyLookupParams) ([]string, error) {
 	if params == nil {
 		return nil, ierr.NewError("params are required").Mark(ierr.ErrValidation)
 	}
 
-	var err error
-	if len(params.FeatureIDs) > 0 {
-		params.MeterIDs, err = featureMeterIDs(ctx, s.FeatureRepo, params.FeatureIDs)
-	} else {
-		params.MeterIDs, err = s.repo.GetDistinctMeterIDs(ctx, &events.MeterUsageQueryParams{
-			TenantID:           params.TenantID,
-			EnvironmentID:      params.EnvironmentID,
-			ExternalCustomerID: params.ExternalCustomerID,
-			StartTime:          params.StartTime,
-			EndTime:            params.EndTime,
-		})
-	}
-	if err != nil {
+	if err := s.resolvePropertyLookupMeters(ctx, params); err != nil {
 		return nil, err
 	}
 	if len(params.MeterIDs) == 0 {
@@ -2957,6 +2952,52 @@ func (s *meterUsageService) GetGroupablePropertyKeys(ctx context.Context, params
 		_, ok := quantityKeys[key]
 		return !ok
 	}), nil
+}
+
+// GetPropertyValues defaults the limit to defaultPropertyValuesLimit.
+func (s *meterUsageService) GetPropertyValues(ctx context.Context, params *events.PropertyLookupParams) ([]string, error) {
+	if params == nil {
+		return nil, ierr.NewError("params are required").Mark(ierr.ErrValidation)
+	}
+	if !analyticsGroupByPropertyName.MatchString(params.Key) {
+		return nil, ierr.NewError("invalid property key").
+			WithHintf("property key %q is not valid", params.Key).
+			Mark(ierr.ErrValidation)
+	}
+	params.Limit = cmp.Or(params.Limit, defaultPropertyValuesLimit)
+
+	if err := s.resolvePropertyLookupMeters(ctx, params); err != nil {
+		return nil, err
+	}
+	if len(params.MeterIDs) == 0 {
+		return []string{}, nil
+	}
+
+	values, err := s.repo.GetPropertyValues(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	return lo.Ternary(values == nil, []string{}, values), nil
+}
+
+// resolvePropertyLookupMeters sets MeterIDs to the features' meters, or to the meters with usage in the window.
+func (s *meterUsageService) resolvePropertyLookupMeters(ctx context.Context, params *events.PropertyLookupParams) error {
+	var err error
+
+	if len(params.FeatureIDs) > 0 {
+		params.MeterIDs, err = featureMeterIDs(ctx, s.FeatureRepo, params.FeatureIDs)
+	} else {
+		params.MeterIDs, err = s.repo.GetDistinctMeterIDs(ctx, &events.MeterUsageQueryParams{
+			TenantID:           params.TenantID,
+			EnvironmentID:      params.EnvironmentID,
+			ExternalCustomerID: params.ExternalCustomerID,
+			StartTime:          params.StartTime,
+			EndTime:            params.EndTime,
+		})
+	}
+
+	return err
 }
 
 // featureMeterIDs returns the distinct meter IDs of the given features.

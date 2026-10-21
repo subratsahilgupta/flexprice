@@ -64,6 +64,14 @@ type PortalPropertyKeysRequest struct {
 	EndTime    time.Time `json:"end_time" binding:"required" example:"2024-01-31T23:59:59Z"`
 }
 
+// PortalPropertyValuesRequest asks for one property key's values in the portal customer's usage
+type PortalPropertyValuesRequest struct {
+	PortalPropertyKeysRequest
+	Key    string `json:"key" binding:"required" example:"region"`
+	Prefix string `json:"prefix,omitempty" example:"us-"`
+	Limit  int    `json:"limit,omitempty" binding:"omitempty,min=1,max=200" example:"50"`
+}
+
 // PortalPaginatedRequest represents a paginated request from the customer portal
 type PortalPaginatedRequest struct {
 	Page  int `form:"page" json:"page" example:"1"`

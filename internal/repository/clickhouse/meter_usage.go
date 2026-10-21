@@ -1387,3 +1387,70 @@ func (r *MeterUsageRepository) GetPropertyKeys(ctx context.Context, params *even
 	SetSpanSuccess(span)
 	return keys, nil
 }
+
+// GetPropertyValues ranks the key's values by row count; no FINAL since the count only orders them.
+func (r *MeterUsageRepository) GetPropertyValues(ctx context.Context, params *events.PropertyLookupParams) ([]string, error) {
+	if params == nil {
+		return nil, ierr.NewError("params are required").Mark(ierr.ErrValidation)
+	}
+	if len(params.MeterIDs) == 0 {
+		return nil, nil
+	}
+
+	span := StartRepositorySpan(ctx, "meter_usage", "get_property_values", map[string]interface{}{
+		"external_customer_id": params.ExternalCustomerID,
+		"meter_count":          len(params.MeterIDs),
+		"key":                  params.Key,
+	})
+	defer FinishSpan(span)
+
+	where, whereArgs := r.qb.BuildWhereClause(&events.MeterUsageQueryParams{
+		TenantID:           params.TenantID,
+		EnvironmentID:      params.EnvironmentID,
+		ExternalCustomerID: params.ExternalCustomerID,
+		MeterIDs:           params.MeterIDs,
+		StartTime:          params.StartTime,
+		EndTime:            params.EndTime,
+	})
+	query := fmt.Sprintf(`
+		SELECT JSONExtractString(properties, ?) AS value
+		FROM meter_usage
+		WHERE %s AND value != '' AND startsWith(value, ?)
+		GROUP BY value
+		ORDER BY count() DESC, value
+		LIMIT ?
+		SETTINGS max_memory_usage = 96636764160
+	`, where)
+	args := append([]interface{}{params.Key}, whereArgs...)
+	args = append(args, params.Prefix, params.Limit)
+
+	rows, err := r.store.GetConn().Query(ctx, query, args...)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to query property values").
+			Mark(ierr.ErrDatabase)
+	}
+	defer rows.Close()
+
+	var values []string
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			SetSpanError(span, err)
+			return nil, ierr.WithError(err).
+				WithHint("Failed to scan property value row").
+				Mark(ierr.ErrDatabase)
+		}
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Error iterating property value rows").
+			Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return values, nil
+}

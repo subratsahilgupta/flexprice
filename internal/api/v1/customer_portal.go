@@ -221,6 +221,22 @@ func (h *CustomerPortalHandler) GetPropertyKeys(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+func (h *CustomerPortalHandler) GetPropertyValues(c *gin.Context) {
+	var req dto.PortalPropertyValuesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(ierr.WithError(err).Mark(ierr.ErrValidation))
+		return
+	}
+
+	response, err := h.portalService.GetPropertyValues(c.Request.Context(), req)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
 func (h *CustomerPortalHandler) GetCostAnalytics(c *gin.Context) {
 	var req dto.PortalCostAnalyticsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

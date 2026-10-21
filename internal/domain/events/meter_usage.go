@@ -281,4 +281,7 @@ type MeterUsageRepository interface {
 
 	// GetPropertyKeys returns the property keys in the customer's recent usage, most seen first.
 	GetPropertyKeys(ctx context.Context, params *PropertyLookupParams) ([]string, error)
+
+	// GetPropertyValues returns the Key's non-empty values starting with Prefix, most seen first, up to Limit.
+	GetPropertyValues(ctx context.Context, params *PropertyLookupParams) ([]string, error)
 }

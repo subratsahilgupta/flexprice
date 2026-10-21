@@ -45,6 +45,8 @@ type CustomerPortalService interface {
 	GetCostAnalytics(ctx context.Context, req dto.PortalCostAnalyticsRequest) (*dto.GetDetailedCostAnalyticsResponse, error)
 	// GetGroupablePropertyKeys returns the property keys portal users may group or filter usage by
 	GetGroupablePropertyKeys(ctx context.Context, req dto.PortalPropertyKeysRequest) (*dto.PropertyKeysResponse, error)
+	// GetPropertyValues returns a visible property key's values in the portal customer's usage
+	GetPropertyValues(ctx context.Context, req dto.PortalPropertyValuesRequest) (*dto.PropertyValuesResponse, error)
 	// GetUsageSummary returns usage summary for the portal customer
 	GetUsageSummary(ctx context.Context, req dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error)
 	// GetPortalConfig returns the customer portal configuration for the current tenant/environment
@@ -375,6 +377,40 @@ func (s *customerPortalService) GetGroupablePropertyKeys(ctx context.Context, re
 	return &dto.PropertyKeysResponse{
 		Keys: lo.Filter(keys, func(key string, _ int) bool { return visiblePropertyKey(key, props, nil) }),
 	}, nil
+}
+
+// GetPropertyValues rejects keys hidden from portal users
+func (s *customerPortalService) GetPropertyValues(ctx context.Context, req dto.PortalPropertyValuesRequest) (*dto.PropertyValuesResponse, error) {
+	if types.GetCustomerID(ctx) == "" {
+		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
+	}
+
+	props, err := s.usageProperties(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !visiblePropertyKey(req.Key, props, nil) {
+		return nil, ierr.NewError("property key is not available").
+			WithHintf("property key %q is not available", req.Key).
+			Mark(ierr.ErrValidation)
+	}
+
+	values, err := NewMeterUsageService(s.ServiceParams).GetPropertyValues(ctx, &events.PropertyLookupParams{
+		TenantID:           types.GetTenantID(ctx),
+		EnvironmentID:      types.GetEnvironmentID(ctx),
+		ExternalCustomerID: types.GetExternalCustomerID(ctx),
+		FeatureIDs:         req.FeatureIDs,
+		StartTime:          req.StartTime,
+		EndTime:            req.EndTime,
+		Key:                req.Key,
+		Prefix:             req.Prefix,
+		Limit:              req.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &dto.PropertyValuesResponse{Values: values}, nil
 }
 
 // GetCostAnalytics returns cost analytics for the portal customer

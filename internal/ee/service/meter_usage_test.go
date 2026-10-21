@@ -13,6 +13,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -5226,6 +5227,55 @@ func (s *MeterUsageServiceSuite) TestGetGroupablePropertyKeys() {
 			})
 			s.NoError(err)
 			s.Equal(tt.want, keys)
+		})
+	}
+}
+
+func (s *MeterUsageServiceSuite) TestGetPropertyValues() {
+	ctx := s.GetContext()
+	ts := s.periodStart.Add(time.Hour)
+	ext := s.customer.ExternalID
+	for region, n := range map[interface{}]int{"us-east": 3, "us-west": 2, "eu": 1, 5: 1, "": 1} {
+		for range n {
+			s.insertMeterUsageWithProps(ctx, s.meterAPI.ID, ext, "", ts, 1, map[string]interface{}{"region": region})
+		}
+	}
+	s.insertMeterUsageWithProps(ctx, s.meterAPI.ID, "ext_cust_2", "", ts, 1, map[string]interface{}{"region": "us-secret"})
+
+	tests := []struct {
+		name       string
+		key        string
+		prefix     string
+		limit      int
+		featureIDs []string
+		want       []string
+		wantErr    bool
+	}{
+		{name: "default limit, non-string and empty values dropped", key: "region", want: []string{"us-east", "us-west", "eu"}},
+		{name: "prefix", key: "region", prefix: "us-", want: []string{"us-east", "us-west"}},
+		{name: "limit", key: "region", limit: 1, want: []string{"us-east"}},
+		{name: "unknown feature", key: "region", featureIDs: []string{"feat_missing"}, want: []string{}},
+		{name: "invalid key", key: "region'; DROP", wantErr: true},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			values, err := s.svc.GetPropertyValues(ctx, &events.PropertyLookupParams{
+				TenantID:           types.GetTenantID(ctx),
+				EnvironmentID:      types.GetEnvironmentID(ctx),
+				ExternalCustomerID: ext,
+				FeatureIDs:         tt.featureIDs,
+				StartTime:          s.periodStart,
+				EndTime:            s.periodEnd,
+				Key:                tt.key,
+				Prefix:             tt.prefix,
+				Limit:              tt.limit,
+			})
+			if tt.wantErr {
+				s.True(ierr.IsValidation(err))
+				return
+			}
+			s.NoError(err)
+			s.Equal(tt.want, values)
 		})
 	}
 }
