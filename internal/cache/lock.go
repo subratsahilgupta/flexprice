@@ -135,9 +135,6 @@ func (l *redisLock) Release(ctx context.Context) error {
 	return err
 }
 
-// ReleaseLockByKey deletes a lock without the token check. Price-sync locks are acquired by the
-// API and released by a Temporal activity in another process, which never sees the token.
-// Lock keys are stored unprefixed, so RedisCache.Delete (which prefixes) cannot release them.
 func ReleaseLockByKey(ctx context.Context, key string) error {
 	rc, ok := GetRedisCache().(*redisCacheImpl)
 	if !ok || rc == nil || rc.client == nil {
