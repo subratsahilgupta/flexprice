@@ -79,9 +79,10 @@ func (s *billingService) UsageNetForWindow(ctx context.Context, sub *subscriptio
 			continue
 		}
 		discounts := lo.FromPtr(line.LineItemDiscount).Add(lo.FromPtr(line.InvoiceLevelDiscount))
-		net = net.Add(decimal.Max(decimal.Zero, line.Amount.Sub(discounts)))
+		net = net.Add(line.Amount.Sub(discounts))
 	}
-	return net, nil
+	// Negative lines offset positive ones, matching what finalization can place credits on.
+	return decimal.Max(net, decimal.Zero), nil
 }
 
 // CalculateMeterUsageCharges computes usage-based invoice line items from the meter_usage table.
