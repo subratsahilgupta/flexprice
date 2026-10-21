@@ -321,6 +321,11 @@ func (h *PlanHandler) SyncPlanPrices(c *gin.Context) {
 	// Start the price sync workflow (activity will release lock when done)
 	workflowRun, err := h.temporalService.ExecuteWorkflow(c.Request.Context(), types.TemporalPriceSyncWorkflow, id)
 	if err != nil {
+		// The workflow never started, so the activity that frees the lock never runs.
+		// Release it here, or the next sync for this plan is blocked for the lock's full TTL.
+		if releaseErr := lock.Release(c.Request.Context()); releaseErr != nil {
+			h.log.Error(c.Request.Context(), "price_sync_lock_release_failed", "plan_id", id, "lock_key", lockKey, "error", releaseErr)
+		}
 		c.Error(err)
 		return
 	}
@@ -450,6 +455,11 @@ func (h *PlanHandler) SyncPlanPricesV2(c *gin.Context) {
 	// Start the price sync workflow (activity will release lock when done)
 	workflowRun, err := h.temporalService.ExecuteWorkflow(c.Request.Context(), types.TemporalPriceSyncV2Workflow, id)
 	if err != nil {
+		// The workflow never started, so the activity that frees the lock never runs.
+		// Release it here, or the next sync for this plan is blocked for the lock's full TTL.
+		if releaseErr := lock.Release(c.Request.Context()); releaseErr != nil {
+			h.log.Error(c.Request.Context(), "price_sync_lock_release_failed", "plan_id", id, "lock_key", lockKey, "error", releaseErr)
+		}
 		c.Error(err)
 		return
 	}

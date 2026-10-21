@@ -2,7 +2,6 @@ package activities
 
 import (
 	"context"
-	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/cache"
@@ -56,14 +55,10 @@ func (a *AddonActivities) SyncAddonPrices(ctx context.Context, input SyncAddonPr
 
 	lockKey := cache.PrefixAddonPriceSyncLock + input.AddonID
 	defer func() {
-		redisCache := cache.GetRedisCache()
-		if redisCache == nil {
-			a.logger.Info(context.Background(), "addon_price_sync_lock_release_skipped", "addon_id", input.AddonID, "lock_key", lockKey, "reason", "redis_cache_nil")
+		if err := cache.ReleaseLockByKey(ctx, lockKey); err != nil {
+			a.logger.Error(ctx, "addon_price_sync_lock_release_failed", "addon_id", input.AddonID, "lock_key", lockKey, "error", err)
 			return
 		}
-		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		redisCache.Delete(releaseCtx, lockKey)
 		a.logger.Info(ctx, "addon_price_sync_lock_released", "addon_id", input.AddonID, "lock_key", lockKey)
 	}()
 

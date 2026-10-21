@@ -2,7 +2,6 @@ package activities
 
 import (
 	"context"
-	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/cache"
@@ -60,14 +59,10 @@ func (a *PlanActivities) SyncPlanPrices(ctx context.Context, input SyncPlanPrice
 
 	lockKey := cache.PrefixPriceSyncLock + input.PlanID
 	defer func() {
-		redisCache := cache.GetRedisCache()
-		if redisCache == nil {
-			a.logger.Info(context.Background(), "price_sync_lock_release_skipped", "plan_id", input.PlanID, "lock_key", lockKey, "reason", "redis_cache_nil")
+		if err := cache.ReleaseLockByKey(ctx, lockKey); err != nil {
+			a.logger.Error(ctx, "price_sync_lock_release_failed", "plan_id", input.PlanID, "lock_key", lockKey, "error", err)
 			return
 		}
-		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		redisCache.Delete(releaseCtx, lockKey)
 		a.logger.Info(ctx, "price_sync_lock_released", "plan_id", input.PlanID, "lock_key", lockKey)
 	}()
 
@@ -107,14 +102,10 @@ func (a *PlanActivities) SyncPlanPricesV2(ctx context.Context, input SyncPlanPri
 
 	lockKey := cache.PrefixPriceSyncLock + input.PlanID
 	defer func() {
-		redisCache := cache.GetRedisCache()
-		if redisCache == nil {
-			a.logger.Info(context.Background(), "price_sync_lock_release_skipped", "plan_id", input.PlanID, "lock_key", lockKey, "reason", "redis_cache_nil")
+		if err := cache.ReleaseLockByKey(ctx, lockKey); err != nil {
+			a.logger.Error(ctx, "price_sync_lock_release_failed", "plan_id", input.PlanID, "lock_key", lockKey, "version", "v2", "error", err)
 			return
 		}
-		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		redisCache.Delete(releaseCtx, lockKey)
 		a.logger.Info(ctx, "price_sync_lock_released", "plan_id", input.PlanID, "lock_key", lockKey, "version", "v2")
 	}()
 
