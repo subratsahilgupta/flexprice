@@ -160,7 +160,7 @@ func (r *recordingSelfBilling) OnTenantCreated(_ context.Context, tenantID, name
 	r.calls = append(r.calls, tenantID+"|"+name+"|"+email)
 }
 
-func (r *recordingSelfBilling) OnTenantBillingDetailsUpdated(context.Context, *tenant.Tenant) {}
+func (r *recordingSelfBilling) OnTenantBillingDetailsUpdated(context.Context, string) {}
 
 // withSelfBilling records every tenant handed to self-billing.
 func (d *tenantTestDeps) withSelfBilling() *recordingSelfBilling {

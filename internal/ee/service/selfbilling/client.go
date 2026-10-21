@@ -63,6 +63,10 @@ type billingDetails struct {
 	taxID      string
 }
 
+func (d billingDetails) hasAddress() bool {
+	return d.line1 != "" || d.line2 != "" || d.city != "" || d.state != "" || d.country != "" || d.postalCode != ""
+}
+
 type remoteSubscription struct {
 	id       string
 	status   types.SubscriptionStatus

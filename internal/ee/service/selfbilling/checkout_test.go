@@ -2,6 +2,7 @@ package selfbilling
 
 import (
 	"context"
+	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"net/http"
 	"testing"
 	"time"
@@ -269,5 +270,25 @@ func TestPollCheckout_PaidButStillConvertingNeverSuspends(t *testing.T) {
 
 	got, err := d.tenants.GetByID(context.Background(), "t1")
 	require.NoError(t, err)
+	assert.Equal(t, types.TenantInternalStatusTrialing, got.InternalStatus)
+}
+
+func TestStartCheckout_SavesAddressOnTenant(t *testing.T) {
+	fc := newFakeClient()
+	s, d := newTestService(fc)
+	seedTenant(t, d, "t1", types.TenantInternalStatusTrialing)
+	fc.subs["us:t1"] = &remoteSubscription{id: "sub_us:t1", status: types.SubscriptionStatusTrialing}
+
+	_, err := s.StartCheckout(tenantCtx("t1"), "t1", checkoutReq)
+	require.NoError(t, err)
+
+	got, err := d.tenants.GetByID(context.Background(), "t1")
+	require.NoError(t, err)
+	assert.Equal(t, tenant.TenantAddress{
+		Line1:      checkoutReq.Line1,
+		City:       checkoutReq.City,
+		PostalCode: checkoutReq.PostalCode,
+		Country:    checkoutReq.Country,
+	}, got.BillingDetails.Address)
 	assert.Equal(t, types.TenantInternalStatusTrialing, got.InternalStatus)
 }

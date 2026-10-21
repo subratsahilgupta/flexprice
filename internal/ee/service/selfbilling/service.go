@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/interfaces"
@@ -99,13 +98,30 @@ func (s *selfBillingService) OnTenantCreated(ctx context.Context, tenantID, name
 
 // OnTenantBillingDetailsUpdated copies the tenant's name and address to its Flexprice Cloud customer in the
 // background; checkout saves the address too, so a failure here is only logged.
-func (s *selfBillingService) OnTenantBillingDetailsUpdated(ctx context.Context, t *tenant.Tenant) {
-	if !s.enabled() || s.Config.Billing.IsBillingTenant(t.ID) {
+func (s *selfBillingService) OnTenantBillingDetailsUpdated(ctx context.Context, tenantID string) {
+	if !s.enabled() || s.Config.Billing.IsBillingTenant(tenantID) {
 		return
 	}
 
+	s.runDetached(ctx, "billing details sync", tenantID, func(ctx context.Context) error {
+		return s.syncBillingDetails(ctx, tenantID)
+	})
+}
+
+// syncBillingDetails sends the latest stored details, so overlapping updates converge, and provisions first
+// in case the update raced signup.
+func (s *selfBillingService) syncBillingDetails(ctx context.Context, tenantID string) error {
+	t, err := s.TenantRepo.GetByID(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.provision(ctx, t.ID, t.Name, t.BillingDetails.Email); err != nil {
+		return err
+	}
+
 	address := t.BillingDetails.Address
-	details := billingDetails{
+	return s.client.UpdateBillingDetails(ctx, s.extID(t.ID), billingDetails{
 		name:       t.Name,
 		line1:      address.Line1,
 		line2:      address.Line2,
@@ -113,10 +129,6 @@ func (s *selfBillingService) OnTenantBillingDetailsUpdated(ctx context.Context, 
 		state:      address.State,
 		country:    address.Country,
 		postalCode: address.PostalCode,
-	}
-
-	s.runDetached(ctx, "billing details sync", t.ID, func(ctx context.Context) error {
-		return s.client.UpdateBillingDetails(ctx, s.extID(t.ID), details)
 	})
 }
 

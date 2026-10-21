@@ -40,6 +40,19 @@ func (s *selfBillingService) StartCheckout(ctx context.Context, tenantID string,
 		return nil, err
 	}
 
+	// The tenant keeps the address too, so a later tenant update pushes it back rather than an older one.
+	t = tenant.NewBuilder(t).WithBillingAddress(tenant.TenantAddress{
+		Line1:      req.Line1,
+		Line2:      req.Line2,
+		City:       req.City,
+		State:      req.State,
+		PostalCode: req.PostalCode,
+		Country:    req.Country,
+	}).Build()
+	if err := s.TenantRepo.Update(ctx, t); err != nil {
+		return nil, err
+	}
+
 	sub, err := s.client.LatestSubscription(ctx, extID)
 	if err != nil {
 		return nil, err

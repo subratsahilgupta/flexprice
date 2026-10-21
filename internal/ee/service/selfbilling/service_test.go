@@ -550,36 +550,50 @@ func TestRunHourly(t *testing.T) {
 }
 
 func TestOnTenantBillingDetailsUpdated(t *testing.T) {
-	acme := &tenant.Tenant{
-		ID:   "t1",
-		Name: "Acme Inc",
-		BillingDetails: tenant.TenantBillingDetails{
-			Email: "billing@acme.io",
-			Address: tenant.TenantAddress{
-				Line1:      "1 Main St",
-				City:       "Bengaluru",
-				State:      "KA",
-				PostalCode: "560001",
-				Country:    "IN",
-			},
-		},
-	}
-
 	tests := []struct {
 		name          string
 		billingTenant string
+		address       tenant.TenantAddress
 		wantPushed    bool
+		wantDetails   billingDetails
 	}{
-		{"pushes_name_and_address", "", true},
-		{"billing_tenant_skipped", "t1", false},
+		{
+			name:       "pushes_latest_name_and_address",
+			address:    tenant.TenantAddress{Line1: "1 Main St", City: "Bengaluru", State: "KA", PostalCode: "560001", Country: "IN"},
+			wantPushed: true,
+			wantDetails: billingDetails{
+				name:       "Acme Inc",
+				line1:      "1 Main St",
+				city:       "Bengaluru",
+				state:      "KA",
+				postalCode: "560001",
+				country:    "IN",
+			},
+		},
+		{
+			name:        "no_address_pushes_name_only",
+			wantPushed:  true,
+			wantDetails: billingDetails{name: "Acme Inc"},
+		},
+		{
+			name:          "billing_tenant_skipped",
+			billingTenant: "t1",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fc := newFakeClient()
-			s, _ := newTestService(fc)
+			s, d := newTestService(fc)
 			s.Config.Billing.TenantID = tt.billingTenant
+			require.NoError(t, d.tenants.Create(context.Background(), &tenant.Tenant{
+				ID:             "t1",
+				Name:           "Acme Inc",
+				Status:         types.StatusPublished,
+				InternalStatus: types.TenantInternalStatusTrialing,
+				BillingDetails: tenant.TenantBillingDetails{Email: "billing@acme.io", Address: tt.address},
+			}))
 
-			s.OnTenantBillingDetailsUpdated(context.Background(), acme)
+			s.OnTenantBillingDetailsUpdated(context.Background(), "t1")
 
 			if !tt.wantPushed {
 				assert.Never(t, func() bool { _, ok := fc.billingUpdate("us:t1"); return ok }, 50*time.Millisecond, 10*time.Millisecond)
@@ -588,14 +602,8 @@ func TestOnTenantBillingDetailsUpdated(t *testing.T) {
 
 			require.Eventually(t, func() bool { _, ok := fc.billingUpdate("us:t1"); return ok }, 2*time.Second, 5*time.Millisecond)
 			got, _ := fc.billingUpdate("us:t1")
-			assert.Equal(t, billingDetails{
-				name:       "Acme Inc",
-				line1:      "1 Main St",
-				city:       "Bengaluru",
-				state:      "KA",
-				postalCode: "560001",
-				country:    "IN",
-			}, got, "the email stays the signup email")
+			assert.Equal(t, tt.wantDetails, got, "the email stays the signup email")
+			assert.True(t, fc.hasCustomer("us:t1"), "the customer is provisioned first, in case the update raced signup")
 		})
 	}
 }

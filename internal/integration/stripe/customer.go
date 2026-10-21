@@ -272,7 +272,7 @@ func (s *CustomerService) CreateCustomerInStripe(ctx context.Context, ourCustome
 	params.SetIdempotencyKey(customerCreateIdempotencyKey(ctx, ourCustomer.ID))
 
 	// Add address if available
-	if ourCustomer.AddressLine1 != "" || ourCustomer.AddressCity != "" {
+	if hasAddress(ourCustomer) {
 		params.Address = stripeAddressParams(ourCustomer)
 	}
 

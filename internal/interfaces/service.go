@@ -7,7 +7,6 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
-	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
@@ -331,5 +330,5 @@ type SelfBillingHook interface {
 	OnTenantCreated(ctx context.Context, tenantID, name, email string)
 
 	// OnTenantBillingDetailsUpdated copies the tenant's name and billing address to its Flexprice Cloud customer.
-	OnTenantBillingDetailsUpdated(ctx context.Context, t *tenant.Tenant)
+	OnTenantBillingDetailsUpdated(ctx context.Context, tenantID string)
 }

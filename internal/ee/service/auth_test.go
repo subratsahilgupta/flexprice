@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -25,8 +24,8 @@ func (h *recordingHook) OnTenantCreated(_ context.Context, tenantID, name, email
 	h.calls = append(h.calls, tenantID+"|"+name+"|"+email)
 }
 
-func (h *recordingHook) OnTenantBillingDetailsUpdated(_ context.Context, t *tenant.Tenant) {
-	h.updated = append(h.updated, t.ID)
+func (h *recordingHook) OnTenantBillingDetailsUpdated(_ context.Context, tenantID string) {
+	h.updated = append(h.updated, tenantID)
 }
 
 type AuthServiceSuite struct {

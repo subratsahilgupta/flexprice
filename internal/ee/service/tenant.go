@@ -130,7 +130,7 @@ func (s *tenantService) UpdateTenant(ctx context.Context, id string, req dto.Upd
 	}
 
 	if s.SelfBilling != nil && (before.Name != existingTenant.Name || before.BillingDetails.Address != existingTenant.BillingDetails.Address) {
-		s.SelfBilling.OnTenantBillingDetailsUpdated(ctx, existingTenant)
+		s.SelfBilling.OnTenantBillingDetailsUpdated(ctx, existingTenant.ID)
 	}
 
 	return dto.NewTenantResponse(existingTenant), nil
