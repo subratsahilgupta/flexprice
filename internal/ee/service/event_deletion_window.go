@@ -26,7 +26,7 @@ type EventDeletionWindowService interface {
 type eventDeletionWindowService struct {
 	ServiceParams
 
-	mu sync.Mutex
+	mu sync.RWMutex
 	// windows is keyed by "tenant:environment"; the fence read is tenant-scoped
 	// and one consumer process serves many tenants.
 	windows map[string]*deletionWindow
@@ -53,31 +53,43 @@ func (s *eventDeletionWindowService) IsSuppressed(ctx context.Context, externalC
 	return s.currentWindow(ctx).byCustomer[externalCustomerID].IncludesTimestamp(timestamp)
 }
 
-// currentWindow returns the ctx tenant's window, reloading it when stale. A failed
-// read yields an empty window, so a Postgres blip writes events rather than
-// dropping them.
+// currentWindow returns the ctx tenant's window, reloading it when stale. No lock
+// is held across the read: one instance serves every consumer goroutine for every
+// tenant, so holding one would stall all ingestion behind a slow query.
 func (s *eventDeletionWindowService) currentWindow(ctx context.Context) *deletionWindow {
 	key := types.GetTenantID(ctx) + ":" + types.GetEnvironmentID(ctx)
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	s.mu.RLock()
 	window, ok := s.windows[key]
+	s.mu.RUnlock()
 	if ok && time.Since(window.loadedAt) < suppressionCacheTTL {
 		return window
 	}
 
+	return s.loadWindow(ctx, key)
+}
+
+// loadWindow reads the deletions in progress and caches them.
+func (s *eventDeletionWindowService) loadWindow(ctx context.Context, key string) *deletionWindow {
 	requests, err := s.EventDeletionRequestRepo.ListAll(ctx, inProgressDeletionFilter(nil))
 	if err != nil {
-		// loadedAt advances even on failure, so a down database does not become one
-		// query per event.
-		window = &deletionWindow{loadedAt: time.Now()}
-		s.windows[key] = window
-		s.Logger.Error(ctx, "failed to load the event deletion suppression window",
+		s.Logger.Error(ctx, "failed to reload the event deletion suppression window, serving the last known one",
 			"error", err,
 			"tenant_id", types.GetTenantID(ctx),
 			"environment_id", types.GetEnvironmentID(ctx),
 		)
+
+		// Keep what the last good read found. A deletion running an interval ago is
+		// almost certainly still running, and discarding it would let its usage back
+		// in while the deletion still reports success. loadedAt still advances, so a
+		// down database retries on the next interval rather than once per event.
+		s.mu.Lock()
+		window := &deletionWindow{loadedAt: time.Now()}
+		if previous, ok := s.windows[key]; ok {
+			window.byCustomer = previous.byCustomer
+		}
+		s.windows[key] = window
+		s.mu.Unlock()
 		return window
 	}
 
@@ -85,8 +97,11 @@ func (s *eventDeletionWindowService) currentWindow(ctx context.Context) *deletio
 	for _, request := range requests {
 		byCustomer[request.ExternalCustomerID] = request
 	}
-	window = &deletionWindow{loadedAt: time.Now(), byCustomer: byCustomer}
+	window := &deletionWindow{loadedAt: time.Now(), byCustomer: byCustomer}
+
+	s.mu.Lock()
 	s.windows[key] = window
+	s.mu.Unlock()
 
 	if len(byCustomer) > 0 {
 		s.Logger.Info(ctx, "event deletion suppression window loaded",

@@ -121,7 +121,7 @@ func (s *EventDeletionWindowSuite) TestIsSuppressed_FalseOnceTheDeletionIsTermin
 	w := s.window(s.requestRepo)
 	s.True(w.IsSuppressed(ctx, "ext_1", inside))
 
-	s.NoError(s.requestRepo.MarkTerminal(ctx, "req_1", types.EventDeletionStatusCompleted, ""))
+	s.NoError(s.requestRepo.MarkTerminal(ctx, []string{"evtdel_ext_1"}, types.EventDeletionStatusCompleted, ""))
 
 	// A fresh window reads the terminal row, so the hold is released.
 	s.False(s.window(s.requestRepo).IsSuppressed(ctx, "ext_1", inside))
@@ -144,11 +144,32 @@ func (s *EventDeletionWindowSuite) TestIsSuppressed_ServesFromCacheWithinTheInte
 		"a fresh load sees it")
 }
 
-// A failed read must write events rather than drop them.
-func (s *EventDeletionWindowSuite) TestIsSuppressed_FailsOpenWhenTheReadFails() {
+// A process that has never loaded successfully has nothing to fall back on, so
+// it writes events rather than holding every one of them.
+func (s *EventDeletionWindowSuite) TestIsSuppressed_FalseWhenTheFirstReadFails() {
 	w := s.window(failingDeletionRequestRepo{})
 
 	s.False(w.IsSuppressed(s.GetContext(), "ext_1", s.periodStart.AddDate(0, 0, 10)))
+}
+
+// Once a window has loaded, a failed reload must not blind the fence: the
+// deletion is still running and still reporting success.
+func (s *EventDeletionWindowSuite) TestIsSuppressed_KeepsTheLastWindowWhenAReloadFails() {
+	s.seedDeleting("ext_1")
+	ctx := s.GetContext()
+	inside := s.periodStart.AddDate(0, 0, 10)
+
+	repo := &flakyDeletionRequestRepo{inner: s.requestRepo}
+	w := s.window(repo).(*eventDeletionWindowService)
+
+	s.True(w.IsSuppressed(ctx, "ext_1", inside), "the first load succeeds")
+
+	repo.fail = true
+	for _, window := range w.windows {
+		window.loadedAt = time.Now().Add(-2 * suppressionCacheTTL)
+	}
+	s.True(w.IsSuppressed(ctx, "ext_1", inside),
+		"a failed reload must serve the last known window")
 }
 
 func (s *EventDeletionWindowSuite) TestIsSuppressed_FalseWithoutARepository() {
@@ -188,9 +209,38 @@ func (failingDeletionRequestRepo) ListAll(
 
 func (failingDeletionRequestRepo) MarkTerminal(
 	context.Context,
-	string,
+	[]string,
 	types.EventDeletionStatus,
 	types.EventDeletionFailureReason,
 ) error {
 	return ierr.NewError("unavailable").Mark(ierr.ErrDatabase)
+}
+
+// flakyDeletionRequestRepo serves the real store until fail is set.
+type flakyDeletionRequestRepo struct {
+	inner events.DeletionRequestRepository
+	fail  bool
+}
+
+func (r *flakyDeletionRequestRepo) CreateBulk(ctx context.Context, requests []*events.DeletionRequest) error {
+	return r.inner.CreateBulk(ctx, requests)
+}
+
+func (r *flakyDeletionRequestRepo) ListAll(
+	ctx context.Context,
+	filter *types.EventDeletionRequestFilter,
+) ([]*events.DeletionRequest, error) {
+	if r.fail {
+		return nil, ierr.NewError("unavailable").Mark(ierr.ErrDatabase)
+	}
+	return r.inner.ListAll(ctx, filter)
+}
+
+func (r *flakyDeletionRequestRepo) MarkTerminal(
+	ctx context.Context,
+	ids []string,
+	status types.EventDeletionStatus,
+	reason types.EventDeletionFailureReason,
+) error {
+	return r.inner.MarkTerminal(ctx, ids, status, reason)
 }

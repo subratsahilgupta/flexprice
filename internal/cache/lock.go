@@ -150,6 +150,9 @@ func (l *redisLock) Release(ctx context.Context) error {
 
 // ReleaseKeys unlinks the given lock keys whoever holds them. Detached from ctx
 // cancellation for the same reason as Release.
+//
+// One UNLINK per key, pipelined: a cluster client routes a command by its first
+// key, so a multi-key UNLINK spanning hash slots is refused with CROSSSLOT.
 func (l *redisLocker) ReleaseKeys(ctx context.Context, keys ...string) error {
 	if len(keys) == 0 {
 		return nil
@@ -158,7 +161,11 @@ func (l *redisLocker) ReleaseKeys(ctx context.Context, keys ...string) error {
 	defer cancel()
 
 	for _, chunk := range lo.Chunk(keys, 1000) {
-		if err := l.client.Unlink(ctx, chunk...).Err(); err != nil {
+		pipe := l.client.Pipeline()
+		for _, key := range chunk {
+			pipe.Unlink(ctx, key)
+		}
+		if _, err := pipe.Exec(ctx); err != nil {
 			return err
 		}
 	}

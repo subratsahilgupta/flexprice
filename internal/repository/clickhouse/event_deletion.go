@@ -69,25 +69,51 @@ func isMeterNarrowed(scope *events.MeterUsageQueryParams) bool {
 	return len(scope.MeterIDs) > 0 || scope.MeterID != ""
 }
 
-func (r *EventDeletionLogRepository) ResolveEventIDs(ctx context.Context, scope *events.MeterUsageQueryParams) ([]string, []string, error) {
+func (r *EventDeletionLogRepository) ResolveEventIDs(
+	ctx context.Context,
+	scope *events.MeterUsageQueryParams,
+) (*events.DeletionTargets, error) {
 	span := StartRepositorySpan(ctx, "event_deletion", "resolve_event_ids", map[string]interface{}{
 		"customer_count": len(scope.ExternalCustomerIDs),
 		"meter_count":    len(scope.MeterIDs),
 	})
 	defer FinishSpan(span)
 
-	// No FINAL: SELECT DISTINCT id already collapses ReplacingMergeTree versions.
+	// FINAL and count() per id, so the row count matches what the audit insert
+	// writes and the mutation removes, without reading the audit table back.
 	where, args := r.qb.BuildWhereClause(meterUsageParams(scope, nil))
-	metered, err := r.selectIDs(ctx, fmt.Sprintf(`
-		SELECT DISTINCT id
-		FROM meter_usage
+	rows, err := r.store.GetConn().Query(ctx, fmt.Sprintf(`
+		SELECT id, count() AS meter_rows
+		FROM meter_usage FINAL
 		WHERE %s
-		SETTINGS %s
-	`, where, maxMemoryUsageSetting), args)
+		GROUP BY id
+		SETTINGS do_not_merge_across_partitions_select_final = 1, %s
+	`, where, maxMemoryUsageSetting), args...)
 	if err != nil {
 		SetSpanError(span, err)
-		return nil, nil, ierr.WithError(err).
+		return nil, ierr.WithError(err).
 			WithHint("Failed to resolve the meter usage in scope for deletion").
+			Mark(ierr.ErrDatabase)
+	}
+	defer rows.Close()
+
+	targets := &events.DeletionTargets{Metered: make([]string, 0), Unmetered: make([]string, 0)}
+	for rows.Next() {
+		var id string
+		var meterRows uint64
+		if err := rows.Scan(&id, &meterRows); err != nil {
+			SetSpanError(span, err)
+			return nil, ierr.WithError(err).
+				WithHint("Failed to read the meter usage in scope for deletion").
+				Mark(ierr.ErrDatabase)
+		}
+		targets.Metered = append(targets.Metered, id)
+		targets.MeterUsageRows += meterRows
+	}
+	if err := rows.Err(); err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to read the meter usage in scope for deletion").
 			Mark(ierr.ErrDatabase)
 	}
 
@@ -95,7 +121,7 @@ func (r *EventDeletionLogRepository) ResolveEventIDs(ctx context.Context, scope 
 	// usage, so there is nothing to look for in events.
 	if isMeterNarrowed(scope) {
 		SetSpanSuccess(span)
-		return metered, nil, nil
+		return targets, nil
 	}
 
 	baseWhere, baseArgs := r.qb.BuildWhereClause(baseParams(scope, nil))
@@ -107,24 +133,22 @@ func (r *EventDeletionLogRepository) ResolveEventIDs(ctx context.Context, scope 
 	`, baseWhere, maxMemoryUsageSetting), baseArgs)
 	if err != nil {
 		SetSpanError(span, err)
-		return nil, nil, ierr.WithError(err).
+		return nil, ierr.WithError(err).
 			WithHint("Failed to resolve the events in scope for deletion").
 			Mark(ierr.ErrDatabase)
 	}
 
-	meteredSet := make(map[string]struct{}, len(metered))
-	for _, id := range metered {
-		meteredSet[id] = struct{}{}
-	}
-	unmetered := make([]string, 0)
+	meteredSet := lo.SliceToMap(targets.Metered, func(id string) (string, struct{}) {
+		return id, struct{}{}
+	})
 	for _, id := range all {
 		if _, ok := meteredSet[id]; !ok {
-			unmetered = append(unmetered, id)
+			targets.Unmetered = append(targets.Unmetered, id)
 		}
 	}
 
 	SetSpanSuccess(span)
-	return metered, unmetered, nil
+	return targets, nil
 }
 
 func (r *EventDeletionLogRepository) FindStrandedMeters(ctx context.Context, scope *events.MeterUsageQueryParams, eventIDs []string) (*events.StrandedMeters, error) {
@@ -313,14 +337,12 @@ func propertiesExpr(skipPayload bool, column string) string {
 
 func (r *EventDeletionLogRepository) DeleteMeterUsage(ctx context.Context, scope *events.MeterUsageQueryParams, eventIDs []string) error {
 	where, args := r.qb.BuildWhereClause(meterUsageParams(scope, eventIDs))
-	query := fmt.Sprintf(`ALTER TABLE meter_usage DELETE WHERE %s`, where)
-	return r.mutate(ctx, "meter_usage", query, args)
+	return r.mutate(ctx, "meter_usage", where, args)
 }
 
 func (r *EventDeletionLogRepository) DeleteEvents(ctx context.Context, scope *events.MeterUsageQueryParams, eventIDs []string) error {
 	where, args := r.qb.BuildWhereClause(baseParams(scope, eventIDs))
-	query := fmt.Sprintf(`ALTER TABLE events DELETE WHERE %s`, where)
-	return r.mutate(ctx, "events", query, args)
+	return r.mutate(ctx, "events", where, args)
 }
 
 // mutate submits one heavyweight delete and waits for it.
@@ -328,15 +350,16 @@ func (r *EventDeletionLogRepository) DeleteEvents(ctx context.Context, scope *ev
 // ALTER TABLE ... DELETE, not DELETE FROM: a lightweight delete fails on a table
 // carrying a projection, and production events carries one. The predicate is
 // literal because ClickHouse refuses a subquery in a mutation predicate.
-func (r *EventDeletionLogRepository) mutate(ctx context.Context, table, query string, args []interface{}) error {
+func (r *EventDeletionLogRepository) mutate(ctx context.Context, table, where string, args []interface{}) error {
 	span := StartRepositorySpan(ctx, "event_deletion", "mutate", map[string]interface{}{"table": table})
 	defer FinishSpan(span)
 
-	since, err := r.serverTime(ctx)
-	if err != nil {
-		SetSpanError(span, err)
-		return err
-	}
+	// A no-op predicate carrying a unique marker. clickhouse-go binds client
+	// side, so the marker lands in system.mutations.command and the wait below
+	// can tell this mutation apart from a concurrent one on the same table.
+	marker := types.GenerateUUID()
+	query := fmt.Sprintf("ALTER TABLE %s DELETE WHERE %s AND ? != ''", table, where)
+	args = append(args, marker)
 
 	// mutations_sync = 0 submits and returns: a blocking submit would hit the
 	// client read deadline while still succeeding on the server.
@@ -358,7 +381,7 @@ func (r *EventDeletionLogRepository) mutate(ctx context.Context, table, query st
 
 	r.logger.Info(ctx, "submitted delete mutation", "table", table)
 
-	if err := r.waitForMutation(ctx, table, since); err != nil {
+	if err := r.waitForMutation(ctx, table, marker); err != nil {
 		SetSpanError(span, err)
 		return err
 	}
@@ -367,34 +390,21 @@ func (r *EventDeletionLogRepository) mutate(ctx context.Context, table, query st
 	return nil
 }
 
-// serverTime is the instant the wait measures from. It must come off ClickHouse's
-// clock, because create_time is server-stamped; a local clock would either skip
-// our mutation or pick up a historical failure whose reason never clears.
-func (r *EventDeletionLogRepository) serverTime(ctx context.Context) (time.Time, error) {
-	var now time.Time
-	if err := r.store.GetConn().QueryRow(ctx, "SELECT now()").Scan(&now); err != nil {
-		return time.Time{}, ierr.WithError(err).
-			WithHint("Failed to read the ClickHouse server time before deleting").
-			Mark(ierr.ErrDatabase)
-	}
-	return now, nil
-}
-
-// waitForMutation polls until every mutation created at or after since is done.
-// All of them, not just the newest: two in the same second are indistinguishable
-// by create_time, and ClickHouse runs them one at a time per table anyway.
-func (r *EventDeletionLogRepository) waitForMutation(ctx context.Context, table string, since time.Time) error {
+// waitForMutation polls until this request's own mutation is done. Scoped by the
+// marker: matching on time alone would pick up a concurrent deletion's mutation
+// and report its failure, or its runtime, as ours.
+func (r *EventDeletionLogRepository) waitForMutation(ctx context.Context, table, marker string) error {
 	query := `
 		SELECT count() AS total, countIf(is_done) AS done, max(latest_fail_reason) AS fail_reason
 		FROM system.mutations
-		WHERE database = currentDatabase() AND table = ? AND create_time >= ?
+		WHERE database = currentDatabase() AND table = ? AND position(command, ?) > 0
 	`
 
 	deadline := time.Now().Add(mutationDeadline)
 	for {
 		var total, done uint64
 		var failReason string
-		if err := r.store.GetConn().QueryRow(ctx, query, table, since).Scan(&total, &done, &failReason); err != nil {
+		if err := r.store.GetConn().QueryRow(ctx, query, table, marker).Scan(&total, &done, &failReason); err != nil {
 			return ierr.WithError(err).
 				WithHint("Failed to read the delete mutation status").
 				WithReportableDetails(map[string]interface{}{"table": table}).
@@ -432,25 +442,6 @@ func (r *EventDeletionLogRepository) waitForMutation(ctx context.Context, table 
 		case <-time.After(mutationPollInterval):
 		}
 	}
-}
-
-func (r *EventDeletionLogRepository) CountRecordedMeterUsageRows(ctx context.Context, requestID string) (uint64, error) {
-	query := fmt.Sprintf(`
-		SELECT count()
-		FROM deleted_events_logs
-		WHERE tenant_id = ? AND environment_id = ? AND request_id = ? AND meter_id != ''
-		SETTINGS %s
-	`, maxMemoryUsageSetting)
-
-	var count uint64
-	args := []interface{}{types.GetTenantID(ctx), types.GetEnvironmentID(ctx), requestID}
-	if err := r.store.GetConn().QueryRow(ctx, query, args...).Scan(&count); err != nil {
-		return 0, ierr.WithError(err).
-			WithHint("Failed to count the recorded meter usage rows").
-			WithReportableDetails(map[string]interface{}{"request_id": requestID}).
-			Mark(ierr.ErrDatabase)
-	}
-	return count, nil
 }
 
 // selectIDs runs a single-column id query and collects the column.

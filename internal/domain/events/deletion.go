@@ -106,6 +106,17 @@ type DeletionStamp struct {
 	SkipPayload bool
 }
 
+// DeletionTargets is what the resolve step found in scope.
+type DeletionTargets struct {
+	// Metered are the events that produced meter_usage.
+	Metered []string
+	// Unmetered are the events that produced none. Empty for a feature-narrowed scope.
+	Unmetered []string
+	// MeterUsageRows counts the meter_usage rows behind Metered, which is what the
+	// audit records and the delete removes.
+	MeterUsageRows uint64
+}
+
 // StrandedMeters is the multi-meter guard's answer: matched events that also
 // carry usage on a meter the request did not name.
 type StrandedMeters struct {
@@ -122,8 +133,9 @@ type DeletionRequestRepository interface {
 	// ListAll returns every row matching the filter, without pagination.
 	ListAll(ctx context.Context, filter *types.EventDeletionRequestFilter) ([]*DeletionRequest, error)
 
-	// MarkTerminal closes every row of one request. reason is empty for COMPLETED.
-	MarkTerminal(ctx context.Context, requestID string, status types.EventDeletionStatus, reason types.EventDeletionFailureReason) error
+	// MarkTerminal closes the given rows. reason is empty for COMPLETED. Keyed on
+	// row ids, not request_id, which is audit correlation and need not be unique.
+	MarkTerminal(ctx context.Context, ids []string, status types.EventDeletionStatus, reason types.EventDeletionFailureReason) error
 }
 
 // DeletedEventsLogRepository is the ClickHouse side of a deletion: what is in
@@ -133,9 +145,8 @@ type DeletionRequestRepository interface {
 // dimension a deletion narrows on, and it builds the WHERE clause for both
 // tables. A scope with MeterIDs set is the feature-narrowed case (case 2).
 type DeletedEventsLogRepository interface {
-	// ResolveEventIDs returns the ids in scope: metered produced meter_usage,
-	// unmetered produced none. unmetered is empty for a feature-narrowed scope.
-	ResolveEventIDs(ctx context.Context, scope *MeterUsageQueryParams) (metered []string, unmetered []string, err error)
+	// ResolveEventIDs returns the ids in scope and the meter_usage rows behind them.
+	ResolveEventIDs(ctx context.Context, scope *MeterUsageQueryParams) (*DeletionTargets, error)
 
 	// FindStrandedMeters reports matched events carrying meter_usage on a meter
 	// outside scope.MeterIDs. Empty for a scope that names no meter.
@@ -151,8 +162,4 @@ type DeletedEventsLogRepository interface {
 
 	// DeleteEvents issues one mutation and waits for it.
 	DeleteEvents(ctx context.Context, scope *MeterUsageQueryParams, eventIDs []string) error
-
-	// CountRecordedMeterUsageRows returns the request's audit rows that carry a
-	// meter, which is the meter_usage row count that was deleted.
-	CountRecordedMeterUsageRows(ctx context.Context, requestID string) (uint64, error)
 }

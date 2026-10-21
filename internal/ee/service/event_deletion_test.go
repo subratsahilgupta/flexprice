@@ -523,7 +523,7 @@ func (s *EventDeletionServiceSuite) TestDelete_AllowsAfterAPreviousDeletionCompl
 		DeletionStatus:     types.EventDeletionStatusDeleting,
 		StartedAt:          s.periodStart,
 	}}))
-	s.NoError(s.requestRepo.MarkTerminal(s.GetContext(), "req_done", types.EventDeletionStatusCompleted, ""))
+	s.NoError(s.requestRepo.MarkTerminal(s.GetContext(), []string{"evtdel_done"}, types.EventDeletionStatusCompleted, ""))
 
 	_, err := s.svc.Delete(s.GetContext(), s.request())
 
@@ -899,4 +899,55 @@ func (s *EventDeletionServiceSuite) TestDelete_StampsTheHTTPRequestID() {
 	s.True(lo.EveryBy(s.logRepo.Logs(), func(l testutil.DeletedEventLog) bool {
 		return l.RequestID == "req-abc-123"
 	}))
+}
+
+// A customer pulled in by the parent hop is guarded, so it must also be fenced:
+// otherwise its invoice can finalize while the child's usage is being deleted.
+func (s *EventDeletionServiceSuite) TestDelete_FencesSubscriptionOwnersFromTheParentHop() {
+	s.seedCustomer("cust_child", "ext_child")
+	s.seedCustomer("cust_parent", "ext_parent")
+	s.seedMeteredFeature("feat_a", "meter_a", "event_a")
+
+	parent := s.seedSubscription("subs_parent", "cust_parent", "meter_a")
+	child := s.seedSubscription("subs_child", "cust_child")
+	child.ParentSubscriptionID = lo.ToPtr(parent.ID)
+	s.NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), child))
+
+	req := s.request()
+	req.ExternalCustomerIDs = []string{"ext_child"}
+
+	_, err := s.svc.Delete(s.GetContext(), req)
+	s.NoError(err)
+
+	s.ElementsMatch([]string{"ext_child", "ext_parent"},
+		lo.Map(s.stateRows(), func(r *events.DeletionRequest, _ int) string { return r.ExternalCustomerID }),
+		"the guard checks the parent's customer, so the fence must cover it too")
+}
+
+// request_id is audit correlation and may repeat across calls, so closing one
+// deletion must never close another's rows.
+func (s *EventDeletionServiceSuite) TestMarkTerminal_ClosesOnlyTheGivenRows() {
+	ctx := s.GetContext()
+	open := func(id, externalCustomerID string) {
+		s.NoError(s.requestRepo.CreateBulk(ctx, []*events.DeletionRequest{{
+			ID:                 id,
+			RequestID:          "shared-http-request-id",
+			ExternalCustomerID: externalCustomerID,
+			PeriodStart:        s.periodStart,
+			PeriodEnd:          s.periodEnd,
+			DeletionStatus:     types.EventDeletionStatusDeleting,
+			StartedAt:          s.periodStart,
+		}}))
+	}
+	open("evtdel_a", "ext_a")
+	open("evtdel_b", "ext_b")
+
+	s.NoError(s.requestRepo.MarkTerminal(ctx, []string{"evtdel_a"}, types.EventDeletionStatusCompleted, ""))
+
+	byID := lo.SliceToMap(s.stateRows(), func(r *events.DeletionRequest) (string, *events.DeletionRequest) {
+		return r.ID, r
+	})
+	s.Equal(types.EventDeletionStatusCompleted, byID["evtdel_a"].DeletionStatus)
+	s.Equal(types.EventDeletionStatusDeleting, byID["evtdel_b"].DeletionStatus,
+		"a shared request id must not let one deletion close another's row")
 }

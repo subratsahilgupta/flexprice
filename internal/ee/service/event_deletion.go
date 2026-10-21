@@ -60,6 +60,8 @@ func NewEventDeletionService(params ServiceParams) EventDeletionService {
 type deletionPlan struct {
 	scope *events.MeterUsageQueryParams
 	stamp events.DeletionStamp
+	// rowIDs are the state rows this request opened, and what closes them.
+	rowIDs []string
 	// affectedSubscriptionIDs own the draft invoices the deletion makes stale.
 	affectedSubscriptionIDs []string
 }
@@ -96,7 +98,7 @@ func (s *eventDeletionService) Delete(ctx context.Context, req *dto.DeleteEvents
 			"request_id", p.stamp.RequestID,
 			"reason", reason,
 		)
-		if closeErr := s.EventDeletionRequestRepo.MarkTerminal(closeCtx, p.stamp.RequestID, types.EventDeletionStatusFailed, reason); closeErr != nil {
+		if closeErr := s.EventDeletionRequestRepo.MarkTerminal(closeCtx, p.rowIDs, types.EventDeletionStatusFailed, reason); closeErr != nil {
 			s.Logger.Error(closeCtx, "failed to close the event deletion request as failed",
 				"error", closeErr,
 				"request_id", p.stamp.RequestID,
@@ -105,7 +107,7 @@ func (s *eventDeletionService) Delete(ctx context.Context, req *dto.DeleteEvents
 		return nil, err
 	}
 
-	if closeErr := s.EventDeletionRequestRepo.MarkTerminal(closeCtx, p.stamp.RequestID, types.EventDeletionStatusCompleted, ""); closeErr != nil {
+	if closeErr := s.EventDeletionRequestRepo.MarkTerminal(closeCtx, p.rowIDs, types.EventDeletionStatusCompleted, ""); closeErr != nil {
 		s.Logger.Error(closeCtx, "failed to close the event deletion request as completed",
 			"error", closeErr,
 			"request_id", p.stamp.RequestID,
@@ -144,9 +146,19 @@ func (s *eventDeletionService) openRequest(ctx context.Context, req *dto.DeleteE
 		lo.Map(subs, func(sub *subscription.Subscription, _ int) string { return sub.CustomerID })...))
 
 	affected := affectedSubscriptions(subs, meterIDs)
-	externalIDByCustomerID := lo.SliceToMap(customers, func(c *customer.Customer) (string, string) {
+
+	// The fence must cover the same customers the guard checks. A subscription
+	// owner pulled in by the parent hop is guarded but was not named, so without
+	// this its invoice could finalize while its usage is being deleted.
+	fenced, err := s.resolveCustomersByID(ctx, customerIDsToCheck)
+	if err != nil {
+		return nil, err
+	}
+	externalIDByCustomerID := lo.SliceToMap(fenced, func(c *customer.Customer) (string, string) {
 		return c.ID, c.ExternalID
 	})
+	fencedExternalIDs := lo.Uniq(lo.Compact(lo.Values(externalIDByCustomerID)))
+	sort.Strings(fencedExternalIDs)
 
 	// The HTTP request id, so an audit row points back at the call that wrote it.
 	// Generated only when there is none, because an empty request_id would make
@@ -156,14 +168,13 @@ func (s *eventDeletionService) openRequest(ctx context.Context, req *dto.DeleteE
 		requestID = types.GenerateUUID()
 	}
 	startedAt := time.Now().UTC()
+	var rowIDs []string
 
 	err = s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		// At READ COMMITTED this guard read and finalization's gate read can both
 		// pass without seeing the other's uncommitted write. Both sides take the
 		// same key; sorted, so two holders cannot wait on each other.
-		keys := lo.Uniq(req.ExternalCustomerIDs)
-		sort.Strings(keys)
-		for _, externalCustomerID := range keys {
+		for _, externalCustomerID := range fencedExternalIDs {
 			key := deletionLockKey(txCtx, externalCustomerID)
 			if lockErr := s.DB.LockWithWait(txCtx, postgres.LockRequest{Key: key}); lockErr != nil {
 				return ierr.WithError(lockErr).
@@ -174,7 +185,7 @@ func (s *eventDeletionService) openRequest(ctx context.Context, req *dto.DeleteE
 		}
 
 		inProgress, listErr := s.EventDeletionRequestRepo.ListAll(txCtx,
-			inProgressDeletionFilter(req.ExternalCustomerIDs))
+			inProgressDeletionFilter(fencedExternalIDs))
 		if listErr != nil {
 			return listErr
 		}
@@ -197,8 +208,8 @@ func (s *eventDeletionService) openRequest(ctx context.Context, req *dto.DeleteE
 			return guardErr
 		}
 
-		rows := make([]*events.DeletionRequest, 0, len(req.ExternalCustomerIDs))
-		for _, externalCustomerID := range req.ExternalCustomerIDs {
+		rows := make([]*events.DeletionRequest, 0, len(fencedExternalIDs))
+		for _, externalCustomerID := range fencedExternalIDs {
 			rows = append(rows, &events.DeletionRequest{
 				ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_EVENT_DELETION_REQUEST),
 				RequestID:          requestID,
@@ -210,7 +221,11 @@ func (s *eventDeletionService) openRequest(ctx context.Context, req *dto.DeleteE
 				SkipPayload:        req.SkipPayload,
 			})
 		}
-		return s.EventDeletionRequestRepo.CreateBulk(txCtx, rows)
+		if createErr := s.EventDeletionRequestRepo.CreateBulk(txCtx, rows); createErr != nil {
+			return createErr
+		}
+		rowIDs = lo.Map(rows, func(row *events.DeletionRequest, _ int) string { return row.ID })
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -226,6 +241,7 @@ func (s *eventDeletionService) openRequest(ctx context.Context, req *dto.DeleteE
 			StartTime:           req.PeriodStart.UTC(),
 			EndTime:             req.PeriodEnd.UTC(),
 		},
+		rowIDs:                  rowIDs,
 		affectedSubscriptionIDs: lo.Map(affected, func(sub *subscription.Subscription, _ int) string { return sub.ID }),
 		stamp: events.DeletionStamp{
 			RequestID:   requestID,
@@ -247,12 +263,13 @@ func (s *eventDeletionService) run(ctx context.Context, p *deletionPlan) (*dto.D
 	case <-time.After(s.suppressionWait):
 	}
 
-	metered, unmetered, err := s.EventDeletionLogRepo.ResolveEventIDs(ctx, p.scope)
+	targets, err := s.EventDeletionLogRepo.ResolveEventIDs(ctx, p.scope)
 	if err != nil {
 		return nil, types.EventDeletionReasonMutationFailed, err
 	}
 
-	eventIDs := append(append(make([]string, 0, len(metered)+len(unmetered)), metered...), unmetered...)
+	eventIDs := append(append(make([]string, 0, len(targets.Metered)+len(targets.Unmetered)),
+		targets.Metered...), targets.Unmetered...)
 	if len(eventIDs) == 0 {
 		s.Logger.Info(ctx, "event deletion matched nothing", "request_id", p.stamp.RequestID)
 		return &dto.DeleteEventsResponse{}, "", nil
@@ -288,7 +305,7 @@ func (s *eventDeletionService) run(ctx context.Context, p *deletionPlan) (*dto.D
 		}
 	}
 
-	if err := s.EventDeletionLogRepo.RecordDeletedEvents(ctx, p.scope, metered, unmetered, p.stamp); err != nil {
+	if err := s.EventDeletionLogRepo.RecordDeletedEvents(ctx, p.scope, targets.Metered, targets.Unmetered, p.stamp); err != nil {
 		return nil, types.EventDeletionReasonMutationFailed, err
 	}
 
@@ -306,14 +323,9 @@ func (s *eventDeletionService) run(ctx context.Context, p *deletionPlan) (*dto.D
 	s.releaseDedupLocks(ctx, eventIDs)
 	s.recomputeDrafts(ctx, p.affectedSubscriptionIDs)
 
-	meterUsageRows, err := s.EventDeletionLogRepo.CountRecordedMeterUsageRows(ctx, p.stamp.RequestID)
-	if err != nil {
-		return nil, types.EventDeletionReasonMutationFailed, err
-	}
-
 	return &dto.DeleteEventsResponse{
 		DeletedEvents:         len(eventIDs),
-		DeletedMeterUsageRows: meterUsageRows,
+		DeletedMeterUsageRows: targets.MeterUsageRows,
 	}, "", nil
 }
 
@@ -430,6 +442,17 @@ func (s *eventDeletionService) resolveCustomers(ctx context.Context, externalCus
 			Mark(ierr.ErrValidation)
 	}
 	return customers, nil
+}
+
+// resolveCustomersByID reads customers already known to exist, so no validation
+// is needed. ListAll, not List, for the same pagination reason as above.
+func (s *eventDeletionService) resolveCustomersByID(ctx context.Context, customerIDs []string) ([]*customer.Customer, error) {
+	if len(customerIDs) == 0 {
+		return nil, nil
+	}
+	filter := types.NewCustomerFilter()
+	filter.CustomerIDs = customerIDs
+	return s.CustomerRepo.ListAll(ctx, filter)
 }
 
 // resolveSubscriptions reads the customers' subscriptions with their line items,

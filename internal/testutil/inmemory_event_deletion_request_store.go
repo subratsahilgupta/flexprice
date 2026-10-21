@@ -112,10 +112,14 @@ func (s *InMemoryEventDeletionRequestStore) ListAll(
 
 func (s *InMemoryEventDeletionRequestStore) MarkTerminal(
 	ctx context.Context,
-	requestID string,
+	ids []string,
 	status types.EventDeletionStatus,
 	reason types.EventDeletionFailureReason,
 ) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
 	rows, err := s.ListAll(ctx, types.NewNoLimitEventDeletionRequestFilter())
 	if err != nil {
 		return err
@@ -123,7 +127,7 @@ func (s *InMemoryEventDeletionRequestStore) MarkTerminal(
 
 	now := time.Now().UTC()
 	for _, row := range rows {
-		if row.RequestID != requestID || row.DeletionStatus != types.EventDeletionStatusDeleting {
+		if !lo.Contains(ids, row.ID) || row.DeletionStatus != types.EventDeletionStatusDeleting {
 			continue
 		}
 		row.DeletionStatus = status

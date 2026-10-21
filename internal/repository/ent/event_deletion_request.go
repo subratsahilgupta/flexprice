@@ -142,12 +142,16 @@ func (r *eventDeletionRequestRepository) applyFilters(
 
 func (r *eventDeletionRequestRepository) MarkTerminal(
 	ctx context.Context,
-	requestID string,
+	ids []string,
 	status types.EventDeletionStatus,
 	reason types.EventDeletionFailureReason,
 ) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
 	span := StartRepositorySpan(ctx, "event_deletion_request", "mark_terminal", map[string]interface{}{
-		"request_id":      requestID,
+		"row_count":       len(ids),
 		"deletion_status": status,
 	})
 	defer FinishSpan(span)
@@ -157,7 +161,7 @@ func (r *eventDeletionRequestRepository) MarkTerminal(
 		Where(
 			entDeletion.TenantID(types.GetTenantID(ctx)),
 			entDeletion.EnvironmentID(types.GetEnvironmentID(ctx)),
-			entDeletion.RequestID(requestID),
+			entDeletion.IDIn(ids...),
 			entDeletion.DeletionStatus(types.EventDeletionStatusDeleting),
 		).
 		SetDeletionStatus(status).
@@ -173,7 +177,7 @@ func (r *eventDeletionRequestRepository) MarkTerminal(
 		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to close the event deletion request").
-			WithReportableDetails(map[string]interface{}{"request_id": requestID}).
+			WithReportableDetails(map[string]interface{}{"ids": ids}).
 			Mark(ierr.ErrDatabase)
 	}
 

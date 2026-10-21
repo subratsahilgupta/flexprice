@@ -165,41 +165,41 @@ func inScope(scope *events.MeterUsageQueryParams, customerID string, ts time.Tim
 func (s *InMemoryDeletedEventsLogStore) ResolveEventIDs(
 	ctx context.Context,
 	scope *events.MeterUsageQueryParams,
-) ([]string, []string, error) {
+) (*events.DeletionTargets, error) {
 	if err := s.failure("resolve"); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	metered := make([]string, 0)
+	targets := &events.DeletionTargets{Metered: make([]string, 0), Unmetered: make([]string, 0)}
 	for _, row := range s.usage {
 		if !inScope(scope, row.ExternalCustomerID, row.Timestamp, row.EventID, row.MeterID) {
 			continue
 		}
-		if !lo.Contains(metered, row.EventID) {
-			metered = append(metered, row.EventID)
+		if !lo.Contains(targets.Metered, row.EventID) {
+			targets.Metered = append(targets.Metered, row.EventID)
 		}
+		targets.MeterUsageRows++
 	}
 
 	// A meter-narrowed scope never matches an event with no meter usage.
 	if len(scope.MeterIDs) > 0 {
-		return metered, nil, nil
+		return targets, nil
 	}
 
-	unmetered := make([]string, 0)
 	for _, row := range s.stored {
 		if !inScope(scope, row.ExternalCustomerID, row.Timestamp, row.EventID, "") {
 			continue
 		}
-		if lo.Contains(metered, row.EventID) || lo.Contains(unmetered, row.EventID) {
+		if lo.Contains(targets.Metered, row.EventID) || lo.Contains(targets.Unmetered, row.EventID) {
 			continue
 		}
-		unmetered = append(unmetered, row.EventID)
+		targets.Unmetered = append(targets.Unmetered, row.EventID)
 	}
 
-	return metered, unmetered, nil
+	return targets, nil
 }
 
 func (s *InMemoryDeletedEventsLogStore) FindStrandedMeters(
@@ -336,20 +336,4 @@ func (s *InMemoryDeletedEventsLogStore) DeleteEvents(
 		return !inScope(scope, row.ExternalCustomerID, row.Timestamp, row.EventID, "")
 	})
 	return nil
-}
-
-func (s *InMemoryDeletedEventsLogStore) CountRecordedMeterUsageRows(
-	ctx context.Context,
-	requestID string,
-) (uint64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var count uint64
-	for _, log := range s.logs {
-		if log.RequestID == requestID && log.MeterID != "" {
-			count++
-		}
-	}
-	return count, nil
 }

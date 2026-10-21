@@ -234,7 +234,7 @@ func (s *InvoiceEventDeletionGateSuite) TestGate_ReleasesOnceTheDeletionIsTermin
 			s.seedDeleting("ext_1", s.periodStart, s.periodEnd)
 			inv := s.draftInvoice("inv_1", "cust_1", nil, s.periodStart, s.periodEnd)
 
-			s.NoError(s.requestRepo.MarkTerminal(s.GetContext(), "req_live", status,
+			s.NoError(s.requestRepo.MarkTerminal(s.GetContext(), []string{"evtdel_ext_1"}, status,
 				types.EventDeletionReasonMutationFailed))
 
 			gated, err := s.svc.isInvoiceGatedOnEventDeletion(s.GetContext(), inv)
