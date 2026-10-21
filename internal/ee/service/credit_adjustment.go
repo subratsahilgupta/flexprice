@@ -83,6 +83,9 @@ func (s *creditAdjustmentService) CalculateCreditAdjustments(inv *invoice.Invoic
 		remainingAmountAvailable = remainingAmountAvailable.Add(w.Balance)
 	}
 
+	// Negative usage lines offset positive ones, so credits never exceed net usage.
+	remainingAmountAvailable = decimal.Min(remainingAmountAvailable, netUsageAfterDiscounts(inv))
+
 	// If there's no amount available, we're done
 	if remainingAmountAvailable.LessThanOrEqual(decimal.Zero) {
 		return nil, nil
@@ -164,6 +167,18 @@ func (s *creditAdjustmentService) CalculateCreditAdjustments(inv *invoice.Invoic
 
 	// Return a map showing how much to take from each wallet
 	return amountsToDebitFromWallets, nil
+}
+
+// netUsageAfterDiscounts sums the invoice's usage lines after discounts, floored at zero.
+func netUsageAfterDiscounts(inv *invoice.Invoice) decimal.Decimal {
+	net := decimal.Zero
+	for _, lineItem := range inv.LineItems {
+		if lo.FromPtr(lineItem.PriceType) != string(types.PRICE_TYPE_USAGE) {
+			continue
+		}
+		net = net.Add(lineItem.Amount.Sub(lineItem.LineItemDiscount).Sub(lineItem.InvoiceLevelDiscount))
+	}
+	return decimal.Max(net, decimal.Zero)
 }
 
 // ApplyCreditsToInvoice applies wallet amounts to an invoice.
