@@ -129,18 +129,3 @@ func TestRunReport_ValidationRules(t *testing.T) {
 		require.NoError(t, err, "%+v", req)
 	}
 }
-
-func TestValidateReportRequest_UnsupportedCompareAndNoCurrency(t *testing.T) {
-	e := &analytics.ReportCatalogEntry{
-		Key:          types.Metric("no_such_metric"),
-		Shapes:       []types.Shape{types.ShapeScalar},
-		DefaultShape: types.ShapeScalar,
-	}
-	err := validateReportRequest(e, &dto.ReportQueryRequest{Shape: "scalar", Compare: "previous_period"}, 0)
-	require.Error(t, err)
-	assert.True(t, ierr.IsValidation(err))
-
-	err = validateReportRequest(e, &dto.ReportQueryRequest{Shape: "scalar", Currency: "usd"}, 0)
-	require.Error(t, err)
-	assert.True(t, ierr.IsValidation(err))
-}

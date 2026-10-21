@@ -16,10 +16,10 @@ type ReportCatalogEntry struct {
 	Key             types.Metric
 	Name            string
 	Description     string
-	Category        string
-	Kind            string
-	ValueType       string
-	HigherIsBetter  bool
+	Category        types.ReportCategory
+	Kind            types.ReportKind
+	ValueType       types.ReportValueType
+	Improvement     types.ImprovementDirection
 	Shapes          []types.Shape
 	DefaultShape    types.Shape
 	Dimensions      []ReportDimension
@@ -29,15 +29,15 @@ type ReportCatalogEntry struct {
 
 var reportCatalog = []ReportCatalogEntry{
 	{
-		Key:            types.MetricInvoiceTotal,
-		Name:           "Total billing",
-		Description:    "Sum of finalized invoice totals in the period",
-		Category:       "billing",
-		Kind:           "flow",
-		ValueType:      "money",
-		HigherIsBetter: true,
-		Shapes:         []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
-		DefaultShape:   types.ShapeTimeseries,
+		Key:          types.MetricInvoiceTotal,
+		Name:         "Total billing",
+		Description:  "Sum of finalized invoice totals in the period",
+		Category:     types.ReportCategoryBilling,
+		Kind:         types.ReportKindFlow,
+		ValueType:    types.ReportValueTypeMoney,
+		Improvement:  types.ImprovementHigher,
+		Shapes:       []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
+		DefaultShape: types.ShapeTimeseries,
 		Dimensions: []ReportDimension{
 			{Key: "customer_id", Label: "Customer"},
 			{Key: "invoice_type", Label: "Invoice type"},
