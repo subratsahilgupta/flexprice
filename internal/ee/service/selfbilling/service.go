@@ -125,7 +125,20 @@ func (s *selfBillingService) provision(ctx context.Context, tenantID, name, emai
 	if err := s.client.EnsureCustomer(ctx, in); err != nil {
 		return err
 	}
-	return s.client.StartTrial(ctx, in.extID)
+
+	created, err := s.client.StartTrial(ctx, in.extID)
+	if err != nil {
+		return err
+	}
+
+	if created {
+		s.notify(ctx, alert{
+			Event:      alertTrialStarted,
+			TenantID:   tenantID,
+			TenantName: name,
+		})
+	}
+	return nil
 }
 
 // RunHourly syncs statuses even when the usage push fails, and returns both errors joined.

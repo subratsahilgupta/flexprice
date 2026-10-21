@@ -68,16 +68,16 @@ func (f *fakeClient) EnsureCustomer(_ context.Context, in customerInput) error {
 	return f.err
 }
 
-func (f *fakeClient) StartTrial(_ context.Context, extID string) error {
+func (f *fakeClient) StartTrial(_ context.Context, extID string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	if f.subs[extID] != nil {
-		return f.err
+		return false, f.err
 	}
 	f.trialsStarted++
 	f.subs[extID] = &remoteSubscription{id: "sub_" + extID, status: types.SubscriptionStatusTrialing}
-	return f.err
+	return f.err == nil, f.err
 }
 
 func (f *fakeClient) LatestSubscription(_ context.Context, extID string) (*remoteSubscription, error) {
@@ -327,12 +327,14 @@ func TestProvision(t *testing.T) {
 		wantCustomer  bool
 		wantTrial     bool
 		wantLegacyID  string
+		wantAlert     bool
 	}{
 		{
 			name:         "new_tenant_gets_customer_and_trial",
 			tenantID:     "t1",
 			wantCustomer: true,
 			wantTrial:    true,
+			wantAlert:    true,
 		},
 		{
 			name:         "existing_subscription_no_second_trial",
@@ -347,12 +349,14 @@ func TestProvision(t *testing.T) {
 			wantCustomer:  true,
 			wantTrial:     true,
 			wantLegacyID:  "t1",
+			wantAlert:     true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fc := newFakeClient()
 			s, _ := newTestService(fc)
+			sink := newAlertSink(t, s)
 			s.Config.Billing.TenantID = tt.billingTenant
 			if tt.existingSub {
 				fc.subs["us:"+tt.tenantID] = &remoteSubscription{id: "old", status: types.SubscriptionStatusActive}
@@ -363,6 +367,19 @@ func TestProvision(t *testing.T) {
 			assert.Equal(t, tt.wantCustomer, fc.customers["us:"+tt.tenantID])
 			assert.Equal(t, tt.wantTrial, fc.trials() == 1)
 			assert.Equal(t, tt.wantLegacyID, fc.legacyExtIDs["us:"+tt.tenantID])
+
+			if !tt.wantAlert {
+				assert.Empty(t, sink.waitFor(t, 0))
+				return
+			}
+
+			got := sink.waitFor(t, 1)
+			assert.Equal(t, alertTrialStarted, got[0].Event)
+			assert.Equal(t, tt.tenantID, got[0].TenantID)
+			assert.Equal(t, "Acme", got[0].TenantName)
+			assert.Equal(t, "us", got[0].Region)
+			assert.Empty(t, got[0].FromStatus)
+			assert.False(t, got[0].OccurredAt.IsZero())
 		})
 	}
 }

@@ -148,3 +148,53 @@ func TestUpdateTenantStatus_NotActiveLeavesProductionLocked(t *testing.T) {
 	assert.Equal(t, types.TenantInternalStatusSuspended, status)
 	assert.Equal(t, 0, productionEnvs(t, d, "t1"))
 }
+
+func TestUpdateTenantStatus_Alerts(t *testing.T) {
+	sub := func(status types.SubscriptionStatus) *remoteSubscription {
+		return &remoteSubscription{id: "sub_us:t1", status: status}
+	}
+	trialing, active, suspended := types.TenantInternalStatusTrialing, types.TenantInternalStatusActive, types.TenantInternalStatusSuspended
+
+	tests := []struct {
+		name      string
+		from      types.TenantInternalStatus
+		sub       *remoteSubscription
+		wantEvent alertEvent // empty = no alert
+		wantTo    types.TenantInternalStatus
+	}{
+		{"trialing_to_active", trialing, sub(types.SubscriptionStatusActive), alertTenantActivated, active},
+		{"suspended_to_active", suspended, sub(types.SubscriptionStatusActive), alertTenantActivated, active},
+		{"trialing_to_suspended", trialing, sub(types.SubscriptionStatusIncomplete), alertTenantSuspended, suspended},
+		{"active_unchanged", active, sub(types.SubscriptionStatusActive), "", active},
+		{"trialing_unchanged", trialing, sub(types.SubscriptionStatusTrialing), "", trialing},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, d := newTestService(newFakeClient())
+			sink := newAlertSink(t, s)
+			seedTenant(t, d, "t1", tt.from)
+			tn, err := d.tenants.GetByID(context.Background(), "t1")
+			require.NoError(t, err)
+
+			status, err := s.updateTenantStatus(tenantCtx("t1"), tn, tt.sub)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantTo, status)
+
+			if tt.wantEvent == "" {
+				assert.Empty(t, sink.waitFor(t, 0))
+				return
+			}
+
+			got := sink.waitFor(t, 1)
+			assert.Equal(t, alert{
+				Event:      tt.wantEvent,
+				TenantID:   "t1",
+				TenantName: "t1",
+				Region:     "us",
+				FromStatus: tt.from,
+				ToStatus:   tt.wantTo,
+				OccurredAt: got[0].OccurredAt,
+			}, got[0])
+		})
+	}
+}
