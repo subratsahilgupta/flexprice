@@ -39,6 +39,7 @@ type Configuration struct {
 	Postgres               PostgresConfig               `validate:"required"`
 	Otel                   OtelConfig                   `validate:"omitempty"`
 	Pyroscope              PyroscopeConfig              `validate:"required"`
+	Telemetry              TelemetryConfig              `mapstructure:"telemetry" validate:"omitempty"`
 	Event                  EventConfig                  `validate:"required"`
 	DynamoDB               DynamoDBConfig               `validate:"required"`
 	Temporal               TemporalConfig               `validate:"required"`
@@ -844,6 +845,16 @@ type PyroscopeConfig struct {
 	DisableGCRuns   bool     `mapstructure:"disable_gc_runs" default:"false"`
 }
 
+type TelemetryConfig struct {
+	// Enabled defaults to false — telemetry is opt-in until validated.
+	// FLEXPRICE_TELEMETRY_DISABLED / DO_NOT_TRACK always win regardless.
+	Enabled      bool   `mapstructure:"enabled"`
+	Disabled     bool   `mapstructure:"disabled"`
+	Host         string `mapstructure:"host"`
+	DryRun       bool   `mapstructure:"dry_run"`
+	InstallLabel string `mapstructure:"install_label"`
+}
+
 type TemporalConfig struct {
 	Address                string               `mapstructure:"address" validate:"required"`
 	TaskQueue              string               `mapstructure:"task_queue" validate:"required"`
@@ -903,6 +914,9 @@ type BillingConfig struct {
 
 	// UsageLookbackHours is how many closed hours each usage push re-sends, so a missed run is recovered.
 	UsageLookbackHours int `mapstructure:"usage_lookback_hours" default:"6"`
+
+	// ZapierWebhookURL receives self-billing lifecycle alerts for Slack; empty disables them.
+	ZapierWebhookURL string `mapstructure:"zapier_webhook_url"`
 }
 
 const defaultUsageLookback = 6 * time.Hour
@@ -936,7 +950,16 @@ func (c BillingConfig) CheckoutProvider() types.CheckoutPaymentProvider {
 
 // hasSecureAPIHost reports whether APIHost is an https URL; plain http is allowed only for localhost.
 func (c BillingConfig) hasSecureAPIHost() bool {
-	u, err := url.Parse(strings.TrimSpace(c.APIHost))
+	return isSecureURL(c.APIHost)
+}
+
+// HasSecureZapierWebhookURL reports whether ZapierWebhookURL is an https URL; plain http is allowed only for localhost.
+func (c BillingConfig) HasSecureZapierWebhookURL() bool {
+	return isSecureURL(c.ZapierWebhookURL)
+}
+
+func isSecureURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Host == "" {
 		return false
 	}

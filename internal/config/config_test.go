@@ -227,3 +227,22 @@ func TestBillingConfig_IsBillingTenant(t *testing.T) {
 	assert.False(t, BillingConfig{}.IsBillingTenant(""))
 	assert.False(t, BillingConfig{TenantID: "t_b"}.IsBillingTenant("t_x"))
 }
+
+func TestBillingConfig_HasSecureZapierWebhookURL(t *testing.T) {
+	tests := []struct {
+		url  string
+		want bool
+	}{
+		{"https://hooks.zapier.com/hooks/catch/1/abc/", true},
+		{"http://hooks.zapier.com/hooks/catch/1/abc/", false},
+		{"http://localhost:8080/hook", true},
+		{"http://127.0.0.1:8080/hook", true},
+		{"", false},
+		{"not a url", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.url, func(t *testing.T) {
+			assert.Equal(t, tt.want, BillingConfig{ZapierWebhookURL: tt.url}.HasSecureZapierWebhookURL())
+		})
+	}
+}

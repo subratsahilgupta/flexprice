@@ -40,6 +40,18 @@ func (s *selfBillingService) updateTenantStatus(ctx context.Context, t *tenant.T
 			return "", err
 		}
 		s.Logger.Info(ctx, "self-billing tenant status updated", "tenant_id", t.ID, "from", t.InternalStatus, "to", next)
+
+		event := alertTenantSuspended
+		if next == types.TenantInternalStatusActive {
+			event = alertTenantActivated
+		}
+		s.notify(ctx, alert{
+			Event:      event,
+			TenantID:   t.ID,
+			TenantName: t.Name,
+			FromStatus: t.InternalStatus,
+			ToStatus:   next,
+		})
 	}
 
 	if next != types.TenantInternalStatusActive {

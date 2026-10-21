@@ -13,6 +13,7 @@ import (
 	adminapi "github.com/flexprice/flexprice/internal/api/admin"
 	adminv1 "github.com/flexprice/flexprice/internal/api/admin/v1"
 	v1 "github.com/flexprice/flexprice/internal/api/v1"
+	"github.com/flexprice/flexprice/internal/buildinfo"
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/config"
@@ -33,6 +34,7 @@ import (
 	kafkaPubsub "github.com/flexprice/flexprice/internal/pubsub/kafka"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
 	"github.com/flexprice/flexprice/internal/pyroscope"
+	"github.com/flexprice/flexprice/internal/telemetry"
 	"github.com/flexprice/flexprice/internal/rbac"
 	"github.com/flexprice/flexprice/internal/repository"
 	"github.com/flexprice/flexprice/internal/storage"
@@ -107,6 +109,7 @@ func main() {
 			// Monitoring
 			tracing.NewService,
 			pyroscope.NewPyroscopeService,
+			telemetry.NewReporter,
 
 			// Cache
 			cache.InitializeInMemoryCache,
@@ -347,6 +350,7 @@ func main() {
 			tracing.RegisterHooks,
 			repository.InitTracing,
 			pyroscope.RegisterHooks,
+			telemetry.RegisterHooks,
 			activity.Install,
 			initIntegrationFactory,
 			startServer,
@@ -362,7 +366,6 @@ func provideHandlers(
 	logger *logger.Logger,
 	serviceParams service.ServiceParams,
 	redisCache cache.RedisCache,
-	locker cache.Locker,
 	meterService service.MeterService,
 	eventService service.EventService,
 	environmentService service.EnvironmentService,
@@ -438,7 +441,7 @@ func provideHandlers(
 		Price:                    v1.NewPriceHandler(priceService, logger),
 		PriceUnit:                v1.NewPriceUnitHandler(priceUnitService, logger),
 		Customer:                 v1.NewCustomerHandler(customerService, billingService, paymentService, entityIntegrationMappingService, logger),
-		Plan:                     v1.NewPlanHandler(planService, entitlementService, creditGrantService, temporalService, locker, cfg, logger),
+		Plan:                     v1.NewPlanHandler(planService, entitlementService, creditGrantService, temporalService, cfg, logger),
 		Subscription:             v1.NewSubscriptionHandler(subscriptionService, logger),
 		SubscriptionPause:        v1.NewSubscriptionPauseHandler(subscriptionService, logger),
 		SubscriptionChange:       v1.NewSubscriptionChangeHandler(subscriptionChangeService, logger),
@@ -470,7 +473,7 @@ func provideHandlers(
 		Paddle:                   v1.NewPaddleHandler(integrationFactory, logger),
 		Webhook:                  v1.NewWebhookHandler(cfg, svixClient, logger, integrationFactory, customerService, paymentService, invoiceService, planService, subscriptionService, entityIntegrationMappingService, checkoutSessionService, refundService, db, webhookService),
 		Coupon:                   v1.NewCouponHandler(couponService, couponAssociationService, logger),
-		Addon:                    v1.NewAddonHandler(addonService, entitlementService, temporalService, locker, logger),
+		Addon:                    v1.NewAddonHandler(addonService, entitlementService, temporalService, logger),
 		Settings:                 v1.NewSettingsHandler(settingsService, logger),
 		SetupIntent:              v1.NewSetupIntentHandler(integrationFactory, customerService, cfg, logger),
 		Group:                    v1.NewGroupHandler(groupService, logger),
@@ -631,6 +634,8 @@ func startServer(
 	if mode == "" {
 		mode = types.ModeLocal
 	}
+
+	log.Infow("starting flexprice", "mode", mode, "version", buildinfo.Version, "git_sha", buildinfo.GitSHA)
 
 	switch mode {
 	case types.ModeLocal:

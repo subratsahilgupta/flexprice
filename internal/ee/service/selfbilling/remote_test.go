@@ -262,12 +262,14 @@ func TestEnsureCustomer(t *testing.T) {
 
 func TestStartTrial(t *testing.T) {
 	tests := []struct {
-		name     string
-		existing []map[string]any
-		wantSubs []map[string]any
+		name        string
+		existing    []map[string]any
+		wantSubs    []map[string]any
+		wantCreated bool
 	}{
 		{
-			name: "creates_monthly_usd_subscription_on_the_plan",
+			name:        "creates_monthly_usd_subscription_on_the_plan",
+			wantCreated: true,
 			wantSubs: []map[string]any{{
 				"external_customer_id": "in:t1",
 				"plan_id":              "plan_1",
@@ -286,7 +288,9 @@ func TestStartTrial(t *testing.T) {
 			f.subs["in:t1"] = tt.existing
 			c := newTestRemoteClient(t, f)
 
-			require.NoError(t, c.StartTrial(context.Background(), "in:t1"))
+			created, err := c.StartTrial(context.Background(), "in:t1")
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantCreated, created)
 
 			require.Len(t, f.subscriptions, len(tt.wantSubs))
 			for i, want := range tt.wantSubs {

@@ -1883,14 +1883,14 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 		filteredSubscriptions := make([]*subscription.Subscription, 0)
 		for _, sub := range subscriptions {
 			if sub.Currency != w.Currency {
-				s.Logger.Info(ctx, "skipping subscription - currency mismatch",
+				s.Logger.Debug(ctx, "skipping subscription - currency mismatch",
 					"subscription_id", sub.ID,
 					"subscription_currency", sub.Currency,
 					"wallet_currency", w.Currency)
 				continue
 			}
 			if sub.SubscriptionType != types.SubscriptionTypeStandalone && sub.SubscriptionType != types.SubscriptionTypeParent {
-				s.Logger.Info(ctx, "skipping subscription - not a standalone or parent subscription")
+				s.Logger.Debug(ctx, "skipping subscription - not a standalone or parent subscription")
 				continue
 			}
 
@@ -3447,7 +3447,15 @@ func (s *walletService) computeRealtimeBalanceDefault(ctx context.Context, w *wa
 	if shouldIncludeUsage {
 		// Get all active subscriptions to calculate current usage
 		subscriptionService := NewSubscriptionService(s.ServiceParams)
-		subscriptions, err := subscriptionService.ListByCustomerID(ctx, w.CustomerID)
+		// Usage lookup reloads line items, so list without them.
+		subscriptions, err := s.SubRepo.List(ctx, &types.SubscriptionFilter{
+			QueryFilter: types.NewNoLimitQueryFilter(),
+			CustomerID:  w.CustomerID,
+			SubscriptionStatus: []types.SubscriptionStatus{
+				types.SubscriptionStatusActive,
+				types.SubscriptionStatusTrialing,
+			},
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -3456,14 +3464,14 @@ func (s *walletService) computeRealtimeBalanceDefault(ctx context.Context, w *wa
 		filteredSubscriptions := make([]*subscription.Subscription, 0)
 		for _, sub := range subscriptions {
 			if sub.Currency != w.Currency {
-				s.Logger.Info(ctx, "skipping subscription - currency mismatch",
+				s.Logger.Debug(ctx, "skipping subscription - currency mismatch",
 					"subscription_id", sub.ID,
 					"subscription_currency", sub.Currency,
 					"wallet_currency", w.Currency)
 				continue
 			}
 			if sub.SubscriptionType != types.SubscriptionTypeStandalone && sub.SubscriptionType != types.SubscriptionTypeParent {
-				s.Logger.Info(ctx, "skipping subscription - not a standalone or parent subscription")
+				s.Logger.Debug(ctx, "skipping subscription - not a standalone or parent subscription")
 				continue
 			}
 
