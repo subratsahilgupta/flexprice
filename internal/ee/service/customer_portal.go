@@ -3,12 +3,17 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/auth"
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/domain/feature"
+	"github.com/flexprice/flexprice/internal/domain/meter"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 )
 
 // CustomerPortalService provides customer portal functionality
@@ -318,6 +323,10 @@ func (s *customerPortalService) GetAnalytics(ctx context.Context, req dto.Portal
 		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
 	}
 
+	if err := s.validatePropertyKeys(ctx, req); err != nil {
+		return nil, err
+	}
+
 	// Convert dashboard request to internal request with customer ID injected
 	internalReq := req.ToInternalRequest(externalCustomerID)
 
@@ -436,4 +445,70 @@ func (s *customerPortalService) GetWalletTransactions(ctx context.Context, walle
 
 	// Get the transactions
 	return walletService.GetWalletTransactions(ctx, walletID, filter)
+}
+
+// validatePropertyKeys rejects property group-by and filter keys hidden from portal users.
+func (s *customerPortalService) validatePropertyKeys(ctx context.Context, req dto.PortalAnalyticsRequest) error {
+	keys := lo.Keys(req.PropertyFilters)
+	for _, g := range req.GroupBy {
+		if name, ok := strings.CutPrefix(g, "properties."); ok {
+			keys = append(keys, name)
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+
+	cfg, err := GetSetting[types.CustomerPortalConfig](&settingsService{ServiceParams: s.ServiceParams}, ctx, types.SettingKeyCustomerPortalConfig)
+	if err != nil {
+		return err
+	}
+	var props *types.CustomerPortalUsageProperties
+	if cfg.AnalyticsConfig != nil {
+		props = cfg.AnalyticsConfig.UsageProperties
+	}
+
+	var meterIDs []string
+	if len(req.FeatureIDs) > 0 {
+		features, err := s.FeatureRepo.ListByIDs(ctx, req.FeatureIDs)
+		if err != nil {
+			return err
+		}
+		meterIDs = lo.Uniq(lo.FilterMap(features, func(f *feature.Feature, _ int) (string, bool) { return f.MeterID, f.MeterID != "" }))
+	} else {
+		meters, err := s.MeterRepo.List(ctx, types.NewNoLimitMeterFilter())
+		if err != nil {
+			return err
+		}
+		meterIDs = lo.Map(meters, func(m *meter.Meter, _ int) string { return m.ID })
+	}
+
+	quantityKeys, err := quantityPropertyKeys(ctx, s.MeterRepo, meterIDs)
+	if err != nil {
+		return err
+	}
+	for _, key := range keys {
+		if !visiblePropertyKey(key, props, quantityKeys) {
+			return ierr.NewError("property key is not available").
+				WithHintf("property key %q is not available", key).
+				Mark(ierr.ErrValidation)
+		}
+	}
+	return nil
+}
+
+// visiblePropertyKey reports whether portal users may group or filter by the property key.
+func visiblePropertyKey(key string, cfg *types.CustomerPortalUsageProperties, quantityKeys map[string]struct{}) bool {
+	if _, ok := quantityKeys[key]; ok {
+		return false
+	}
+
+	if cfg == nil {
+		return true
+	}
+	if len(cfg.AllowedKeys) > 0 && !slices.Contains(cfg.AllowedKeys, key) {
+		return false
+	}
+
+	return !slices.Contains(cfg.HiddenKeys, key)
 }

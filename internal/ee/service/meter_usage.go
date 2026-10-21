@@ -22,6 +22,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/expression"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -2919,3 +2920,40 @@ func rollupBucketPoints(
 
 // ensure meterUsageService implements MeterUsageService
 var _ MeterUsageService = (*meterUsageService)(nil)
+
+// quantityPropertyKeys returns the property keys that hold quantities for the given meters'
+// events, across every meter sharing those event names.
+func quantityPropertyKeys(ctx context.Context, meterRepo meter.Repository, meterIDs []string) (map[string]struct{}, error) {
+	meters, err := meterRepo.ListByIDs(ctx, meterIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	keys := make(map[string]struct{})
+	evaluator := expression.NewCELEvaluator()
+	for _, eventName := range lo.Uniq(lo.Map(meters, func(m *meter.Meter, _ int) string { return m.EventName })) {
+		matching, err := meterRepo.GetMatchingMetersByEventName(ctx, eventName)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, m := range matching {
+			if m.Aggregation.Expression == "" {
+				if m.Aggregation.Field != "" && m.Aggregation.Type != types.AggregationCount && m.Aggregation.Type != types.AggregationCountUnique {
+					keys[m.Aggregation.Field] = struct{}{}
+				}
+				continue
+			}
+
+			ids, err := evaluator.Identifiers(m.Aggregation.Expression)
+			if err != nil {
+				return nil, err
+			}
+			for _, id := range ids {
+				keys[id] = struct{}{}
+			}
+		}
+	}
+
+	return keys, nil
+}

@@ -5166,3 +5166,47 @@ func (s *MeterUsageServiceSuite) TestConvertToBillingCharges_NilMeter() {
 	s.Equal("meter_missing", charges[0].MeterID)
 	s.True(totalCost.Equal(decimal.NewFromFloat(0.10)), "expected 10 * $0.01, got %s", totalCost)
 }
+
+func (s *MeterUsageServiceSuite) TestQuantityPropertyKeys() {
+	ctx := s.GetContext()
+	meters := []*meter.Meter{
+		{ID: "meter_tokens", EventName: "llm", Aggregation: meter.Aggregation{Type: types.AggregationSum, Field: "tokens"}},
+		{ID: "meter_users", EventName: "llm", Aggregation: meter.Aggregation{Type: types.AggregationCountUnique, Field: "user_id"}},
+		{ID: "meter_calls", EventName: "llm", Aggregation: meter.Aggregation{Type: types.AggregationCount, Field: "model"}},
+		{ID: "meter_expr", EventName: "llm", Aggregation: meter.Aggregation{Type: types.AggregationSum, Field: "region", Expression: "input_tokens + output_tokens"}},
+		{ID: "meter_bytes", EventName: "upload", Aggregation: meter.Aggregation{Type: types.AggregationSum, Field: "bytes"}},
+	}
+	for _, m := range meters {
+		m.BaseModel = types.GetDefaultBaseModel(ctx)
+		s.NoError(s.GetStores().MeterRepo.CreateMeter(ctx, m))
+	}
+
+	keys, err := quantityPropertyKeys(ctx, s.GetStores().MeterRepo, []string{"meter_users"})
+	s.NoError(err)
+	s.ElementsMatch([]string{"tokens", "input_tokens", "output_tokens"}, lo.Keys(keys))
+}
+
+func TestVisiblePropertyKey(t *testing.T) {
+	quantityKeys := map[string]struct{}{"tokens": {}}
+	tests := []struct {
+		name string
+		key  string
+		cfg  *types.CustomerPortalUsageProperties
+		want bool
+	}{
+		{name: "no config", key: "region", want: true},
+		{name: "quantity key", key: "tokens", want: false},
+		{name: "quantity key even if allowed", key: "tokens", cfg: &types.CustomerPortalUsageProperties{AllowedKeys: []string{"tokens"}}, want: false},
+		{name: "hidden", key: "region", cfg: &types.CustomerPortalUsageProperties{HiddenKeys: []string{"region"}}, want: false},
+		{name: "not in allowed", key: "region", cfg: &types.CustomerPortalUsageProperties{AllowedKeys: []string{"model"}}, want: false},
+		{name: "in allowed", key: "model", cfg: &types.CustomerPortalUsageProperties{AllowedKeys: []string{"model"}}, want: true},
+		{name: "allowed and hidden", key: "model", cfg: &types.CustomerPortalUsageProperties{AllowedKeys: []string{"model"}, HiddenKeys: []string{"model"}}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := visiblePropertyKey(tt.key, tt.cfg, quantityKeys); got != tt.want {
+				t.Errorf("visiblePropertyKey(%q) = %v, want %v", tt.key, got, tt.want)
+			}
+		})
+	}
+}
