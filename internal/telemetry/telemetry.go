@@ -79,6 +79,7 @@ func (r *Reporter) init(ctx context.Context) {
 		"version":       buildinfo.Version,
 		"git_sha":       buildinfo.GitSHA,
 		"build_variant": buildinfo.BuildVariant,
+		"env":           r.cfg.Logging.Environment,
 		"region":        r.cfg.Logging.Region,
 		"os":            runtime.GOOS,
 		"arch":          runtime.GOARCH,
@@ -92,7 +93,8 @@ func (r *Reporter) init(ctx context.Context) {
 	}
 	p["$set"] = map[string]any{
 		"version": buildinfo.Version, "git_sha": buildinfo.GitSHA, "build_variant": buildinfo.BuildVariant,
-		"region": r.cfg.Logging.Region, "os": runtime.GOOS, "arch": runtime.GOARCH, "cloud": r.cloud.Load(),
+		"env": r.cfg.Logging.Environment, "region": r.cfg.Logging.Region,
+		"os": runtime.GOOS, "arch": runtime.GOARCH, "cloud": r.cloud.Load(),
 	}
 	r.send(ctx, "flexprice_install_init", p)
 }
