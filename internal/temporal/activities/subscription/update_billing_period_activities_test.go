@@ -587,6 +587,35 @@ func (s *BillingActivitiesSuite) TestUpdateCurrentPeriodActivity_QuietNeverCycle
 	}
 }
 
+func (s *BillingActivitiesSuite) TestRolloverSkipsSubscriptionsWithoutNeverMeterGrants() {
+	ctx := s.GetContext()
+	f := &feature.Feature{ID: "feature-normal-rollover", Type: types.FeatureTypeMetered,
+		MeterID: s.testData.meter.ID, BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.Require().NoError(s.GetStores().FeatureRepo.Create(ctx, f))
+	ec := &entitlement.Entitlement{ID: "ec-normal-rollover", EntityType: types.ENTITLEMENT_ENTITY_TYPE_PLAN,
+		EntityID: s.testData.plan.ID, FeatureID: f.ID, FeatureType: types.FeatureTypeMetered, IsEnabled: true,
+		GrantMeasure:      types.EntitlementGrantMeasureQuantity,
+		GrantDurationUnit: types.EntitlementGrantDurationUnitSubscriptionPeriod,
+		GrantQuota:        lo.ToPtr(decimal.NewFromInt(100)), BaseModel: types.GetDefaultBaseModel(ctx)}
+	_, err := s.GetStores().EntitlementRepo.Create(ctx, ec)
+	s.Require().NoError(err)
+	now := time.Now().UTC()
+	sub := &subscription.Subscription{ID: "sub-normal-rollover", CustomerID: s.testData.customer.ID,
+		PlanID: s.testData.plan.ID, SubscriptionStatus: types.SubscriptionStatusActive,
+		SubscriptionType: types.SubscriptionTypeStandalone, StartDate: now.Add(-time.Minute),
+		CurrentPeriodStart: now.Add(-time.Minute), CurrentPeriodEnd: now.AddDate(0, 1, 0),
+		BillingPeriod: types.BILLING_PERIOD_MONTHLY, BillingPeriodCount: 1,
+		BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, sub))
+	params := s.newServiceParams()
+	activities := NewBillingActivities(service.NewSubscriptionService(params), params, s.GetLogger())
+	activities.refreshEntitlementGrantsAfterRollover(ctx, sub)
+	grants, err := s.GetStores().EntitlementGrantRepo.List(ctx,
+		types.NewNoLimitEntitlementGrantFilter().WithSubscriptionIDs(sub.ID))
+	s.Require().NoError(err)
+	s.Empty(grants)
+}
+
 func (s *BillingActivitiesSuite) TestUpdateCurrentPeriodActivity_DoesNotRefreshCancelledSubscription() {
 	ctx := s.GetContext()
 	s.WithEnvironment("env_cancelled_rollover")

@@ -223,9 +223,22 @@ func (s *BillingActivities) refreshEntitlementGrantsAfterRollover(ctx context.Co
 		(sub.SubscriptionStatus != types.SubscriptionStatusActive && sub.SubscriptionStatus != types.SubscriptionStatusTrialing) {
 		return
 	}
-	if err := service.NewAlertService(s.serviceParams).RefreshEntitlementGrantsForCustomer(ctx, sub.CustomerID); err != nil {
-		s.logger.Error(ctx, "entitlement grant refresh after rollover failed",
+	entitlements, err := s.subscriptionService.GetSubscriptionEntitlementsForSubscription(ctx, sub)
+	if err != nil {
+		s.logger.Error(ctx, "failed to resolve entitlements for rollover refresh",
 			"error", err, "subscription_id", sub.ID)
+		return
+	}
+	for _, ec := range entitlements {
+		if ec == nil || ec.Entitlement == nil || !ec.HasGrantConfig() ||
+			ec.Feature == nil || ec.Feature.Meter == nil || ec.Feature.Meter.ResetUsage != types.ResetUsageNever {
+			continue
+		}
+		if err := service.NewAlertService(s.serviceParams).RefreshEntitlementGrantsForCustomer(ctx, sub.CustomerID); err != nil {
+			s.logger.Error(ctx, "entitlement grant refresh after rollover failed",
+				"error", err, "subscription_id", sub.ID)
+		}
+		return
 	}
 }
 

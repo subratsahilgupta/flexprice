@@ -207,7 +207,7 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 		toClose = append(toClose, liveByFeature[featureID]...)
 	}
 
-	grantSvc := NewEntitlementGrantService(s.ServiceParams)
+	grantSvc := &entitlementGrantService{ServiceParams: s.ServiceParams}
 
 	// A feature with both directions names its pooled row twice.
 	closedByID, err := grantSvc.CloseEntitlementGrants(ctx, lo.UniqBy(lo.Compact(toClose),
@@ -241,20 +241,33 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 		// and the predecessor's unspent balance carries. Whether a config still funds the
 		// feature is irrelevant: quota already granted belongs to the customer for the rest of
 		// the cycle, so it carries even when the config that bought it is the one leaving.
+		neverReset, err := grantSvc.isNeverResetMeter(ctx, featureID)
+		if err != nil {
+			return err
+		}
+
 		quota := grantToAdd.Quota
 		predecessorGrant := lo.FirstOrEmpty(liveByFeature[featureID])
-		if closed := closedByID[predecessorGrant.GetID()]; closed != nil {
+		closed := closedByID[predecessorGrant.GetID()]
+
+		// A running-balance successor already counts all usage to date, so it takes the full
+		// allowance; carrying the unspent balance would count that headroom twice.
+		if closed == nil || neverReset {
+			for _, ec := range surviving {
+				quota = quota.Add(lo.FromPtr(ec.GrantQuota))
+			}
+		} else {
 			carried, _ := closed.Remaining()
 			quota = quota.Add(carried)
+		}
+
+		if closed != nil {
 			req.Closed = closed
 			req.New = entitlementgrant.NewEntitlementGrantBuilder(grantToAdd).
 				WithQuota(quota).
 				WithWindow(closed.ValidTo, grantToAdd.ValidTo).
 				Build()
 		} else {
-			for _, ec := range surviving {
-				quota = quota.Add(lo.FromPtr(ec.GrantQuota))
-			}
 			req.New = entitlementgrant.NewEntitlementGrantBuilder(grantToAdd).
 				WithQuota(quota).
 				Build()
@@ -269,8 +282,20 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 			continue
 		}
 
-		// The successor carries whatever quota the closed window had left.
+		neverReset, err := grantSvc.isNeverResetMeter(ctx, featureID)
+		if err != nil {
+			return err
+		}
+
+		// The successor carries whatever quota the closed window had left; a running-balance
+		// successor takes the surviving configs' full allowance instead.
 		quota, _ := closed.Remaining()
+		if neverReset {
+			quota = decimal.Zero
+			for _, ec := range cfg.survivingECsByFeature[featureID] {
+				quota = quota.Add(lo.FromPtr(ec.GrantQuota))
+			}
+		}
 		reqs = append(reqs, OpenFeatureBasedEntitlementGrantsRequest{
 			FeatureID: featureID,
 			Closed:    closed,

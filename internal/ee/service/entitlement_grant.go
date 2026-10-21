@@ -359,6 +359,10 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 			WithEnvironmentID(types.GetEnvironmentID(ctx)).
 			WithBaseModel(types.GetDefaultBaseModel(ctx)).
 			Build()
+		grant, err := s.initializeRunningGrantUsage(ctx, grant, time.Now().UTC())
+		if err != nil {
+			return nil, err
+		}
 		if err := grant.Validate(); err != nil {
 			return nil, err
 		}
@@ -789,6 +793,50 @@ func (s *entitlementGrantService) openOneGrant(
 	}
 	// Lost the race; re-read the winner so callers see a consistent set.
 	return s.EntitlementGrantRepo.FindLastBySlot(ctx, ec.ID, sub.CustomerID, sub.ID)
+}
+
+// initializeRunningGrantUsage persists a NEVER grant with its current balance from the outset.
+// Future windows remain unevaluated until they become effective.
+func (s *entitlementGrantService) initializeRunningGrantUsage(ctx context.Context, g *entitlementgrant.EntitlementGrant, at time.Time) (*entitlementgrant.EntitlementGrant, error) {
+	if g.Measure != types.EntitlementGrantMeasureQuantity || g.ValidFrom.After(at) {
+		return g, nil
+	}
+	f, err := s.FeatureRepo.Get(ctx, g.FeatureID())
+	if err != nil {
+		return nil, err
+	}
+	m, err := s.MeterRepo.GetMeter(ctx, f.MeterID)
+	if err != nil {
+		return nil, err
+	}
+	if !keepsRunningAggregate(m) {
+		return g, nil
+	}
+	sub, err := s.SubRepo.Get(ctx, g.SubscriptionID)
+	if err != nil {
+		return nil, err
+	}
+	extIDs, err := NewSubscriptionService(s.ServiceParams).ExternalCustomerIDsForSubscription(ctx, sub)
+	if err != nil {
+		return nil, err
+	}
+	usage, err := NewMeterUsageService(s.ServiceParams).GetCheckpointedUsage(ctx, CheckpointedUsageRequest{
+		CustomerID: sub.CustomerID, ExternalCustomerIDs: extIDs,
+		MeterID: m.ID, AggregationType: m.Aggregation.Type, Until: types.EarliestOf(at, g.ValidTo),
+	})
+	if err != nil {
+		return nil, err
+	}
+	usage = decimal.Max(usage, decimal.Zero)
+	status := types.EntitlementGrantStatusActive
+	var crossedAt *time.Time
+	if g.IsExhausted(usage) {
+		status = types.EntitlementGrantStatusExhausted
+		crossedAt = &at
+	}
+	return entitlementgrant.NewEntitlementGrantBuilder(g).
+		WithUsage(usage).WithLastComputedAt(&at).
+		WithGrantStatus(status).WithQuotaCrossedAt(crossedAt).Build(), nil
 }
 
 // computeGrantWindow derives [valid_from, valid_to) from the first usage past the

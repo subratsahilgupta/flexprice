@@ -169,11 +169,16 @@ func (s *EntitlementGrantSuite) TestEvaluate_NeverQuietPeriodUsesCheckpoint() {
 		AggregationType: types.AggregationSum, Until: sub.CurrentPeriodStart,
 	}, nil)
 	s.Require().NoError(err)
-	at := sub.CurrentPeriodStart.Add(time.Hour)
-	grants, meta, err := s.grantService.EnsureGrantsForSubscriptions(ctx, cust, []*subscription.Subscription{sub}, at)
+	at := sub.CurrentPeriodStart
+	params := s.buildServiceParams()
+	usageStore := &recordingGrantUsageStore{MeterUsageRepository: params.MeterUsageRepo}
+	params.MeterUsageRepo = usageStore
+	grants, meta, err := NewEntitlementGrantService(params).EnsureGrantsForSubscriptions(ctx, cust, []*subscription.Subscription{sub}, at)
 	s.Require().NoError(err)
 	s.Require().Len(grants, 1)
-	s.Require().NoError(s.evalAlertService().evaluateEntitlementGrantsForCustomer(ctx, cust, meta, grants, at))
+	s.Empty(usageStore.queries, "automatic opening leaves usage to the immediate evaluation")
+	s.Require().NoError(NewAlertService(params).(*alertService).evaluateEntitlementGrantsForCustomer(ctx, cust, meta, grants, at))
+	s.Len(usageStore.queries, 1, "opening and evaluation should read usage only once")
 	stored, err := s.GetStores().EntitlementGrantRepo.Get(ctx, grants[0].ID)
 	s.Require().NoError(err)
 	s.True(stored.Usage.Equal(decimal.NewFromInt(80)))
@@ -347,7 +352,17 @@ func (s *EntitlementGrantSuite) TestReissue_PeriodResetKeepsRemainingPlusDelta()
 
 func (s *EntitlementGrantSuite) TestOverride_NeverCycleQuotaEditsUseFullQuota() {
 	ctx := s.GetContext()
-	cust, sub, _ := s.recoveryFixture(types.ResetUsageNever)
+	cust, sub, m := s.recoveryFixture(types.ResetUsageNever)
+	sub.StartDate = sub.StartDate.Add(-2 * time.Hour)
+	sub.CurrentPeriodStart = sub.StartDate
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
+	s.seedMeterUsage(cust.ExternalID, m.ID, sub.CurrentPeriodStart.Add(-time.Hour), 40)
+	_, err := NewMeterUsageService(s.buildServiceParams()).SaveUsageCheckpoint(ctx, CheckpointedUsageRequest{
+		CustomerID: cust.ID, ExternalCustomerIDs: []string{cust.ExternalID}, MeterID: m.ID,
+		AggregationType: types.AggregationSum, Until: sub.CurrentPeriodStart,
+	}, nil)
+	s.Require().NoError(err)
+	s.seedMeterUsage(cust.ExternalID, m.ID, sub.CurrentPeriodStart.Add(time.Hour), 40)
 	// Give the live window an evaluated snapshot; each API update owns a new boundary.
 	grants, _, err := s.grantService.EnsureGrantsForSubscriptions(ctx, cust, []*subscription.Subscription{sub}, time.Now().UTC())
 	s.Require().NoError(err)
@@ -363,20 +378,35 @@ func (s *EntitlementGrantSuite) TestOverride_NeverCycleQuotaEditsUseFullQuota() 
 		GrantDurationUnit: types.EntitlementGrantDurationUnitSubscriptionPeriod, GrantQuota: lo.ToPtr(decimal.NewFromInt(120)),
 	})
 	s.Require().NoError(err)
-	assertQuota := func(want string) {
+	assertQuota := func(want, usage string, status types.EntitlementGrantStatus) {
 		live, err := s.grantService.LiveGrantsByFeature(ctx, sub, time.Now().UTC())
 		s.Require().NoError(err)
 		s.Require().Len(live["feature-recovery"], 1)
-		s.Equal(want, live["feature-recovery"][0].Quota.String())
+		g := live["feature-recovery"][0]
+		s.Equal(want, g.Quota.String())
+		s.Equal(usage, g.Usage.String())
+		s.Equal(status, g.GrantStatus)
+		s.NotNil(g.LastComputedAt)
+		if status == types.EntitlementGrantStatusExhausted {
+			s.NotNil(g.QuotaCrossedAt)
+		} else {
+			s.Nil(g.QuotaCrossedAt)
+		}
 	}
-	assertQuota("120")
+	assertQuota("120", "80", types.EntitlementGrantStatusActive)
 	_, err = s.entService.UpdateEntitlement(ctx, created.ID, dto.UpdateEntitlementRequest{
 		GrantQuota: lo.ToPtr(decimal.NewFromInt(50)),
 	})
 	s.Require().NoError(err)
-	assertQuota("50")
+	assertQuota("50", "80", types.EntitlementGrantStatusExhausted)
+	_, err = s.entService.UpdateEntitlement(ctx, created.ID, dto.UpdateEntitlementRequest{
+		GrantQuota: lo.ToPtr(decimal.NewFromInt(150)),
+	})
+	s.Require().NoError(err)
+	assertQuota("150", "80", types.EntitlementGrantStatusActive)
+	s.seedMeterUsage(cust.ExternalID, m.ID, time.Now().UTC().Add(-time.Minute), -100)
 	s.Require().NoError(s.entService.DeleteEntitlement(ctx, created.ID))
-	assertQuota("100")
+	assertQuota("100", "0", types.EntitlementGrantStatusActive)
 }
 
 func (s *EntitlementGrantSuite) TestOverride_NeverBeforeFirstEvaluationOpensAtChange() {
