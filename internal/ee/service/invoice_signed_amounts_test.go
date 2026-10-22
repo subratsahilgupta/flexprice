@@ -84,8 +84,8 @@ func (s *InvoiceServiceSuite) checkSignedCycle(usage, positiveUsage, credits, wa
 	if credits > 0 {
 		after, err := s.GetStores().WalletRepo.GetWalletByID(ctx, walletID)
 		s.Require().NoError(err)
-		netUsage := decimal.Max(decimal.NewFromInt(usage+positiveUsage), decimal.Zero)
-		expectedDebit := decimal.Min(netUsage, decimal.NewFromInt(credits))
+		positiveCharges := decimal.Max(decimal.NewFromInt(usage), decimal.Zero).Add(decimal.Max(decimal.NewFromInt(positiveUsage), decimal.Zero))
+		expectedDebit := decimal.Min(positiveCharges, decimal.NewFromInt(credits))
 		s.True(after.CreditBalance.Equal(seeded.Sub(expectedDebit)), "wallet never receives a credit from a negative total")
 	}
 	items, err := s.GetStores().InvoiceLineItemRepo.ListByInvoiceID(ctx, draft.ID)
@@ -118,10 +118,10 @@ func (s *InvoiceServiceSuite) TestSignedInvoice_MixedPositiveTotal() {
 func (s *InvoiceServiceSuite) TestSignedInvoice_ZeroNetFinalizes() {
 	s.checkSignedCycle(-100, 100, 0, 0)
 }
-func (s *InvoiceServiceSuite) TestSignedInvoice_PrepaidCappedAtNetUsage() {
-	s.checkSignedCycle(-30, 100, 100, 0)
+func (s *InvoiceServiceSuite) TestSignedInvoice_PrepaidAppliesOnlyToPositiveLines() {
+	s.checkSignedCycle(-30, 100, 100, -30)
 }
-func (s *InvoiceServiceSuite) TestSignedInvoice_PrepaidBelowNetUsage() {
+func (s *InvoiceServiceSuite) TestSignedInvoice_PrepaidLimitedByWalletBalance() {
 	s.checkSignedCycle(-30, 100, 50, 20)
 }
 

@@ -1158,7 +1158,7 @@ func (s *CreditExpiryInvoiceRaceSuite) TestFinalizationHold_SafetyCap() {
 	s.True(s.finalizationDue(inv.ID))
 }
 
-func (s *CreditExpiryInvoiceRaceSuite) TestExpirySettlement_NegativeLinesOffsetBeforeFinalization() {
+func (s *CreditExpiryInvoiceRaceSuite) TestExpirySettlement_PaysPositiveLinesBeforeFinalization() {
 	ctx := s.GetContext()
 	boundary := time.Now().UTC().Add(-3 * time.Hour)
 	sub, start := s.rolledSubscription("subs_signed_expiry", boundary)
@@ -1172,23 +1172,22 @@ func (s *CreditExpiryInvoiceRaceSuite) TestExpirySettlement_NegativeLinesOffsetB
 
 	result, err := s.walletService.ExpireCredits(ctx, tx.ID)
 	s.Require().NoError(err)
-	s.True(decimal.NewFromInt(5).Equal(result.Applied), "applied %s", result.Applied)
-	s.True(result.Expired)
+	s.True(decimal.NewFromInt(50).Equal(result.Applied), "applied %s", result.Applied)
+	s.False(result.Expired)
 	expired := s.walletTransactions(types.TransactionReasonCreditExpired)
-	s.Require().Len(expired, 1)
-	s.True(decimal.NewFromInt(45).Equal(expired[0].CreditAmount))
+	s.Empty(expired)
 	adjustments := s.walletTransactions(types.TransactionReasonCreditAdjustment)
 	s.Require().Len(adjustments, 1)
-	s.True(decimal.NewFromInt(5).Equal(adjustments[0].CreditAmount))
+	s.True(decimal.NewFromInt(50).Equal(adjustments[0].CreditAmount))
 	s.True(s.creditsAvailable(tx.ID).IsZero())
 
 	settled, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
 	s.Require().NoError(err)
-	s.True(decimal.NewFromInt(5).Equal(settled.TotalPrepaidCreditsApplied))
+	s.True(decimal.NewFromInt(50).Equal(settled.TotalPrepaidCreditsApplied))
 	final, err := s.creditAdjustment.ApplyCreditsToInvoice(ctx, settled)
 	s.Require().NoError(err)
-	s.True(decimal.NewFromInt(5).Equal(final.TotalPrepaidCreditsApplied))
-	s.True(decimal.NewFromInt(5).Equal(lineCredits(settled)))
-	s.True(settled.Total.IsZero())
+	s.True(decimal.NewFromInt(50).Equal(final.TotalPrepaidCreditsApplied))
+	s.True(decimal.NewFromInt(50).Equal(lineCredits(settled)))
+	s.True(decimal.NewFromInt(-45).Equal(settled.Total))
 	s.Len(s.walletTransactions(types.TransactionReasonCreditAdjustment), 1, "finalization must not debit again")
 }

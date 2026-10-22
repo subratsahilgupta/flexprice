@@ -239,7 +239,7 @@ func (s *walletService) earlierDraftUsageBeforeExpiry(ctx context.Context, sub *
 }
 
 // usageNet returns the invoice's usage charges after discounts, in its denomination: what
-// finalization can place credits on. Negative lines offset positive ones; only the total is floored.
+// finalization can place credits on. Each usage line is floored independently.
 func usageNet(inv *invoice.Invoice) decimal.Decimal {
 	net := decimal.Zero
 	for _, item := range inv.LineItems {
@@ -247,9 +247,9 @@ func usageNet(inv *invoice.Invoice) decimal.Decimal {
 			continue
 		}
 		d := item.Denomination()
-		net = net.Add(d.Amount.Sub(d.LineItemDiscount).Sub(d.InvoiceLevelDiscount))
+		net = net.Add(decimal.Max(decimal.Zero, d.Amount.Sub(d.LineItemDiscount).Sub(d.InvoiceLevelDiscount)))
 	}
-	return decimal.Max(net, decimal.Zero)
+	return net
 }
 
 func (s *walletService) HasPendingExpiringCredit(ctx context.Context, customerID, currency string, periodStart, periodEnd time.Time) (bool, error) {

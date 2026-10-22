@@ -433,3 +433,16 @@ type PendingProviderInvoice struct {
 	TenantID      string
 	EnvironmentID string
 }
+
+// SyncsToVendors excludes skipped invoices and invoices with signed negative charges.
+func (i *Invoice) SyncsToVendors() bool {
+	if i.InvoiceStatus == types.InvoiceStatusSkipped || i.Total.IsNegative() {
+		return false
+	}
+	for _, item := range i.LineItems {
+		if item != nil && (item.Amount.IsNegative() || item.Denomination().Amount.IsNegative()) {
+			return false
+		}
+	}
+	return true
+}
