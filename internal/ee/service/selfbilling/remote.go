@@ -154,17 +154,23 @@ func (c *remoteClient) UpdateBillingDetails(ctx context.Context, extID string, d
 		metadata = lo.Assign(cust.CustomerResponse.GetMetadata(), map[string]string{metaTaxID: details.taxID})
 	}
 
-	_, err := c.sdk.Customers.UpdateCustomer(ctx, sdktypes.UpdateCustomerRequest{
-		Name:              lo.EmptyableToPtr(details.name),
-		Email:             lo.EmptyableToPtr(details.email),
-		AddressLine1:      lo.EmptyableToPtr(details.line1),
-		AddressLine2:      lo.EmptyableToPtr(details.line2),
-		AddressCity:       lo.EmptyableToPtr(details.city),
-		AddressState:      lo.EmptyableToPtr(details.state),
-		AddressCountry:    lo.EmptyableToPtr(details.country),
-		AddressPostalCode: lo.EmptyableToPtr(details.postalCode),
-		Metadata:          metadata,
-	}, nil, lo.ToPtr(extID))
+	req := sdktypes.UpdateCustomerRequest{
+		Name:     lo.EmptyableToPtr(details.name),
+		Email:    lo.EmptyableToPtr(details.email),
+		Metadata: metadata,
+	}
+
+	// An address is sent whole, empty parts included, so a cleared line or state does not linger on Flexprice Cloud.
+	if details.hasAddress() {
+		req.AddressLine1 = lo.ToPtr(details.line1)
+		req.AddressLine2 = lo.ToPtr(details.line2)
+		req.AddressCity = lo.ToPtr(details.city)
+		req.AddressState = lo.ToPtr(details.state)
+		req.AddressCountry = lo.ToPtr(details.country)
+		req.AddressPostalCode = lo.ToPtr(details.postalCode)
+	}
+
+	_, err := c.sdk.Customers.UpdateCustomer(ctx, req, nil, lo.ToPtr(extID))
 	return cloudErr(err)
 }
 
