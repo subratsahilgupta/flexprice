@@ -43,6 +43,9 @@ func NewAnalyticsService(params ServiceParams) AnalyticsService {
 }
 
 func (s *analyticsService) ExecuteView(ctx context.Context, def *analytics.ViewDefinition, vars map[string][]string) (*dto.AnalyticsQueryResult, error) {
+	if def != nil && def.Family == types.FamilyReport {
+		return nil, errReportFamilyViaViews()
+	}
 	rv, err := analytics.ResolveVariables(def, vars)
 	if err != nil {
 		return nil, err
@@ -211,13 +214,13 @@ func (s *analyticsService) QueryView(ctx context.Context, id string, vars map[st
 	if err != nil {
 		return nil, err
 	}
-	if v.Definition != nil && v.Definition.Family == types.FamilyReport {
-		return nil, ierr.NewError("custom reports run through the reports endpoint").
-			WithHint("POST /analytics/reports/{key}/query with the saved settings").
-			Mark(ierr.ErrValidation)
-	}
-
 	return s.ExecuteView(ctx, v.Definition, vars)
+}
+
+func errReportFamilyViaViews() error {
+	return ierr.NewError("custom reports run through the reports endpoint").
+		WithHint("POST /analytics/reports/{key}/query with the saved settings").
+		Mark(ierr.ErrValidation)
 }
 
 func validateCustomReport(def *analytics.ViewDefinition, maxRows int) error {
@@ -275,7 +278,14 @@ func (s *analyticsService) ListViews(ctx context.Context, family types.Family) (
 	}
 	out := make([]*analytics.View, 0, len(all))
 	for _, v := range all {
-		if v.Definition != nil && v.Definition.Family == family {
+		if v.Definition == nil {
+			continue
+		}
+		vf := v.Definition.Family
+		if vf == "" {
+			vf = types.FamilyUsage
+		}
+		if vf == family {
 			out = append(out, v)
 		}
 	}
