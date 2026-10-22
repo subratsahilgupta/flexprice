@@ -25,33 +25,185 @@ type ReportCatalogEntry struct {
 	Dimensions      []ReportDimension
 	Grains          []types.Grain
 	SupportsCompare bool
+	VariantOf       types.Metric
+	VariantLabel    string
+	MaxRangeDays    int
 }
 
 var reportCatalog = []ReportCatalogEntry{
 	{
-		Key:          types.MetricInvoiceTotal,
-		Name:         "Total billing",
-		Description:  "Sum of finalized invoice totals in the period",
+		Key:             types.MetricInvoiceTotal,
+		Name:            "Total billing",
+		Description:     "Finalized invoice totals by billing period",
+		Category:        types.ReportCategoryBilling,
+		Kind:            types.ReportKindFlow,
+		ValueType:       types.ReportValueTypeMoney,
+		Improvement:     types.ImprovementHigher,
+		DefaultShape:    types.ShapeTimeseries,
+		Grains:          []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
+		SupportsCompare: true,
+		VariantLabel:    "Billing period",
+	},
+	{
+		Key:             types.MetricInvoiceTotalIssued,
+		Name:            "Total billing (invoice date)",
+		Description:     "Finalized invoice totals by invoice date",
+		Category:        types.ReportCategoryBilling,
+		Kind:            types.ReportKindFlow,
+		ValueType:       types.ReportValueTypeMoney,
+		Improvement:     types.ImprovementHigher,
+		DefaultShape:    types.ShapeTimeseries,
+		Grains:          []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
+		SupportsCompare: true,
+		VariantOf:       types.MetricInvoiceTotal,
+		VariantLabel:    "Invoice date",
+	},
+	{
+		Key:          types.MetricTotalReceivables,
+		Name:         "Total receivables",
+		Description:  "Outstanding amount on finalized invoices right now",
+		Category:     types.ReportCategoryReceivables,
+		Kind:         types.ReportKindSnapshot,
+		ValueType:    types.ReportValueTypeMoney,
+		DefaultShape: types.ShapeScalar,
+	},
+	{
+		Key:          types.MetricReceivablesAging,
+		Name:         "Receivables aging",
+		Description:  "Outstanding amount by days past due",
+		Category:     types.ReportCategoryReceivables,
+		Kind:         types.ReportKindSnapshot,
+		ValueType:    types.ReportValueTypeMoney,
+		DefaultShape: types.ShapeBreakdown,
+	},
+	{
+		Key:             types.MetricDaysToPay,
+		Name:            "Days to pay",
+		Description:     "Average days from issue to payment for paid invoices",
+		Category:        types.ReportCategoryReceivables,
+		Kind:            types.ReportKindRatio,
+		ValueType:       types.ReportValueTypeDays,
+		DefaultShape:    types.ShapeTimeseries,
+		Grains:          []types.Grain{types.GrainWeek, types.GrainMonth},
+		SupportsCompare: true,
+	},
+	{
+		Key:          types.MetricARPU,
+		Name:         "ARPU",
+		Description:  "Billed revenue per billed customer",
+		Category:     types.ReportCategoryCustomers,
+		Kind:         types.ReportKindRatio,
+		ValueType:    types.ReportValueTypeMoney,
+		Improvement:  types.ImprovementHigher,
+		DefaultShape: types.ShapeTimeseries,
+		Grains:       []types.Grain{types.GrainMonth},
+		VariantLabel: "Billed",
+	},
+	{
+		Key:          types.MetricARPUPaid,
+		Name:         "ARPU (paid)",
+		Description:  "Paid revenue per paying customer",
+		Category:     types.ReportCategoryCustomers,
+		Kind:         types.ReportKindRatio,
+		ValueType:    types.ReportValueTypeMoney,
+		Improvement:  types.ImprovementHigher,
+		DefaultShape: types.ShapeTimeseries,
+		Grains:       []types.Grain{types.GrainMonth},
+		VariantOf:    types.MetricARPU,
+		VariantLabel: "Paid",
+	},
+	{
+		Key:             types.MetricCreditConsumption,
+		Name:            "Credit consumption",
+		Description:     "Wallet credits applied to invoices",
+		Category:        types.ReportCategoryCredits,
+		Kind:            types.ReportKindFlow,
+		ValueType:       types.ReportValueTypeMoney,
+		Improvement:     types.ImprovementHigher,
+		DefaultShape:    types.ShapeTimeseries,
+		Grains:          []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
+		SupportsCompare: true,
+	},
+	{
+		Key:             types.MetricCreditTopups,
+		Name:            "Credit top-ups",
+		Description:     "Purchased, free and subscription credit grants",
+		Category:        types.ReportCategoryCredits,
+		Kind:            types.ReportKindFlow,
+		ValueType:       types.ReportValueTypeMoney,
+		Improvement:     types.ImprovementHigher,
+		DefaultShape:    types.ShapeTimeseries,
+		Grains:          []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
+		SupportsCompare: true,
+	},
+	{
+		Key:          types.MetricNetBilling,
+		Name:         "Net billing",
+		Description:  "Billing by period minus finalized credit notes",
 		Category:     types.ReportCategoryBilling,
 		Kind:         types.ReportKindFlow,
 		ValueType:    types.ReportValueTypeMoney,
 		Improvement:  types.ImprovementHigher,
-		Shapes:       []types.Shape{types.ShapeScalar, types.ShapeTimeseries, types.ShapeBreakdown},
 		DefaultShape: types.ShapeTimeseries,
-		Dimensions: []ReportDimension{
-			{Key: "customer_id", Label: "Customer"},
-			{Key: "invoice_type", Label: "Invoice type"},
-		},
-		Grains:          []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
-		SupportsCompare: true,
+		Grains:       []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
+		VariantLabel: "Billing period",
+	},
+	{
+		Key:          types.MetricNetBillingIssued,
+		Name:         "Net billing (invoice date)",
+		Description:  "Invoiced by issue date minus finalized credit notes",
+		Category:     types.ReportCategoryBilling,
+		Kind:         types.ReportKindFlow,
+		ValueType:    types.ReportValueTypeMoney,
+		Improvement:  types.ImprovementHigher,
+		DefaultShape: types.ShapeTimeseries,
+		Grains:       []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
+		VariantOf:    types.MetricNetBilling,
+		VariantLabel: "Invoice date",
+	},
+	{
+		Key:          types.MetricActiveCustomers,
+		Name:         "Active customers",
+		Description:  "Customers with an active or trialing subscription in the period",
+		Category:     types.ReportCategoryCustomers,
+		Kind:         types.ReportKindRatio,
+		ValueType:    types.ReportValueTypeCount,
+		Improvement:  types.ImprovementHigher,
+		DefaultShape: types.ShapeScalar,
+	},
+	{
+		Key:          types.MetricEventsVolume,
+		Name:         "Events volume",
+		Description:  "Metered events per meter",
+		Category:     types.ReportCategoryUsage,
+		Kind:         types.ReportKindFlow,
+		ValueType:    types.ReportValueTypeCount,
+		DefaultShape: types.ShapeTimeseries,
+		Grains:       []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
 	},
 }
 
+var dimensionLabels = map[string]string{
+	"customer_id":        "Customer",
+	"invoice_type":       "Invoice type",
+	"aging_bucket":       "Aging bucket",
+	"transaction_reason": "Reason",
+	"meter_id":           "Meter",
+}
+
+// Shapes and dimensions come from the billing metric.
 func ReportCatalog() []ReportCatalogEntry {
 	out := make([]ReportCatalogEntry, len(reportCatalog))
 	for i, e := range reportCatalog {
-		e.Shapes = slices.Clone(e.Shapes)
-		e.Dimensions = slices.Clone(e.Dimensions)
+		bm := billingMetrics[e.Key]
+		e.Shapes = slices.Clone(bm.Shapes)
+		e.Dimensions = nil
+		for _, d := range bm.Dimensions {
+			if label, ok := dimensionLabels[d]; ok {
+				e.Dimensions = append(e.Dimensions, ReportDimension{Key: d, Label: label})
+			}
+		}
+		e.MaxRangeDays = bm.MaxRangeDays
 		e.Grains = slices.Clone(e.Grains)
 		out[i] = e
 	}

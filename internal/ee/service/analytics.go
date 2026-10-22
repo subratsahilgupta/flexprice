@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sort"
 	"strings"
@@ -73,6 +74,14 @@ func (s *analyticsService) executeUsage(ctx context.Context, rv *analytics.Resol
 func (s *analyticsService) executeBilling(ctx context.Context, rv *analytics.ResolvedView) (*dto.AnalyticsQueryResult, error) {
 	if err := s.requireReports(); err != nil {
 		return nil, err
+	}
+	if len(rv.Metrics) == 1 {
+		if bm, ok := analytics.LookupBillingMetric(rv.Metrics[0]); ok && bm.MaxRangeDays > 0 &&
+			rv.Time.To.Sub(rv.Time.From) > time.Duration(bm.MaxRangeDays)*24*time.Hour {
+			return nil, ierr.NewErrorf("range exceeds %d days for this report", bm.MaxRangeDays).
+				WithHint(fmt.Sprintf("Choose a range of %d days or less", bm.MaxRangeDays)).
+				Mark(ierr.ErrValidation)
+		}
 	}
 	out, err := s.ReportsRepo.RunReport(ctx, rv, types.GetTenantID(ctx), types.GetEnvironmentID(ctx))
 	if err != nil {
@@ -391,6 +400,9 @@ func (s *analyticsService) ListReports(_ context.Context) (*dto.ReportCatalogRes
 			Improvement:     e.Improvement,
 			DefaultShape:    string(e.DefaultShape),
 			SupportsCompare: e.SupportsCompare,
+			VariantOf:       string(e.VariantOf),
+			VariantLabel:    e.VariantLabel,
+			MaxRangeDays:    e.MaxRangeDays,
 			Shapes:          []string{},
 			Dimensions:      []dto.ReportDimension{},
 			Grains:          []string{},
@@ -418,12 +430,20 @@ func (s *analyticsService) RunReport(ctx context.Context, key string, req *dto.R
 		return nil, err
 	}
 
+	grain, dims := req.Grain, req.Dimensions
+	if req.Shape == string(types.ShapeTimeseries) && grain == "" && len(entry.Grains) > 0 {
+		grain = string(entry.Grains[0])
+	}
+	if entry.Key == types.MetricEventsVolume && req.Shape == string(types.ShapeBreakdown) && len(dims) == 0 {
+		dims = []string{"meter_id"}
+	}
+
 	def := analytics.ViewDefinition{
 		Family:     types.FamilyBilling,
 		Shape:      types.Shape(req.Shape),
 		Metrics:    []types.Metric{entry.Key},
-		Dimensions: req.Dimensions,
-		Time:       analytics.TimeSpecRaw{Range: req.Range, Grain: types.Grain(req.Grain)},
+		Dimensions: dims,
+		Time:       analytics.TimeSpecRaw{Range: req.Range, Grain: types.Grain(grain)},
 		Limit:      req.Limit,
 	}
 	for _, f := range req.Filters {
