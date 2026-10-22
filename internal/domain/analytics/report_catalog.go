@@ -180,7 +180,6 @@ var reportCatalog = []ReportCatalogEntry{
 		ValueType:    types.ReportValueTypeCount,
 		DefaultShape: types.ShapeTimeseries,
 		Grains:       []types.Grain{types.GrainDay, types.GrainWeek, types.GrainMonth},
-		MaxRangeDays: 7,
 	},
 }
 
@@ -204,6 +203,7 @@ func ReportCatalog() []ReportCatalogEntry {
 				e.Dimensions = append(e.Dimensions, ReportDimension{Key: d, Label: label})
 			}
 		}
+		e.MaxRangeDays = bm.MaxRangeDays
 		e.Grains = slices.Clone(e.Grains)
 		out[i] = e
 	}
