@@ -102,6 +102,7 @@ type Metric string
 const (
 	MetricUsageQuantity Metric = "usage_quantity"
 	MetricEventCount    Metric = "event_count"
+	MetricEventsVolume  Metric = "events_volume"
 )
 
 // Billing family metrics.
@@ -119,9 +120,6 @@ const (
 	MetricNetBillingIssued   Metric = "net_billing_issued"
 	MetricActiveCustomers    Metric = "active_customers"
 )
-
-// Usage family metrics.
-const MetricEventsVolume Metric = "events_volume"
 
 func (m Metric) Validate() error {
 	switch m {
