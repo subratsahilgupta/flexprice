@@ -562,8 +562,9 @@ func (s *subscriptionModificationService) applyLineItemChange(
 
 			newItem := builder.Build()
 
-			setPredecessorLineItemID(newItem, lineItemID)
-			clearSuccessorLineItemID(newItem)
+			newItem.PredecessorLineItemID = lo.ToPtr(lineItemID)
+			newItem.SuccessorLineItemID = nil
+			clearLineItemMetadataIDs(newItem, lineageMetadataKeys...)
 
 			if err := sp.SubscriptionLineItemRepo.Create(txCtx, newItem); err != nil {
 				return err
@@ -574,7 +575,7 @@ func (s *subscriptionModificationService) applyLineItemChange(
 				return err
 			}
 
-			setSuccessorLineItemID(endedItem, newItem.ID)
+			endedItem.SuccessorLineItemID = lo.ToPtr(newItem.ID)
 			if err := sp.SubscriptionLineItemRepo.Update(txCtx, endedItem); err != nil {
 				return ierr.WithError(err).
 					WithHint("Failed to link the superseded line item to its successor").

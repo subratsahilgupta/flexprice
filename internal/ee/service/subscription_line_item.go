@@ -529,7 +529,8 @@ func (s *subscriptionService) cancelScheduledLineItem(ctx context.Context, lineI
 				return err
 			}
 			pred.EndDate = lineItem.EndDate
-			clearSuccessorLineItemID(pred)
+			pred.SuccessorLineItemID = nil
+			clearLineItemMetadataIDs(pred, types.SubscriptionLineItemMetadataKeySuccessorID)
 			if err := s.SubscriptionLineItemRepo.Update(ctx, pred); err != nil {
 				return err
 			}
@@ -562,36 +563,28 @@ func (s *subscriptionService) findPublishedSuccessor(ctx context.Context, item *
 	return succ, nil
 }
 
+// predecessorLineItemID reads the column first and falls back to metadata, where
+// line items versioned before the lineage columns existed still hold the pointer.
 func predecessorLineItemID(item *subscription.SubscriptionLineItem) string {
-	if item == nil || item.Metadata == nil {
+	if item == nil {
 		return ""
+	}
+	if item.PredecessorLineItemID != nil {
+		return *item.PredecessorLineItemID
 	}
 	return item.Metadata[types.SubscriptionLineItemMetadataKeyPredecessorID]
 }
 
+// successorLineItemID reads the column first and falls back to metadata, where
+// line items versioned before the lineage columns existed still hold the pointer.
 func successorLineItemID(item *subscription.SubscriptionLineItem) string {
-	if item == nil || item.Metadata == nil {
+	if item == nil {
 		return ""
 	}
-	return item.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID]
-}
-
-func setLineItemMetadataID(item *subscription.SubscriptionLineItem, key, id string) {
-	if item == nil || id == "" {
-		return
+	if item.SuccessorLineItemID != nil {
+		return *item.SuccessorLineItemID
 	}
-	copied := make(map[string]string, len(item.Metadata)+1)
-	maps.Copy(copied, item.Metadata)
-	copied[key] = id
-	item.Metadata = copied
-}
-
-func setPredecessorLineItemID(item *subscription.SubscriptionLineItem, predecessorID string) {
-	setLineItemMetadataID(item, types.SubscriptionLineItemMetadataKeyPredecessorID, predecessorID)
-}
-
-func setSuccessorLineItemID(item *subscription.SubscriptionLineItem, successorID string) {
-	setLineItemMetadataID(item, types.SubscriptionLineItemMetadataKeySuccessorID, successorID)
+	return item.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID]
 }
 
 // lineageMetadataKeys are service-owned. Callers must never set them: a forged pointer
@@ -621,10 +614,6 @@ func clearLineItemMetadataIDs(item *subscription.SubscriptionLineItem, keys ...s
 		delete(copied, key)
 	}
 	item.Metadata = copied
-}
-
-func clearSuccessorLineItemID(item *subscription.SubscriptionLineItem) {
-	clearLineItemMetadataIDs(item, types.SubscriptionLineItemMetadataKeySuccessorID)
 }
 
 // stripCallerLineageMetadata drops version pointers that arrived in a request payload.
@@ -807,8 +796,9 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			if !oldEndDate.IsZero() {
 				newLineItem.EndDate = oldEndDate // Fill the gap freed up by the backdate
 			}
-			setPredecessorLineItemID(newLineItem, lineItemID)
-			clearSuccessorLineItemID(newLineItem)
+			newLineItem.PredecessorLineItemID = lo.ToPtr(lineItemID)
+			newLineItem.SuccessorLineItemID = nil
+			clearLineItemMetadataIDs(newLineItem, lineageMetadataKeys...)
 
 			// Materialize bucket prices when the update request carries
 			// commitment_time_buckets: ToSubscriptionLineItem rebuilt
@@ -858,7 +848,7 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			if err != nil {
 				return err
 			}
-			setSuccessorLineItemID(predecessor, newLineItem.ID)
+			predecessor.SuccessorLineItemID = lo.ToPtr(newLineItem.ID)
 			return s.SubscriptionLineItemRepo.Update(ctx, predecessor)
 		})
 
