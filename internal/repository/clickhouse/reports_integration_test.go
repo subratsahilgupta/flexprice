@@ -130,10 +130,10 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 		return res.Rows
 	}
 
-	assert.Equal(t, [][]string{{"inr", "5", "0"}, {"usd", "110", "13"}}, runCmp(types.ShapeScalar, "", "previous_period"))
+	assert.Equal(t, [][]string{{"inr", "5", "0"}, {"usd", "60", "6"}}, runCmp(types.ShapeScalar, "", "previous_period"))
 	assert.Equal(t, [][]string{
 		{"2026-09-01T00:00:00Z", "inr", "5", "0"},
-		{"2026-09-01T00:00:00Z", "usd", "110", "13"},
+		{"2026-09-01T00:00:00Z", "usd", "60", "6"},
 	}, runCmp(types.ShapeTimeseries, types.GrainMonth, "previous_period"))
 	assert.Contains(t, runCmp(types.ShapeTimeseries, types.GrainDay, "previous_period"), []string{"2026-09-20T00:00:00Z", "usd", "0", "2"})
 	byCustomer := runCmp(types.ShapeBreakdown, "", "previous_period", "customer_id")
@@ -150,12 +150,12 @@ func TestReportsRepository_RunsBillingQuery(t *testing.T) {
 		require.NoError(t, err)
 		return res.Rows
 	}
-	// Sep 50/1, Aug 6/3; inr no prior.
+	// Sep 60/2, Aug 6/2; inr no prior.
 	rows := arpuCmp(types.ShapeScalar)
 	require.Len(t, rows, 2)
 	assert.Equal(t, []string{"inr", "5", ""}, rows[0])
 	assert.Equal(t, "usd", rows[1][0])
-	assert.Equal(t, "50", rows[1][1])
+	assert.Equal(t, "30", rows[1][1])
 	assert.Equal(t, "3", rows[1][2])
 }
 
@@ -221,6 +221,7 @@ func TestReportsRepository_GenericReports(t *testing.T) {
 		tx("w3", "credit", "failed", "PURCHASED_CREDIT_INVOICED", 99),
 		tx("w4", "credit", "completed", "CREDIT_NOTE", 7),
 		tx("w6", "debit", "completed", "CREDIT_EXPIRED", 5),
+		tx("w7", "debit", "completed", "INVOICE_PAYMENT", 3),
 		`('w5','t1','e1','published','debit','completed','INVOICE_PAYMENT','c1','usd',12,12,1,'2026-09-10 00:00:00','[{"credit_transaction_id":"w1","credits":8},{"credit_transaction_id":"w2","credits":4}]',0,1)`,
 	}, ",")))
 	mergeTables(t, admin, db, "invoices", "wallet_transactions")
@@ -261,12 +262,12 @@ func TestReportsRepository_GenericReports(t *testing.T) {
 		{"PURCHASED_CREDIT_DIRECT", "usd", "50"},
 	}, run(types.MetricCreditTopups, types.ShapeBreakdown, "transaction_reason"))
 
-	assert.ElementsMatch(t, [][]string{{"free", "usd", "4"}, {"paid", "usd", "8"}}, run(types.MetricCreditConsumption, types.ShapeScalar))
+	assert.ElementsMatch(t, [][]string{{"free", "usd", "4"}, {"paid", "usd", "11"}}, run(types.MetricCreditConsumption, types.ShapeScalar))
 
 	assert.Equal(t, [][]string{{"usd", "90"}}, run(types.MetricARPUPaid, types.ShapeScalar))
 
-	// p1, p2 (c1), b1, b2 (c3), b3 (c4): 510 over 3 customers.
-	assert.Equal(t, [][]string{{"usd", "170"}}, run(types.MetricARPU, types.ShapeScalar))
+	// 669 finalized over 4 customers.
+	assert.Equal(t, [][]string{{"usd", "167.25"}}, run(types.MetricARPU, types.ShapeScalar))
 	monthly := &analytics.ResolvedView{
 		Family: types.FamilyBilling, Shape: types.ShapeTimeseries, Metrics: []types.Metric{types.MetricARPU},
 		Time: analytics.TimeSpec{
@@ -277,7 +278,7 @@ func TestReportsRepository_GenericReports(t *testing.T) {
 	}
 	mres, err := repo.RunReport(ctx, monthly, "t1", "e1")
 	require.NoError(t, err)
-	assert.Equal(t, [][]string{{"2026-09-01T00:00:00Z", "usd", "170"}}, mres.Rows)
+	assert.Equal(t, [][]string{{"2026-09-01T00:00:00Z", "usd", "167.25"}}, mres.Rows)
 }
 
 func TestReportsRepository_CustomReports(t *testing.T) {
