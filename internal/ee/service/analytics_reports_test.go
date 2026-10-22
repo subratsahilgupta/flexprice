@@ -45,11 +45,11 @@ func TestListReports_VariantFieldsOnlyWhereSet(t *testing.T) {
 	assert.Equal(t, "Paid", raw["arpu_paid"]["variant_label"])
 	assert.Equal(t, "arpu", raw["arpu_paid"]["variant_of"])
 	assert.Equal(t, "ARPU (paid)", raw["arpu_paid"]["name"])
-	assert.Equal(t, "Billing period", raw["invoice_total"]["variant_label"])
+	assert.Equal(t, "Finalized date", raw["invoice_total"]["variant_label"])
 	assert.NotContains(t, raw["invoice_total"], "variant_of")
-	assert.Equal(t, "Invoice date", raw["invoice_total_issued"]["variant_label"])
+	assert.Equal(t, "Finalized date", raw["invoice_total_issued"]["variant_label"])
 	assert.Equal(t, "invoice_total", raw["invoice_total_issued"]["variant_of"])
-	assert.Equal(t, "Billing period", raw["net_billing"]["variant_label"])
+	assert.Equal(t, "Finalized date", raw["net_billing"]["variant_label"])
 	assert.Equal(t, "net_billing", raw["net_billing_issued"]["variant_of"])
 }
 
@@ -98,6 +98,14 @@ func TestRunReport_CompareAddsChangeAndMeta(t *testing.T) {
 	assert.Equal(t, "2026-08-01T00:00:00Z", res.Meta.PrevFrom)
 	assert.Equal(t, "2026-09-01T00:00:00Z", res.Meta.PrevTo)
 	assert.Equal(t, "previous_period", repo.Last.Compare)
+}
+
+func TestRunReport_ARPUCompareAddsChange(t *testing.T) {
+	repo := &testutil.InMemoryReportsRepo{On: true, Columns: reportCols("currency", "arpu", "arpu_prev"), Rows: [][]string{{"usd", "55", "50"}}}
+	res, err := reportsSvc(repo).RunReport(billingCtx(), "arpu", &dto.ReportQueryRequest{Shape: "scalar", Range: "2026-09-01..2026-10-01", Compare: "previous_period"})
+	require.NoError(t, err)
+	assert.Equal(t, "arpu_change_pct", res.Columns[len(res.Columns)-1].Name)
+	assert.Equal(t, []string{"usd", "55", "50", "10"}, res.Rows[0])
 }
 
 func TestRunReport_CurrencyBecomesFilter(t *testing.T) {
