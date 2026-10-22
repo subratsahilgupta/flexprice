@@ -221,6 +221,7 @@ func TestReportsRepository_GenericReports(t *testing.T) {
 		tx("w3", "credit", "failed", "PURCHASED_CREDIT_INVOICED", 99),
 		tx("w4", "credit", "completed", "CREDIT_NOTE", 7),
 		tx("w6", "debit", "completed", "CREDIT_EXPIRED", 5),
+		tx("w7", "debit", "completed", "INVOICE_PAYMENT", 3),
 		`('w5','t1','e1','published','debit','completed','INVOICE_PAYMENT','c1','usd',12,12,1,'2026-09-10 00:00:00','[{"credit_transaction_id":"w1","credits":8},{"credit_transaction_id":"w2","credits":4}]',0,1)`,
 	}, ",")))
 	mergeTables(t, admin, db, "invoices", "wallet_transactions")
@@ -261,7 +262,7 @@ func TestReportsRepository_GenericReports(t *testing.T) {
 		{"PURCHASED_CREDIT_DIRECT", "usd", "50"},
 	}, run(types.MetricCreditTopups, types.ShapeBreakdown, "transaction_reason"))
 
-	assert.ElementsMatch(t, [][]string{{"free", "usd", "4"}, {"paid", "usd", "8"}}, run(types.MetricCreditConsumption, types.ShapeScalar))
+	assert.ElementsMatch(t, [][]string{{"free", "usd", "4"}, {"paid", "usd", "11"}}, run(types.MetricCreditConsumption, types.ShapeScalar))
 
 	assert.Equal(t, [][]string{{"usd", "90"}}, run(types.MetricARPUPaid, types.ShapeScalar))
 

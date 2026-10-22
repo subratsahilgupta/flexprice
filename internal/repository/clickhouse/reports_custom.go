@@ -55,7 +55,7 @@ func buildCreditConsumption(in buildInput) (*reportQuery, error) {
 		expr := ""
 		switch d {
 		case "credit_type":
-			expr = "if(ifNull(g.transaction_reason, 'PURCHASED_CREDIT_DIRECT') IN ('PURCHASED_CREDIT_DIRECT', 'PURCHASED_CREDIT_INVOICED'), 'paid', 'free')"
+			expr = "if(ifNull(nullIf(g.transaction_reason, ''), 'PURCHASED_CREDIT_DIRECT') IN ('PURCHASED_CREDIT_DIRECT', 'PURCHASED_CREDIT_INVOICED'), 'paid', 'free')"
 		case "customer_id":
 			expr = "d.customer_id"
 		case "currency":
@@ -93,7 +93,7 @@ func buildCreditConsumption(in buildInput) (*reportQuery, error) {
 			params[name] = v
 			placeholders[j] = "{" + name + ":String}"
 		}
-		field := map[string]string{"customer_id": "d.customer_id", "currency": "d.currency", "credit_type": "if(ifNull(g.transaction_reason, 'PURCHASED_CREDIT_DIRECT') IN ('PURCHASED_CREDIT_DIRECT', 'PURCHASED_CREDIT_INVOICED'), 'paid', 'free')"}[f.Field]
+		field := map[string]string{"customer_id": "d.customer_id", "currency": "d.currency", "credit_type": "if(ifNull(nullIf(g.transaction_reason, ''), 'PURCHASED_CREDIT_DIRECT') IN ('PURCHASED_CREDIT_DIRECT', 'PURCHASED_CREDIT_INVOICED'), 'paid', 'free')"}[f.Field]
 		filterConds = append(filterConds, field+" IN ("+strings.Join(placeholders, ", ")+")")
 	}
 	if len(filterConds) > 0 {
