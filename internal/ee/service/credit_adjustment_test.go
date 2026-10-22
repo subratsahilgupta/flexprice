@@ -196,7 +196,7 @@ func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_SkipsNonUs
 	s.Empty(debits, "no wallets should be debited when invoice has no usage items")
 }
 
-func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_CappedAtNetUsage() {
+func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_AppliesPerPositiveUsageLine() {
 	svc := s.getServiceImpl()
 
 	usage := s.createLineItemForCalculation(decimal.NewFromInt(50), nil, decimal.Zero)
@@ -212,15 +212,15 @@ func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_CappedAtNe
 	debits, err := svc.CalculateCreditAdjustments(inv, wallets)
 	s.Require().NoError(err)
 
-	// Net usage = 50 + 0.5 - 45 = 5.5; the fixed fee and the refunded usage stay uncovered.
-	s.True(decimal.RequireFromString("5.5").Equal(debits["wallet_1"]), "debit %s", debits["wallet_1"])
-	s.True(decimal.RequireFromString("5.5").Equal(usage.PrepaidCreditsApplied))
-	s.True(compute.PrepaidCreditsApplied.IsZero())
+	// Credits cover each positive usage line; fixed and negative lines receive none.
+	s.True(decimal.RequireFromString("50.5").Equal(debits["wallet_1"]), "debit %s", debits["wallet_1"])
+	s.True(decimal.NewFromInt(50).Equal(usage.PrepaidCreditsApplied))
+	s.True(decimal.RequireFromString("0.5").Equal(compute.PrepaidCreditsApplied))
 	s.True(fixed.PrepaidCreditsApplied.IsZero())
 	s.True(refund.PrepaidCreditsApplied.IsZero())
 }
 
-func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_NegativeNetUsageAppliesNothing() {
+func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_NegativeNetUsageStillPaysPositiveLine() {
 	svc := s.getServiceImpl()
 
 	usage := s.createLineItemForCalculation(decimal.NewFromInt(100), nil, decimal.Zero)
@@ -234,8 +234,9 @@ func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_NegativeNe
 	debits, err := svc.CalculateCreditAdjustments(inv, wallets)
 	s.Require().NoError(err)
 
-	s.Empty(debits)
-	s.True(usage.PrepaidCreditsApplied.IsZero())
+	s.True(decimal.NewFromInt(100).Equal(debits["wallet_1"]))
+	s.True(decimal.NewFromInt(100).Equal(usage.PrepaidCreditsApplied))
+	s.True(refund.PrepaidCreditsApplied.IsZero())
 }
 
 func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_MultipleWalletsConsumedInOrder() {
@@ -408,10 +409,10 @@ func TestUsageNet(t *testing.T) {
 		lines []*invoice.InvoiceLineItem
 		want  int64
 	}{
-		{"negative line offsets positive", []*invoice.InvoiceLineItem{line(usage, 50, 0), line(usage, -45, 0)}, 5},
-		{"discounts reduce the net", []*invoice.InvoiceLineItem{line(usage, 50, 10), line(usage, -20, 0)}, 20},
-		{"fixed lines are ignored", []*invoice.InvoiceLineItem{line(usage, 50, 0), line(fixed, 20, 0), line(usage, -45, 0)}, 5},
-		{"net negative floors at zero", []*invoice.InvoiceLineItem{line(usage, 100, 0), line(usage, -130, 0)}, 0},
+		{"negative line does not offset positive", []*invoice.InvoiceLineItem{line(usage, 50, 0), line(usage, -45, 0)}, 50},
+		{"discounts reduce the net", []*invoice.InvoiceLineItem{line(usage, 50, 10), line(usage, -20, 0)}, 40},
+		{"fixed lines are ignored", []*invoice.InvoiceLineItem{line(usage, 50, 0), line(fixed, 20, 0), line(usage, -45, 0)}, 50},
+		{"net negative still includes positive line", []*invoice.InvoiceLineItem{line(usage, 100, 0), line(usage, -130, 0)}, 100},
 		{
 			"reads the custom-currency denomination",
 			[]*invoice.InvoiceLineItem{{

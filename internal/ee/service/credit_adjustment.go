@@ -83,9 +83,6 @@ func (s *creditAdjustmentService) CalculateCreditAdjustments(inv *invoice.Invoic
 		remainingAmountAvailable = remainingAmountAvailable.Add(w.Balance)
 	}
 
-	// Negative usage lines offset positive ones, so credits never exceed net usage.
-	remainingAmountAvailable = decimal.Min(remainingAmountAvailable, usageNet(inv))
-
 	// If there's no amount available, we're done
 	if remainingAmountAvailable.LessThanOrEqual(decimal.Zero) {
 		return nil, nil
