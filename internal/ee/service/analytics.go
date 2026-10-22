@@ -223,47 +223,12 @@ func errReportFamilyViaViews() error {
 		Mark(ierr.ErrValidation)
 }
 
-func validateCustomReport(def *analytics.ViewDefinition, maxRows int) error {
-	if err := def.Validate(); err != nil {
-		return err
-	}
-	req := &dto.ReportQueryRequest{
-		Shape:      string(def.Shape),
-		Dimensions: def.Dimensions,
-		Grain:      string(def.Time.Grain),
-		Compare:    def.Compare,
-		Currency:   def.Currency,
-		Limit:      def.Limit,
-	}
-	for _, f := range def.Filters {
-		if f != nil {
-			req.Filters = append(req.Filters, dto.ReportFilter{Field: f.Field, Op: string(f.Op), Value: f.Value})
-		}
-	}
-	for _, so := range def.Sort {
-		if so != nil {
-			req.Sort = append(req.Sort, dto.ReportSort{Field: so.Field, Dir: string(so.Dir)})
-		}
-	}
-	entry, err := req.ValidateForReport(string(def.Metrics[0]), maxRows)
-	if err != nil {
-		return err
-	}
-	days, _ := analytics.ReportRangeMaxDays(def.Time.Range)
-	if d := entry.MaxRangeDays; d > 0 && days > d {
-		return ierr.NewErrorf("range exceeds %d days for this report", d).
-			WithHint(fmt.Sprintf("Choose a range of %d days or less", d)).
-			Mark(ierr.ErrValidation)
-	}
-	return nil
-}
-
 func (s *analyticsService) validateDefinition(def *analytics.ViewDefinition) error {
 	if def.Family == types.FamilyReport {
 		if err := s.requireReports(); err != nil {
 			return err
 		}
-		return validateCustomReport(def, s.ReportsRepo.MaxRows())
+		return def.ValidateReport(s.ReportsRepo.MaxRows())
 	}
 	return def.Validate()
 }
