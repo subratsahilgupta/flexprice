@@ -93,12 +93,12 @@ func (s *SubscriptionModificationServiceSuite) TestExecuteLineItemChange_PriceCh
 			s.Require().NoError(err)
 			s.Equal(effectiveDate, ended.EndDate, "predecessor must end at effective_date")
 
-			successorID := ended.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID]
+			successorID := lo.FromPtr(ended.SuccessorLineItemID)
 			s.Require().NotEmpty(successorID, "predecessor must point at its successor")
 
 			created, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, successorID)
 			s.Require().NoError(err)
-			s.Equal(li.ID, created.Metadata[types.SubscriptionLineItemMetadataKeyPredecessorID])
+			s.Equal(li.ID, lo.FromPtr(created.PredecessorLineItemID))
 			s.Equal(effectiveDate, created.StartDate)
 			s.Equal(tc.quantity, created.Quantity, "quantity is carried over when only the price changes")
 
@@ -375,14 +375,14 @@ func (s *SubscriptionModificationServiceSuite) TestLineItemChange_CheckoutReplay
 	ended, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, li.ID)
 	s.Require().NoError(err)
 	s.Equal(effectiveDate, ended.EndDate)
-	successorID := ended.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID]
+	successorID := lo.FromPtr(ended.SuccessorLineItemID)
 	s.Require().NotEmpty(successorID)
 
 	s.Require().NoError(impl.applyModifySubscriptionParams(ctx, params), "duplicate delivery must not error")
 
 	after, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, li.ID)
 	s.Require().NoError(err)
-	s.Equal(successorID, after.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID],
+	s.Equal(successorID, lo.FromPtr(after.SuccessorLineItemID),
 		"duplicate delivery must not create a second successor")
 }
 
@@ -566,7 +566,7 @@ func (s *SubscriptionModificationServiceSuite) TestExecuteLineItemChange_Coupon(
 
 			ended, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, li.ID)
 			s.Require().NoError(err)
-			successorID := ended.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID]
+			successorID := lo.FromPtr(ended.SuccessorLineItemID)
 			s.Require().NotEmpty(successorID)
 
 			associations := subscriptionCouponAssociations(ctx, s.Require(), s.GetStores(), sub.ID)
@@ -635,7 +635,7 @@ func (s *SubscriptionModificationServiceSuite) TestLineItemChange_Coupon_PayFirs
 
 	ended, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, li.ID)
 	s.Require().NoError(err)
-	successorID := ended.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID]
+	successorID := lo.FromPtr(ended.SuccessorLineItemID)
 	s.Require().NotEmpty(successorID)
 
 	association, err := s.GetStores().CouponAssociationRepo.Get(ctx, ref.AssociationID)
