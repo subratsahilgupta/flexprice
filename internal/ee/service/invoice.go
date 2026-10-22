@@ -1958,6 +1958,9 @@ func (s *invoiceService) SyncInvoiceToStripeIfEnabled(ctx context.Context, invoi
 	if err != nil {
 		return err
 	}
+	if !inv.SyncsToVendors() {
+		return nil
+	}
 
 	// Keep Stripe sync working for both subscription and non-subscription invoices.
 	// For invoices without subscription context, default to send_invoice.
@@ -2055,6 +2058,9 @@ func (s *invoiceService) SyncInvoiceToRazorpayIfEnabled(ctx context.Context, inv
 	if err != nil {
 		return err
 	}
+	if !inv.SyncsToVendors() {
+		return nil
+	}
 
 	if inv.AmountRemaining.IsZero() {
 		s.Logger.Debug(ctx, "invoice amount remaining is zero, skipping Razorpay sync",
@@ -2119,6 +2125,9 @@ func (s *invoiceService) SyncInvoiceToChargebeeIfEnabled(ctx context.Context, in
 	if err != nil {
 		return err
 	}
+	if !inv.SyncsToVendors() {
+		return nil
+	}
 
 	// Check if Chargebee connection exists
 	conn, err := s.ConnectionRepo.GetByProvider(ctx, types.SecretProviderChargebee)
@@ -2176,6 +2185,9 @@ func (s *invoiceService) SyncInvoiceToQuickBooksIfEnabled(ctx context.Context, i
 	inv, err := s.InvoiceRepo.Get(ctx, invoiceID)
 	if err != nil {
 		return err
+	}
+	if !inv.SyncsToVendors() {
+		return nil
 	}
 
 	// Check if QuickBooks connection exists
@@ -2239,6 +2251,9 @@ func (s *invoiceService) SyncInvoiceToZohoBooksIfEnabled(ctx context.Context, in
 	if err != nil {
 		return err
 	}
+	if !inv.SyncsToVendors() {
+		return nil
+	}
 
 	conn, err := s.ConnectionRepo.GetByProvider(ctx, types.SecretProviderZohoBooks)
 	if err != nil || conn == nil {
@@ -2281,6 +2296,9 @@ func (s *invoiceService) SyncInvoiceToZohoBooksIfEnabled(ctx context.Context, in
 // saved payment method (token), the invoice is also charged automatically; otherwise
 // the invoice is synced as a Moyasar invoice link so the customer can pay manually.
 func (s *invoiceService) SyncInvoiceToMoyasarIfEnabled(ctx context.Context, inv *invoice.Invoice) error {
+	if !inv.SyncsToVendors() {
+		return nil
+	}
 	conn, err := s.ConnectionRepo.GetByProvider(ctx, types.SecretProviderMoyasar)
 	if err != nil {
 		if ierr.IsNotFound(err) {
@@ -5640,8 +5658,8 @@ func (s *invoiceService) SyncInvoiceToExternalVendors(ctx context.Context, invoi
 	if err != nil {
 		return err
 	}
-	if inv.InvoiceStatus == types.InvoiceStatusSkipped {
-		return nil // No-op for zero-dollar skipped invoices
+	if !inv.SyncsToVendors() {
+		return nil
 	}
 	if inv.SubscriptionID == nil {
 		return nil // No subscription to sync for non-subscription invoices
