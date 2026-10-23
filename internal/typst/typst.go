@@ -99,7 +99,8 @@ func DefaultCompiler(logger *logger.Logger) Compiler {
 func (c *compiler) Compile(opts CompileOpts) (string, error) {
 	// Determine output file path
 	outputFile := filepath.Join(c.outputDir, opts.OutputFile)
-	if opts.OutputFile == "" {
+	createdTemp := opts.OutputFile == ""
+	if createdTemp {
 		tmpFile, err := os.CreateTemp(c.outputDir, "typst-*.pdf")
 		if err != nil {
 			return "", ierr.WithError(err).
@@ -142,6 +143,9 @@ func (c *compiler) Compile(opts CompileOpts) (string, error) {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		if createdTemp {
+			os.Remove(outputFile) // #nosec G104 -- best-effort cleanup
+		}
 		c.logger.Error(context.Background(), "Typst compilation failed", "stderr", stderr.String(), "error", err)
 		return "", ierr.WithError(err).
 			WithMessage("typst compilation failed").
@@ -191,8 +195,11 @@ func (c *compiler) CompileTemplate(
 			WithHint("template error").Mark(ierr.ErrSystem)
 	}
 
+	defer os.Remove(jsonFile.Name())
+
 	// write data to json file
 	if _, err := jsonFile.Write(data); err != nil {
+		jsonFile.Close() // #nosec G104 -- best-effort, error non-fatal
 		return nil, ierr.WithError(err).
 			WithMessage("failed to write data to json file").
 			WithHint("template error").Mark(ierr.ErrSystem)
@@ -205,8 +212,6 @@ func (c *compiler) CompileTemplate(
 		InputFile: templatePath,
 		ExtraArgs: []string{"--input", fmt.Sprintf("path=%s", jsonFile.Name())},
 	}
-
-	defer os.Remove(jsonFile.Name())
 
 	for _, opt := range opts {
 		opt(&compileOpts)
