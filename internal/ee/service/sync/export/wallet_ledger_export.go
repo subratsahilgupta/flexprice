@@ -3,6 +3,7 @@ package export
 import (
 	"bytes"
 	"context"
+	"io"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -55,21 +56,37 @@ func NewWalletLedgerExporter(walletRepo wallet.Repository, logger *logger.Logger
 	}
 }
 
-// PrepareData fetches the ledger a batch of wallets at a time and converts it to CSV format.
-// Each wallet's history is read once.
+// PrepareData returns the whole ledger CSV in memory; the export service streams it via WriteData.
 func (e *WalletLedgerExporter) PrepareData(ctx context.Context, request *dto.ExportRequest) ([]byte, int, error) {
+	var buf bytes.Buffer
+	count, err := e.WriteData(ctx, request, &buf)
+	if err != nil {
+		return nil, 0, err
+	}
+	return buf.Bytes(), count, nil
+}
+
+// WriteData writes the ledger a batch of wallets at a time, reading each wallet's history once.
+func (e *WalletLedgerExporter) WriteData(ctx context.Context, request *dto.ExportRequest, w io.Writer) (int, error) {
 	const walletsPerBatch = 50
 
 	walletIDs, err := e.walletRepo.ListWalletIDsForLedgerExport(ctx, request.TenantID, request.EnvID, request.StartTime, request.EndTime, request.CustomerExternalIDs)
 	if err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 
-	var csvRecords []*WalletLedgerCSV
+	csvWriter := gocsv.DefaultCSVWriter(w)
+	if err := gocsv.MarshalCSV([]*WalletLedgerCSV{}, csvWriter); err != nil {
+		return 0, ierr.WithError(err).
+			WithHint("Failed to marshal data to CSV").
+			Mark(ierr.ErrInternal)
+	}
+
+	totalRecords := 0
 	for _, batch := range lo.Chunk(walletIDs, walletsPerBatch) {
 		rows, err := e.walletRepo.GetWalletLedgerForExport(ctx, request.TenantID, request.EnvID, batch, request.StartTime, request.EndTime)
 		if err != nil {
-			return nil, 0, ierr.WithError(err).
+			return 0, ierr.WithError(err).
 				WithHint("Failed to fetch wallet ledger data batch").
 				WithReportableDetails(map[string]interface{}{
 					"first_wallet_id": batch[0],
@@ -77,16 +94,14 @@ func (e *WalletLedgerExporter) PrepareData(ctx context.Context, request *dto.Exp
 				}).
 				Mark(ierr.ErrDatabase)
 		}
-		for _, r := range rows {
-			csvRecords = append(csvRecords, toWalletLedgerCSV(r))
+		if err := gocsv.MarshalCSVWithoutHeaders(lo.Map(rows, func(r *wallet.WalletLedgerExportData, _ int) *WalletLedgerCSV {
+			return toWalletLedgerCSV(r)
+		}), csvWriter); err != nil {
+			return 0, ierr.WithError(err).
+				WithHint("Failed to marshal data to CSV").
+				Mark(ierr.ErrInternal)
 		}
-	}
-
-	var buf bytes.Buffer
-	if err := gocsv.Marshal(csvRecords, &buf); err != nil {
-		return nil, 0, ierr.WithError(err).
-			WithHint("Failed to marshal data to CSV").
-			Mark(ierr.ErrInternal)
+		totalRecords += len(rows)
 	}
 
 	e.logger.Info(ctx, "completed wallet ledger export data fetch",
@@ -94,10 +109,9 @@ func (e *WalletLedgerExporter) PrepareData(ctx context.Context, request *dto.Exp
 		"env_id", request.EnvID,
 		"customer_filter_count", len(request.CustomerExternalIDs),
 		"wallet_count", len(walletIDs),
-		"total_records", len(csvRecords),
-		"csv_size_bytes", buf.Len())
+		"total_records", totalRecords)
 
-	return buf.Bytes(), len(csvRecords), nil
+	return totalRecords, nil
 }
 
 func toWalletLedgerCSV(r *wallet.WalletLedgerExportData) *WalletLedgerCSV {

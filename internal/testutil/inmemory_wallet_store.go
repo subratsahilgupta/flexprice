@@ -902,10 +902,12 @@ func (s *InMemoryWalletStore) GetWalletLedgerForExport(ctx context.Context, tena
 	}
 
 	var results []*wallet.WalletLedgerExportData
+	isChild := make(map[string]bool)
 	for _, tx := range allTransactions {
 		if tx.TenantID != tenantID || tx.EnvironmentID != envID || tx.TxStatus != types.TransactionStatusCompleted {
 			continue
 		}
+		isChild[tx.ID] = tx.ParentTransactionID != ""
 		if !lo.Contains(walletIDs, tx.WalletID) || tx.CreatedAt.Before(startTime) || !tx.CreatedAt.Before(endTime) {
 			continue
 		}
@@ -936,6 +938,13 @@ func (s *InMemoryWalletStore) GetWalletLedgerForExport(ctx context.Context, tena
 			batch.CreditBalanceAfter = balance
 			results = append(results, &batch)
 		}
+		if drawn := tx.CreditBalanceBefore.Sub(balance); tx.CreditAmount.GreaterThan(drawn) {
+			rest := row
+			rest.Credits = tx.CreditAmount.Sub(drawn)
+			rest.CreditBalanceBefore = balance
+			rest.CreditBalanceAfter = balance.Sub(rest.Credits)
+			results = append(results, &rest)
+		}
 	}
 
 	sort.SliceStable(results, func(i, j int) bool {
@@ -945,6 +954,9 @@ func (s *InMemoryWalletStore) GetWalletLedgerForExport(ctx context.Context, tena
 		}
 		if !a.EffectiveAt.Equal(b.EffectiveAt) {
 			return a.EffectiveAt.Before(b.EffectiveAt)
+		}
+		if aBonus, bBonus := isChild[a.TransactionID], isChild[b.TransactionID]; aBonus != bBonus {
+			return bBonus
 		}
 		return a.TransactionID < b.TransactionID
 	})

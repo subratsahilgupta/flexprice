@@ -1284,12 +1284,26 @@ func amountPaidSQL(tx, inv string) string {
 // drawnSQL expands a debit's consumption_breakdown into one row per credit drawn from, with the
 // credit and its invoice. A debit with no breakdown keeps a single row with no credit.
 func drawnSQL(debit string) string {
-	return fmt.Sprintf(`LEFT JOIN LATERAL ROWS FROM (
-				jsonb_to_recordset(CASE WHEN jsonb_typeof(%[1]s.consumption_breakdown) = 'array' THEN %[1]s.consumption_breakdown END)
+	return drawnFromSQL(fmt.Sprintf(`CASE WHEN jsonb_typeof(%[1]s.consumption_breakdown) = 'array' THEN %[1]s.consumption_breakdown END`, debit))
+}
+
+// ledgerDrawnSQL is drawnSQL with one more row, with no credit, for what a manual debit took past
+// the credits it drew from, so the debit's rows add up to its credit_amount.
+func ledgerDrawnSQL(debit string) string {
+	return drawnFromSQL(fmt.Sprintf(`CASE WHEN jsonb_typeof(%[1]s.consumption_breakdown) = 'array' THEN %[1]s.consumption_breakdown || COALESCE((
+					SELECT jsonb_build_array(jsonb_build_object('credits', %[1]s.credit_amount - COALESCE(SUM((e->>'credits')::numeric), 0)))
+					FROM jsonb_array_elements(%[1]s.consumption_breakdown) e
+					HAVING %[1]s.credit_amount > COALESCE(SUM((e->>'credits')::numeric), 0)
+				), '[]'::jsonb) END`, debit))
+}
+
+func drawnFromSQL(breakdown string) string {
+	return `LEFT JOIN LATERAL ROWS FROM (
+				jsonb_to_recordset(` + breakdown + `)
 					AS (credit_transaction_id text, credits numeric)
 			) WITH ORDINALITY AS drawn(credit_transaction_id, credits, ord) ON true
 			LEFT JOIN wallet_transactions batch ON batch.id = drawn.credit_transaction_id
-			LEFT JOIN invoices invoice ON invoice.id = batch.source_id AND batch.source_type = 'INVOICE'`, debit)
+			LEFT JOIN invoices invoice ON invoice.id = batch.source_id AND batch.source_type = 'INVOICE'`
 }
 
 // drawnValueSQL is the share of what was paid for the credit drawn from that the drawn credits
@@ -1614,7 +1628,8 @@ func (r *walletRepository) GetWalletLedgerForExport(ctx context.Context, tenantI
 	}
 
 	// history reads each wallet once, through the wallet index, up to the window's end: what was
-	// paid for the credits before the window carries into the first row in it.
+	// paid for the credits before the window carries into the first row in it. A bonus shares its
+	// purchase's time, so after_parent keeps it after the purchase.
 	query := `
 		WITH history AS (
 			SELECT
@@ -1631,6 +1646,7 @@ func (r *walletRepository) GetWalletLedgerForExport(ctx context.Context, tenantI
 				tx.credit_balance_after,
 				tx.created_at,
 				` + effectiveAtSQL("tx", "tx_invoice") + ` AS effective_at,
+				COALESCE(tx.parent_transaction_id, '') <> '' AS after_parent,
 				tx_invoice.period_start AS invoice_period_start,
 				tx_invoice.period_end AS invoice_period_end,
 				CASE WHEN tx.type = $3 THEN ` + amountPaidSQL("tx", "tx_invoice") + ` END AS amount_paid,
@@ -1644,7 +1660,7 @@ func (r *walletRepository) GetWalletLedgerForExport(ctx context.Context, tenantI
 			FROM
 				wallet_transactions tx
 				LEFT JOIN invoices tx_invoice ON tx_invoice.id = tx.source_id AND tx.source_type = 'INVOICE'
-				` + drawnSQL("tx") + `
+				` + ledgerDrawnSQL("tx") + `
 			WHERE
 				tx.tenant_id = $1
 				AND tx.environment_id = $2
@@ -1657,7 +1673,7 @@ func (r *walletRepository) GetWalletLedgerForExport(ctx context.Context, tenantI
 		valued AS (
 			SELECT
 				history.*,
-				SUM(change) OVER (PARTITION BY wallet_id ORDER BY effective_at, id, ord) AS value_after,
+				SUM(change) OVER (PARTITION BY wallet_id ORDER BY effective_at, after_parent, id, ord) AS value_after,
 				SUM(drawn_credits) OVER (PARTITION BY id ORDER BY ord) AS drawn_so_far
 			FROM history
 		)
@@ -1693,7 +1709,7 @@ func (r *walletRepository) GetWalletLedgerForExport(ctx context.Context, tenantI
 		WHERE
 			tx.effective_at >= $8
 			AND tx.effective_at < $9
-		ORDER BY tx.wallet_id, tx.effective_at, tx.id, tx.ord
+		ORDER BY tx.wallet_id, tx.effective_at, tx.after_parent, tx.id, tx.ord
 	`
 
 	// The breakdown's jsonb_to_recordset is estimated at 100 rows per transaction, which pushes the

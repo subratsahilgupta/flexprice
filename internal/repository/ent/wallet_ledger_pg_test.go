@@ -214,4 +214,34 @@ func TestWalletLedgerExport(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{other.ID}, ids(rows))
 	})
+
+	t.Run("a bonus follows its purchase and an overdrawn debit closes at its balance", func(t *testing.T) {
+		walletC := newWallet(newCustomer("c"), "c")
+		// The bonus's id sorts before its purchase's and both share a time: only the parent link orders them.
+		purchaseC := newTx("wtx_z_", walletC, types.TransactionTypeCredit, types.TransactionReasonPurchasedCreditDirect, 100, 0, 100, at(-2))
+		bonus := newTx("wtx_b_", walletC, types.TransactionTypeCredit, types.TransactionReasonPurchasedCreditBonus, 10, 100, 110, at(-2))
+		bonus.ParentTransactionID = purchaseC.ID
+		// A manual debit of 130 when 110 was left: the breakdown holds the 110 drawn.
+		manual := newTx("wtx_m_", walletC, types.TransactionTypeDebit, types.TransactionReasonManualBalanceDebit, 130, 110, -20, at(-1))
+		manual.ConsumptionBreakdown = []*types.WalletTxConsumption{
+			{CreditTransactionID: purchaseC.ID, Credits: decimal.NewFromInt(100)},
+			{CreditTransactionID: bonus.ID, Credits: decimal.NewFromInt(10)},
+		}
+		for _, tx := range []*walletdomain.Transaction{purchaseC, bonus, manual} {
+			require.NoError(t, repo.CreateTransaction(ctx, tx))
+		}
+
+		rows := ledger(t, start, end, []string{"ext_c" + runID})
+		require.Equal(t, []string{purchaseC.ID, bonus.ID, manual.ID, manual.ID, manual.ID}, ids(rows))
+		balances := lo.Map(rows, func(r *walletdomain.WalletLedgerExportData, _ int) string {
+			return r.CreditTransactionID + ":" + r.Credits.String() + ":" + r.CreditBalanceBefore.String() + ">" + r.CreditBalanceAfter.String()
+		})
+		require.Equal(t, []string{
+			":100:0>100",
+			":10:100>110",
+			purchaseC.ID + ":100:110>10",
+			bonus.ID + ":10:10>0",
+			":20:0>-20",
+		}, balances, "the part past the credits gets its own row and the debit closes at its saved balance")
+	})
 }
