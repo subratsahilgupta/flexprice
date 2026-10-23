@@ -84,7 +84,8 @@ func (s *dlqService) StartReplay(ctx context.Context, req admindto.ReplayDLQRequ
 		group = dlq.DefaultGroup
 	}
 	// One run per topic and group: two runs would share saved progress and publish the same messages.
-	workflowID := "dlq-replay-" + opts.SourceTopic + "-" + group
+	// Kafka topic names cannot contain ':', so the first ':' always separates topic from group.
+	workflowID := "dlq-replay-" + opts.SourceTopic + ":" + group
 	input := dlqmodels.ReplayDLQWorkflowInput{
 		SourceTopic: opts.SourceTopic, TargetOverride: opts.TargetOverride, Group: opts.Group, SinceMs: opts.SinceMs,
 		FromStart: opts.FromStart, Max: opts.Max, MaxReplays: opts.MaxReplays,

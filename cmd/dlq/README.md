@@ -134,9 +134,10 @@ curl "$ADMIN_URL/v1/dlq/replay/runs/$WORKFLOW_ID" -H "X-Admin-Secret: $FLEXPRICE
 `status` is `queued` until a worker starts the activity (a run stuck there means no
 worker polls `events` in that region), then `running`, then `completed` with
 `summary` or `failed` with `last_error`. Committed offsets keep progress across
-activity retries and failed runs.
+activity retries and failed runs. Runs with `max`, `since` or `from_start` are not
+retried, since a retry would recount or republish messages.
 
-The workflow ID is `dlq-replay-<source_topic>-<group>`, so a second replay for the
+The workflow ID is `dlq-replay-<source_topic>:<group>`, so a second replay for the
 same topic and group returns `409` while one is running. That guard does not cover
 the CLI: never run the CLI against a topic/group the admin portal is replaying.
 

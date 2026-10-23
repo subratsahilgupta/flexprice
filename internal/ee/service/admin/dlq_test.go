@@ -101,13 +101,13 @@ func TestDLQStartReplay(t *testing.T) {
 	svc := &dlqService{ServiceParams: service.ServiceParams{Logger: logger.NewNoopLogger()}, runs: runs}
 	run, err := svc.StartReplay(context.Background(), admindto.ReplayDLQRequest{SourceTopic: "events_dlq", Since: "2026-10-01T00:00:00Z", Max: 10, MaxReplays: 2})
 	require.NoError(t, err)
-	require.Equal(t, "dlq-replay-events_dlq-dlq-replay-tool", run.WorkflowID)
+	require.Equal(t, "dlq-replay-events_dlq:dlq-replay-tool", run.WorkflowID)
 	require.Equal(t, admindto.ReplayStatusQueued, run.Status)
 	require.Equal(t, dlqmodels.ReplayDLQWorkflowInput{SourceTopic: "events_dlq", SinceMs: 1790812800000, Max: 10, MaxReplays: 2}, runs.started)
 
 	runs.startErr = serviceerror.NewWorkflowExecutionAlreadyStarted("running", "", "")
 	_, err = svc.StartReplay(context.Background(), admindto.ReplayDLQRequest{SourceTopic: "events_dlq", Group: "mine"})
-	require.Equal(t, "dlq-replay-events_dlq-mine", runs.startedID)
+	require.Equal(t, "dlq-replay-events_dlq:mine", runs.startedID)
 	require.True(t, ierr.IsAlreadyExists(err))
 }
 
