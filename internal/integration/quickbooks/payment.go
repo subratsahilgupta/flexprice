@@ -71,7 +71,7 @@ func (s *PaymentService) HandleExternalPaymentFromWebhook(ctx context.Context, q
 		s.logger.Error(ctx, "failed to get payment from QuickBooks",
 			"error", err,
 			"quickbooks_payment_id", qbPaymentID)
-		return nil // Don't fail webhook processing
+		return err
 	}
 
 	// Find invoice references in payment lines
@@ -108,7 +108,7 @@ func (s *PaymentService) HandleExternalPaymentFromWebhook(ctx context.Context, q
 		s.logger.Error(ctx, "failed to find invoice mapping",
 			"error", err,
 			"quickbooks_invoice_id", qbInvoiceID)
-		return nil
+		return err
 	}
 
 	flexpriceInvoiceID := invoiceMapping.EntityID
@@ -140,7 +140,7 @@ func (s *PaymentService) HandleExternalPaymentFromWebhook(ctx context.Context, q
 			"error", err,
 			"quickbooks_payment_id", qbPaymentID,
 			"invoice_id", flexpriceInvoiceID)
-		return nil
+		return err
 	}
 	if !applied {
 		s.logger.Info(ctx, "QuickBooks payment already applied, skipping",
@@ -159,19 +159,18 @@ func (s *PaymentService) HandleExternalPaymentFromWebhook(ctx context.Context, q
 }
 
 // createExternalPaymentRecord records the QuickBooks payment as succeeded.
-// It returns true only for the caller that made the pending-to-succeeded
-// transition, so the invoice is reconciled exactly once.
+// It must run under the payment lock and returns true only when this call
+// moved an unfinished payment to succeeded.
 func (s *PaymentService) createExternalPaymentRecord(ctx context.Context, qbPayment *PaymentResponse, qbInvoiceID, entityMappingID, invoiceID string, paymentService interfaces.PaymentService, invoiceService interfaces.InvoiceService) (bool, error) {
-	// Rows from before the idempotency key carry only the gateway payment ID.
+	// Any row with this gateway ID was already processed.
 	filter := types.NewNoLimitPaymentFilter()
 	filter.GatewayPaymentID = &qbPayment.ID
 	listResp, err := paymentService.ListPayments(ctx, filter)
-	if err == nil && listResp != nil {
-		for _, existing := range listResp.Items {
-			if existing.PaymentStatus == types.PaymentStatusSucceeded {
-				return false, nil
-			}
-		}
+	if err != nil {
+		return false, err
+	}
+	if listResp != nil && len(listResp.Items) > 0 {
+		return false, nil
 	}
 
 	// Extract actual payment amount from payment lines
@@ -239,7 +238,14 @@ func (s *PaymentService) createExternalPaymentRecord(ctx context.Context, qbPaym
 		return false, err
 	}
 
-	if paymentResp.PaymentStatus == types.PaymentStatusSucceeded {
+	// Status read under the lock decides; the create response may be stale.
+	current, err := paymentService.GetPayment(ctx, paymentResp.ID)
+	if err != nil {
+		return false, err
+	}
+	switch current.PaymentStatus {
+	case types.PaymentStatusInitiated, types.PaymentStatusPending, types.PaymentStatusProcessing:
+	default:
 		return false, nil
 	}
 

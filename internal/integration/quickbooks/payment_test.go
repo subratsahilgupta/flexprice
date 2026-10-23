@@ -2,6 +2,7 @@ package quickbooks
 
 import (
 	"context"
+	"maps"
 	"sync"
 	"testing"
 
@@ -35,52 +36,81 @@ func (fakeMappingRepo) List(_ context.Context, _ *types.EntityIntegrationMapping
 	return []*entityintegrationmapping.EntityIntegrationMapping{{ID: "eim_1", EntityID: "inv_1"}}, nil
 }
 
-// fakePaymentService mimics idempotency-key dedupe and status compare-and-swap.
+// fakePaymentService mimics idempotency-key dedupe and the real transition table.
 type fakePaymentService struct {
 	interfaces.PaymentService
-	mu       sync.Mutex
-	byKey    map[string]*dto.PaymentResponse
-	byID     map[string]*dto.PaymentResponse
-	preExist []*dto.PaymentResponse
+	mu    sync.Mutex
+	byKey map[string]string
+	byID  map[string]dto.PaymentResponse
 }
 
 func newFakePaymentService() *fakePaymentService {
-	return &fakePaymentService{byKey: map[string]*dto.PaymentResponse{}, byID: map[string]*dto.PaymentResponse{}}
+	return &fakePaymentService{byKey: map[string]string{}, byID: map[string]dto.PaymentResponse{}}
 }
 
-func (f *fakePaymentService) ListPayments(_ context.Context, _ *types.PaymentFilter) (*dto.ListPaymentsResponse, error) {
+func (f *fakePaymentService) seed(key string, p dto.PaymentResponse) {
+	f.byID[p.ID] = p
+	if key != "" {
+		f.byKey[key] = p.ID
+	}
+}
+
+func (f *fakePaymentService) ListPayments(_ context.Context, filter *types.PaymentFilter) (*dto.ListPaymentsResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return &dto.ListPaymentsResponse{Items: f.preExist}, nil
+	var items []*dto.PaymentResponse
+	for _, p := range f.byID {
+		if filter.GatewayPaymentID != nil && (p.GatewayPaymentID == nil || *p.GatewayPaymentID != *filter.GatewayPaymentID) {
+			continue
+		}
+		cp := p
+		items = append(items, &cp)
+	}
+	return &dto.ListPaymentsResponse{Items: items}, nil
 }
 
 func (f *fakePaymentService) CreatePayment(_ context.Context, req *dto.CreatePaymentRequest) (*dto.PaymentResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if existing, ok := f.byKey[req.IdempotencyKey]; ok {
-		return existing, nil
+	if id, ok := f.byKey[req.IdempotencyKey]; ok {
+		cp := f.byID[id]
+		return &cp, nil
 	}
-	p := &dto.PaymentResponse{ID: "pay_" + req.IdempotencyKey, PaymentStatus: types.PaymentStatusPending}
-	f.byKey[req.IdempotencyKey] = p
+	p := dto.PaymentResponse{ID: "pay_" + req.IdempotencyKey, PaymentStatus: types.PaymentStatusInitiated}
+	f.byKey[req.IdempotencyKey] = p.ID
 	f.byID[p.ID] = p
-	return p, nil
+	return &p, nil
 }
 
 func (f *fakePaymentService) GetPayment(_ context.Context, id string) (*dto.PaymentResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.byID[id], nil
+	p, ok := f.byID[id]
+	if !ok {
+		return nil, ierr.NewError("payment not found").Mark(ierr.ErrNotFound)
+	}
+	return &p, nil
 }
 
-func (f *fakePaymentService) UpdatePayment(_ context.Context, id string, _ dto.UpdatePaymentRequest) (*dto.PaymentResponse, error) {
+func (f *fakePaymentService) UpdatePayment(_ context.Context, id string, req dto.UpdatePaymentRequest) (*dto.PaymentResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	p := f.byID[id]
-	if p.PaymentStatus == types.PaymentStatusSucceeded {
-		return nil, ierr.NewError("invalid transition").Mark(ierr.ErrValidation)
+	p, ok := f.byID[id]
+	if !ok {
+		return nil, ierr.NewError("payment not found").Mark(ierr.ErrNotFound)
 	}
-	p.PaymentStatus = types.PaymentStatusSucceeded
-	return p, nil
+	if req.PaymentStatus != nil {
+		if err := p.PaymentStatus.ValidateTransitionTo(types.PaymentStatus(*req.PaymentStatus)); err != nil {
+			return nil, err
+		}
+		p.PaymentStatus = types.PaymentStatus(*req.PaymentStatus)
+	}
+	if req.GatewayPaymentID != nil {
+		p.GatewayPaymentID = req.GatewayPaymentID
+	}
+	f.byID[id] = p
+	cp := p
+	return &cp, nil
 }
 
 // fakeDB serializes transactions and restores payment state on error.
@@ -93,15 +123,9 @@ type fakeDB struct {
 func (d *fakeDB) WithTx(ctx context.Context, fn func(context.Context) error) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	saved := map[string]types.PaymentStatus{}
-	savedKeys := map[string]*dto.PaymentResponse{}
 	d.payments.mu.Lock()
-	for id, p := range d.payments.byID {
-		saved[id] = p.PaymentStatus
-	}
-	for k, p := range d.payments.byKey {
-		savedKeys[k] = p
-	}
+	savedByID := maps.Clone(d.payments.byID)
+	savedByKey := maps.Clone(d.payments.byKey)
 	d.payments.mu.Unlock()
 
 	err := fn(ctx)
@@ -110,14 +134,8 @@ func (d *fakeDB) WithTx(ctx context.Context, fn func(context.Context) error) err
 	}
 	d.payments.mu.Lock()
 	defer d.payments.mu.Unlock()
-	for id, p := range d.payments.byID {
-		if status, ok := saved[id]; ok {
-			p.PaymentStatus = status
-		} else {
-			delete(d.payments.byID, id)
-		}
-	}
-	d.payments.byKey = savedKeys
+	d.payments.byID = savedByID
+	d.payments.byKey = savedByKey
 	return err
 }
 
@@ -145,7 +163,7 @@ func (f *fakeInvoiceService) ReconcilePaymentStatus(_ context.Context, _ string,
 	return nil
 }
 
-func TestHandleExternalPaymentFromWebhook_AppliesOnce(t *testing.T) {
+func TestHandleExternalPaymentFromWebhook(t *testing.T) {
 	log, err := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: types.LogLevelInfo}})
 	require.NoError(t, err)
 
@@ -156,27 +174,49 @@ func TestHandleExternalPaymentFromWebhook_AppliesOnce(t *testing.T) {
 			LinkedTxn: []LinkedTxn{{TxnId: "qb_inv_1", TxnType: "Invoice"}},
 		}},
 	}
+	gatewayID := "qb_pay_1"
 
 	tests := []struct {
 		name           string
 		deliveries     int
 		concurrent     bool
-		legacySucceed  bool
+		seed           *dto.PaymentResponse
+		seedKey        string
 		failReconcile  int
 		wantReconciled int
+		wantErrs       int
+		wantStatus     types.PaymentStatus
 	}{
-		{name: "single delivery", deliveries: 1, wantReconciled: 1},
-		{name: "sequential duplicate", deliveries: 3, wantReconciled: 1},
-		{name: "concurrent duplicate", deliveries: 8, concurrent: true, wantReconciled: 1},
-		{name: "reconcile fails then retry applies once", deliveries: 3, failReconcile: 1, wantReconciled: 1},
-		{name: "legacy succeeded payment", deliveries: 2, legacySucceed: true, wantReconciled: 0},
+		{name: "single delivery", deliveries: 1, wantReconciled: 1, wantStatus: types.PaymentStatusSucceeded},
+		{name: "sequential duplicate", deliveries: 3, wantReconciled: 1, wantStatus: types.PaymentStatusSucceeded},
+		{name: "concurrent duplicate", deliveries: 8, concurrent: true, wantReconciled: 1, wantStatus: types.PaymentStatusSucceeded},
+		{
+			name: "reconcile fails then retry applies once", deliveries: 3, failReconcile: 1,
+			wantReconciled: 1, wantErrs: 1, wantStatus: types.PaymentStatusSucceeded,
+		},
+		{
+			name: "legacy succeeded payment", deliveries: 2,
+			seed:       &dto.PaymentResponse{ID: "pay_old", PaymentStatus: types.PaymentStatusSucceeded, GatewayPaymentID: &gatewayID},
+			wantStatus: types.PaymentStatusSucceeded,
+		},
+		{
+			name: "refunded payment redelivered", deliveries: 2,
+			seed:       &dto.PaymentResponse{ID: "pay_old", PaymentStatus: types.PaymentStatusRefunded, GatewayPaymentID: &gatewayID},
+			wantStatus: types.PaymentStatusRefunded,
+		},
+		{
+			name: "keyed succeeded payment without gateway id", deliveries: 2,
+			seed:       &dto.PaymentResponse{ID: "pay_quickbooks_payment_qb_pay_1", PaymentStatus: types.PaymentStatusSucceeded},
+			seedKey:    "quickbooks_payment_qb_pay_1",
+			wantStatus: types.PaymentStatusSucceeded,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			payments := newFakePaymentService()
-			if tt.legacySucceed {
-				payments.preExist = []*dto.PaymentResponse{{ID: "pay_old", PaymentStatus: types.PaymentStatusSucceeded}}
+			if tt.seed != nil {
+				payments.seed(tt.seedKey, *tt.seed)
 			}
 			invoices := &fakeInvoiceService{failReconcile: tt.failReconcile}
 			db := &fakeDB{payments: payments}
@@ -186,8 +226,14 @@ func TestHandleExternalPaymentFromWebhook_AppliesOnce(t *testing.T) {
 				Logger:                       log,
 			})
 
+			var errMu sync.Mutex
+			errs := 0
 			deliver := func() {
-				require.NoError(t, svc.HandleExternalPaymentFromWebhook(context.Background(), "qb_pay_1", payments, invoices, db))
+				if err := svc.HandleExternalPaymentFromWebhook(context.Background(), "qb_pay_1", payments, invoices, db); err != nil {
+					errMu.Lock()
+					errs++
+					errMu.Unlock()
+				}
 			}
 			if tt.concurrent {
 				var wg sync.WaitGroup
@@ -206,11 +252,16 @@ func TestHandleExternalPaymentFromWebhook_AppliesOnce(t *testing.T) {
 			}
 
 			require.Equal(t, tt.wantReconciled, invoices.reconciled)
+			require.Equal(t, tt.wantErrs, errs)
+			require.Len(t, payments.byID, 1, "no second payment may be created")
+			for _, p := range payments.byID {
+				require.Equal(t, tt.wantStatus, p.PaymentStatus)
+			}
 		})
 	}
 }
 
-func TestHandleExternalPaymentFromWebhook_RollbackKeepsPaymentPending(t *testing.T) {
+func TestHandleExternalPaymentFromWebhook_RollbackKeepsPaymentUnfinished(t *testing.T) {
 	log, err := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: types.LogLevelInfo}})
 	require.NoError(t, err)
 
@@ -227,7 +278,7 @@ func TestHandleExternalPaymentFromWebhook_RollbackKeepsPaymentPending(t *testing
 		Logger:                       log,
 	})
 
-	require.NoError(t, svc.HandleExternalPaymentFromWebhook(context.Background(), "qb_pay_1", payments, invoices, db))
+	require.Error(t, svc.HandleExternalPaymentFromWebhook(context.Background(), "qb_pay_1", payments, invoices, db))
 	require.Zero(t, invoices.reconciled)
 	require.Empty(t, payments.byID, "failed apply must leave no succeeded payment")
 

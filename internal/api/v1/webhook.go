@@ -728,7 +728,7 @@ func (h *WebhookHandler) HandleQuickBooksWebhook(c *gin.Context) {
 
 	signature := c.GetHeader("intuit-signature")
 	if signature == "" {
-		h.logger.Info(context.Background(), "missing intuit-signature header, rejecting webhook",
+		h.logger.Info(c.Request.Context(), "missing intuit-signature header, rejecting webhook",
 			"tenant_id", tenantID,
 			"environment_id", environmentID)
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Missing intuit-signature header"})
@@ -754,7 +754,7 @@ func (h *WebhookHandler) HandleQuickBooksWebhook(c *gin.Context) {
 
 	err = qbIntegration.WebhookHandler.VerifyWebhookSignature(ctx, body, signature)
 	if err != nil {
-		h.logger.Error(context.Background(), "failed to verify QuickBooks webhook signature",
+		h.logger.Error(ctx, "failed to verify QuickBooks webhook signature",
 			"tenant_id", tenantID,
 			"error", err,
 			"environment_id", environmentID)
@@ -772,10 +772,15 @@ func (h *WebhookHandler) HandleQuickBooksWebhook(c *gin.Context) {
 	// Handle the webhook event
 	err = qbIntegration.WebhookHandler.HandleWebhook(ctx, body, serviceDeps)
 	if err != nil {
-		h.logger.Error(context.Background(), "failed to handle QuickBooks webhook event",
+		h.logger.Error(ctx, "failed to handle QuickBooks webhook event",
 			"error", err,
 			"tenant_id", tenantID,
 			"environment_id", environmentID)
+		status := http.StatusInternalServerError
+		if ierr.IsValidation(err) {
+			status = http.StatusBadRequest
+		}
+		c.AbortWithStatusJSON(status, gin.H{"error": "Webhook processing failed"})
 		return
 	}
 

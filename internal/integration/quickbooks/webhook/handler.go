@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 
 	"github.com/flexprice/flexprice/internal/domain/connection"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -101,7 +102,7 @@ func (h *Handler) HandleWebhook(ctx context.Context, payload []byte, services *S
 			Mark(ierr.ErrValidation)
 	}
 
-	// Process each event notification
+	var errs []error
 	for _, notification := range webhookPayload.EventNotifications {
 		realmID := notification.RealmID
 
@@ -115,6 +116,7 @@ func (h *Handler) HandleWebhook(ctx context.Context, payload []byte, services *S
 			h.logger.Error(ctx, "failed to get QuickBooks connection",
 				"error", err,
 				"realm_id", realmID)
+			errs = append(errs, err)
 			continue
 		}
 
@@ -143,12 +145,12 @@ func (h *Handler) HandleWebhook(ctx context.Context, payload []byte, services *S
 					"entity_name", entity.Name,
 					"entity_id", entity.ID,
 					"operation", entity.Operation)
-				// Continue processing other entities
+				errs = append(errs, err)
 			}
 		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 // processEntityChange processes a single entity change event
