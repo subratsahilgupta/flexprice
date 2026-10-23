@@ -37,7 +37,7 @@ func (h *SubscriptionScheduleHandler) GetSchedule(c *gin.Context) {
 
 	schedule, err := h.scheduleService.Get(c.Request.Context(), scheduleID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Schedule not found"})
+		c.Error(err)
 		return
 	}
 
@@ -60,7 +60,7 @@ func (h *SubscriptionScheduleHandler) ListSchedulesForSubscription(c *gin.Contex
 
 	schedules, err := h.scheduleService.GetBySubscriptionID(c.Request.Context(), subscriptionID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve schedules"})
+		c.Error(err)
 		return
 	}
 
@@ -188,7 +188,7 @@ func (h *SubscriptionScheduleHandler) ListSchedules(c *gin.Context) {
 
 	schedules, err := h.scheduleService.List(c.Request.Context(), filter)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve schedules"})
+		c.Error(err)
 		return
 	}
 
