@@ -10,6 +10,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -18,7 +19,7 @@ import (
 // QuickBooksPaymentService defines the interface for QuickBooks payment operations
 type QuickBooksPaymentService interface {
 	// HandleExternalPaymentFromWebhook processes a QuickBooks payment webhook (INBOUND ONLY)
-	HandleExternalPaymentFromWebhook(ctx context.Context, qbPaymentID string, paymentService interfaces.PaymentService, invoiceService interfaces.InvoiceService) error
+	HandleExternalPaymentFromWebhook(ctx context.Context, qbPaymentID string, paymentService interfaces.PaymentService, invoiceService interfaces.InvoiceService, db postgres.IClient) error
 }
 
 // PaymentService handles QuickBooks payment operations
@@ -60,7 +61,7 @@ func NewPaymentService(params PaymentServiceParams) QuickBooksPaymentService {
 // 5. Uses ReconcilePaymentStatus() to update invoice (supports partial payments!)
 //
 // IMPORTANT: Now creates payment records, supports partial payments!
-func (s *PaymentService) HandleExternalPaymentFromWebhook(ctx context.Context, qbPaymentID string, paymentService interfaces.PaymentService, invoiceService interfaces.InvoiceService) error {
+func (s *PaymentService) HandleExternalPaymentFromWebhook(ctx context.Context, qbPaymentID string, paymentService interfaces.PaymentService, invoiceService interfaces.InvoiceService, db postgres.IClient) error {
 	s.logger.Info(ctx, "processing QuickBooks payment webhook",
 		"quickbooks_payment_id", qbPaymentID)
 
@@ -118,29 +119,33 @@ func (s *PaymentService) HandleExternalPaymentFromWebhook(ctx context.Context, q
 		"quickbooks_payment_id", qbPaymentID,
 		"payment_amount", paymentAmount)
 
-	// Create external payment record
-	applied, err := s.createExternalPaymentRecord(ctx, qbPayment, qbInvoiceID, invoiceMapping.ID, flexpriceInvoiceID, paymentService, invoiceService)
+	amount := decimal.NewFromFloat(paymentAmount)
+	applied := false
+	err = db.WithTx(ctx, func(txCtx context.Context) error {
+		if lockErr := db.LockWithWait(txCtx, postgres.LockRequest{Key: "quickbooks_payment:" + qbPayment.ID}); lockErr != nil {
+			return lockErr
+		}
+		created, createErr := s.createExternalPaymentRecord(txCtx, qbPayment, qbInvoiceID, invoiceMapping.ID, flexpriceInvoiceID, paymentService, invoiceService)
+		if createErr != nil || !created {
+			return createErr
+		}
+		if reconcileErr := s.reconcileInvoiceWithExternalPayment(txCtx, flexpriceInvoiceID, amount, invoiceService); reconcileErr != nil {
+			return reconcileErr
+		}
+		applied = true
+		return nil
+	})
 	if err != nil {
-		s.logger.Error(ctx, "failed to create external payment record",
+		s.logger.Error(ctx, "failed to apply QuickBooks payment",
 			"error", err,
-			"quickbooks_payment_id", qbPaymentID)
+			"quickbooks_payment_id", qbPaymentID,
+			"invoice_id", flexpriceInvoiceID)
 		return nil
 	}
 	if !applied {
 		s.logger.Info(ctx, "QuickBooks payment already applied, skipping",
 			"quickbooks_payment_id", qbPaymentID,
 			"flexprice_invoice_id", flexpriceInvoiceID)
-		return nil
-	}
-
-	// Reconcile invoice with external payment (supports partial payments!)
-	amount := decimal.NewFromFloat(paymentAmount)
-	err = s.reconcileInvoiceWithExternalPayment(ctx, flexpriceInvoiceID, amount, invoiceService)
-	if err != nil {
-		s.logger.Error(ctx, "failed to reconcile invoice with external payment",
-			"error", err,
-			"invoice_id", flexpriceInvoiceID,
-			"payment_amount", amount)
 		return nil
 	}
 
@@ -249,10 +254,6 @@ func (s *PaymentService) createExternalPaymentRecord(ctx context.Context, qbPaym
 
 	_, err = paymentService.UpdatePayment(ctx, paymentResp.ID, updateReq)
 	if err != nil {
-		// A concurrent delivery may have made the transition first.
-		if current, getErr := paymentService.GetPayment(ctx, paymentResp.ID); getErr == nil && current.PaymentStatus == types.PaymentStatusSucceeded {
-			return false, nil
-		}
 		s.logger.Error(ctx, "failed to update external payment status",
 			"error", err,
 			"payment_id", paymentResp.ID,

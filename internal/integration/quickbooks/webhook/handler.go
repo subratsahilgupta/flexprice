@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/integration/quickbooks"
 	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -183,14 +184,14 @@ func (h *Handler) processEntityChange(ctx context.Context, entity *EntityChange,
 	}
 
 	// Handle payment event
-	return h.handlePaymentEvent(ctx, entity.ID, paymentService, invoiceService)
+	return h.handlePaymentEvent(ctx, entity.ID, paymentService, invoiceService, services.DB)
 }
 
 // handlePaymentEvent processes a Payment entity change
-func (h *Handler) handlePaymentEvent(ctx context.Context, paymentID string, paymentService interfaces.PaymentService, invoiceService interfaces.InvoiceService) error {
+func (h *Handler) handlePaymentEvent(ctx context.Context, paymentID string, paymentService interfaces.PaymentService, invoiceService interfaces.InvoiceService, db postgres.IClient) error {
 	h.logger.Info(ctx, "handling QuickBooks payment event",
 		"quickbooks_payment_id", paymentID)
 
 	// Delegate to payment service
-	return h.paymentSvc.HandleExternalPaymentFromWebhook(ctx, paymentID, paymentService, invoiceService)
+	return h.paymentSvc.HandleExternalPaymentFromWebhook(ctx, paymentID, paymentService, invoiceService, db)
 }

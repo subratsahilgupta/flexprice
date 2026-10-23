@@ -764,6 +764,7 @@ func (h *WebhookHandler) HandleQuickBooksWebhook(c *gin.Context) {
 
 	// Create service dependencies for webhook handler
 	serviceDeps := &quickbookswebhook.ServiceDependencies{
+		DB:             h.db,
 		PaymentService: h.paymentService,
 		InvoiceService: h.invoiceService,
 	}
