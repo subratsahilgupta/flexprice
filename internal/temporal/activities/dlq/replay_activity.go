@@ -2,6 +2,7 @@ package dlq
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/ee/service"
@@ -59,6 +60,11 @@ func (a *ReplayDLQActivities) ReplayDLQ(ctx context.Context, input models.Replay
 		DryRun:         input.DryRun,
 	})
 	if err != nil {
+		// A failed run is not retried when bounded, so keep what it published in the error the operator sees.
+		if summary != nil {
+			err = fmt.Errorf("%w (before failing: scanned %d, replayed %d, skipped %d, quarantined %d)",
+				err, summary.Scanned, summary.Replayed, summary.Skipped, summary.Quarantined)
+		}
 		logger.Error("DLQ replay activity failed",
 			"source_topic", input.SourceTopic,
 			"error", err)

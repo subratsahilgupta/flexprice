@@ -125,10 +125,11 @@ timeout), publishes nothing, saves no progress, and returns `scanned`, `replayed
 With `"dry_run": false` the request starts `ReplayDLQWorkflow` on the Temporal
 worker (task queue `events`) and returns `202` with `workflow_id` and `run_id`.
 The admin server does no Kafka work for a real run, so the **worker** in that region
-needs Kafka credentials. Poll the run with:
+needs Kafka credentials. Poll the run with the returned `run_id`; without it you get the
+latest run for that workflow ID, which may be a newer replay:
 
 ```bash
-curl "$ADMIN_URL/v1/dlq/replay/runs/$WORKFLOW_ID" -H "X-Admin-Secret: $FLEXPRICE_ADMIN_SECRET"
+curl "$ADMIN_URL/v1/dlq/replay/runs/$WORKFLOW_ID?run_id=$RUN_ID" -H "X-Admin-Secret: $FLEXPRICE_ADMIN_SECRET"
 ```
 
 `status` is `queued` until a worker starts the activity (a run stuck there means no
