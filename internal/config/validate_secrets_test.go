@@ -50,9 +50,7 @@ func TestValidateSecrets(t *testing.T) {
 			c.Webhook.Svix.Enabled = true
 			c.Webhook.Svix.AuthToken = "svix_auth_token"
 		}, true, "svix"},
-		{"baked encryption_key is NOT flagged", func(c *Configuration) {
-			// encryption key left at the baked hex from base(); everything else real.
-		}, false, ""},
+		{"custom encryption_key is NOT flagged", func(c *Configuration) {}, false, ""},
 	}
 
 	for _, tc := range cases {
@@ -96,6 +94,21 @@ func TestValidateEncryptionKey(t *testing.T) {
 	}
 }
 
+func TestValidateEncryptionKeyInsecureOptOut(t *testing.T) {
+	c := Configuration{}
+	c.Deployment.Mode = types.ModeAPI
+	c.Secrets.EncryptionKey = "super-secret-encryption-key"
+
+	t.Setenv("FLEXPRICE_ALLOW_INSECURE_DEFAULTS", "")
+	if err := c.validateEncryptionKey(); err == nil {
+		t.Fatal("default key without opt-out must fail")
+	}
+	t.Setenv("FLEXPRICE_ALLOW_INSECURE_DEFAULTS", "true")
+	if err := c.validateEncryptionKey(); err != nil {
+		t.Fatalf("opt-out must allow default key: %v", err)
+	}
+}
+
 func TestNewValidatedConfigEncryptionKey(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -105,7 +118,7 @@ func TestNewValidatedConfigEncryptionKey(t *testing.T) {
 	}{
 		{"local default ok", string(types.ModeLocal), "super-secret-encryption-key", false},
 		{"api default fails", string(types.ModeAPI), "super-secret-encryption-key", true},
-		{"api empty fails", string(types.ModeAPI), "", true},
+		{"api blank fails", string(types.ModeAPI), "   ", true},
 		{"api custom ok", string(types.ModeAPI), "a-real-production-encryption-key", false},
 	}
 	for _, tt := range tests {
