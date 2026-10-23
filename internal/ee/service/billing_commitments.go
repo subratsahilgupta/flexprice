@@ -41,7 +41,7 @@ type commitmentLoader struct {
 type loadedScope struct {
 	items       []*subscription.SubscriptionLineItem // in fill order, limited to this call's line items
 	bucket      types.WindowSize
-	overageRate *decimal.Decimal
+	overagePrice *price.Price
 }
 
 // stackKey groups commitments that can share lines: same type and measurement, and bucket size for windows.
@@ -138,14 +138,14 @@ func (s *billingService) newCommitmentLoader(
 			}
 		}
 
-		var overageRate *decimal.Decimal
+		var overagePrice *price.Price
 		if c.OveragePriceID != nil {
 			p, err := s.PriceRepo.Get(ctx, *c.OveragePriceID)
 			if err != nil {
 				return nil, err
 			}
 
-			overageRate = lo.ToPtr(p.Amount)
+			overagePrice = p
 		}
 
 		bucket := bucketFor(c, l.context)
@@ -176,12 +176,38 @@ func (s *billingService) newCommitmentLoader(
 			l.handled[item.ID] = true
 		}
 
-		l.scopes[c.ID] = &loadedScope{items: items, bucket: bucket, overageRate: overageRate}
+		l.scopes[c.ID] = &loadedScope{items: items, bucket: bucket, overagePrice: overagePrice}
 		l.commitments = append(l.commitments, &stackedCommitment{C: c, CommittedRate: committedRate, Period: period})
 	}
 
 	sortCommitmentStack(l.commitments)
+
+	// A line priced by two stacks would bill its usage twice, which terminated commitments of another type can cause.
+	claimedBy := map[string]*stackedCommitment{}
+	for _, sc := range l.commitments {
+		for _, item := range l.scopes[sc.C.ID].items {
+			other, claimed := claimedBy[item.ID]
+			if !claimed {
+				claimedBy[item.ID] = sc
+				continue
+			}
+
+			if l.stackKeyOf(other) != l.stackKeyOf(sc) {
+				return nil, ierr.NewErrorf(
+					"line item %s is scoped by commitments %s and %s, which differ in type, measurement or bucket size",
+					item.ID, other.C.ID, sc.C.ID,
+				).
+					WithHint("Overlapping commitments on one line must share type and measurement").
+					Mark(ierr.ErrInvalidOperation)
+			}
+		}
+	}
+
 	return l, nil
+}
+
+func (l *commitmentLoader) stackKeyOf(sc *stackedCommitment) stackKey {
+	return stackKey{typ: sc.C.Type, measurement: sc.C.Measurement, bucket: l.scopes[sc.C.ID].bucket}
 }
 
 // HandledLineIDs returns the line items commitments price; normal pricing skips them.
@@ -194,7 +220,7 @@ func (l *commitmentLoader) Stacks(ctx context.Context) ([]*commitmentStack, []*a
 	var keys []stackKey
 	groups := map[stackKey][]*stackedCommitment{}
 	for _, proto := range l.commitments {
-		key := stackKey{typ: proto.C.Type, measurement: proto.C.Measurement, bucket: l.scopes[proto.C.ID].bucket}
+		key := l.stackKeyOf(proto)
 		if _, ok := groups[key]; !ok {
 			keys = append(keys, key)
 		}
@@ -253,10 +279,22 @@ func (l *commitmentLoader) InvoiceLines(ctx context.Context) ([]dto.CreateInvoic
 	return lines, total, nil
 }
 
+// sameOveragePrice reports whether two overage prices agree: both absent, or both flat with equal amounts.
+func sameOveragePrice(a, b *price.Price) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+
+	return a.BillingModel == types.BILLING_MODEL_FLAT_FEE &&
+		b.BillingModel == types.BILLING_MODEL_FLAT_FEE &&
+		a.Amount.Equal(b.Amount)
+}
+
 // linkLines creates the stack's usage lines, links them to the commitments scoping them and returns each
 // line's meter, aligned with stack.Lines.
 func (l *commitmentLoader) linkLines(ctx context.Context, stack *commitmentStack) ([]*meter.Meter, error) {
 	byItem := map[string]*usageLine{}
+	overageFrom := map[string]*stackedCommitment{}
 	var meters []*meter.Meter
 	for _, sc := range stack.Commitments {
 		scope := l.scopes[sc.C.ID]
@@ -274,9 +312,18 @@ func (l *commitmentLoader) linkLines(ctx context.Context, stack *commitmentStack
 				meters = append(meters, m)
 			}
 
-			// Overlapping commitments agree on the overage rate, so any covering commitment's rate is the line's.
-			if line.OverageRate == nil {
-				line.OverageRate = scope.overageRate
+			// Commitments covering a line must agree on its overage price: none, or flat with equal amounts.
+			first, seen := overageFrom[item.ID]
+			if !seen {
+				overageFrom[item.ID] = sc
+				line.OveragePrice = scope.overagePrice
+			} else if !sameOveragePrice(l.scopes[first.C.ID].overagePrice, scope.overagePrice) {
+				return nil, ierr.NewErrorf(
+					"commitments %s and %s cover line item %s with different overage prices",
+					first.C.ID, sc.C.ID, item.ID,
+				).
+					WithHint("Overlapping commitments on one line must share an overage price").
+					Mark(ierr.ErrInvalidOperation)
 			}
 
 			sc.Lines = append(sc.Lines, line)
