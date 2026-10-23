@@ -433,3 +433,29 @@ func TestAppMetricViews(t *testing.T) {
 		})
 	}
 }
+
+func TestDBDurationViewTrimsBucketsAndMinMax(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader), dbDurationView())
+	h, err := mp.Meter(tracerName).Float64Histogram("db.client.duration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.Record(context.Background(), 42)
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatal(err)
+	}
+	hist := rm.ScopeMetrics[0].Metrics[0].Data.(metricdata.Histogram[float64])
+	dp := hist.DataPoints[0]
+	if len(dp.Bounds) != len(dbDurationBoundsMs) {
+		t.Fatalf("bounds = %v, want %v", dp.Bounds, dbDurationBoundsMs)
+	}
+	if _, ok := dp.Min.Value(); ok {
+		t.Error("min should not be recorded")
+	}
+	if _, ok := dp.Max.Value(); ok {
+		t.Error("max should not be recorded")
+	}
+}
