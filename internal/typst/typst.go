@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"time"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -101,15 +100,14 @@ func (c *compiler) Compile(opts CompileOpts) (string, error) {
 	// Determine output file path
 	outputFile := filepath.Join(c.outputDir, opts.OutputFile)
 	if opts.OutputFile == "" {
-		tmpFilePath := filepath.Join(c.outputDir, fmt.Sprintf("typst-%d.pdf", time.Now().UnixMilli()))
-		tmpFile, err := os.Create(tmpFilePath) // #nosec G304 -- code-generated temp path
+		tmpFile, err := os.CreateTemp(c.outputDir, "typst-*.pdf")
 		if err != nil {
 			return "", ierr.WithError(err).
 				WithMessage("failed to create temporary output file").
 				WithHint("template error").Mark(ierr.ErrSystem)
 		}
 		tmpFile.Close() // #nosec G104 -- best-effort, error non-fatal
-		outputFile = tmpFilePath
+		outputFile = tmpFile.Name()
 	}
 
 	// Build font directories argument
@@ -186,7 +184,7 @@ func (c *compiler) CompileTemplate(
 	}
 
 	// create json file in temp dir
-	jsonFile, err := os.Create(filepath.Join(c.outputDir, fmt.Sprintf("typst-%d.json", time.Now().UnixMilli())))
+	jsonFile, err := os.CreateTemp(c.outputDir, "typst-*.json")
 	if err != nil {
 		return nil, ierr.WithError(err).
 			WithMessage("failed to create temporary json file").
