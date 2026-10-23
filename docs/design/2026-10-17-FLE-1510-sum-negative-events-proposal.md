@@ -81,7 +81,9 @@ For an invoice with no prior payment:
 
 Finalize invoices with nothing collectible without requesting payment. Never create negative payments, automatic wallet credits, refunds or future-invoice offsets from a negative total. Preserve the signed total through recalculation, tax application and currency conversion. Existing payments must not be erased by recomputation.
 
-**Accepted prepaid limitation:** retain current allocation to eligible positive lines and skip negative lines. Separate +$100 and -$30 lines may consume $100 prepaid credits and leave a -$30 invoice total. Cross-line netting is deferred. The no-collection rule above does not impose an aggregate cap on this prepaid allocation.
+**Decided credit policy:** keep negative line items on the invoice, where they reduce the signed total. Apply prepaid credits independently to each positive usage line after discounts, limited by available credits. Fixed and negative lines receive no prepaid credits. Negative lines do not offset another line’s credit eligibility; there is no cap based on net usage across the invoice. This policy applies at both finalization and expiring-credit settlement.
+
+For example, separate +$50 and -$45 usage lines with sufficient credits consume $50 credits against the positive line. The invoice total becomes -$45, the amount due is zero, and no wallet refund or credit is created. Per-line allocation is the chosen behavior, not a temporary limitation pending cross-line netting.
 
 Expiring credits can already settle against draft invoices. Reconciliation if usage later decreases is deferred; the initial compatibility boundary for that combination must be explicit. External billing/accounting routes need verification before claiming negative-invoice support.
 
@@ -96,7 +98,7 @@ Restrictions apply to newly enabled combinations and must be enforced without un
 - Evaluation settings and prorated endpoint-balance pricing are agreed directions for Phase 2, detailed below. Final-value pricing using only the month-end price remains a separate open option. Neither evaluation setting is required for the restricted initial case.
 - Mid-period allowance replacement, successor carry-forward, plan/override transitions and shorter, additive, parallel or amount-based grants.
 - Negative totals with nonlinear prices, commitments and bucketed/grouped balance evaluation.
-- Cross-line prepaid netting and credit-expiry settlement reconciliation.
+- Credit-expiry settlement reconciliation when an already-settled line’s charge later decreases.
 - Historical event/checkpoint correction, finalized-invoice adjustments, automatic refunds and future offsets.
 - Time-weighted billing, which belongs to a separate aggregation/billing model.
 
@@ -159,9 +161,9 @@ Three agreed follow-ups remain open.
 
 ### 1. Reconcile expired credits after negative usage
 
-If expiring credits settle $100 against a draft and later negative usage reduces the charge to $60, the wallet still records $100 applied to the invoice.
+If expiring credits settle $100 against a draft usage line and later negative usage reduces that same line’s charge to $60, the wallet still records $100 applied to the invoice. A separate negative line does not reduce the original line’s credit eligibility under the agreed per-line policy.
 
-Reconcile the allocation to $60 consumed and $40 expired. Keep the wallet ledger, invoice credit attribution, and expiry accounting consistent without restoring expired funds to the spendable balance. Capping new credit applications at net usage does not correct credits already settled at expiry.
+Reconcile the allocation to $60 consumed and $40 expired. Keep the wallet ledger, invoice credit attribution, and expiry accounting consistent without restoring expired funds to the spendable balance. Per-line credit allocation does not reconcile credits already settled before that line’s charge decreased.
 
 ### 2. Bill temporary overage with peak or time-weighted usage
 
