@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/auth"
 	"github.com/flexprice/flexprice/internal/domain/events"
-	"github.com/flexprice/flexprice/internal/domain/meter"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -391,7 +391,12 @@ func (s *customerPortalService) GetPropertyValues(ctx context.Context, req dto.P
 	}
 
 	// Same checks as grouping and filtering, quantity keys included.
-	if err := s.validatePropertyKeys(ctx, dto.PortalAnalyticsRequest{FeatureIDs: req.FeatureIDs, PropertyFilters: map[string][]string{req.Key: nil}}); err != nil {
+	if err := s.validatePropertyKeys(ctx, dto.PortalAnalyticsRequest{
+		FeatureIDs:      req.FeatureIDs,
+		StartTime:       req.StartTime,
+		EndTime:         req.EndTime,
+		PropertyFilters: map[string][]string{req.Key: nil},
+	}); err != nil {
 		return nil, err
 	}
 
@@ -421,7 +426,12 @@ func (s *customerPortalService) GetCostAnalytics(ctx context.Context, req dto.Po
 		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
 	}
 
-	if err := s.validatePropertyKeys(ctx, dto.PortalAnalyticsRequest{FeatureIDs: req.FeatureIDs, PropertyFilters: req.PropertyFilters}); err != nil {
+	if err := s.validatePropertyKeys(ctx, dto.PortalAnalyticsRequest{
+		FeatureIDs:      req.FeatureIDs,
+		StartTime:       req.StartTime,
+		EndTime:         req.EndTime,
+		PropertyFilters: req.PropertyFilters,
+	}); err != nil {
 		return nil, err
 	}
 
@@ -533,20 +543,27 @@ func (s *customerPortalService) validatePropertyKeys(ctx context.Context, req dt
 		return err
 	}
 
-	var meterIDs []string
-	if len(req.FeatureIDs) > 0 {
-		if meterIDs, err = featureMeterIDs(ctx, s.FeatureRepo, req.FeatureIDs); err != nil {
-			return err
-		}
-	} else {
-		meters, err := s.MeterRepo.List(ctx, types.NewNoLimitMeterFilter())
-		if err != nil {
-			return err
-		}
-		meterIDs = lo.Map(meters, func(m *meter.Meter, _ int) string { return m.ID })
+	// Scoped to the customer's meters (the features', or those with usage in the window), never the whole tenant.
+	lookup := &events.PropertyLookupParams{
+		TenantID:           types.GetTenantID(ctx),
+		EnvironmentID:      types.GetEnvironmentID(ctx),
+		ExternalCustomerID: types.GetExternalCustomerID(ctx),
+		FeatureIDs:         req.FeatureIDs,
+		StartTime:          req.StartTime,
+		EndTime:            req.EndTime,
+	}
+	// Same defaults as GetDetailedAnalytics for a request without a window.
+	if lookup.EndTime.IsZero() {
+		lookup.EndTime = time.Now().UTC()
+	}
+	if lookup.StartTime.IsZero() {
+		lookup.StartTime = lookup.EndTime.Add(-6 * time.Hour)
+	}
+	if err := resolvePropertyLookupMeters(ctx, s.ServiceParams, lookup); err != nil {
+		return err
 	}
 
-	quantityKeys, err := quantityPropertyKeys(ctx, s.MeterRepo, meterIDs)
+	quantityKeys, err := quantityPropertyKeys(ctx, s.MeterRepo, lookup.MeterIDs)
 	if err != nil {
 		return err
 	}

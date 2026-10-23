@@ -2931,7 +2931,7 @@ func (s *meterUsageService) GetGroupablePropertyKeys(ctx context.Context, params
 		return nil, ierr.NewError("params are required").Mark(ierr.ErrValidation)
 	}
 
-	if err := s.resolvePropertyLookupMeters(ctx, params); err != nil {
+	if err := resolvePropertyLookupMeters(ctx, s.ServiceParams, params); err != nil {
 		return nil, err
 	}
 	if len(params.MeterIDs) == 0 {
@@ -2968,7 +2968,7 @@ func (s *meterUsageService) GetPropertyValues(ctx context.Context, params *event
 		params.Limit = defaultPropertyValuesLimit
 	}
 
-	if err := s.resolvePropertyLookupMeters(ctx, params); err != nil {
+	if err := resolvePropertyLookupMeters(ctx, s.ServiceParams, params); err != nil {
 		return nil, err
 	}
 	if len(params.MeterIDs) == 0 {
@@ -2984,13 +2984,13 @@ func (s *meterUsageService) GetPropertyValues(ctx context.Context, params *event
 }
 
 // resolvePropertyLookupMeters sets MeterIDs to the features' meters, or to the meters with usage in the window.
-func (s *meterUsageService) resolvePropertyLookupMeters(ctx context.Context, params *events.PropertyLookupParams) error {
+func resolvePropertyLookupMeters(ctx context.Context, sp ServiceParams, params *events.PropertyLookupParams) error {
 	var err error
 
 	if len(params.FeatureIDs) > 0 {
-		params.MeterIDs, err = featureMeterIDs(ctx, s.FeatureRepo, params.FeatureIDs)
+		params.MeterIDs, err = featureMeterIDs(ctx, sp.FeatureRepo, params.FeatureIDs)
 	} else {
-		params.MeterIDs, err = s.repo.GetDistinctMeterIDs(ctx, &events.MeterUsageQueryParams{
+		params.MeterIDs, err = sp.MeterUsageRepo.GetDistinctMeterIDs(ctx, &events.MeterUsageQueryParams{
 			TenantID:           params.TenantID,
 			EnvironmentID:      params.EnvironmentID,
 			ExternalCustomerID: params.ExternalCustomerID,
