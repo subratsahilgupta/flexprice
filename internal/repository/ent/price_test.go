@@ -48,6 +48,9 @@ func TestPriceGetByGroupIDs_ScopedToTenantAndEnvironment(t *testing.T) {
 		p.DisplayAmount = p.GetDisplayAmount()
 		p.Status = types.StatusPublished
 		require.NoError(t, repo.Create(ctx, p))
+		t.Cleanup(func() {
+			_ = client.Writer(context.Background()).Price.DeleteOneID(p.ID).Exec(context.Background())
+		})
 		return p
 	}
 
