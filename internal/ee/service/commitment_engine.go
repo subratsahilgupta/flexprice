@@ -4,11 +4,13 @@ import (
 	"sort"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/commitment"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -186,4 +188,177 @@ func allocate(stack *commitmentStack) (*allocation, error) {
 	}
 
 	return out, nil
+}
+
+// lineCost prices a quantity of usage on a price the way the normal billing path would.
+type lineCost func(p *price.Price, qty decimal.Decimal) decimal.Decimal
+
+// proportionalQuantity converts a money value on the line into units at its average rate.
+func proportionalQuantity(line *usageLine, value decimal.Decimal) decimal.Decimal {
+	if line.Cost.IsZero() {
+		return decimal.Zero
+	}
+
+	return line.Quantity.Mul(value).Div(line.Cost)
+}
+
+func (l *usageLine) displayName() string {
+	if l.Item.DisplayName != "" {
+		return l.Item.DisplayName
+	}
+
+	return l.Price.DisplayName
+}
+
+// commitmentInvoiceLines renders each stack and its allocation (index-aligned) as within, true-up and on-demand lines.
+func commitmentInvoiceLines(
+	stacks []*commitmentStack,
+	allocs []*allocation,
+	currency string,
+	periodStart, periodEnd time.Time,
+	cost lineCost,
+) []dto.CreateInvoiceLineItemRequest {
+	newLine := func(
+		c *commitment.Commitment,
+		line *usageLine,
+		kind types.CommitmentLineKind,
+		name string,
+		qty, amount decimal.Decimal,
+	) dto.CreateInvoiceLineItemRequest {
+		out := dto.CreateInvoiceLineItemRequest{
+			DisplayName:  lo.ToPtr(name),
+			Quantity:     qty,
+			Amount:       types.RoundToCurrencyPrecision(amount, currency),
+			PeriodStart:  lo.ToPtr(periodStart),
+			PeriodEnd:    lo.ToPtr(periodEnd),
+			CommitmentID: lo.ToPtr(c.ID),
+			Metadata: types.Metadata{
+				types.MetadataKeyCommitmentLineKind: string(kind),
+				types.MetadataKeyCommitmentID:       c.ID,
+			},
+		}
+
+		if c.InvoiceDescription != nil && kind != types.CommitmentLineOnDemand {
+			out.Metadata[types.MetadataKeyDescription] = *c.InvoiceDescription
+		}
+
+		if line == nil {
+			out.EntityType = lo.ToPtr(string(types.InvoiceLineItemEntityTypeCommitment))
+			out.EntityID = lo.ToPtr(c.ID)
+			return out
+		}
+
+		out.PriceID = lo.ToPtr(line.Item.PriceID)
+		out.PriceType = lo.ToPtr(string(line.Item.PriceType))
+		out.MeterID = lo.ToPtr(line.Item.MeterID)
+		out.MeterDisplayName = lo.ToPtr(line.Item.MeterDisplayName)
+		out.EntityID = lo.ToPtr(line.Item.EntityID)
+		out.EntityType = lo.ToPtr(string(line.Item.EntityType))
+		out.PlanDisplayName = lo.ToPtr(line.Item.PlanDisplayName)
+		out.SubscriptionLineItemID = lo.ToPtr(line.Item.ID)
+		return out
+	}
+
+	var out []dto.CreateInvoiceLineItemRequest
+	for si, stack := range stacks {
+		alloc := allocs[si]
+		for ci, sc := range stack.Commitments {
+			used := alloc.Commitments[ci]
+			first := len(out)
+			largest := -1
+			usedValue, withinValue := decimal.Zero, decimal.Zero
+			for li, line := range sc.Lines {
+				if !used.UsedByLine[li].IsPositive() {
+					continue
+				}
+
+				qty, amount := used.UsedByLine[li], used.UsedByLine[li].Mul(sc.CommittedRate)
+				if stack.Type == types.COMMITMENT_TYPE_AMOUNT {
+					qty, amount = proportionalQuantity(line, used.UsedByLine[li]), used.UsedByLine[li]
+				}
+
+				row := newLine(sc.C, line, types.CommitmentLineWithin, sc.C.InvoiceLabel, qty, amount)
+				usedValue = usedValue.Add(amount)
+				withinValue = withinValue.Add(row.Amount)
+				if largest < 0 || row.Amount.GreaterThan(out[largest].Amount) {
+					largest = len(out)
+				}
+
+				out = append(out, row)
+			}
+
+			// Lines rounded one by one can drift from their rounded total; the largest line absorbs it.
+			if len(out) > first {
+				drift := types.RoundToCurrencyPrecision(usedValue, currency).Sub(withinValue)
+				out[largest].Amount = out[largest].Amount.Add(drift)
+				withinValue = withinValue.Add(drift)
+			}
+
+			if !sc.C.Binding {
+				continue
+			}
+
+			// True-up is the rounded period amount minus the rounded within lines, so they sum exactly.
+			trueUp := types.RoundToCurrencyPrecision(sc.Period.Amount, currency).Sub(withinValue)
+			if !trueUp.IsPositive() {
+				continue
+			}
+
+			trueUpQty := used.Unused
+			if stack.Type == types.COMMITMENT_TYPE_AMOUNT {
+				trueUpQty = decimal.NewFromInt(1)
+			}
+
+			row := newLine(sc.C, nil, types.CommitmentLineTrueUp, sc.C.InvoiceLabel+" (unused)", trueUpQty, trueUp)
+			row.PriceID = sc.C.CommittedPriceID
+			row.PriceType = lo.ToPtr(string(types.PRICE_TYPE_FIXED))
+			out = append(out, row)
+		}
+
+		for li, line := range stack.Lines {
+			// The last commitment scoping the line carries its on-demand lines.
+			owner := stack.Commitments[len(stack.Commitments)-1]
+			for _, sc := range stack.Commitments {
+				if lo.Contains(sc.Lines, line) {
+					owner = sc
+				}
+			}
+
+			// Window stacks price each window so bucketed prices match the normal path; the rest price the sum once.
+			var qty, amount decimal.Decimal
+			perWindow := stack.Measurement == types.CommitmentMeasurementWindow && line.OverageRate == nil
+			for _, w := range alloc.OnDemand[li] {
+				if !w.IsPositive() {
+					continue
+				}
+
+				qty = qty.Add(w)
+				switch {
+				case stack.Type == types.COMMITMENT_TYPE_AMOUNT:
+					amount = amount.Add(w)
+				case perWindow:
+					amount = amount.Add(cost(line.Price, w))
+				}
+			}
+
+			if stack.Type == types.COMMITMENT_TYPE_QUANTITY && !perWindow && qty.IsPositive() {
+				amount = cost(line.Price, qty)
+				if line.OverageRate != nil {
+					amount = qty.Mul(*line.OverageRate)
+				}
+			}
+
+			switch {
+			case qty.IsPositive() && stack.Type == types.COMMITMENT_TYPE_AMOUNT:
+				out = append(out, newLine(owner.C, line, types.CommitmentLineOnDemand, line.displayName(), proportionalQuantity(line, qty), amount))
+			case qty.IsPositive():
+				out = append(out, newLine(owner.C, line, types.CommitmentLineOnDemand, line.displayName(), qty, amount))
+			case stack.Type == types.COMMITMENT_TYPE_AMOUNT && line.Cost.IsZero() && line.Quantity.IsPositive():
+				// Free usage takes no capacity, but its quantity still shows on the invoice.
+				out = append(out, newLine(owner.C, line, types.CommitmentLineOnDemand, line.displayName(), line.Quantity, decimal.Zero))
+			}
+		}
+	}
+
+	return out
 }
