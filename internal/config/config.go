@@ -1460,14 +1460,19 @@ func NewValidatedConfig() (*Configuration, error) {
 
 // validateCriticalSecrets rejects secrets that sign tokens or grant access.
 func (c Configuration) validateCriticalSecrets() error {
-	if os.Getenv("FLEXPRICE_ALLOW_INSECURE_DEFAULTS") == "true" {
+	allowInsecure := os.Getenv("FLEXPRICE_ALLOW_INSECURE_DEFAULTS") == "true"
+	fail := func(err error) error {
+		if !allowInsecure {
+			return err
+		}
+		log.Printf("[config] WARNING: FLEXPRICE_ALLOW_INSECURE_DEFAULTS bypassed critical secret check: %v. Must never be set outside local Docker Compose", err)
 		return nil
 	}
 	if placeholderSecrets[strings.TrimSpace(c.Auth.Secret)] {
-		return fmt.Errorf("auth.secret (FLEXPRICE_AUTH_SECRET) is empty or a placeholder (mode %q)", c.Deployment.Mode)
+		return fail(fmt.Errorf("auth.secret (FLEXPRICE_AUTH_SECRET) is empty or a placeholder (mode %q)", c.Deployment.Mode))
 	}
 	if _, ok := c.Auth.APIKey.Keys[devAPIKeyHash]; ok {
-		return fmt.Errorf("auth.api_key.keys contains the public dev key (mode %q): set FLEXPRICE_AUTH_API_KEY_KEYS", c.Deployment.Mode)
+		return fail(fmt.Errorf("auth.api_key.keys contains the public dev key (mode %q): set FLEXPRICE_AUTH_API_KEY_KEYS", c.Deployment.Mode))
 	}
 	return nil
 }
