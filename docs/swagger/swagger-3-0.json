@@ -21062,6 +21062,9 @@
             "type": "string",
             "description": "flat_amount is the flat amount for the given tier (optional)\nApplied on top of unit_amount*quantity. Useful for cases like \"2.7$ + 5c\""
           },
+          "transform_quantity": {
+            "$ref": "#/components/schemas/price.TransformQuantity"
+          },
           "unit_amount": {
             "type": "string",
             "description": "unit_amount is the amount per unit for the given tier"
@@ -35920,6 +35923,9 @@
           "flat_amount": {
             "type": "string",
             "description": "flat_amount is the flat amount for the given tier (optional)\nApplied on top of unit_amount*quantity. Useful for cases like \"2.7$ + 5c\""
+          },
+          "transform_quantity": {
+            "$ref": "#/components/schemas/price.TransformQuantity"
           },
           "unit_amount": {
             "type": "string",
