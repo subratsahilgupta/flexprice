@@ -596,7 +596,10 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 					Commitments: []*stackedCommitment{committed("c1", true, "100", []int{0}, []*usageLine{line}, "100")},
 				}
 			},
-			cost: func(*price.Price, decimal.Decimal) decimal.Decimal { return intDec(9999) },
+			cost: func(*price.Price, decimal.Decimal) decimal.Decimal {
+				t.Error("cost must not be called when the line has an overage rate")
+				return decimal.Zero
+			},
 			want: []wantLine{
 				{types.CommitmentLineWithin, "Label c1", "100", "100"},
 				{types.CommitmentLineOnDemand, "Usage a", "30", "90"},

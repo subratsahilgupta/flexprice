@@ -342,9 +342,10 @@ func commitmentInvoiceLines(
 			}
 
 			if stack.Type == types.COMMITMENT_TYPE_QUANTITY && !perWindow && qty.IsPositive() {
-				amount = cost(line.Price, qty)
 				if line.OverageRate != nil {
 					amount = qty.Mul(*line.OverageRate)
+				} else {
+					amount = cost(line.Price, qty)
 				}
 			}
 
