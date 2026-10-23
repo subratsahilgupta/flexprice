@@ -55,8 +55,8 @@ func (r *userRepository) Create(ctx context.Context, user *domainUser.User) erro
 		SetUpdatedAt(user.UpdatedAt)
 
 	// Set email only if it's not empty (service accounts have no email)
-	if user.Email != "" {
-		builder.SetEmail(user.Email)
+	if email := types.NormalizeEmail(user.Email); email != "" {
+		builder.SetEmail(email)
 	}
 	if user.Name != "" {
 		builder.SetName(user.Name)
@@ -317,7 +317,7 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*domainU
 
 	// For login, we don't have tenant ID in context, so we just search by email
 	query := client.User.Query().Where(
-		entUser.Email(email),
+		entUser.EmailEqualFold(types.NormalizeEmail(email)),
 		entUser.Status(string(types.StatusPublished)),
 	)
 
