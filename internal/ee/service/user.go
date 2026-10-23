@@ -463,7 +463,7 @@ func (s *userService) InviteUser(ctx context.Context, req *dto.CreateUserRequest
 
 	var userID string
 
-	// Human super_admins only, whatever role the invitee gets.
+	// Service accounts must not invite.
 	if !types.IsSuperAdminUser(ctx) {
 		return nil, nil, ierr.NewError("only super_admin users can invite users").
 			WithHint("Ask a tenant super_admin to invite this user").
