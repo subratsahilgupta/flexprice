@@ -718,7 +718,7 @@ func NewRouter(
 		// Webhook routes
 		webhookGroup := v1Private.Group("/webhooks")
 		{
-			webhookGroup.GET("/dashboard", handlers.Webhook.GetDashboardURL)
+			webhookGroup.GET("/dashboard", write(types.EntityWebhook, types.ActionWrite), handlers.Webhook.GetDashboardURL)
 			webhookGroup.POST("/retry", write(types.EntityWebhook, types.ActionWrite), handlers.Webhook.RetryOutboundWebhook)
 		}
 	}
