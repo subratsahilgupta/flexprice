@@ -1493,15 +1493,17 @@ func (c Configuration) validateSecrets() error {
 const defaultEncryptionKey = "super-secret-encryption-key"
 
 func (c Configuration) validateEncryptionKey() error {
-	if os.Getenv("FLEXPRICE_ALLOW_INSECURE_DEFAULTS") == "true" {
+	key := strings.TrimSpace(c.Secrets.EncryptionKey)
+	if key != "" && key != defaultEncryptionKey {
 		return nil
 	}
-	key := strings.TrimSpace(c.Secrets.EncryptionKey)
-	if key == "" || key == defaultEncryptionKey {
-		return fmt.Errorf("secrets.encryption_key is empty or the shipped default (mode %q): set FLEXPRICE_SECRETS_ENCRYPTION_KEY",
-			c.Deployment.Mode)
+	err := fmt.Errorf("secrets.encryption_key is empty or the shipped default (mode %q): set FLEXPRICE_SECRETS_ENCRYPTION_KEY",
+		c.Deployment.Mode)
+	if os.Getenv("FLEXPRICE_ALLOW_INSECURE_DEFAULTS") == "true" {
+		log.Printf("[config] WARNING: FLEXPRICE_ALLOW_INSECURE_DEFAULTS bypassed encryption key check: %v. Must never be set outside local Docker Compose", err)
+		return nil
 	}
-	return nil
+	return err
 }
 
 // GetDefaultConfig returns a default configuration for local development
