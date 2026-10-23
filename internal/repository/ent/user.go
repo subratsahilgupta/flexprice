@@ -31,6 +31,7 @@ func NewUserRepository(client postgres.IClient, logger *logger.Logger, redisCach
 
 // Create creates a new user
 func (r *userRepository) Create(ctx context.Context, user *domainUser.User) error {
+	user.Email = types.NormalizeEmail(user.Email)
 	r.logger.Debug(ctx, "creating user", "user_id", user.ID, "email", user.Email, "tenant_id", user.TenantID)
 
 	// Start a span for this repository operation
@@ -55,8 +56,8 @@ func (r *userRepository) Create(ctx context.Context, user *domainUser.User) erro
 		SetUpdatedAt(user.UpdatedAt)
 
 	// Set email only if it's not empty (service accounts have no email)
-	if email := types.NormalizeEmail(user.Email); email != "" {
-		builder.SetEmail(email)
+	if user.Email != "" {
+		builder.SetEmail(user.Email)
 	}
 	if user.Name != "" {
 		builder.SetName(user.Name)
