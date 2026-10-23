@@ -63,10 +63,12 @@ func (h *Handler) VerifyWebhookSignature(ctx context.Context, payload []byte, si
 
 	// Check if webhook verifier token is configured
 	if qbConfig.WebhookVerifierToken == "" {
-		h.logger.Info(ctx, "webhook verifier token not configured - SECURITY RISK, skipping signature verification",
+		h.logger.Info(ctx, "webhook verifier token not configured, rejecting webhook",
 			"connection_id", conn.ID,
-			"note", "Configure webhook_verifier_token in QuickBooks connection for production security")
-		return nil // Allow webhook without verification (for development)
+			"hint", "configure webhook_verifier_token on the QuickBooks connection")
+		return ierr.NewError("webhook verifier token not configured").
+			WithHint("Configure webhook_verifier_token on the QuickBooks connection").
+			Mark(ierr.ErrPermissionDenied)
 	}
 
 	// Compute HMAC-SHA256
