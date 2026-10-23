@@ -2854,6 +2854,11 @@ definitions:
           flat_amount is the flat amount for the given tier (optional)
           Applied on top of unit_amount*quantity. Useful for cases like "2.7$ + 5c"
         type: string
+      transform_quantity:
+        allOf:
+        - $ref: '#/definitions/price.TransformQuantity'
+        description: transform_quantity bills unit_amount per package of divide_by
+          units; round defaults to up
       unit_amount:
         description: unit_amount is the amount per unit for the given tier
         type: string
@@ -14085,6 +14090,11 @@ definitions:
           flat_amount is the flat amount for the given tier (optional)
           Applied on top of unit_amount*quantity. Useful for cases like "2.7$ + 5c"
         type: string
+      transform_quantity:
+        allOf:
+        - $ref: '#/definitions/price.TransformQuantity'
+        description: transform_quantity bills unit_amount per package of divide_by
+          units; round defaults to up
       unit_amount:
         description: unit_amount is the amount per unit for the given tier
         type: string

@@ -18693,6 +18693,14 @@ const docTemplate = `{
                     "description": "flat_amount is the flat amount for the given tier (optional)\nApplied on top of unit_amount*quantity. Useful for cases like \"2.7$ + 5c\"",
                     "type": "string"
                 },
+                "transform_quantity": {
+                    "description": "transform_quantity bills unit_amount per package of divide_by units; round defaults to up",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/price.TransformQuantity"
+                        }
+                    ]
+                },
                 "unit_amount": {
                     "description": "unit_amount is the amount per unit for the given tier",
                     "type": "string"
@@ -33926,6 +33934,14 @@ const docTemplate = `{
                 "flat_amount": {
                     "description": "flat_amount is the flat amount for the given tier (optional)\nApplied on top of unit_amount*quantity. Useful for cases like \"2.7$ + 5c\"",
                     "type": "string"
+                },
+                "transform_quantity": {
+                    "description": "transform_quantity bills unit_amount per package of divide_by units; round defaults to up",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/price.TransformQuantity"
+                        }
+                    ]
                 },
                 "unit_amount": {
                     "description": "unit_amount is the amount per unit for the given tier",
