@@ -1560,8 +1560,9 @@ func buildOverridePriceRequest(originalPrice *dto.PriceResponse, override dto.Ov
 				priceUnitConfig.PriceUnitTiers = make([]dto.CreatePriceTier, len(originalPrice.PriceUnitTiers))
 				for i, tier := range originalPrice.PriceUnitTiers {
 					priceUnitConfig.PriceUnitTiers[i] = dto.CreatePriceTier{
-						UpTo:       tier.UpTo,
-						UnitAmount: tier.UnitAmount,
+						UpTo:              tier.UpTo,
+						UnitAmount:        tier.UnitAmount,
+						TransformQuantity: tier.TransformQuantity,
 					}
 					priceUnitConfig.PriceUnitTiers[i].FlatAmount = tier.FlatAmount
 				}
@@ -1575,8 +1576,9 @@ func buildOverridePriceRequest(originalPrice *dto.PriceResponse, override dto.Ov
 				createPriceReq.Tiers = make([]dto.CreatePriceTier, len(originalPrice.Tiers))
 				for i, tier := range originalPrice.Tiers {
 					createPriceReq.Tiers[i] = dto.CreatePriceTier{
-						UpTo:       tier.UpTo,
-						UnitAmount: tier.UnitAmount,
+						UpTo:              tier.UpTo,
+						UnitAmount:        tier.UnitAmount,
+						TransformQuantity: tier.TransformQuantity,
 					}
 					createPriceReq.Tiers[i].FlatAmount = tier.FlatAmount
 				}
