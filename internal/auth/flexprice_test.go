@@ -123,7 +123,7 @@ func TestGenerateSessionTokenTimeoutBoundaries(t *testing.T) {
 func TestValidateToken_RejectsMissingTenant(t *testing.T) {
 	a := newTestAuth()
 
-	for name, tenantID := range map[string]string{"empty": "", "absent": "-"} {
+	for name, tenantID := range map[string]string{"empty": "", "whitespace": "   ", "absent": "-"} {
 		t.Run(name, func(t *testing.T) {
 			claims := jwt.MapClaims{
 				"user_id": "usr_abc",

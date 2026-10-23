@@ -125,7 +125,7 @@ func (f *flexpriceAuth) ValidateToken(ctx context.Context, token string) (*auth.
 	}
 
 	tenantID, tenantOk := claims["tenant_id"].(string)
-	if !tenantOk || tenantID == "" {
+	if !tenantOk || strings.TrimSpace(tenantID) == "" {
 		return nil, ierr.NewError("token missing tenant ID").
 			WithHint("Token missing tenant ID").
 			Mark(ierr.ErrPermissionDenied)
