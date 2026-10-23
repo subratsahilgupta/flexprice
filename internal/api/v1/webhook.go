@@ -777,7 +777,7 @@ func (h *WebhookHandler) HandleQuickBooksWebhook(c *gin.Context) {
 			"tenant_id", tenantID,
 			"environment_id", environmentID)
 		status := http.StatusInternalServerError
-		if ierr.IsValidation(err) {
+		if allValidationErrors(err) {
 			status = http.StatusBadRequest
 		}
 		c.AbortWithStatusJSON(status, gin.H{"error": "Webhook processing failed"})
@@ -787,6 +787,19 @@ func (h *WebhookHandler) HandleQuickBooksWebhook(c *gin.Context) {
 	h.logger.Info(context.Background(), "successfully processed QuickBooks webhook",
 		"tenant_id", tenantID,
 		"environment_id", environmentID)
+}
+
+// allValidationErrors reports whether every joined leaf is a validation error.
+func allValidationErrors(err error) bool {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, e := range joined.Unwrap() {
+			if !allValidationErrors(e) {
+				return false
+			}
+		}
+		return true
+	}
+	return ierr.IsValidation(err)
 }
 
 func (h *WebhookHandler) HandleNomodWebhook(c *gin.Context) {
