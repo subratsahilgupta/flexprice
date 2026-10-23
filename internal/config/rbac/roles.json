@@ -17,7 +17,7 @@
 
   "all_writer": {
     "name": "All Writer",
-    "description": "Provides read and write access to all resources and operations, excluding user, role, and administrative management.",
+    "description": "Provides read and write access to all resources, including users, secrets, and settings.",
     "permissions": {
       "*": ["read", "write"]
     }
