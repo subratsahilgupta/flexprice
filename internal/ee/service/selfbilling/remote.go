@@ -118,12 +118,9 @@ func (c *remoteClient) LatestSubscription(ctx context.Context, extID string) (*r
 		return than == nil || lo.FromPtr(s.CreatedAt).After(lo.FromPtr(than.CreatedAt))
 	}
 
+	// Every plan counts, not just self-serve: a tenant moved to an Enterprise plan is driven by that subscription.
 	for i := range resp.ListSubscriptionsResponse.Items {
 		s := &resp.ListSubscriptionsResponse.Items[i]
-		if lo.FromPtr(s.PlanID) != c.planID {
-			continue
-		}
-
 		if lo.FromPtr(s.SubscriptionStatus) == sdktypes.SubscriptionStatusCancelled {
 			if newer(s, cancelled) {
 				cancelled = s

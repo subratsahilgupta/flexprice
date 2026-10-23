@@ -151,7 +151,7 @@ func (s *selfBillingService) runDetached(ctx context.Context, op, tenantID strin
 	}()
 }
 
-// provision ensures the Flexprice Cloud customer and starts its trial when it has no self-serve subscription yet.
+// provision ensures the Flexprice Cloud customer and starts a self-serve trial when it has no subscription on any plan yet.
 func (s *selfBillingService) provision(ctx context.Context, tenantID, name, email string) error {
 	in := customerInput{
 		extID:    s.extID(tenantID),
