@@ -175,6 +175,7 @@ func (s *subscriptionModificationService) resolveLineItemChangeMod(
 	allowAlreadyApplied bool,
 ) (*lineItemChangeMod, error) {
 	sp := s.serviceParams
+	subSvc := NewSubscriptionService(sp).(*subscriptionService)
 	lineItemID := change.ID
 	updatedQuantity := change.Quantity
 
@@ -206,6 +207,11 @@ func (s *subscriptionModificationService) resolveLineItemChangeMod(
 
 	alreadyApplied := allowAlreadyApplied && !lineItem.EndDate.IsZero() && lineItem.EndDate.Equal(effectiveDate)
 	if !alreadyApplied {
+		if successor, err := subSvc.findPublishedSuccessor(ctx, lineItem); err != nil {
+			return nil, err
+		} else if successor != nil {
+			return nil, alreadyScheduledVersionError(lineItemID, successor.ID)
+		}
 		if err := validateChangeEffectiveDateWithinLineItemWindow(effectiveDate, sub, lineItem, lineItemID); err != nil {
 			return nil, err
 		}
@@ -492,6 +498,7 @@ func (s *subscriptionModificationService) applyLineItemChange(
 	}
 
 	sp := s.serviceParams
+	subSvc := NewSubscriptionService(sp).(*subscriptionService)
 	mods := request.GetModifications()
 	if len(mods) == 0 {
 		return []dto.ChangedLineItem{}, nil
@@ -529,6 +536,12 @@ func (s *subscriptionModificationService) applyLineItemChange(
 						"effective_date": effectiveDate,
 					}).
 					Mark(ierr.ErrValidation)
+			}
+
+			if successor, err := subSvc.findPublishedSuccessor(txCtx, lineItem); err != nil {
+				return err
+			} else if successor != nil {
+				return alreadyScheduledVersionError(lineItemID, successor.ID)
 			}
 
 			newItemEndDate := time.Time{}

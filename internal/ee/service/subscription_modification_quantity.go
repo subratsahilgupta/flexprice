@@ -291,6 +291,7 @@ func (s *subscriptionModificationService) buildQuantityChangeRequest(
 	params *dto.SubModifyQuantityChangeRequest,
 ) (*quantityChangeRequest, error) {
 	sp := s.serviceParams
+	subSvc := NewSubscriptionService(sp).(*subscriptionService)
 
 	if params == nil {
 		return nil, ierr.NewError("quantity_change_params is required").
@@ -368,6 +369,12 @@ func (s *subscriptionModificationService) buildQuantityChangeRequest(
 				WithHint("Quantity changes are only supported for fixed-price line items").
 				WithReportableDetails(map[string]interface{}{"line_item_id": change.ID, "price_type": lineItem.PriceType}).
 				Mark(ierr.ErrValidation)
+		}
+
+		if successor, err := subSvc.findPublishedSuccessor(ctx, lineItem); err != nil {
+			return nil, err
+		} else if successor != nil {
+			return nil, alreadyScheduledVersionError(change.ID, successor.ID)
 		}
 
 		if err := validateChangeEffectiveDateWithinLineItemWindow(effectiveDate, sub, lineItem, change.ID); err != nil {
@@ -589,6 +596,7 @@ func (s *subscriptionModificationService) applyQuantityChange(
 	}
 
 	sp := s.serviceParams
+	subSvc := NewSubscriptionService(sp).(*subscriptionService)
 	mods := request.GetModifications()
 	if len(mods) == 0 {
 		return []dto.ChangedLineItem{}, nil
@@ -606,7 +614,7 @@ func (s *subscriptionModificationService) applyQuantityChange(
 			effectiveDate := mod.getEffectiveDate()
 			lineItemID := mod.getLineItemID()
 
-			lineItem, err := sp.SubscriptionLineItemRepo.Get(txCtx, lineItemID)
+			lineItem, err := sp.SubscriptionLineItemRepo.GetForUpdate(txCtx, lineItemID)
 			if err != nil {
 				return err
 			}
@@ -627,6 +635,12 @@ func (s *subscriptionModificationService) applyQuantityChange(
 						"effective_date": effectiveDate,
 					}).
 					Mark(ierr.ErrValidation)
+			}
+
+			if successor, err := subSvc.findPublishedSuccessor(txCtx, lineItem); err != nil {
+				return err
+			} else if successor != nil {
+				return alreadyScheduledVersionError(lineItemID, successor.ID)
 			}
 
 			// Preserve a finite original window on the replacement; open-ended stays open-ended.
@@ -652,8 +666,18 @@ func (s *subscriptionModificationService) applyQuantityChange(
 				WithEndDate(newItemEndDate).
 				WithBaseModel(types.GetDefaultBaseModel(txCtx)).
 				Build()
+			newItem.PredecessorLineItemID = lo.ToPtr(lineItemID)
+			newItem.SuccessorLineItemID = nil
+			clearLineItemMetadataIDs(newItem, lineageMetadataKeys...)
 			if err := sp.SubscriptionLineItemRepo.Create(txCtx, newItem); err != nil {
 				return err
+			}
+
+			endedItem.SuccessorLineItemID = lo.ToPtr(newItem.ID)
+			if err := sp.SubscriptionLineItemRepo.Update(txCtx, endedItem); err != nil {
+				return ierr.WithError(err).
+					WithHint("Failed to link the superseded line item to its successor").
+					Mark(ierr.ErrDatabase)
 			}
 
 			oldStart := endedItem.StartDate
