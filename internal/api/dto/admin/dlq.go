@@ -71,7 +71,7 @@ type ReplayDLQRun struct {
 	Status     ReplayStatus       `json:"status"`
 	Attempt    int32              `json:"attempt,omitempty"`
 	LastError  string             `json:"last_error,omitempty"`
-	StartedAt  time.Time          `json:"started_at,omitempty"`
+	StartedAt  *time.Time         `json:"started_at,omitempty"`
 	ClosedAt   *time.Time         `json:"closed_at,omitempty"`
 	Summary    *ReplayDLQResponse `json:"summary,omitempty"`
 }

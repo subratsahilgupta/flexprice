@@ -34,7 +34,10 @@ func ReplayDLQWorkflow(ctx workflow.Context, input models.ReplayDLQWorkflowInput
 		maxAttempts = 1
 	}
 	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: time.Minute * 30,
+		// The activity heartbeats, so a long drain is bounded by StartToCloseTimeout while
+		// a dead worker is noticed after HeartbeatTimeout.
+		StartToCloseTimeout: time.Hour * 2,
+		HeartbeatTimeout:    time.Minute,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second * 10,
 			BackoffCoefficient: 2.0,

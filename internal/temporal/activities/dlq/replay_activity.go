@@ -2,6 +2,7 @@ package dlq
 
 import (
 	"context"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -28,6 +29,24 @@ func (a *ReplayDLQActivities) ReplayDLQ(ctx context.Context, input models.Replay
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
+
+	// Heartbeat so a dead worker is detected within HeartbeatTimeout instead of StartToCloseTimeout.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				activity.RecordHeartbeat(ctx)
+			}
+		}
+	}()
 
 	summary, err := a.dlqReplayService.ReplayDLQ(ctx, dlqengine.Options{
 		SourceTopic:    input.SourceTopic,

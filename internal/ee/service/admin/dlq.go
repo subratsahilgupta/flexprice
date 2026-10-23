@@ -43,7 +43,7 @@ type replayRunState struct {
 	activityStarted bool
 	attempt         int32
 	lastFailure     string
-	startedAt       time.Time
+	startedAt       *time.Time
 	closedAt        *time.Time
 }
 
@@ -180,9 +180,12 @@ func (r *temporalReplayRuns) describe(ctx context.Context, workflowID, runID str
 	}
 	info := resp.GetWorkflowExecutionInfo()
 	state := &replayRunState{
-		runID:     info.GetExecution().GetRunId(),
-		status:    info.GetStatus(),
-		startedAt: info.GetStartTime().AsTime(),
+		runID:  info.GetExecution().GetRunId(),
+		status: info.GetStatus(),
+	}
+	if info.GetStartTime() != nil {
+		started := info.GetStartTime().AsTime()
+		state.startedAt = &started
 	}
 	if info.GetCloseTime() != nil {
 		closed := info.GetCloseTime().AsTime()
