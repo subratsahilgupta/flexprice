@@ -1460,6 +1460,9 @@ func NewValidatedConfig() (*Configuration, error) {
 
 // validateCriticalSecrets rejects secrets that sign tokens or grant access.
 func (c Configuration) validateCriticalSecrets() error {
+	if os.Getenv("FLEXPRICE_ALLOW_INSECURE_DEFAULTS") == "true" {
+		return nil
+	}
 	if placeholderSecrets[strings.TrimSpace(c.Auth.Secret)] {
 		return fmt.Errorf("auth.secret (FLEXPRICE_AUTH_SECRET) is empty or a placeholder (mode %q)", c.Deployment.Mode)
 	}

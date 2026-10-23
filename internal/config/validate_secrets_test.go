@@ -128,6 +128,22 @@ func TestNewValidatedConfigLocalAllowsDefaults(t *testing.T) {
 	}
 }
 
+func TestValidateCriticalSecretsInsecureOptOut(t *testing.T) {
+	c := Configuration{}
+	c.Deployment.Mode = types.ModeAPI
+	c.Auth.Secret = "super_secret"
+	c.Auth.APIKey.Keys = map[string]APIKeyDetails{devAPIKeyHash: {IsActive: true}}
+
+	t.Setenv("FLEXPRICE_ALLOW_INSECURE_DEFAULTS", "")
+	if err := c.validateCriticalSecrets(); err == nil {
+		t.Fatal("defaults without opt-out must fail")
+	}
+	t.Setenv("FLEXPRICE_ALLOW_INSECURE_DEFAULTS", "true")
+	if err := c.validateCriticalSecrets(); err != nil {
+		t.Fatalf("opt-out must allow defaults: %v", err)
+	}
+}
+
 func TestNewValidatedConfigNonLocalRejectsDefaults(t *testing.T) {
 	t.Setenv("FLEXPRICE_DEPLOYMENT_MODE", "api")
 	t.Setenv("FLEXPRICE_AUTH_SECRET", "")
