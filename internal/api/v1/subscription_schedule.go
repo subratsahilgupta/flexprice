@@ -37,7 +37,7 @@ func (h *SubscriptionScheduleHandler) GetSchedule(c *gin.Context) {
 
 	schedule, err := h.scheduleService.Get(c.Request.Context(), scheduleID)
 	if err != nil {
-		c.Error(ierr.WithError(err).WithHint("Schedule not found").Mark(ierr.ErrNotFound))
+		c.Error(err)
 		return
 	}
 
