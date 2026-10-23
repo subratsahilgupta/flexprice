@@ -1442,6 +1442,9 @@ func NewValidatedConfig() (*Configuration, error) {
 	// customer uploads to their identity provider contains unusable endpoints,
 	// and the failure surfaces much later as an audience mismatch on every
 	// assertion, pointing at signatures rather than at configuration.
+	if err := cfg.validateEncryptionKey(); err != nil {
+		return nil, err
+	}
 	if err := cfg.Auth.SAML.validate(); err != nil {
 		return nil, err
 	}
@@ -1480,14 +1483,21 @@ func (c Configuration) validateSecrets() error {
 	if strings.TrimSpace(c.ClickHouse.Password) == devDBPassword {
 		bad = append(bad, "clickhouse.password (FLEXPRICE_CLICKHOUSE_PASSWORD)")
 	}
-	// NOTE: secrets.encryption_key is intentionally NOT checked. ECS prod currently decrypts
-	// with the baked value (canonical env FLEXPRICE_SECRETS_ENCRYPTION_KEY is unset there; ECS
-	// sets a different, unread name). Rejecting it would block prod boot and switching keys
-	// would corrupt stored ciphertext. Reconcile separately before adding it. See config.yaml.
-
 	if len(bad) > 0 {
 		return fmt.Errorf("placeholder/dev secrets detected for enabled features (mode %q): %s — inject real values via FLEXPRICE_* env",
 			c.Deployment.Mode, strings.Join(bad, ", "))
+	}
+	return nil
+}
+
+const defaultEncryptionKey = "super-secret-encryption-key"
+
+// validateEncryptionKey rejects an empty or shipped-default encryption key.
+func (c Configuration) validateEncryptionKey() error {
+	key := strings.TrimSpace(c.Secrets.EncryptionKey)
+	if key == "" || key == defaultEncryptionKey {
+		return fmt.Errorf("secrets.encryption_key is empty or the shipped default (mode %q): set FLEXPRICE_SECRETS_ENCRYPTION_KEY",
+			c.Deployment.Mode)
 	}
 	return nil
 }

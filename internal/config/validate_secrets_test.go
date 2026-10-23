@@ -8,8 +8,7 @@ import (
 )
 
 // TestValidateSecrets covers the fail-fast placeholder-secret check: it must reject baked
-// dev/sample secrets for ENABLED features, ignore them for disabled features, and never flag
-// secrets.encryption_key (deliberately excluded pending key reconciliation).
+// dev/sample secrets for ENABLED features and ignore them for disabled features.
 func TestValidateSecrets(t *testing.T) {
 	// base is an otherwise-valid non-local config with real secrets. Individual cases mutate
 	// one field to assert it is (or isn't) rejected.
@@ -20,7 +19,6 @@ func TestValidateSecrets(t *testing.T) {
 		c.Auth.Secret = "a-real-32-byte-production-secret-value"
 		c.Postgres.Password = "a-real-db-password"
 		c.ClickHouse.Password = "a-real-ch-password"
-		// baked encryption key present — must NOT be flagged.
 		c.Secrets.EncryptionKey = "031f6bbed1156eca651d48652c17a5bce727514cc804f185aca207153b2915abb79c0f1b53945915866dc3b63f37ea73aa86fc062f13e6008249e30819f87483"
 		return c
 	}
@@ -70,6 +68,53 @@ func TestValidateSecrets(t *testing.T) {
 			}
 			if tc.wantErr && tc.wantSubstr != "" && !strings.Contains(err.Error(), tc.wantSubstr) {
 				t.Errorf("error %q does not mention %q", err.Error(), tc.wantSubstr)
+			}
+		})
+	}
+}
+
+func TestValidateEncryptionKey(t *testing.T) {
+	tests := []struct {
+		name    string
+		key     string
+		wantErr bool
+	}{
+		{"default key", "super-secret-encryption-key", true},
+		{"empty key", "", true},
+		{"whitespace key", "  ", true},
+		{"custom key", "a-real-production-encryption-key", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := Configuration{}
+			c.Deployment.Mode = types.ModeAPI
+			c.Secrets.EncryptionKey = tt.key
+			if err := c.validateEncryptionKey(); (err != nil) != tt.wantErr {
+				t.Fatalf("err=%v wantErr=%v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestNewValidatedConfigEncryptionKey(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    string
+		key     string
+		wantErr bool
+	}{
+		{"local default ok", string(types.ModeLocal), "super-secret-encryption-key", false},
+		{"api default fails", string(types.ModeAPI), "super-secret-encryption-key", true},
+		{"api empty fails", string(types.ModeAPI), "", true},
+		{"api custom ok", string(types.ModeAPI), "a-real-production-encryption-key", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("FLEXPRICE_DEPLOYMENT_MODE", tt.mode)
+			t.Setenv("FLEXPRICE_SECRETS_ENCRYPTION_KEY", tt.key)
+			_, err := NewValidatedConfig()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err=%v wantErr=%v", err, tt.wantErr)
 			}
 		})
 	}
