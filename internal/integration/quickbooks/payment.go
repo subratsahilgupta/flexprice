@@ -119,11 +119,17 @@ func (s *PaymentService) HandleExternalPaymentFromWebhook(ctx context.Context, q
 		"payment_amount", paymentAmount)
 
 	// Create external payment record
-	err = s.createExternalPaymentRecord(ctx, qbPayment, qbInvoiceID, invoiceMapping.ID, flexpriceInvoiceID, paymentService, invoiceService)
+	applied, err := s.createExternalPaymentRecord(ctx, qbPayment, qbInvoiceID, invoiceMapping.ID, flexpriceInvoiceID, paymentService, invoiceService)
 	if err != nil {
 		s.logger.Error(ctx, "failed to create external payment record",
 			"error", err,
 			"quickbooks_payment_id", qbPaymentID)
+		return nil
+	}
+	if !applied {
+		s.logger.Info(ctx, "QuickBooks payment already applied, skipping",
+			"quickbooks_payment_id", qbPaymentID,
+			"flexprice_invoice_id", flexpriceInvoiceID)
 		return nil
 	}
 
@@ -147,17 +153,20 @@ func (s *PaymentService) HandleExternalPaymentFromWebhook(ctx context.Context, q
 	return nil
 }
 
-// createExternalPaymentRecord creates a payment record in Flexprice for external QuickBooks payment
-func (s *PaymentService) createExternalPaymentRecord(ctx context.Context, qbPayment *PaymentResponse, qbInvoiceID, entityMappingID, invoiceID string, paymentService interfaces.PaymentService, invoiceService interfaces.InvoiceService) error {
-	// Check if payment already exists (idempotency) - use filter approach
+// createExternalPaymentRecord records the QuickBooks payment as succeeded.
+// It returns true only for the caller that made the pending-to-succeeded
+// transition, so the invoice is reconciled exactly once.
+func (s *PaymentService) createExternalPaymentRecord(ctx context.Context, qbPayment *PaymentResponse, qbInvoiceID, entityMappingID, invoiceID string, paymentService interfaces.PaymentService, invoiceService interfaces.InvoiceService) (bool, error) {
+	// Rows from before the idempotency key carry only the gateway payment ID.
 	filter := types.NewNoLimitPaymentFilter()
 	filter.GatewayPaymentID = &qbPayment.ID
 	listResp, err := paymentService.ListPayments(ctx, filter)
-	if err == nil && listResp != nil && len(listResp.Items) > 0 {
-		s.logger.Info(ctx, "payment already exists, skipping creation",
-			"payment_id", listResp.Items[0].ID,
-			"quickbooks_payment_id", qbPayment.ID)
-		return nil
+	if err == nil && listResp != nil {
+		for _, existing := range listResp.Items {
+			if existing.PaymentStatus == types.PaymentStatusSucceeded {
+				return false, nil
+			}
+		}
 	}
 
 	// Extract actual payment amount from payment lines
@@ -174,7 +183,7 @@ func (s *PaymentService) createExternalPaymentRecord(ctx context.Context, qbPaym
 		s.logger.Error(ctx, "failed to get invoice for payment creation",
 			"error", err,
 			"invoice_id", invoiceID)
-		return err
+		return false, err
 	}
 
 	s.logger.Info(ctx, "creating external payment record for QuickBooks payment",
@@ -195,6 +204,7 @@ func (s *PaymentService) createExternalPaymentRecord(ctx context.Context, qbPaym
 		Currency:          invoiceResp.Currency,
 		PaymentMethodType: methodType,
 		ProcessPayment:    false, // Don't process - already succeeded in QuickBooks
+		IdempotencyKey:    "quickbooks_payment_" + qbPayment.ID,
 		Metadata: types.Metadata{
 			"payment_source":          "quickbooks_external",
 			"quickbooks_payment_id":   qbPayment.ID,
@@ -221,7 +231,11 @@ func (s *PaymentService) createExternalPaymentRecord(ctx context.Context, qbPaym
 			"error", err,
 			"quickbooks_payment_id", qbPayment.ID,
 			"invoice_id", invoiceID)
-		return err
+		return false, err
+	}
+
+	if paymentResp.PaymentStatus == types.PaymentStatusSucceeded {
+		return false, nil
 	}
 
 	// Update payment to succeeded status with QuickBooks details
@@ -235,11 +249,15 @@ func (s *PaymentService) createExternalPaymentRecord(ctx context.Context, qbPaym
 
 	_, err = paymentService.UpdatePayment(ctx, paymentResp.ID, updateReq)
 	if err != nil {
+		// A concurrent delivery may have made the transition first.
+		if current, getErr := paymentService.GetPayment(ctx, paymentResp.ID); getErr == nil && current.PaymentStatus == types.PaymentStatusSucceeded {
+			return false, nil
+		}
 		s.logger.Error(ctx, "failed to update external payment status",
 			"error", err,
 			"payment_id", paymentResp.ID,
 			"quickbooks_payment_id", qbPayment.ID)
-		return err
+		return false, err
 	}
 
 	s.logger.Info(ctx, "successfully created external payment record",
@@ -248,7 +266,7 @@ func (s *PaymentService) createExternalPaymentRecord(ctx context.Context, qbPaym
 		"invoice_id", invoiceID,
 		"amount", amount)
 
-	return nil
+	return true, nil
 }
 
 // reconcileInvoiceWithExternalPayment reconciles an invoice with an external QuickBooks payment
