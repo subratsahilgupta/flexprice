@@ -41,9 +41,11 @@ func TestPriceGetByGroupIDs_ScopedToTenantAndEnvironment(t *testing.T) {
 			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
 			EntityID:           "plan_" + types.GenerateUUID(),
 			GroupID:            groupID,
+			TransformQuantity:  domainPrice.JSONBTransformQuantity{DivideBy: 1},
 			EnvironmentID:      types.GetEnvironmentID(ctx),
 			BaseModel:          types.GetDefaultBaseModel(ctx),
 		}
+		p.DisplayAmount = p.GetDisplayAmount()
 		p.Status = types.StatusPublished
 		require.NoError(t, repo.Create(ctx, p))
 		return p
