@@ -5168,7 +5168,7 @@ func (s *MeterUsageServiceSuite) TestConvertToBillingCharges_NilMeter() {
 	s.True(totalCost.Equal(decimal.NewFromFloat(0.10)), "expected 10 * $0.01, got %s", totalCost)
 }
 
-func (s *MeterUsageServiceSuite) TestQuantityPropertyKeys() {
+func (s *MeterUsageServiceSuite) TestAggregationPropertyKeys() {
 	ctx := s.GetContext()
 	meters := []*meter.Meter{
 		{ID: "meter_tokens", EventName: "llm", Aggregation: meter.Aggregation{Type: types.AggregationSum, Field: "tokens"}},
@@ -5182,7 +5182,7 @@ func (s *MeterUsageServiceSuite) TestQuantityPropertyKeys() {
 		s.NoError(s.GetStores().MeterRepo.CreateMeter(ctx, m))
 	}
 
-	keys, err := quantityPropertyKeys(ctx, s.GetStores().MeterRepo, []string{"meter_users"})
+	keys, err := aggregationPropertyKeys(ctx, s.GetStores().MeterRepo, []string{"meter_users"})
 	s.NoError(err)
 	s.ElementsMatch([]string{"tokens", "input_tokens", "output_tokens"}, lo.Keys(keys))
 }
@@ -5211,7 +5211,7 @@ func (s *MeterUsageServiceSuite) TestGetGroupablePropertyKeys() {
 		featureIDs []string
 		want       []string
 	}{
-		{name: "meters with usage, quantity and unusable keys dropped", want: []string{"region", "model", "zone"}},
+		{name: "meters with usage, aggregation and unusable keys dropped", want: []string{"region", "model", "zone"}},
 		{name: "scoped to feature", featureIDs: []string{"feat_other"}, want: []string{"zone"}},
 		{name: "unknown feature", featureIDs: []string{"feat_missing"}, want: []string{}},
 	}
@@ -5282,7 +5282,7 @@ func (s *MeterUsageServiceSuite) TestGetPropertyValues() {
 }
 
 func TestVisiblePropertyKey(t *testing.T) {
-	quantityKeys := map[string]struct{}{"tokens": {}}
+	aggregationKeys := map[string]struct{}{"tokens": {}}
 	tests := []struct {
 		name string
 		key  string
@@ -5292,8 +5292,8 @@ func TestVisiblePropertyKey(t *testing.T) {
 		{name: "no config", key: "region", want: false},
 		{name: "disabled", key: "region", cfg: &types.CustomerPortalUsageProperties{}, want: false},
 		{name: "enabled", key: "region", cfg: &types.CustomerPortalUsageProperties{Enabled: true}, want: true},
-		{name: "quantity key", key: "tokens", cfg: &types.CustomerPortalUsageProperties{Enabled: true}, want: false},
-		{name: "quantity key even if allowed", key: "tokens", cfg: &types.CustomerPortalUsageProperties{Enabled: true, AllowedKeys: []string{"tokens"}}, want: false},
+		{name: "aggregation key", key: "tokens", cfg: &types.CustomerPortalUsageProperties{Enabled: true}, want: false},
+		{name: "aggregation key even if allowed", key: "tokens", cfg: &types.CustomerPortalUsageProperties{Enabled: true, AllowedKeys: []string{"tokens"}}, want: false},
 		{name: "hidden", key: "region", cfg: &types.CustomerPortalUsageProperties{Enabled: true, HiddenKeys: []string{"region"}}, want: false},
 		{name: "not in allowed", key: "region", cfg: &types.CustomerPortalUsageProperties{Enabled: true, AllowedKeys: []string{"model"}}, want: false},
 		{name: "in allowed", key: "model", cfg: &types.CustomerPortalUsageProperties{Enabled: true, AllowedKeys: []string{"model"}}, want: true},
@@ -5301,7 +5301,7 @@ func TestVisiblePropertyKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := visiblePropertyKey(tt.key, tt.cfg, quantityKeys); got != tt.want {
+			if got := visiblePropertyKey(tt.key, tt.cfg, aggregationKeys); got != tt.want {
 				t.Errorf("visiblePropertyKey(%q) = %v, want %v", tt.key, got, tt.want)
 			}
 		})

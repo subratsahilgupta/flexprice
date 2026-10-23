@@ -390,7 +390,7 @@ func (s *customerPortalService) GetPropertyValues(ctx context.Context, req dto.P
 		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
 	}
 
-	// Same checks as grouping and filtering, quantity keys included.
+	// Same checks as grouping and filtering, aggregation keys included.
 	if err := s.validatePropertyKeys(ctx, dto.PortalAnalyticsRequest{
 		FeatureIDs:      req.FeatureIDs,
 		StartTime:       req.StartTime,
@@ -559,16 +559,17 @@ func (s *customerPortalService) validatePropertyKeys(ctx context.Context, req dt
 	if lookup.StartTime.IsZero() {
 		lookup.StartTime = lookup.EndTime.Add(-6 * time.Hour)
 	}
-	if err := resolvePropertyLookupMeters(ctx, s.ServiceParams, lookup); err != nil {
+	meterIDs, err := resolvePropertyLookupMeters(ctx, s.ServiceParams, lookup)
+	if err != nil {
 		return err
 	}
 
-	quantityKeys, err := quantityPropertyKeys(ctx, s.MeterRepo, lookup.MeterIDs)
+	aggregationKeys, err := aggregationPropertyKeys(ctx, s.MeterRepo, meterIDs)
 	if err != nil {
 		return err
 	}
 	for _, key := range keys {
-		if !visiblePropertyKey(key, props, quantityKeys) {
+		if !visiblePropertyKey(key, props, aggregationKeys) {
 			return ierr.NewError("property key is not available").
 				WithHintf("property key %q is not available", key).
 				Mark(ierr.ErrValidation)
@@ -590,8 +591,8 @@ func (s *customerPortalService) usageProperties(ctx context.Context) (*types.Cus
 }
 
 // visiblePropertyKey reports whether portal users may group or filter by the property key.
-func visiblePropertyKey(key string, cfg *types.CustomerPortalUsageProperties, quantityKeys map[string]struct{}) bool {
-	if _, ok := quantityKeys[key]; ok {
+func visiblePropertyKey(key string, cfg *types.CustomerPortalUsageProperties, aggregationKeys map[string]struct{}) bool {
+	if _, ok := aggregationKeys[key]; ok {
 		return false
 	}
 
