@@ -3,6 +3,7 @@ package tracing
 import (
 	"context"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/config"
@@ -449,8 +450,9 @@ func TestDBDurationViewTrimsBucketsAndMinMax(t *testing.T) {
 	}
 	hist := rm.ScopeMetrics[0].Metrics[0].Data.(metricdata.Histogram[float64])
 	dp := hist.DataPoints[0]
-	if len(dp.Bounds) != len(dbDurationBoundsMs) {
-		t.Fatalf("bounds = %v, want %v", dp.Bounds, dbDurationBoundsMs)
+	want := []float64{1, 5, 10, 25, 50, 100, 250, 1000, 5000}
+	if !slices.Equal(dp.Bounds, want) {
+		t.Fatalf("bounds = %v, want %v", dp.Bounds, want)
 	}
 	if _, ok := dp.Min.Value(); ok {
 		t.Error("min should not be recorded")

@@ -396,14 +396,11 @@ func dropView(match sdkmetric.Instrument) sdkmetric.Option {
 	return sdkmetric.WithView(sdkmetric.NewView(match, sdkmetric.Stream{Aggregation: sdkmetric.AggregationDrop{}}))
 }
 
-// Billed per bucket sample; 16 defaults were overkill.
-var dbDurationBoundsMs = []float64{1, 5, 10, 25, 50, 100, 250, 1000, 5000}
-
 func dbDurationView() sdkmetric.Option {
 	return sdkmetric.WithView(sdkmetric.NewView(
 		sdkmetric.Instrument{Name: "db.client.duration", Scope: instrumentation.Scope{Name: tracerName}},
 		sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
-			Boundaries: dbDurationBoundsMs,
+			Boundaries: []float64{1, 5, 10, 25, 50, 100, 250, 1000, 5000},
 			NoMinMax:   true,
 		}},
 	))
