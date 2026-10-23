@@ -175,7 +175,9 @@ func (h *SubscriptionScheduleHandler) ListSchedules(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindQuery(filter); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid query parameters").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
