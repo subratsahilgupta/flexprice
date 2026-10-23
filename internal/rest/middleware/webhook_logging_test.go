@@ -111,6 +111,22 @@ func TestWebhookLoggingMiddleware_Redaction(t *testing.T) {
 			wantRaw: `{"data":{"source":{"last4":"4242","payment_token":"[redacted]"}}}`,
 		},
 		{
+			name:    "moyasar card fields",
+			body:    `{"data":{"number":"INV-1","source":{"type":"creditcard","number":"4111111111111111","cvc":"123","expiry_month":"12","last4":"4242"}}}`,
+			wantRaw: `{"data":{"number":"INV-1","source":{"cvc":"[redacted]","expiry_month":"[redacted]","last4":"4242","number":"[redacted]","type":"creditcard"}}}`,
+		},
+		{
+			name:    "embedded json string",
+			body:    `{"payload":"{\"password\":\"x\",\"ok\":1}","list":"[{\"token\":\"t\"}]","note":"{not json"}`,
+			wantRaw: `{"list":"[{\"token\":\"[redacted]\"}]","note":"{not json","payload":"{\"ok\":1,\"password\":\"[redacted]\"}"}`,
+		},
+		{
+			name:    "encoded body placeholder",
+			headers: map[string]string{"Content-Encoding": "gzip", "Content-Type": "application/json"},
+			body:    "\x1f\x8b\x08binary",
+			wantRaw: "[redacted: encoded body]",
+		},
+		{
 			name:    "plain text passes through",
 			headers: map[string]string{"Content-Type": "text/plain"},
 			body:    "token=leak",

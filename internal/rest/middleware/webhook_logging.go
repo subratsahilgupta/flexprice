@@ -53,7 +53,7 @@ func WebhookLoggingMiddleware(
 			Path:          c.Request.URL.Path,
 			RequestID:     requestID,
 			Headers:       headers,
-			Body:          redactWebhookBody(peek, c.GetHeader("Content-Type")),
+			Body:          redactWebhookBody(peek, c.GetHeader("Content-Type"), c.GetHeader("Content-Encoding")),
 		}
 		if err := repo.Create(c.Request.Context(), req); err != nil {
 			log.Error(c.Request.Context(), "failed to persist webhook event",
@@ -92,8 +92,31 @@ func isSensitiveKey(name string) bool {
 	return false
 }
 
+const encodedBody = "[redacted: encoded body]"
+
+// isCardKey matches card fields; number/exp need a card parent.
+func isCardKey(key, parent string) bool {
+	key = strings.ToLower(key)
+	for _, part := range []string{"cvc", "cvv", "card_number"} {
+		if strings.Contains(key, part) {
+			return true
+		}
+	}
+	if key == "pan" {
+		return true
+	}
+	parent = strings.ToLower(parent)
+	if parent != "source" && parent != "card" {
+		return false
+	}
+	return key == "number" || strings.HasPrefix(key, "exp")
+}
+
 // redactWebhookBody returns a copy safe to store; other bodies pass through.
-func redactWebhookBody(body []byte, contentType string) string {
+func redactWebhookBody(body []byte, contentType, contentEncoding string) string {
+	if enc := strings.TrimSpace(contentEncoding); enc != "" && !strings.EqualFold(enc, "identity") {
+		return encodedBody
+	}
 	mediaType, _, _ := mime.ParseMediaType(contentType)
 	trimmed := bytes.TrimSpace(body)
 	if len(trimmed) == 0 {
@@ -111,7 +134,7 @@ func redactWebhookBody(body []byte, contentType string) string {
 			return unparseableBody
 		}
 		for k := range form {
-			if isSensitiveKey(k) {
+			if isSensitiveKey(k) || isCardKey(k, "") {
 				form[k] = []string{redactedValue}
 			}
 		}
@@ -127,27 +150,42 @@ func redactWebhookBody(body []byte, contentType string) string {
 	if _, err := dec.Token(); err != io.EOF {
 		return unparseableBody
 	}
-	redactJSON(doc)
-	out, err := json.Marshal(doc)
+	out, err := json.Marshal(redactJSON(doc, ""))
 	if err != nil {
 		return unparseableBody
 	}
 	return string(out)
 }
 
-func redactJSON(v any) {
+// redactJSON returns v with sensitive values replaced, including embedded JSON strings.
+func redactJSON(v any, parentKey string) any {
 	switch t := v.(type) {
 	case map[string]any:
 		for k, child := range t {
-			if isSensitiveKey(k) {
+			if isSensitiveKey(k) || isCardKey(k, parentKey) {
 				t[k] = redactedValue
 				continue
 			}
-			redactJSON(child)
+			t[k] = redactJSON(child, k)
 		}
 	case []any:
-		for _, child := range t {
-			redactJSON(child)
+		for i, child := range t {
+			t[i] = redactJSON(child, parentKey)
 		}
+	case string:
+		trimmed := strings.TrimSpace(t)
+		if trimmed == "" || (trimmed[0] != '{' && trimmed[0] != '[') {
+			return t
+		}
+		var inner any
+		if err := json.Unmarshal([]byte(trimmed), &inner); err != nil {
+			return t
+		}
+		out, err := json.Marshal(redactJSON(inner, parentKey))
+		if err != nil {
+			return redactedValue
+		}
+		return string(out)
 	}
+	return v
 }
