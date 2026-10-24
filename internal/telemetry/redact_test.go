@@ -7,10 +7,11 @@ import (
 
 func TestRedactEventPayload(t *testing.T) {
 	tests := []struct {
-		name    string
-		in      string
-		wantKey []string // keys that must survive
-		noKey   []string // keys that must be gone, anywhere in the tree
+		name      string
+		in        string
+		wantKey   []string // keys that must survive
+		noKey     []string // keys that must be gone, anywhere in the tree
+		wantExact string   // if set, output must equal this exactly (pass-through cases)
 	}{
 		{
 			name: "customer.created carries PII",
@@ -63,22 +64,28 @@ func TestRedactEventPayload(t *testing.T) {
 			noKey:   []string{"properties"},
 		},
 		{
-			name:    "non-object payload passes through unchanged",
-			in:      `"just a string"`,
-			wantKey: nil,
-			noKey:   nil,
+			name: "alert value_at_time stripped from nested alert_info",
+			in: `{
+				"wallet_id": "wallet_01", "alert_type": "low_balance",
+				"alert_info": {"value_at_time": "42.50", "timestamp": "2026-01-01T00:00:00Z"}
+			}`,
+			wantKey: []string{"wallet_id", "alert_type", "alert_info", "timestamp"},
+			noKey:   []string{"value_at_time"},
 		},
 		{
-			name:    "invalid json passes through unchanged",
-			in:      `{not valid json`,
-			wantKey: nil,
-			noKey:   nil,
+			name:      "non-object payload passes through unchanged",
+			in:        `"just a string"`,
+			wantExact: `"just a string"`,
 		},
 		{
-			name:    "empty payload passes through unchanged",
-			in:      ``,
-			wantKey: nil,
-			noKey:   nil,
+			name:      "invalid json passes through unchanged",
+			in:        `{not valid json`,
+			wantExact: `{not valid json`,
+		},
+		{
+			name:      "empty payload passes through unchanged",
+			in:        ``,
+			wantExact: ``,
 		},
 	}
 
@@ -86,6 +93,13 @@ func TestRedactEventPayload(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			out := redactEventPayload(json.RawMessage(tt.in))
 			outStr := string(out)
+
+			if tt.wantKey == nil && tt.noKey == nil {
+				if outStr != tt.wantExact {
+					t.Errorf("expected exact output %q, got %q", tt.wantExact, outStr)
+				}
+				return
+			}
 
 			for _, k := range tt.wantKey {
 				if !containsKey(outStr, k) {

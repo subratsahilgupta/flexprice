@@ -114,12 +114,10 @@ func (r *Reporter) ReportEvent(ctx context.Context, event *types.WebhookEvent) {
 		return
 	}
 
-	p := newSystemEventPayload(r, &systemEventInput{
-		TenantID:      types.GetTenantID(ctx),
-		EnvironmentID: types.GetEnvironmentID(ctx),
-		EventName:     string(event.EventName),
-		Payload:       redactEventPayload(event.Payload),
-	})
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+	eventName := string(event.EventName)
+	rawPayload := event.Payload
 
 	select {
 	case r.inflight <- struct{}{}:
@@ -129,6 +127,12 @@ func (r *Reporter) ReportEvent(ctx context.Context, event *types.WebhookEvent) {
 	}
 	go func() {
 		defer func() { <-r.inflight }()
+		p := newSystemEventPayload(r, &systemEventInput{
+			TenantID:      tenantID,
+			EnvironmentID: environmentID,
+			EventName:     eventName,
+			Payload:       redactEventPayload(rawPayload),
+		})
 		sendCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		r.send(sendCtx, EventSystemEvent, p)
