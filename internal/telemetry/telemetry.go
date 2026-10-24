@@ -103,8 +103,10 @@ func (r *Reporter) reportInstallInit(ctx context.Context) {
 }
 
 // ReportEvent fires a lightweight ping for a real system event consumed off
-// the webhook topic. Dispatches off the caller's goroutine so a stalled
-// collector never delays webhook delivery; capped by inflight so a
+// the webhook topic. event.Payload is redacted (see redact.go) before it's
+// sent, since webhook payloads can carry customer PII and financial data
+// depending on event type. Dispatches off the caller's goroutine so a
+// stalled collector never delays webhook delivery; capped by inflight so a
 // persistent stall can't pile up unbounded goroutines. Best-effort: a
 // dropped or failed send is fine, this is telemetry, not delivery.
 func (r *Reporter) ReportEvent(ctx context.Context, event *types.WebhookEvent) {
@@ -116,7 +118,7 @@ func (r *Reporter) ReportEvent(ctx context.Context, event *types.WebhookEvent) {
 		TenantID:      types.GetTenantID(ctx),
 		EnvironmentID: types.GetEnvironmentID(ctx),
 		EventName:     string(event.EventName),
-		Payload:       json.RawMessage(event.Payload),
+		Payload:       redactEventPayload(event.Payload),
 	})
 
 	select {
