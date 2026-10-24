@@ -78,14 +78,12 @@ func sortCommitmentStack(cs []*stackedCommitment) {
 	})
 }
 
-// allocate fills the stack as a waterfall: in each window every commitment is filled to capacity before the next.
-func allocate(stack *commitmentStack) (*allocation, error) {
-	windows := len(stack.Windows)
-
-	onDemand := make([][]decimal.Decimal, len(stack.Lines))
-	for i, line := range stack.Lines {
-		if len(line.Usage) != windows {
-			return nil, ierr.NewErrorf("usage line %d covers %d windows, stack has %d", i, len(line.Usage), windows).
+// validate checks allocate's input contract: every line's usage is window-aligned and sums to its
+// period total, and every commitment's pools and lines are consistent with the stack.
+func (s *commitmentStack) validate() error {
+	for i, line := range s.Lines {
+		if len(line.Usage) != len(s.Windows) {
+			return ierr.NewErrorf("usage line %d covers %d windows, stack has %d", i, len(line.Usage), len(s.Windows)).
 				Mark(ierr.ErrInternal)
 		}
 
@@ -95,15 +93,51 @@ func allocate(stack *commitmentStack) (*allocation, error) {
 		}
 
 		want := line.Quantity
-		if stack.Type == types.COMMITMENT_TYPE_AMOUNT {
+		if s.Type == types.COMMITMENT_TYPE_AMOUNT {
 			want = line.Cost
 		}
 
 		if !total.Equal(want) {
-			return nil, ierr.NewErrorf("usage line %d windows sum to %s, expected %s", i, total, want).
+			return ierr.NewErrorf("usage line %d windows sum to %s, expected %s", i, total, want).
+				Mark(ierr.ErrInternal)
+		}
+	}
+
+	for _, sc := range s.Commitments {
+		if len(sc.PoolOf) != len(s.Windows) {
+			return ierr.NewErrorf("commitment %s maps %d windows, stack has %d", sc.C.ID, len(sc.PoolOf), len(s.Windows)).
 				Mark(ierr.ErrInternal)
 		}
 
+		for _, p := range sc.PoolOf {
+			if p < -1 || p >= len(sc.Pools) {
+				return ierr.NewErrorf("commitment %s references pool %d of %d", sc.C.ID, p, len(sc.Pools)).
+					Mark(ierr.ErrInternal)
+			}
+		}
+
+		for _, line := range sc.Lines {
+			if !lo.Contains(s.Lines, line) {
+				return ierr.NewErrorf("commitment %s fills a line that is not in the stack", sc.C.ID).
+					Mark(ierr.ErrInternal)
+			}
+		}
+	}
+
+	return nil
+}
+
+// allocate fills the stack as a waterfall. For each window, commitments drain their pool across
+// their lines in order; each is filled to capacity before the next receives anything, and whatever
+// usage is left after the last one is on-demand.
+func allocate(stack *commitmentStack) (*allocation, error) {
+	if err := stack.validate(); err != nil {
+		return nil, err
+	}
+
+	// What each line still has per window; whatever the waterfall leaves is on-demand.
+	onDemand := make([][]decimal.Decimal, len(stack.Lines))
+	for i, line := range stack.Lines {
 		onDemand[i] = append([]decimal.Decimal(nil), line.Usage...)
 	}
 
@@ -115,18 +149,6 @@ func allocate(stack *commitmentStack) (*allocation, error) {
 	remaining := make([][]decimal.Decimal, len(stack.Commitments))
 	stackIndex := make([][]int, len(stack.Commitments))
 	for ci, sc := range stack.Commitments {
-		if len(sc.PoolOf) != windows {
-			return nil, ierr.NewErrorf("commitment %s maps %d windows, stack has %d", sc.C.ID, len(sc.PoolOf), windows).
-				Mark(ierr.ErrInternal)
-		}
-
-		for _, p := range sc.PoolOf {
-			if p < -1 || p >= len(sc.Pools) {
-				return nil, ierr.NewErrorf("commitment %s references pool %d of %d", sc.C.ID, p, len(sc.Pools)).
-					Mark(ierr.ErrInternal)
-			}
-		}
-
 		remaining[ci] = make([]decimal.Decimal, len(sc.Pools))
 		capacity := decimal.Zero
 		for pi, pool := range sc.Pools {
@@ -136,18 +158,7 @@ func allocate(stack *commitmentStack) (*allocation, error) {
 
 		stackIndex[ci] = make([]int, len(sc.Lines))
 		for li, line := range sc.Lines {
-			stackIndex[ci][li] = -1
-			for si, candidate := range stack.Lines {
-				if candidate == line {
-					stackIndex[ci][li] = si
-					break
-				}
-			}
-
-			if stackIndex[ci][li] < 0 {
-				return nil, ierr.NewErrorf("commitment %s fills a line that is not in the stack", sc.C.ID).
-					Mark(ierr.ErrInternal)
-			}
+			stackIndex[ci][li] = lo.IndexOf(stack.Lines, line)
 		}
 
 		out.Commitments[ci] = commitmentAllocation{
@@ -157,7 +168,7 @@ func allocate(stack *commitmentStack) (*allocation, error) {
 		}
 	}
 
-	for w := 0; w < windows; w++ {
+	for w := range stack.Windows {
 		for ci, sc := range stack.Commitments {
 			if sc.PoolOf[w] < 0 {
 				continue
