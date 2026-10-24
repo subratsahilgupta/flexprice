@@ -1,6 +1,9 @@
 package telemetry
 
-import "encoding/json"
+import (
+	"bytes"
+	"encoding/json"
+)
 
 // redactedFieldSet returns the keys removed from system_event payloads at every nesting depth.
 func redactedFieldSet() map[string]bool {
@@ -46,6 +49,7 @@ func redactedFieldSet() map[string]bool {
 		"gateway_refund_id":  true,
 		"hosted_invoice_url": true,
 		"properties":         true,
+		"error":              true,
 	}
 }
 
@@ -68,12 +72,15 @@ func redactPayload(v any, fields map[string]bool) {
 }
 
 // redactEventPayload returns raw with sensitive fields stripped at any depth.
+// Decodes with UseNumber so large integers aren't rounded through float64.
 func redactEventPayload(raw json.RawMessage) json.RawMessage {
 	if len(raw) == 0 {
 		return raw
 	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
 	var parsed any
-	if err := json.Unmarshal(raw, &parsed); err != nil {
+	if err := dec.Decode(&parsed); err != nil {
 		return raw
 	}
 	redactPayload(parsed, redactedFieldSet())

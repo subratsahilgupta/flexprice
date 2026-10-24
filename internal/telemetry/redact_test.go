@@ -64,6 +64,20 @@ func TestRedactEventPayload(t *testing.T) {
 			noKey:   []string{"properties"},
 		},
 		{
+			name: "invoice.sync.failed provider error stripped",
+			in: `{
+				"invoice_id": "inv_01", "tenant_id": "tenant_01",
+				"provider": "stripe", "error": "card ending in 4242 declined: insufficient_funds"
+			}`,
+			wantKey: []string{"invoice_id", "tenant_id", "provider"},
+			noKey:   []string{"error"},
+		},
+		{
+			name:      "large integers survive redaction without precision loss",
+			in:        `{"id": "evt_01", "sequence": 9007199254740993}`,
+			wantExact: `{"id":"evt_01","sequence":9007199254740993}`,
+		},
+		{
 			name: "alert value_at_time stripped from nested alert_info",
 			in: `{
 				"wallet_id": "wallet_01", "alert_type": "low_balance",
