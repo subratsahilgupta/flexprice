@@ -295,7 +295,11 @@ func newOtelLogProvider(ctx context.Context, cfg *config.Configuration, logsCfg 
 		semconv.ServiceName(cfg.Otel.ResolveServiceName(cfg)),
 	}
 	if cfg.Logging.Environment != "" {
-		resAttrs = append(resAttrs, semconv.DeploymentEnvironmentName(cfg.Logging.Environment))
+		resAttrs = append(resAttrs,
+			semconv.DeploymentEnvironmentName(cfg.Logging.Environment),
+			// SigNoz usage meter reads the legacy key.
+			attribute.String("deployment.environment", cfg.Logging.Environment),
+		)
 	}
 	if cfg.Logging.Region != "" {
 		resAttrs = append(resAttrs, semconv.CloudRegion(cfg.Logging.Region))
