@@ -5,11 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"sort"
-	"strings"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
@@ -396,6 +396,8 @@ func (s *ExportService) getExporter(entityType types.ScheduledTaskEntityType) Ex
 func customerFilterDigest(customerExternalIDs []string) string {
 	ids := lo.Uniq(customerExternalIDs)
 	sort.Strings(ids)
-	sum := sha256.Sum256([]byte(strings.Join(ids, "\n")))
+	// JSON, not a joined string: an ID may contain the separator.
+	encoded, _ := json.Marshal(ids)
+	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:6])
 }

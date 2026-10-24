@@ -28,7 +28,7 @@ type WalletLedgerCSV struct {
 	Type                       string `csv:"type"`
 	TransactionReason          string `csv:"transaction_reason"`
 	ExternalID                 string `csv:"external_id"`
-	CustomerName               string `csv:"name"`
+	CustomerName               string `csv:"customer_name"`
 	WalletID                   string `csv:"wallet_id"`
 	Currency                   string `csv:"currency"`
 	InvoiceID                  string `csv:"invoice_id"`
