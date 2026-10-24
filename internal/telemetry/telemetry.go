@@ -117,7 +117,7 @@ func (r *Reporter) ReportEvent(ctx context.Context, event *types.WebhookEvent) {
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	eventName := string(event.EventName)
-	rawPayload := event.Payload
+	rawPayload := append(json.RawMessage(nil), event.Payload...)
 
 	select {
 	case r.inflight <- struct{}{}:
