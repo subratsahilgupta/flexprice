@@ -28,12 +28,21 @@ func invalidf(format string, args ...any) error {
 		Mark(ierr.ErrValidation)
 }
 
-// loadCommitmentContext loads a subscription with its line items, prices and meters.
+// loadCommitmentContext loads a subscription with every line item it has had, and their prices and meters,
+// so a term reaching back before the current period still resolves its scope.
 func (s *commitmentService) loadCommitmentContext(
 	ctx context.Context,
 	subscriptionID string,
 ) (*commitmentContext, error) {
-	sub, items, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
+	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	lf := types.NewNoLimitSubscriptionLineItemFilter()
+	lf.SubscriptionIDs = []string{subscriptionID}
+	lf.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
+	items, err := s.SubscriptionLineItemRepo.List(ctx, lf)
 	if err != nil {
 		return nil, err
 	}
@@ -51,6 +60,7 @@ func (s *commitmentService) loadCommitmentContext(
 	if len(priceIDs) > 0 {
 		f := types.NewNoLimitPriceFilter()
 		f.PriceIDs = priceIDs
+		f.AllowExpiredPrices = true
 		prices, err := s.PriceRepo.List(ctx, f)
 		if err != nil {
 			return nil, err

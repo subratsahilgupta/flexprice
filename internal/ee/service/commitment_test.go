@@ -1021,15 +1021,16 @@ func (s *CommitmentServiceSuite) TestUpdate_ReadsUnderCommitmentLockInTx() {
 	var events []string
 	stores := s.GetStores()
 	params := ServiceParams{
-		Logger:         s.GetLogger(),
-		Config:         s.GetConfig(),
-		DB:             &recordingDB{IClient: s.GetDB(), events: &events},
-		CommitmentRepo: &recordingCommitmentRepo{Repository: stores.CommitmentRepo, events: &events},
-		SubRepo:        stores.SubscriptionRepo,
-		PriceRepo:      stores.PriceRepo,
-		MeterRepo:      stores.MeterRepo,
-		GroupRepo:      stores.GroupRepo,
-		SettingsRepo:   stores.SettingsRepo,
+		Logger:                   s.GetLogger(),
+		Config:                   s.GetConfig(),
+		DB:                       &recordingDB{IClient: s.GetDB(), events: &events},
+		CommitmentRepo:           &recordingCommitmentRepo{Repository: stores.CommitmentRepo, events: &events},
+		SubRepo:                  stores.SubscriptionRepo,
+		SubscriptionLineItemRepo: stores.SubscriptionLineItemRepo,
+		PriceRepo:                stores.PriceRepo,
+		MeterRepo:                stores.MeterRepo,
+		GroupRepo:                stores.GroupRepo,
+		SettingsRepo:             stores.SettingsRepo,
 	}
 
 	_, err = NewCommitmentService(params).Update(
@@ -1145,4 +1146,37 @@ func (s *CommitmentServiceSuite) TestCheckPriceAttach_RejectsSamePriorityOverlap
 
 	err = s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, s.fx.priceOtherMeterInGroup, s.fx.sub.StartDate, nil)
 	s.requireValidation(err, "same priority", cb.ID)
+}
+
+func (s *CommitmentServiceSuite) TestResponse_ResolvesWindowBucketAfterScopeLineEndsBeforeCurrentPeriod() {
+	ctx := s.GetContext()
+	req := validReq(s.fx.sub.ID, "")
+	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeGroup, EntityID: s.fx.groupAPIOnly.ID}
+	req.Measurement = types.CommitmentMeasurementWindow
+	created, err := s.svc.Create(ctx, req)
+	s.Require().NoError(err)
+
+	// The scope's only line is versioned on 1 Feb, then the subscription moves on to March.
+	feb := time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)
+	only, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, "subs_line_api_only")
+	s.Require().NoError(err)
+	successor := *only
+	successor.ID, successor.StartDate, successor.PredecessorLineItemID = "subs_line_api_only_v2", feb, lo.ToPtr(only.ID)
+	only.EndDate, only.SuccessorLineItemID = feb, lo.ToPtr(successor.ID)
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, only))
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &successor))
+
+	sub, err := s.GetStores().SubscriptionRepo.Get(ctx, s.fx.sub.ID)
+	s.Require().NoError(err)
+	sub.CurrentPeriodStart, sub.CurrentPeriodEnd = feb.AddDate(0, 1, 0), feb.AddDate(0, 2, 0)
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
+
+	svc := s.svc.(*commitmentService)
+	cc, err := svc.loadCommitmentContext(ctx, s.fx.sub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.WindowSizeMinute, bucketFor(created.Commitment, cc))
+
+	got, err := s.svc.Get(ctx, created.ID)
+	s.Require().NoError(err)
+	s.True(created.CommitmentValue.Equal(*got.CommitmentValue), "want %s, got %s", created.CommitmentValue, got.CommitmentValue)
 }
