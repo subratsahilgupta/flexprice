@@ -210,7 +210,6 @@ func (l *usageLine) displayName() string {
 	return l.Price.DisplayName
 }
 
-// lineRenderer carries the invoice context every rendered commitment line shares.
 type lineRenderer struct {
 	currency    string
 	periodStart time.Time
@@ -286,9 +285,8 @@ func (r lineRenderer) commitmentLines(
 	return append(rows, row)
 }
 
-// absorbDrift reconciles individually rounded rows with their rounded exact total: positive drift
-// goes to the largest row, negative drift is taken from the largest rows without driving any below
-// zero. It returns the rows' final sum.
+// absorbDrift reconciles individually rounded rows with their rounded exact total, never driving
+// a row below zero, and returns the rows' final sum.
 func (r lineRenderer) absorbDrift(rows []dto.CreateInvoiceLineItemRequest, usedValue decimal.Decimal) decimal.Decimal {
 	if len(rows) == 0 {
 		return decimal.Zero
@@ -331,7 +329,7 @@ func (r lineRenderer) absorbDrift(rows []dto.CreateInvoiceLineItemRequest, usedV
 }
 
 // onDemandLines prices one line's usage left after the whole stack was filled. On-demand belongs
-// to the stack, not to any one commitment (D36), so its rows carry no commitment id.
+// to the stack, not to any one commitment, so its rows carry no commitment id.
 func (r lineRenderer) onDemandLines(
 	stack *commitmentStack,
 	line *usageLine,

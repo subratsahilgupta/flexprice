@@ -744,7 +744,7 @@ func TestCommitmentInvoiceLinesFields(t *testing.T) {
 		require.Equal(t, "Description c1", g.Metadata[types.MetadataKeyDescription])
 	}
 
-	// On-demand belongs to the stack, not to any one commitment (D36).
+	// On-demand belongs to the stack, not to any one commitment.
 	require.Nil(t, onDemand.CommitmentID)
 	require.NotContains(t, onDemand.Metadata, types.MetadataKeyCommitmentID)
 	require.NotContains(t, onDemand.Metadata, types.MetadataKeyDescription)
