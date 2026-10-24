@@ -98,32 +98,36 @@ func commitmentCoversLine(c *commitment.Commitment, li *subscription.Subscriptio
 	return false
 }
 
-// planSyncSkipsPrice reports whether plan sync must leave p off sub because it would break an active
-// commitment. A violation is logged and skipped so one subscription never fails the whole sync.
-func planSyncSkipsPrice(
+// createSyncLineItem inserts a price-sync usage line item in the same transaction as the commitment attach
+// check, under the subscription's commitments lock. A violation is logged and the line skipped, so one
+// subscription never fails the whole sync; it reports whether the line was created.
+func createSyncLineItem(
 	ctx context.Context,
 	params ServiceParams,
 	sub *subscription.Subscription,
 	p *price.Price,
-	at time.Time,
-	until *time.Time,
+	li *subscription.SubscriptionLineItem,
 ) (bool, error) {
 	svc := &commitmentService{ServiceParams: params}
 	var commitmentID string
+	var checkErr error
 	err := params.DB.WithTx(ctx, func(txCtx context.Context) error {
-		var err error
-		commitmentID, err = svc.checkPriceAttach(txCtx, sub, p, at, until)
-		return err
+		commitmentID, checkErr = svc.checkPriceAttach(txCtx, sub, p, li.StartDate, lo.EmptyableToPtr(li.EndDate))
+		if checkErr != nil {
+			return checkErr
+		}
+
+		return params.SubscriptionLineItemRepo.Create(txCtx, li)
 	})
-	if err == nil {
+	if checkErr != nil && ierr.IsValidation(checkErr) {
+		params.Logger.Info(ctx, "price sync skipped a price that would break a commitment",
+			"subscription_id", sub.ID, "price_id", p.ID, "commitment_id", commitmentID, "reason", checkErr.Error())
 		return false, nil
 	}
 
-	if !ierr.IsValidation(err) {
+	if err != nil {
 		return false, err
 	}
 
-	params.Logger.Info(ctx, "plan sync skipped a price that would break a commitment",
-		"subscription_id", sub.ID, "price_id", p.ID, "commitment_id", commitmentID, "reason", err.Error())
 	return true, nil
 }

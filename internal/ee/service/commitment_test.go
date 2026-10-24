@@ -996,7 +996,9 @@ type recordingDB struct {
 
 func (d *recordingDB) WithTx(ctx context.Context, fn func(context.Context) error) error {
 	*d.events = append(*d.events, "tx")
-	return d.IClient.WithTx(ctx, fn)
+	err := d.IClient.WithTx(ctx, fn)
+	*d.events = append(*d.events, "tx_end")
+	return err
 }
 
 func (d *recordingDB) LockWithWait(ctx context.Context, req postgres.LockRequest) error {
@@ -1012,6 +1014,41 @@ type recordingCommitmentRepo struct {
 func (r *recordingCommitmentRepo) Get(ctx context.Context, id string) (*commitment.Commitment, error) {
 	*r.events = append(*r.events, "get")
 	return r.Repository.Get(ctx, id)
+}
+
+type recordingLineItemRepo struct {
+	subscription.LineItemRepository
+	events *[]string
+}
+
+func (r *recordingLineItemRepo) Create(ctx context.Context, li *subscription.SubscriptionLineItem) error {
+	*r.events = append(*r.events, "create:"+li.PriceID)
+	return r.LineItemRepository.Create(ctx, li)
+}
+
+func (r *recordingLineItemRepo) CreateBulk(ctx context.Context, items []*subscription.SubscriptionLineItem) error {
+	for _, li := range items {
+		*r.events = append(*r.events, "create_bulk:"+li.PriceID)
+	}
+	return r.LineItemRepository.CreateBulk(ctx, items)
+}
+
+// requireInsertUnderLock asserts the insert ran inside the transaction that took the commitments lock.
+func (s *CommitmentServiceSuite) requireInsertUnderLock(events []string, insert string) {
+	at := lo.IndexOf(events, insert)
+	s.Require().GreaterOrEqual(at, 0, "events %v", events)
+	lock := lo.LastIndexOf(events[:at], "lock:commitments:"+s.fx.sub.ID)
+	s.Require().GreaterOrEqual(lock, 0, "events %v", events)
+	depth := 0
+	for _, e := range events[lock:at] {
+		switch e {
+		case "tx":
+			depth++
+		case "tx_end":
+			depth--
+		}
+		s.Require().GreaterOrEqual(depth, 0, "lock released before %s: %v", insert, events)
+	}
 }
 
 func (s *CommitmentServiceSuite) TestUpdate_ReadsUnderCommitmentLockInTx() {

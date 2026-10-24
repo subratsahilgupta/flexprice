@@ -846,6 +846,11 @@ func (s *addonService) createAddonSyncLineItems(
 		return &dto.PriceResponse{Price: p}
 	})
 
+	commitmentsOn, err := NewCommitmentService(s.ServiceParams).IsEnabled(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+
 	var toCreate []*subscription.SubscriptionLineItem
 	for _, ref := range refs {
 		sub, ok := subMap[ref.SubscriptionID]
@@ -860,13 +865,26 @@ func (s *addonService) createAddonSyncLineItems(
 			if _, isOverridden := overridden[addonOverrideKey{subscriptionID: ref.SubscriptionID, rootPriceID: price.GetRootPriceID()}]; isOverridden {
 				continue
 			}
-			toCreate = append(toCreate, s.buildAddonSyncLineItem(ctx, sub, price, addonResp, ref.AssociationID, ref.EndDate))
+			lineItem := s.buildAddonSyncLineItem(ctx, sub, price, addonResp, ref.AssociationID, ref.EndDate)
+			if commitmentsOn && price.Type == types.PRICE_TYPE_USAGE {
+				found++
+				ok, err := createSyncLineItem(ctx, s.ServiceParams, sub, price, lineItem)
+				if err != nil {
+					return found, created, err
+				}
+
+				if ok {
+					created++
+				}
+				continue
+			}
+			toCreate = append(toCreate, lineItem)
 		}
 	}
 
-	found = len(toCreate)
-	if found == 0 {
-		return 0, 0, nil
+	found += len(toCreate)
+	if len(toCreate) == 0 {
+		return found, created, nil
 	}
 
 	const bulkInsertBatchSize = 1500

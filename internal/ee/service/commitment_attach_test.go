@@ -5,6 +5,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/addon"
+	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/types"
@@ -145,4 +146,77 @@ func (s *CommitmentServiceSuite) TestCheckPriceAttach_GuardsTerminatedCommitment
 	s.requireValidation(err, "different meter")
 
 	s.Require().NoError(s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, s.fx.priceOtherMeterInGroup, cutoff, nil))
+}
+
+func (s *CommitmentServiceSuite) TestPlanSync_InsertsUsageLineUnderCommitmentsLock() {
+	ctx := s.GetContext()
+	s.quantityCommitmentOnAPIOnlyGroup()
+	sub, err := s.GetStores().SubscriptionRepo.Get(ctx, s.fx.sub.ID)
+	s.Require().NoError(err)
+	sub.SubscriptionType = types.SubscriptionTypeStandalone
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
+	s.Require().NoError(s.GetStores().PlanRepo.Create(ctx, &plan.Plan{
+		ID:            "plan_cmt",
+		Name:          "Plan",
+		EnvironmentID: types.GetEnvironmentID(ctx),
+		BaseModel:     types.GetDefaultBaseModel(ctx),
+	}))
+	api := *s.fx.priceAPI
+	api.ID, api.GroupID, api.Sequence = "price_plan_api_new", s.fx.groupAPIOnly.ID, 1
+	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &api))
+
+	var events []string
+	params := s.fullParams()
+	params.PlanPriceSyncRepo = s.GetStores().PlanPriceSyncRepo
+	params.DB = &recordingDB{IClient: s.GetDB(), events: &events}
+	params.SubscriptionLineItemRepo = &recordingLineItemRepo{LineItemRepository: s.GetStores().SubscriptionLineItemRepo, events: &events}
+	_, err = NewPlanService(params).SyncPlanPricesV2(ctx, "plan_cmt")
+	s.Require().NoError(err)
+
+	s.requireInsertUnderLock(events, "create:"+api.ID)
+}
+
+func (s *CommitmentServiceSuite) TestAddonSync_SkipsPriceBreakingCommitment() {
+	ctx := s.GetContext()
+	s.quantityCommitmentOnAPIOnlyGroup()
+	s.Require().NoError(s.GetStores().AddonRepo.Create(ctx, &addon.Addon{
+		ID:        "addon_sync",
+		LookupKey: "addon_sync",
+		Name:      "Sync",
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}))
+
+	// A second meter would break the single-meter commitment; another API price joins it fine.
+	storage := *s.fx.priceOtherMeterInGroup
+	storage.ID, storage.EntityType, storage.EntityID, storage.Sequence = "price_addon_sync_storage", types.PRICE_ENTITY_TYPE_ADDON, "addon_sync", 1
+	api := *s.fx.priceAPI
+	api.ID, api.EntityType, api.EntityID, api.Sequence = "price_addon_sync_api", types.PRICE_ENTITY_TYPE_ADDON, "addon_sync", 2
+	api.GroupID = s.fx.groupAPIOnly.ID
+	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &storage))
+	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &api))
+	s.Require().NoError(s.GetStores().AddonAssociationRepo.Create(ctx, &addonassociation.AddonAssociation{
+		ID:          "addon_assoc_sync",
+		AddonID:     "addon_sync",
+		EntityID:    s.fx.sub.ID,
+		EntityType:  types.AddonAssociationEntityTypeSubscription,
+		AddonStatus: types.AddonStatusActive,
+		StartDate:   lo.ToPtr(s.fx.sub.StartDate),
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}))
+
+	var events []string
+	params := s.fullParams()
+	params.DB = &recordingDB{IClient: s.GetDB(), events: &events}
+	params.SubscriptionLineItemRepo = &recordingLineItemRepo{LineItemRepository: s.GetStores().SubscriptionLineItemRepo, events: &events}
+	resp, err := NewAddonService(params).SyncAddonPrices(ctx, "addon_sync")
+	s.Require().NoError(err)
+	s.Equal(2, resp.Summary.LineItemsFoundForCreation)
+	s.Equal(1, resp.Summary.LineItemsCreated)
+
+	_, items, err := s.GetStores().SubscriptionRepo.GetWithLineItems(ctx, s.fx.sub.ID)
+	s.Require().NoError(err)
+	priceIDs := lo.Map(items, func(li *subscription.SubscriptionLineItem, _ int) string { return li.PriceID })
+	s.Contains(priceIDs, api.ID)
+	s.NotContains(priceIDs, storage.ID)
+	s.requireInsertUnderLock(events, "create:"+api.ID)
 }

@@ -537,14 +537,15 @@ func (s *planService) SyncPlanPrices(ctx context.Context, planID string) (*dto.S
 
 			lineItem := createPlanLineItem(ctx, sub, price, plan)
 			if commitmentsOn && price.Type == types.PRICE_TYPE_USAGE {
-				skip, err := planSyncSkipsPrice(ctx, s.ServiceParams, sub, price, lineItem.StartDate, lo.EmptyableToPtr(lineItem.EndDate))
+				created, err := createSyncLineItem(ctx, s.ServiceParams, sub, price, lineItem)
 				if err != nil {
 					return nil, err
 				}
 
-				if skip {
-					continue
+				if created {
+					lineItemsCreated++
 				}
+				continue
 			}
 			lineItemsToCreate = append(lineItemsToCreate, lineItem)
 		}
@@ -731,14 +732,15 @@ func (s *planService) SyncPlanPricesV2(ctx context.Context, planID string) (*dto
 				}
 				lineItem := createPlanLineItem(ctx, sub, price, plan)
 				if commitmentsOn && price.Type == types.PRICE_TYPE_USAGE {
-					skip, err := planSyncSkipsPrice(ctx, s.ServiceParams, sub, price, lineItem.StartDate, lo.EmptyableToPtr(lineItem.EndDate))
+					created, err := createSyncLineItem(ctx, s.ServiceParams, sub, price, lineItem)
 					if err != nil {
 						return nil, err
 					}
 
-					if skip {
-						continue
+					if created {
+						lineItemsCreated++
 					}
+					continue
 				}
 				lineItems = append(lineItems, lineItem)
 			}
