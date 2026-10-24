@@ -537,7 +537,7 @@ func (s *planService) SyncPlanPrices(ctx context.Context, planID string) (*dto.S
 
 			lineItem := createPlanLineItem(ctx, sub, price, plan)
 			if commitmentsOn && price.Type == types.PRICE_TYPE_USAGE {
-				skip, err := planSyncSkipsPrice(ctx, s.ServiceParams, sub, price, lineItem.StartDate)
+				skip, err := planSyncSkipsPrice(ctx, s.ServiceParams, sub, price, lineItem.StartDate, lo.EmptyableToPtr(lineItem.EndDate))
 				if err != nil {
 					return nil, err
 				}
@@ -731,7 +731,7 @@ func (s *planService) SyncPlanPricesV2(ctx context.Context, planID string) (*dto
 				}
 				lineItem := createPlanLineItem(ctx, sub, price, plan)
 				if commitmentsOn && price.Type == types.PRICE_TYPE_USAGE {
-					skip, err := planSyncSkipsPrice(ctx, s.ServiceParams, sub, price, lineItem.StartDate)
+					skip, err := planSyncSkipsPrice(ctx, s.ServiceParams, sub, price, lineItem.StartDate, lo.EmptyableToPtr(lineItem.EndDate))
 					if err != nil {
 						return nil, err
 					}

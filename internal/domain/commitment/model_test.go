@@ -35,3 +35,14 @@ func TestCommitment_IsActiveAt(t *testing.T) {
 		})
 	}
 }
+
+func TestCommitment_EffectiveEnd(t *testing.T) {
+	start := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := start.AddDate(1, 0, 0)
+	early := start.AddDate(0, 6, 0)
+	late := end.AddDate(0, 1, 0)
+
+	require.Equal(t, end, (&Commitment{StartDate: start, EndDate: end}).EffectiveEnd())
+	require.Equal(t, early, (&Commitment{StartDate: start, EndDate: end, TerminatedAt: &early}).EffectiveEnd())
+	require.Equal(t, end, (&Commitment{StartDate: start, EndDate: end, TerminatedAt: &late}).EffectiveEnd())
+}

@@ -84,7 +84,7 @@ func (s *CommitmentServiceSuite) TestCheckPriceAttach_RejectsEntitledMeter() {
 	s.Require().NoError(err)
 
 	s.entitleMeter(s.fx.meterStorage.ID, true)
-	err = s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, s.fx.priceStorage, s.fx.sub.StartDate)
+	err = s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, s.fx.priceStorage, s.fx.sub.StartDate, nil)
 	s.Require().Error(err)
 	s.Require().True(ierr.IsValidation(err))
 	s.Require().Contains(err.Error(), "entitlement")

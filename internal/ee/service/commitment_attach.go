@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 )
 
 // checkLineItemCommitmentAttach runs the commitment price-attach guard for a usage line item joining sub.
@@ -34,11 +35,11 @@ func checkLineItemCommitmentAttach(
 		return err
 	}
 
-	return svc.CheckPriceAttach(ctx, sub, p, li.StartDate)
+	return svc.CheckPriceAttach(ctx, sub, p, li.StartDate, lo.EmptyableToPtr(li.EndDate))
 }
 
-// rejectLegacyCommitmentInScope rejects legacy line-item commitment fields on a line that an active
-// commitment covers, since the two would bill the same usage twice.
+// rejectLegacyCommitmentInScope rejects legacy line-item commitment fields on a line that a commitment still
+// in force covers, since the two would bill the same usage twice.
 func rejectLegacyCommitmentInScope(
 	ctx context.Context,
 	params ServiceParams,
@@ -57,9 +58,9 @@ func rejectLegacyCommitmentInScope(
 
 	f := commitment.NewNoLimitFilter()
 	f.SubscriptionIDs = []string{sub.ID}
-	f.Statuses = []types.CommitmentStatus{types.CommitmentStatusActive}
-	active, err := params.CommitmentRepo.List(ctx, f)
-	if err != nil || len(active) == 0 {
+	f.Statuses = []types.CommitmentStatus{types.CommitmentStatusActive, types.CommitmentStatusTerminated}
+	listed, err := params.CommitmentRepo.List(ctx, f)
+	if err != nil || len(listed) == 0 {
 		return err
 	}
 
@@ -69,8 +70,8 @@ func rejectLegacyCommitmentInScope(
 	}
 
 	now := time.Now().UTC()
-	for _, c := range active {
-		if now.Before(c.EndDate) && commitmentCoversLine(c, li, p) {
+	for _, c := range listed {
+		if inForceAfter(c, now) && commitmentCoversLine(c, li, p) {
 			return invalidf(
 				"line item %s is covered by commitment %s; legacy line-item commitment fields are not allowed",
 				li.ID,
@@ -105,12 +106,13 @@ func planSyncSkipsPrice(
 	sub *subscription.Subscription,
 	p *price.Price,
 	at time.Time,
+	until *time.Time,
 ) (bool, error) {
 	svc := &commitmentService{ServiceParams: params}
 	var commitmentID string
 	err := params.DB.WithTx(ctx, func(txCtx context.Context) error {
 		var err error
-		commitmentID, err = svc.checkPriceAttach(txCtx, sub, p, at)
+		commitmentID, err = svc.checkPriceAttach(txCtx, sub, p, at, until)
 		return err
 	})
 	if err == nil {

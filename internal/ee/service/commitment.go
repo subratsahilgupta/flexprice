@@ -27,9 +27,10 @@ type CommitmentService interface {
 	TerminateForSubscription(ctx context.Context, subscriptionID string, effectiveAt time.Time) error
 	IsEnabled(ctx context.Context) (bool, error)
 	ActiveForPeriod(ctx context.Context, subscriptionID string, from, to time.Time) ([]*commitment.Commitment, error)
-	// CheckPriceAttach rejects a usage price that would join an active commitment's scope but break its rules:
-	// a single-meter commitment gaining a second meter, a bucket-size mismatch, or overlapping commitments that disagree.
-	CheckPriceAttach(ctx context.Context, sub *subscription.Subscription, p *price.Price, at time.Time) error
+	// CheckPriceAttach rejects a usage price, billed from `at` until `until` (nil when open-ended), that would join a
+	// commitment's scope but break its rules: a single-meter commitment gaining a second meter, a bucket-size mismatch,
+	// or overlapping commitments that disagree.
+	CheckPriceAttach(ctx context.Context, sub *subscription.Subscription, p *price.Price, at time.Time, until *time.Time) error
 }
 
 type commitmentService struct {
@@ -151,10 +152,8 @@ func (s *commitmentService) createLocked(
 	req *dto.CreateCommitmentRequest,
 	opts commitmentCreateOptions,
 ) (*commitment.Commitment, error) {
-	if err := s.DB.LockWithWait(ctx, postgres.LockRequest{Key: "commitments:" + req.SubscriptionID}); err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to lock subscription commitments").
-			Mark(ierr.ErrInternal)
+	if err := s.lockSubscriptionCommitments(ctx, req.SubscriptionID); err != nil {
+		return nil, err
 	}
 
 	if req.IdempotencyKey != nil {
@@ -428,22 +427,54 @@ func (s *commitmentService) Terminate(
 	return resp, nil
 }
 
-// TerminateForSubscription terminates every active commitment on the subscription whose term runs past effectiveAt.
+// TerminateForSubscription terminates every active commitment on the subscription whose term runs past effectiveAt,
+// and pulls a termination scheduled after effectiveAt back to it.
 func (s *commitmentService) TerminateForSubscription(
 	ctx context.Context,
 	subscriptionID string,
 	effectiveAt time.Time,
 ) error {
 	return s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		if err := s.lockSubscriptionCommitments(txCtx, subscriptionID); err != nil {
+			return err
+		}
+
 		f := commitment.NewNoLimitFilter()
 		f.SubscriptionIDs = []string{subscriptionID}
-		f.Statuses = []types.CommitmentStatus{types.CommitmentStatusActive}
-		active, err := s.CommitmentRepo.List(txCtx, f)
+		f.Statuses = []types.CommitmentStatus{types.CommitmentStatusActive, types.CommitmentStatusTerminated}
+		listed, err := s.CommitmentRepo.List(txCtx, f)
 		if err != nil {
 			return err
 		}
 
-		for _, c := range active {
+		for _, c := range listed {
+			if c.CommitmentStatus == types.CommitmentStatusTerminated {
+				if c.TerminatedAt == nil || !c.TerminatedAt.After(effectiveAt) {
+					continue
+				}
+
+				if err := s.lockCommitment(txCtx, c.ID); err != nil {
+					return err
+				}
+
+				latest, err := s.CommitmentRepo.Get(txCtx, c.ID)
+				if err != nil {
+					return err
+				}
+
+				if _, err := s.CommitmentRepo.Update(txCtx, commitment.NewCommitmentBuilder(latest).WithTerminatedAt(effectiveAt).Build()); err != nil {
+					return err
+				}
+
+				s.Logger.Info(ctx, "commitment termination moved to subscription cancellation",
+					"commitment_id", c.ID,
+					"subscription_id", subscriptionID,
+					"previous_terminated_at", *c.TerminatedAt,
+					"effective_at", effectiveAt,
+				)
+				continue
+			}
+
 			if !effectiveAt.Before(c.EndDate) {
 				continue
 			}
@@ -461,6 +492,18 @@ func (s *commitmentService) TerminateForSubscription(
 
 		return nil
 	})
+}
+
+// lockSubscriptionCommitments serialises commitment creates, attach checks and cancellation on one
+// subscription, and must run inside a transaction.
+func (s *commitmentService) lockSubscriptionCommitments(ctx context.Context, subscriptionID string) error {
+	if err := s.DB.LockWithWait(ctx, postgres.LockRequest{Key: "commitments:" + subscriptionID}); err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to lock subscription commitments").
+			Mark(ierr.ErrInternal)
+	}
+
+	return nil
 }
 
 // lockCommitment serialises writes to one commitment and must run inside a transaction.
@@ -738,8 +781,9 @@ func (s *commitmentService) CheckPriceAttach(
 	sub *subscription.Subscription,
 	p *price.Price,
 	at time.Time,
+	until *time.Time,
 ) error {
-	_, err := s.checkPriceAttach(ctx, sub, p, at)
+	_, err := s.checkPriceAttach(ctx, sub, p, at, until)
 	return err
 }
 
@@ -750,6 +794,7 @@ func (s *commitmentService) checkPriceAttach(
 	sub *subscription.Subscription,
 	p *price.Price,
 	at time.Time,
+	until *time.Time,
 ) (string, error) {
 	if p == nil || p.Type != types.PRICE_TYPE_USAGE {
 		return "", nil
@@ -760,19 +805,13 @@ func (s *commitmentService) checkPriceAttach(
 		return "", err
 	}
 
-	inScope, err := s.commitmentsInScope(ctx, sub.ID, p, at)
-	if err != nil || len(inScope) == 0 {
+	// Serialise with createLocked before reading, so a concurrent create is seen.
+	if err := s.lockSubscriptionCommitments(ctx, sub.ID); err != nil {
 		return "", err
 	}
 
-	// Serialise with createLocked, then re-read so a concurrent create is seen.
-	if err := s.DB.LockWithWait(ctx, postgres.LockRequest{Key: "commitments:" + sub.ID}); err != nil {
-		return "", ierr.WithError(err).
-			WithHint("Failed to lock subscription commitments").
-			Mark(ierr.ErrInternal)
-	}
-
-	if inScope, err = s.commitmentsInScope(ctx, sub.ID, p, at); err != nil || len(inScope) == 0 {
+	inScope, err := s.commitmentsInScope(ctx, sub.ID, p, at, until)
+	if err != nil || len(inScope) == 0 {
 		return "", err
 	}
 
@@ -800,24 +839,26 @@ func (s *commitmentService) checkPriceAttach(
 	return s.checkAttachPairs(ctx, inScope)
 }
 
-// commitmentsInScope returns active commitments, still running at `at`, whose scope includes the new usage price.
+// commitmentsInScope returns commitments in force after `at` and starting before `until` (nil when open-ended)
+// whose scope includes the new usage price.
 func (s *commitmentService) commitmentsInScope(
 	ctx context.Context,
 	subscriptionID string,
 	p *price.Price,
 	at time.Time,
+	until *time.Time,
 ) ([]*commitment.Commitment, error) {
 	f := commitment.NewNoLimitFilter()
 	f.SubscriptionIDs = []string{subscriptionID}
-	f.Statuses = []types.CommitmentStatus{types.CommitmentStatusActive}
-	active, err := s.CommitmentRepo.List(ctx, f)
+	f.Statuses = []types.CommitmentStatus{types.CommitmentStatusActive, types.CommitmentStatusTerminated}
+	listed, err := s.CommitmentRepo.List(ctx, f)
 	if err != nil {
 		return nil, err
 	}
 
 	// A price-scoped commitment never includes a newly attached price (new ID).
-	return lo.Filter(active, func(c *commitment.Commitment, _ int) bool {
-		if !at.Before(c.EndDate) {
+	return lo.Filter(listed, func(c *commitment.Commitment, _ int) bool {
+		if !inForceAfter(c, at) || (until != nil && !c.StartDate.Before(*until)) {
 			return false
 		}
 
@@ -832,6 +873,12 @@ func (s *commitmentService) commitmentsInScope(
 
 		return false
 	}), nil
+}
+
+// inForceAfter reports whether c still bills after `at`; a terminated commitment bills until terminated_at.
+func inForceAfter(c *commitment.Commitment, at time.Time) bool {
+	end := c.EffectiveEnd()
+	return at.Before(end) && c.StartDate.Before(end)
 }
 
 // checkAttachAgainst checks the meter and bucket-size rules for one commitment that the new price joins.
@@ -874,13 +921,22 @@ func (s *commitmentService) checkAttachAgainst(
 	return nil
 }
 
-// checkAttachPairs requires commitments that now share the new price and overlap in time to agree on
-// type, measurement and overage rate.
+// checkAttachPairs requires commitments that now share the new price and overlap in time to differ in
+// priority and agree on type, measurement and overage rate.
 func (s *commitmentService) checkAttachPairs(ctx context.Context, inScope []*commitment.Commitment) (string, error) {
 	for i, a := range inScope {
 		for _, b := range inScope[i+1:] {
-			if !a.StartDate.Before(b.EndDate) || !b.StartDate.Before(a.EndDate) {
+			if !a.StartDate.Before(b.EffectiveEnd()) || !b.StartDate.Before(a.EffectiveEnd()) {
 				continue
+			}
+
+			if a.Priority == b.Priority {
+				return a.ID, invalidf(
+					"commitments %s and %s overlap on the new price with the same priority %d",
+					a.ID,
+					b.ID,
+					a.Priority,
+				)
 			}
 
 			if a.Type != b.Type || a.Measurement != b.Measurement {

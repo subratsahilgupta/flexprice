@@ -78,7 +78,11 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 			s.applySubscriptionScopedLineItemDefaults(lineItem, sub, price)
 		}
 
-		if err := NewCommitmentService(s.ServiceParams).CheckPriceAttach(txCtx, sub, price.Price, lineItem.StartDate); err != nil {
+		if err := NewCommitmentService(s.ServiceParams).CheckPriceAttach(txCtx, sub, price.Price, lineItem.StartDate, lo.EmptyableToPtr(lineItem.EndDate)); err != nil {
+			return err
+		}
+
+		if err := rejectLegacyCommitmentInScope(txCtx, s.ServiceParams, sub, lineItem); err != nil {
 			return err
 		}
 

@@ -51,6 +51,15 @@ func (c *Commitment) IsActiveAt(t time.Time) bool {
 	return c.TerminatedAt == nil || t.Before(*c.TerminatedAt)
 }
 
+// EffectiveEnd is the end of the billed term: terminated_at when it cuts the term short, otherwise end_date.
+func (c *Commitment) EffectiveEnd() time.Time {
+	if c.TerminatedAt != nil && c.TerminatedAt.Before(c.EndDate) {
+		return *c.TerminatedAt
+	}
+
+	return c.EndDate
+}
+
 // Location returns the commitment timezone, falling back to UTC.
 func (c *Commitment) Location() *time.Location {
 	if c == nil {

@@ -736,6 +736,21 @@ func (s *CommitmentServiceSuite) TestTerminateForSubscription_TerminatesActiveCo
 	}
 }
 
+func (s *CommitmentServiceSuite) TestTerminateForSubscription_PullsLaterTerminationBack() {
+	created, err := s.svc.Create(s.GetContext(), validReq(s.fx.sub.ID, s.fx.priceAPI.ID))
+	s.Require().NoError(err)
+	scheduled := created.StartDate.AddDate(0, 2, 0)
+	_, err = s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{EffectiveAt: &scheduled})
+	s.Require().NoError(err)
+
+	cancelAt := created.StartDate.AddDate(0, 0, 15)
+	s.Require().NoError(s.svc.TerminateForSubscription(s.GetContext(), s.fx.sub.ID, cancelAt))
+	got, err := s.svc.Get(s.GetContext(), created.ID)
+	s.Require().NoError(err)
+	s.Equal(types.CommitmentStatusTerminated, got.CommitmentStatus)
+	s.True(got.TerminatedAt.Equal(cancelAt), "got %s", got.TerminatedAt)
+}
+
 func (s *CommitmentServiceSuite) TestActiveForPeriod_IncludesTerminated() {
 	created, err := s.svc.Create(s.GetContext(), validReq(s.fx.sub.ID, s.fx.priceAPI.ID))
 	s.Require().NoError(err)
@@ -916,7 +931,7 @@ func (s *CommitmentServiceSuite) TestCheckPriceAttach_NoopCases() {
 	sub, p := s.fx.sub, s.fx.priceOtherMeterInGroup
 	at := sub.StartDate
 	// No commitments yet.
-	s.Require().NoError(s.svc.CheckPriceAttach(s.GetContext(), sub, p, at))
+	s.Require().NoError(s.svc.CheckPriceAttach(s.GetContext(), sub, p, at, nil))
 
 	req := validReq(sub.ID, "")
 	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeGroup, EntityID: s.fx.groupAPIOnly.ID}
@@ -924,14 +939,14 @@ func (s *CommitmentServiceSuite) TestCheckPriceAttach_NoopCases() {
 	s.Require().NoError(err)
 
 	// A price outside the scoped group, and a fixed price, never trigger the check.
-	s.Require().NoError(s.svc.CheckPriceAttach(s.GetContext(), sub, s.fx.priceStorage, at))
+	s.Require().NoError(s.svc.CheckPriceAttach(s.GetContext(), sub, s.fx.priceStorage, at, nil))
 	fixed := *p
 	fixed.Type = types.PRICE_TYPE_FIXED
-	s.Require().NoError(s.svc.CheckPriceAttach(s.GetContext(), sub, &fixed, at))
+	s.Require().NoError(s.svc.CheckPriceAttach(s.GetContext(), sub, &fixed, at, nil))
 
 	// Disabled feature is a no-op.
 	setCommitmentsV2(s.T(), s.GetContext(), s.GetStores(), false)
-	s.Require().NoError(s.svc.CheckPriceAttach(s.GetContext(), sub, p, at))
+	s.Require().NoError(s.svc.CheckPriceAttach(s.GetContext(), sub, p, at, nil))
 }
 
 func (s *CommitmentServiceSuite) TestCheckPriceAttach_RejectsBucketMismatchForMeterScopedWindow() {
@@ -943,14 +958,14 @@ func (s *CommitmentServiceSuite) TestCheckPriceAttach_RejectsBucketMismatchForMe
 
 	hourly := *s.fx.priceAPI
 	hourly.ID, hourly.BucketSize = "price_api_hourly", types.WindowSizeHour
-	err = s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, &hourly, s.fx.sub.StartDate)
+	err = s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, &hourly, s.fx.sub.StartDate, nil)
 	s.Require().Error(err)
 	s.True(ierr.IsValidation(err), "got %v", err)
 	s.Contains(err.Error(), created.ID)
 
 	same := *s.fx.priceAPI
 	same.ID = "price_api_same_bucket"
-	s.Require().NoError(s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, &same, s.fx.sub.StartDate))
+	s.Require().NoError(s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, &same, s.fx.sub.StartDate, nil))
 }
 
 func (s *CommitmentServiceSuite) TestCheckPriceAttach_RejectsOverlappingCommitmentsThatDisagree() {
@@ -966,7 +981,7 @@ func (s *CommitmentServiceSuite) TestCheckPriceAttach_RejectsOverlappingCommitme
 	cb, err := s.svc.Create(s.GetContext(), b)
 	s.Require().NoError(err)
 
-	err = s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, s.fx.priceOtherMeterInGroup, s.fx.sub.StartDate)
+	err = s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, s.fx.priceOtherMeterInGroup, s.fx.sub.StartDate, nil)
 	s.Require().Error(err)
 	s.True(ierr.IsValidation(err), "got %v", err)
 	s.Contains(err.Error(), ca.ID)
@@ -1090,7 +1105,7 @@ func (s *CommitmentServiceSuite) TestCheckPriceAttach_RejectsPriceOnAnotherCaden
 
 	weekly := *s.fx.priceOtherMeterInGroup
 	weekly.ID, weekly.BillingPeriod = "price_other_meter_weekly", types.BILLING_PERIOD_WEEKLY
-	err = s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, &weekly, s.fx.sub.StartDate)
+	err = s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, &weekly, s.fx.sub.StartDate, nil)
 	s.requireValidation(err, "commitments require scope prices billed every subscription period")
 }
 
@@ -1112,4 +1127,22 @@ func (s *CommitmentServiceSuite) TestCreate_RejectsIncompleteSubscription() {
 
 	_, err = s.svc.Create(s.GetContext(), validReq(s.fx.sub.ID, s.fx.priceAPI.ID))
 	s.requireValidation(err, "must be active or trialing")
+}
+
+func (s *CommitmentServiceSuite) TestCheckPriceAttach_RejectsSamePriorityOverlap() {
+	a := validReq(s.fx.sub.ID, "")
+	a.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeGroup, EntityID: s.fx.groupAPIOnly.ID}
+	a.Type, a.CommittedRate, a.Value = types.COMMITMENT_TYPE_AMOUNT, nil, decimal.NewFromInt(100)
+	_, err := s.svc.Create(s.GetContext(), a)
+	s.Require().NoError(err)
+
+	// Disjoint scopes, so the same priority is accepted until a price joins both.
+	b := a
+	b.Name = "Storage"
+	b.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeMeter, EntityID: s.fx.meterStorage.ID}
+	cb, err := s.svc.Create(s.GetContext(), b)
+	s.Require().NoError(err)
+
+	err = s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, s.fx.priceOtherMeterInGroup, s.fx.sub.StartDate, nil)
+	s.requireValidation(err, "same priority", cb.ID)
 }
