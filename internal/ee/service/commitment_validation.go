@@ -205,7 +205,9 @@ func (s *commitmentService) validateAgainstSubscription(
 		)
 	}
 
-	meters := lo.Uniq(lo.Map(lines, func(li *subscription.SubscriptionLineItem, _ int) string {
+	// Lines scheduled to join later in the term must satisfy the same rules as those present at start.
+	termLines := scopeLinesInPeriod(req.Scope.EntityType, req.Scope.EntityID, cc, req.StartDate, req.EndDate)
+	meters := lo.Uniq(lo.Map(termLines, func(li *subscription.SubscriptionLineItem, _ int) string {
 		return li.MeterID
 	}))
 	if meterID, err := s.entitledMeter(ctx, sub, meters); err != nil {
@@ -222,7 +224,7 @@ func (s *commitmentService) validateAgainstSubscription(
 	}
 
 	if req.Measurement == types.CommitmentMeasurementWindow {
-		sizes := lo.Uniq(lo.Map(lines, func(li *subscription.SubscriptionLineItem, _ int) types.WindowSize {
+		sizes := lo.Uniq(lo.Map(termLines, func(li *subscription.SubscriptionLineItem, _ int) types.WindowSize {
 			return price.ResolveBucketSize(cc.Prices[li.PriceID], cc.Meters[li.MeterID])
 		}))
 		if len(sizes) != 1 || sizes[0] == "" {
@@ -234,13 +236,11 @@ func (s *commitmentService) validateAgainstSubscription(
 		return invalid("subscription has a legacy subscription-level commitment; remove it before adding a commitment")
 	}
 
-	for _, li := range lines {
+	for _, li := range termLines {
 		if li.HasAnyCommitment() {
 			return invalidf("price %s already has a legacy line-item commitment", li.PriceID)
 		}
-	}
 
-	for _, li := range scopeLinesInPeriod(req.Scope.EntityType, req.Scope.EntityID, cc, req.StartDate, req.EndDate) {
 		if !billsEverySubscriptionPeriod(sub, li.BillingPeriod, li.BillingPeriodCount) {
 			return errScopeCadence(li.PriceID)
 		}

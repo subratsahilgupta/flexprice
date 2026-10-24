@@ -891,6 +891,11 @@ func (s *commitmentService) checkAttachAgainst(
 ) error {
 	lines := resolveScopeLines(c.ScopeEntityType, c.ScopeEntityID, cc, maxTime(at, c.StartDate))
 	if len(lines) == 0 {
+		// Nothing in scope at this instant, e.g. the only line was just replaced: check against the term's lines.
+		lines = scopeLinesInPeriod(c.ScopeEntityType, c.ScopeEntityID, cc, c.StartDate, c.EffectiveEnd())
+	}
+
+	if len(lines) == 0 {
 		return nil
 	}
 

@@ -154,3 +154,45 @@ func TestValidateBoundary(t *testing.T) {
 	require.Contains(t, err.Error(), "1 Apr 2027")
 	require.Contains(t, err.Error(), "1 May 2027")
 }
+
+func (s *CommitmentServiceSuite) TestValidation_ScheduledSecondMeterBreaksQuantityCommitment() {
+	future := *s.fx.lineAPI
+	future.ID, future.PriceID, future.MeterID = "subs_line_other_meter", s.fx.priceOtherMeterInGroup.ID, s.fx.meterStorage.ID
+	future.StartDate = time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC)
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(s.GetContext(), &future))
+
+	req := validReq(s.fx.sub.ID, "")
+	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeGroup, EntityID: s.fx.groupAPIOnly.ID}
+	_, err := s.svc.Create(s.GetContext(), req)
+	s.requireValidation(err, "exactly one meter")
+}
+
+func (s *CommitmentServiceSuite) TestValidation_ScheduledLegacyLineItemCommitment() {
+	future := *s.fx.lineAPI
+	future.ID, future.CommitmentAmount = "subs_line_api_legacy", lo.ToPtr(decimal.NewFromInt(50))
+	future.StartDate = time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC)
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(s.GetContext(), &future))
+
+	_, err := s.svc.Create(s.GetContext(), validReq(s.fx.sub.ID, s.fx.priceAPI.ID))
+	s.requireValidation(err, "legacy line-item commitment")
+}
+
+func (s *CommitmentServiceSuite) TestCheckPriceAttach_ReplacedOnlyLineKeepsBucketRule() {
+	req := validReq(s.fx.sub.ID, "")
+	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeGroup, EntityID: s.fx.groupAPIOnly.ID}
+	req.Measurement = types.CommitmentMeasurementWindow
+	_, err := s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+
+	// The scope's only line ends where its replacement on an hourly price would start.
+	march := time.Date(2027, 3, 1, 0, 0, 0, 0, time.UTC)
+	only, err := s.GetStores().SubscriptionLineItemRepo.Get(s.GetContext(), "subs_line_api_only")
+	s.Require().NoError(err)
+	only.EndDate = march
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Update(s.GetContext(), only))
+
+	hourly := *s.fx.priceAPI
+	hourly.ID, hourly.GroupID, hourly.BucketSize = "price_api_only_hourly", s.fx.groupAPIOnly.ID, types.WindowSizeHour
+	err = s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, &hourly, march, nil)
+	s.requireValidation(err, "bucket size")
+}
