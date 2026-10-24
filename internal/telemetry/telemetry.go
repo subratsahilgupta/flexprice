@@ -102,13 +102,13 @@ func (r *Reporter) reportInstallInit(ctx context.Context) {
 	r.send(ctx, EventInstallInit, newInstallPayload(r))
 }
 
-// ReportEvent pings the collector for event names in trackedEventNames, with
-// a redacted payload (redact.go), dispatched off the caller's goroutine.
+// ReportEvent pings the collector for event names isTrackedEventName allows,
+// with a redacted payload (redact.go), dispatched off the caller's goroutine.
 func (r *Reporter) ReportEvent(ctx context.Context, event *types.WebhookEvent) {
 	if reason := r.disabledReason(); reason != "" {
 		return
 	}
-	if !trackedEventNames()[string(event.EventName)] {
+	if !isTrackedEventName(string(event.EventName)) {
 		return
 	}
 

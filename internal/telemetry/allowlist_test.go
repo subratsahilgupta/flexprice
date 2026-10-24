@@ -17,7 +17,7 @@ func TestTrackedEventNames(t *testing.T) {
 		"wallet.created",
 	}
 	for _, name := range tracked {
-		if !trackedEventNames()[name] {
+		if !isTrackedEventName(name) {
 			t.Errorf("expected %q to be tracked", name)
 		}
 	}
@@ -33,7 +33,7 @@ func TestTrackedEventNames(t *testing.T) {
 		"",
 	}
 	for _, name := range untracked {
-		if trackedEventNames()[name] {
+		if isTrackedEventName(name) {
 			t.Errorf("expected %q to not be tracked", name)
 		}
 	}
