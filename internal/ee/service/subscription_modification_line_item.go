@@ -549,8 +549,10 @@ func (s *subscriptionModificationService) applyLineItemChange(
 				newItemEndDate = lineItem.EndDate
 			}
 
+			newItemID := types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)
 			endedItem := subscription.NewSubscriptionLineItemBuilder(lineItem).
 				WithEndDate(effectiveDate).
+				WithSuccessorLineItemID(lo.ToPtr(newItemID)).
 				Build()
 			if err := sp.SubscriptionLineItemRepo.Update(txCtx, endedItem); err != nil {
 				return ierr.WithError(err).
@@ -559,11 +561,13 @@ func (s *subscriptionModificationService) applyLineItemChange(
 			}
 
 			builder := subscription.NewSubscriptionLineItemBuilder(endedItem).
-				WithID(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)).
+				WithID(newItemID).
 				WithQuantity(mod.getTargetQuantity()).
 				WithStartDate(effectiveDate).
 				WithEndDate(newItemEndDate).
-				WithBaseModel(types.GetDefaultBaseModel(txCtx))
+				WithBaseModel(types.GetDefaultBaseModel(txCtx)).
+				WithPredecessorLineItemID(lo.ToPtr(lineItemID)).
+				WithSuccessorLineItemID(nil)
 
 			if priceReq := mod.getNewPriceRequest(); priceReq != nil {
 				newPrice, err := priceSvc.CreatePrice(txCtx, *priceReq)
@@ -574,9 +578,6 @@ func (s *subscriptionModificationService) applyLineItemChange(
 			}
 
 			newItem := builder.Build()
-
-			newItem.PredecessorLineItemID = lo.ToPtr(lineItemID)
-			newItem.SuccessorLineItemID = nil
 			clearLineItemMetadataIDs(newItem, lineageMetadataKeys...)
 
 			if err := sp.SubscriptionLineItemRepo.Create(txCtx, newItem); err != nil {
@@ -586,13 +587,6 @@ func (s *subscriptionModificationService) applyLineItemChange(
 			if err := NewCouponAssociationService(sp).CreateCouponRefAssociations(
 				txCtx, request.GetSubscription(), mod.getCoupons(), newItem.ID); err != nil {
 				return err
-			}
-
-			endedItem.SuccessorLineItemID = lo.ToPtr(newItem.ID)
-			if err := sp.SubscriptionLineItemRepo.Update(txCtx, endedItem); err != nil {
-				return ierr.WithError(err).
-					WithHint("Failed to link the superseded line item to its successor").
-					Mark(ierr.ErrDatabase)
 			}
 
 			changedLineItems = append(changedLineItems,

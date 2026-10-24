@@ -649,8 +649,10 @@ func (s *subscriptionModificationService) applyQuantityChange(
 				newItemEndDate = lineItem.EndDate
 			}
 
+			newItemID := types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)
 			endedItem := subscription.NewSubscriptionLineItemBuilder(lineItem).
 				WithEndDate(effectiveDate).
+				WithSuccessorLineItemID(lo.ToPtr(newItemID)).
 				Build()
 			if err := sp.SubscriptionLineItemRepo.Update(txCtx, endedItem); err != nil {
 				return ierr.WithError(err).
@@ -660,24 +662,17 @@ func (s *subscriptionModificationService) applyQuantityChange(
 
 			// Copy from the ended line item, then override identity / window / quantity.
 			newItem := subscription.NewSubscriptionLineItemBuilder(endedItem).
-				WithID(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)).
+				WithID(newItemID).
 				WithQuantity(mod.getQuantity()).
 				WithStartDate(effectiveDate).
 				WithEndDate(newItemEndDate).
 				WithBaseModel(types.GetDefaultBaseModel(txCtx)).
+				WithPredecessorLineItemID(lo.ToPtr(lineItemID)).
+				WithSuccessorLineItemID(nil).
 				Build()
-			newItem.PredecessorLineItemID = lo.ToPtr(lineItemID)
-			newItem.SuccessorLineItemID = nil
 			clearLineItemMetadataIDs(newItem, lineageMetadataKeys...)
 			if err := sp.SubscriptionLineItemRepo.Create(txCtx, newItem); err != nil {
 				return err
-			}
-
-			endedItem.SuccessorLineItemID = lo.ToPtr(newItem.ID)
-			if err := sp.SubscriptionLineItemRepo.Update(txCtx, endedItem); err != nil {
-				return ierr.WithError(err).
-					WithHint("Failed to link the superseded line item to its successor").
-					Mark(ierr.ErrDatabase)
 			}
 
 			oldStart := endedItem.StartDate
