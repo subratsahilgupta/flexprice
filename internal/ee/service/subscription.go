@@ -6683,13 +6683,29 @@ func carryParentSourceToOverrides(planEnts, addonEnts, subEnts []*dto.Entitlemen
 	}
 }
 
+// GetSubscriptionEntitlementsForSubscription is every entitlement live at some point in the
+// current period, for callers that work across the period such as grants.
 func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx context.Context, sub *subscription.Subscription) ([]*dto.EntitlementResponse, error) {
 	if sub == nil {
 		return nil, ierr.NewError("subscription is required").
 			WithHint("A subscription must be provided to resolve entitlements").
 			Mark(ierr.ErrValidation)
 	}
+	return s.subscriptionEntitlementsLiveBetween(ctx, sub, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
+}
 
+func (s *subscriptionService) GetActiveSubscriptionEntitlementsForSubscription(ctx context.Context, sub *subscription.Subscription, at time.Time) ([]*dto.EntitlementResponse, error) {
+	if sub == nil {
+		return nil, ierr.NewError("subscription is required").
+			WithHint("A subscription must be provided to resolve entitlements").
+			Mark(ierr.ErrValidation)
+	}
+	return s.subscriptionEntitlementsLiveBetween(ctx, sub, at, at)
+}
+
+// subscriptionEntitlementsLiveBetween drops entitlements whose start_date/end_date keep them out
+// of [from, to] before overrides are applied, so an expired override no longer hides its parent.
+func (s *subscriptionService) subscriptionEntitlementsLiveBetween(ctx context.Context, sub *subscription.Subscription, from, to time.Time) ([]*dto.EntitlementResponse, error) {
 	// Initialize entitlement service
 	entitlementService := NewEntitlementService(s.ServiceParams)
 
@@ -6782,13 +6798,20 @@ func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx con
 	if err != nil {
 		return nil, err
 	}
-	subscriptionEntitlements := subscriptionEntResp.Items
+	live := func(ents []*dto.EntitlementResponse) []*dto.EntitlementResponse {
+		return lo.Filter(ents, func(ent *dto.EntitlementResponse, _ int) bool {
+			return ent != nil && ent.Entitlement != nil && ent.Entitlement.IsLiveBetween(from, to)
+		})
+	}
+	planItems := live(planEntitlements.Items)
+	addonEntitlements = live(addonEntitlements)
+	subscriptionEntitlements := live(subscriptionEntResp.Items)
 
-	carryParentSourceToOverrides(planEntitlements.Items, addonEntitlements, subscriptionEntitlements)
+	carryParentSourceToOverrides(planItems, addonEntitlements, subscriptionEntitlements)
 
 	// Step 6: Filter out overridden entitlements and combine results
 	finalEntitlements := s.filterOverriddenEntitlements(
-		planEntitlements.Items,
+		planItems,
 		addonEntitlements,
 		subscriptionEntitlements,
 		sub.ID,
@@ -6919,8 +6942,7 @@ func (s *subscriptionService) GetAggregatedSubscriptionEntitlementsForSubscripti
 		req = &dto.GetSubscriptionEntitlementsRequest{}
 	}
 
-	// Get all entitlements for the subscription
-	entitlements, err := s.GetSubscriptionEntitlementsForSubscription(ctx, sub)
+	entitlements, err := s.GetActiveSubscriptionEntitlementsForSubscription(ctx, sub, time.Now().UTC())
 	if err != nil {
 		return nil, err
 	}

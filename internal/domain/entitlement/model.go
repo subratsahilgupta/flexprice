@@ -69,6 +69,14 @@ func (e *Entitlement) IsUnlimitedGrant() bool {
 	return e != nil && e.HasGrantConfig() && e.GrantQuota == nil
 }
 
+// IsLiveBetween reports whether start_date/end_date overlap [from, to]; end_date is exclusive.
+func (e *Entitlement) IsLiveBetween(from, to time.Time) bool {
+	if e.StartDate != nil && e.StartDate.After(to) {
+		return false
+	}
+	return e.EndDate == nil || e.EndDate.After(from)
+}
+
 func (e *Entitlement) IsSubscriptionOverride() bool {
 	return e != nil &&
 		e.EntityType == types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION &&

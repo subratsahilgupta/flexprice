@@ -3,6 +3,7 @@ package entitlement
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -286,5 +287,33 @@ func TestGrantConfigEquals(t *testing.T) {
 		if base().GrantConfigEquals(moved) {
 			t.Errorf("a changed %s must count as a change", name)
 		}
+	}
+}
+
+func TestEntitlement_IsLiveBetween(t *testing.T) {
+	day := func(n int) *time.Time { d := time.Date(2026, 7, n, 0, 0, 0, 0, time.UTC); return &d }
+
+	tests := []struct {
+		name       string
+		start, end *time.Time
+		from, to   time.Time
+		want       bool
+	}{
+		{"no dates", nil, nil, *day(5), *day(5), true},
+		{"inside", day(1), day(10), *day(5), *day(5), true},
+		{"starts at instant", day(5), nil, *day(5), *day(5), true},
+		{"not started", day(6), nil, *day(5), *day(5), false},
+		{"ends at instant", nil, day(5), *day(5), *day(5), false},
+		{"ended", nil, day(4), *day(5), *day(5), false},
+		{"ends inside range", nil, day(8), *day(5), *day(20), true},
+		{"starts inside range", day(15), nil, *day(5), *day(20), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &Entitlement{StartDate: tt.start, EndDate: tt.end}
+			if got := e.IsLiveBetween(tt.from, tt.to); got != tt.want {
+				t.Errorf("IsLiveBetween() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

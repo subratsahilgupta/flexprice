@@ -188,6 +188,10 @@ type SubscriptionService interface {
 
 	GetSubscriptionEntitlementsForSubscription(ctx context.Context, sub *subscription.Subscription) ([]*dto.EntitlementResponse, error)
 
+	// GetActiveSubscriptionEntitlementsForSubscription is the subscription's entitlements live at at:
+	// an override past its end_date drops out and the plan or addon entitlement it replaced returns.
+	GetActiveSubscriptionEntitlementsForSubscription(ctx context.Context, sub *subscription.Subscription, at time.Time) ([]*dto.EntitlementResponse, error)
+
 	GetAggregatedSubscriptionEntitlementsForSubscription(ctx context.Context, sub *subscription.Subscription, req *dto.GetSubscriptionEntitlementsRequest) (*dto.SubscriptionEntitlementsResponse, error)
 	GetAggregatedSubscriptionEntitlements(ctx context.Context, subscriptionID string, req *dto.GetSubscriptionEntitlementsRequest) (*dto.SubscriptionEntitlementsResponse, error)
 

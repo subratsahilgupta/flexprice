@@ -2993,7 +2993,7 @@ func (s *billingService) GetCustomerEntitlementsForSubscriptions(ctx context.Con
 		}
 
 		// Get all entitlements for this subscription (plan + addons)
-		subEntitlements, err := subscriptionService.GetSubscriptionEntitlementsForSubscription(ctx, sub)
+		subEntitlements, err := subscriptionService.GetActiveSubscriptionEntitlementsForSubscription(ctx, sub, time.Now().UTC())
 		if err != nil {
 			s.Logger.Info(ctx, "failed to get subscription entitlements, skipping",
 				"subscription_id", sub.ID,
