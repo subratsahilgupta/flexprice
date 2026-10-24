@@ -107,8 +107,9 @@ func fillPeriodValue(
 	if c.Measurement == types.CommitmentMeasurementWindow {
 		loc := c.Location()
 		for _, b := range generateBucketStarts(cp.Start, cp.End, bucket, &anchor) {
-			// The first bucket can start before the term; the allocator gives it no capacity.
-			if b.Before(c.StartDate) {
+			// The first bucket can start before the period (or the term): it belongs to the
+			// period containing its start, which already counted it.
+			if b.Before(cp.Start) {
 				continue
 			}
 

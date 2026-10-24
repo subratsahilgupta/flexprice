@@ -735,14 +735,20 @@ func TestCommitmentInvoiceLinesFields(t *testing.T) {
 	for i, g := range got {
 		require.Equal(t, periodStart, lo.FromPtr(g.PeriodStart), "line %d period start", i)
 		require.Equal(t, periodStart.AddDate(0, 1, 0), lo.FromPtr(g.PeriodEnd), "line %d period end", i)
-		require.Equal(t, "c1", lo.FromPtr(g.CommitmentID), "line %d commitment", i)
-		require.Equal(t, "c1", g.Metadata[types.MetadataKeyCommitmentID], "line %d metadata commitment", i)
 	}
 
 	within, trueUp, onDemand := got[0], got[1], got[2]
-	require.Equal(t, "Description c1", within.Metadata[types.MetadataKeyDescription])
-	require.Equal(t, "Description c1", trueUp.Metadata[types.MetadataKeyDescription])
+	for _, g := range []dto.CreateInvoiceLineItemRequest{within, trueUp} {
+		require.Equal(t, "c1", lo.FromPtr(g.CommitmentID))
+		require.Equal(t, "c1", g.Metadata[types.MetadataKeyCommitmentID])
+		require.Equal(t, "Description c1", g.Metadata[types.MetadataKeyDescription])
+	}
+
+	// On-demand belongs to the stack, not to any one commitment (D36).
+	require.Nil(t, onDemand.CommitmentID)
+	require.NotContains(t, onDemand.Metadata, types.MetadataKeyCommitmentID)
 	require.NotContains(t, onDemand.Metadata, types.MetadataKeyDescription)
+	require.Equal(t, string(types.CommitmentLineOnDemand), onDemand.Metadata[types.MetadataKeyCommitmentLineKind])
 
 	for _, g := range []dto.CreateInvoiceLineItemRequest{within, onDemand} {
 		require.Equal(t, "price_a", lo.FromPtr(g.PriceID))
@@ -760,4 +766,54 @@ func TestCommitmentInvoiceLinesFields(t *testing.T) {
 	require.Equal(t, string(types.InvoiceLineItemEntityTypeCommitment), lo.FromPtr(trueUp.EntityType))
 	require.Equal(t, "c1", lo.FromPtr(trueUp.EntityID))
 	require.Nil(t, trueUp.SubscriptionLineItemID)
+}
+
+func TestCommitmentInvoiceLinesNegativeDriftNeverGoesBelowZero(t *testing.T) {
+	// Four half-cent lines each round up to $0.01; the rounded total is $0.02, so $0.02 of
+	// negative drift must come back out without turning any row into a credit.
+	lines := []*usageLine{
+		invoiceLine("a", "1", "0.005", "0.005"),
+		invoiceLine("b", "1", "0.005", "0.005"),
+		invoiceLine("c", "1", "0.005", "0.005"),
+		invoiceLine("d", "1", "0.005", "0.005"),
+	}
+	stack := &commitmentStack{
+		Type:        types.COMMITMENT_TYPE_AMOUNT,
+		Measurement: types.CommitmentMeasurementBillingPeriod,
+		Windows:     engineWindows(1),
+		Lines:       lines,
+		Commitments: []*stackedCommitment{committed("c1", true, "100", []int{0}, lines, "100")},
+	}
+
+	got := renderStack(t, stack, func(_ *price.Price, qty decimal.Decimal) decimal.Decimal { return qty })
+	requireLines(t, []wantLine{
+		{types.CommitmentLineWithin, "Label c1", "1", "0"},
+		{types.CommitmentLineWithin, "Label c1", "1", "0"},
+		{types.CommitmentLineWithin, "Label c1", "1", "0.01"},
+		{types.CommitmentLineWithin, "Label c1", "1", "0.01"},
+		{types.CommitmentLineTrueUp, "Label c1 (unused)", "1", "99.98"},
+	}, got)
+
+	sum := decimal.Zero
+	for _, g := range got {
+		require.False(t, g.Amount.IsNegative(), "no row may be negative, got %s", g.Amount)
+		sum = sum.Add(g.Amount)
+	}
+
+	require.True(t, sum.Equal(dec("100")), "within plus true-up must equal the period amount, got %s", sum)
+}
+
+func TestAllocateRejectsPoolIndexBelowSentinel(t *testing.T) {
+	line := quantityLine(10)
+	stack := &commitmentStack{
+		Type:        types.COMMITMENT_TYPE_QUANTITY,
+		Measurement: types.CommitmentMeasurementWindow,
+		Windows:     engineWindows(1),
+		Lines:       []*usageLine{line},
+		Commitments: []*stackedCommitment{stacked("c1", 1, []int{-2}, []*usageLine{line}, 10)},
+	}
+
+	_, err := allocate(stack)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "references pool")
 }

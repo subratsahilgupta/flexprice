@@ -121,7 +121,7 @@ func allocate(stack *commitmentStack) (*allocation, error) {
 		}
 
 		for _, p := range sc.PoolOf {
-			if p >= len(sc.Pools) {
+			if p < -1 || p >= len(sc.Pools) {
 				return nil, ierr.NewErrorf("commitment %s references pool %d of %d", sc.C.ID, p, len(sc.Pools)).
 					Mark(ierr.ErrInternal)
 			}
@@ -210,7 +210,16 @@ func (l *usageLine) displayName() string {
 	return l.Price.DisplayName
 }
 
-// commitmentInvoiceLines renders each stack and its allocation (index-aligned) as within, true-up and on-demand lines.
+// lineRenderer carries the invoice context every rendered commitment line shares.
+type lineRenderer struct {
+	currency    string
+	periodStart time.Time
+	periodEnd   time.Time
+	cost        lineCost
+}
+
+// commitmentInvoiceLines renders each stack and its allocation (index-aligned) as within, true-up
+// and on-demand invoice lines.
 func commitmentInvoiceLines(
 	stacks []*commitmentStack,
 	allocs []*allocation,
@@ -218,148 +227,194 @@ func commitmentInvoiceLines(
 	periodStart, periodEnd time.Time,
 	cost lineCost,
 ) []dto.CreateInvoiceLineItemRequest {
-	newLine := func(
-		c *commitment.Commitment,
-		line *usageLine,
-		kind types.CommitmentLineKind,
-		name string,
-		qty, amount decimal.Decimal,
-	) dto.CreateInvoiceLineItemRequest {
-		out := dto.CreateInvoiceLineItemRequest{
-			DisplayName:  lo.ToPtr(name),
-			Quantity:     qty,
-			Amount:       types.RoundToCurrencyPrecision(amount, currency),
-			PeriodStart:  lo.ToPtr(periodStart),
-			PeriodEnd:    lo.ToPtr(periodEnd),
-			CommitmentID: lo.ToPtr(c.ID),
-			Metadata: types.Metadata{
-				types.MetadataKeyCommitmentLineKind: string(kind),
-				types.MetadataKeyCommitmentID:       c.ID,
-			},
-		}
-
-		if c.InvoiceDescription != nil && kind != types.CommitmentLineOnDemand {
-			out.Metadata[types.MetadataKeyDescription] = *c.InvoiceDescription
-		}
-
-		if line == nil {
-			out.EntityType = lo.ToPtr(string(types.InvoiceLineItemEntityTypeCommitment))
-			out.EntityID = lo.ToPtr(c.ID)
-			return out
-		}
-
-		out.PriceID = lo.ToPtr(line.Item.PriceID)
-		out.PriceType = lo.ToPtr(string(line.Item.PriceType))
-		out.MeterID = lo.ToPtr(line.Item.MeterID)
-		out.MeterDisplayName = lo.ToPtr(line.Item.MeterDisplayName)
-		out.EntityID = lo.ToPtr(line.Item.EntityID)
-		out.EntityType = lo.ToPtr(string(line.Item.EntityType))
-		out.PlanDisplayName = lo.ToPtr(line.Item.PlanDisplayName)
-		out.SubscriptionLineItemID = lo.ToPtr(line.Item.ID)
-		return out
-	}
-
+	r := lineRenderer{currency: currency, periodStart: periodStart, periodEnd: periodEnd, cost: cost}
 	var out []dto.CreateInvoiceLineItemRequest
 	for si, stack := range stacks {
-		alloc := allocs[si]
 		for ci, sc := range stack.Commitments {
-			used := alloc.Commitments[ci]
-			first := len(out)
-			largest := -1
-			usedValue, withinValue := decimal.Zero, decimal.Zero
-			for li, line := range sc.Lines {
-				if !used.UsedByLine[li].IsPositive() {
-					continue
-				}
-
-				qty, amount := used.UsedByLine[li], used.UsedByLine[li].Mul(sc.CommittedRate)
-				if stack.Type == types.COMMITMENT_TYPE_AMOUNT {
-					qty, amount = proportionalQuantity(line, used.UsedByLine[li]), used.UsedByLine[li]
-				}
-
-				row := newLine(sc.C, line, types.CommitmentLineWithin, sc.C.InvoiceLabel, qty, amount)
-				usedValue = usedValue.Add(amount)
-				withinValue = withinValue.Add(row.Amount)
-				if largest < 0 || row.Amount.GreaterThan(out[largest].Amount) {
-					largest = len(out)
-				}
-
-				out = append(out, row)
-			}
-
-			// Lines rounded one by one can drift from their rounded total; the largest line absorbs it.
-			if len(out) > first {
-				drift := types.RoundToCurrencyPrecision(usedValue, currency).Sub(withinValue)
-				out[largest].Amount = out[largest].Amount.Add(drift)
-				withinValue = withinValue.Add(drift)
-			}
-
-			if !sc.C.Binding {
-				continue
-			}
-
-			// True-up is the rounded period amount minus the rounded within lines, so they sum exactly.
-			trueUp := types.RoundToCurrencyPrecision(sc.Period.Amount, currency).Sub(withinValue)
-			if !trueUp.IsPositive() {
-				continue
-			}
-
-			trueUpQty := used.Unused
-			if stack.Type == types.COMMITMENT_TYPE_AMOUNT {
-				trueUpQty = decimal.NewFromInt(1)
-			}
-
-			row := newLine(sc.C, nil, types.CommitmentLineTrueUp, sc.C.InvoiceLabel+" (unused)", trueUpQty, trueUp)
-			row.PriceID = sc.C.CommittedPriceID
-			row.PriceType = lo.ToPtr(string(types.PRICE_TYPE_FIXED))
-			out = append(out, row)
+			out = append(out, r.commitmentLines(stack, sc, allocs[si].Commitments[ci])...)
 		}
 
 		for li, line := range stack.Lines {
-			// The last commitment scoping the line carries its on-demand lines.
-			owner := stack.Commitments[len(stack.Commitments)-1]
-			for _, sc := range stack.Commitments {
-				if lo.Contains(sc.Lines, line) {
-					owner = sc
-				}
-			}
-
-			// Window stacks price each window so bucketed prices match the normal path; the rest price the sum once.
-			var qty, amount decimal.Decimal
-			perWindow := stack.Measurement == types.CommitmentMeasurementWindow && line.OverageRate == nil
-			for _, w := range alloc.OnDemand[li] {
-				if !w.IsPositive() {
-					continue
-				}
-
-				qty = qty.Add(w)
-				switch {
-				case stack.Type == types.COMMITMENT_TYPE_AMOUNT:
-					amount = amount.Add(w)
-				case perWindow:
-					amount = amount.Add(cost(line.Price, w))
-				}
-			}
-
-			if stack.Type == types.COMMITMENT_TYPE_QUANTITY && !perWindow && qty.IsPositive() {
-				if line.OverageRate != nil {
-					amount = qty.Mul(*line.OverageRate)
-				} else {
-					amount = cost(line.Price, qty)
-				}
-			}
-
-			switch {
-			case qty.IsPositive() && stack.Type == types.COMMITMENT_TYPE_AMOUNT:
-				out = append(out, newLine(owner.C, line, types.CommitmentLineOnDemand, line.displayName(), proportionalQuantity(line, qty), amount))
-			case qty.IsPositive():
-				out = append(out, newLine(owner.C, line, types.CommitmentLineOnDemand, line.displayName(), qty, amount))
-			case stack.Type == types.COMMITMENT_TYPE_AMOUNT && line.Cost.IsZero() && line.Quantity.IsPositive():
-				// Free usage takes no capacity, but its quantity still shows on the invoice.
-				out = append(out, newLine(owner.C, line, types.CommitmentLineOnDemand, line.displayName(), line.Quantity, decimal.Zero))
-			}
+			out = append(out, r.onDemandLines(stack, line, allocs[si].OnDemand[li])...)
 		}
 	}
 
+	return out
+}
+
+// commitmentLines renders one commitment's within lines and its true-up; for a binding commitment
+// the rows sum to the rounded period amount.
+func (r lineRenderer) commitmentLines(
+	stack *commitmentStack,
+	sc *stackedCommitment,
+	used commitmentAllocation,
+) []dto.CreateInvoiceLineItemRequest {
+	var rows []dto.CreateInvoiceLineItemRequest
+	usedValue := decimal.Zero
+	for li, line := range sc.Lines {
+		if !used.UsedByLine[li].IsPositive() {
+			continue
+		}
+
+		qty, amount := used.UsedByLine[li], used.UsedByLine[li].Mul(sc.CommittedRate)
+		if stack.Type == types.COMMITMENT_TYPE_AMOUNT {
+			qty, amount = proportionalQuantity(line, used.UsedByLine[li]), used.UsedByLine[li]
+		}
+
+		usedValue = usedValue.Add(amount)
+		rows = append(rows, r.row(sc.C, line, types.CommitmentLineWithin, sc.C.InvoiceLabel, qty, amount))
+	}
+
+	withinValue := r.absorbDrift(rows, usedValue)
+	if !sc.C.Binding {
+		return rows
+	}
+
+	trueUp := types.RoundToCurrencyPrecision(sc.Period.Amount, r.currency).Sub(withinValue)
+	if !trueUp.IsPositive() {
+		return rows
+	}
+
+	trueUpQty := used.Unused
+	if stack.Type == types.COMMITMENT_TYPE_AMOUNT {
+		trueUpQty = decimal.NewFromInt(1)
+	}
+
+	row := r.row(sc.C, nil, types.CommitmentLineTrueUp, sc.C.InvoiceLabel+" (unused)", trueUpQty, trueUp)
+	row.PriceID = sc.C.CommittedPriceID
+	row.PriceType = lo.ToPtr(string(types.PRICE_TYPE_FIXED))
+	return append(rows, row)
+}
+
+// absorbDrift reconciles individually rounded rows with their rounded exact total: positive drift
+// goes to the largest row, negative drift is taken from the largest rows without driving any below
+// zero. It returns the rows' final sum.
+func (r lineRenderer) absorbDrift(rows []dto.CreateInvoiceLineItemRequest, usedValue decimal.Decimal) decimal.Decimal {
+	if len(rows) == 0 {
+		return decimal.Zero
+	}
+
+	sum := decimal.Zero
+	for i := range rows {
+		sum = sum.Add(rows[i].Amount)
+	}
+
+	drift := types.RoundToCurrencyPrecision(usedValue, r.currency).Sub(sum)
+	for remaining := drift.Abs(); remaining.IsPositive(); {
+		largest := 0
+		for i := range rows {
+			if rows[i].Amount.GreaterThan(rows[largest].Amount) {
+				largest = i
+			}
+		}
+
+		if drift.IsPositive() {
+			rows[largest].Amount = rows[largest].Amount.Add(remaining)
+			break
+		}
+
+		take := decimal.Min(rows[largest].Amount, remaining)
+		if !take.IsPositive() {
+			break
+		}
+
+		rows[largest].Amount = rows[largest].Amount.Sub(take)
+		remaining = remaining.Sub(take)
+	}
+
+	sum = decimal.Zero
+	for i := range rows {
+		sum = sum.Add(rows[i].Amount)
+	}
+
+	return sum
+}
+
+// onDemandLines prices one line's usage left after the whole stack was filled. On-demand belongs
+// to the stack, not to any one commitment (D36), so its rows carry no commitment id.
+func (r lineRenderer) onDemandLines(
+	stack *commitmentStack,
+	line *usageLine,
+	windows []decimal.Decimal,
+) []dto.CreateInvoiceLineItemRequest {
+	qty, amount := decimal.Zero, decimal.Zero
+	// Window stacks price each window so bucketed prices match the normal path; the rest price the sum once.
+	perWindow := stack.Measurement == types.CommitmentMeasurementWindow && line.OverageRate == nil
+	for _, w := range windows {
+		if !w.IsPositive() {
+			continue
+		}
+
+		qty = qty.Add(w)
+		switch {
+		case stack.Type == types.COMMITMENT_TYPE_AMOUNT:
+			amount = amount.Add(w)
+		case perWindow:
+			amount = amount.Add(r.cost(line.Price, w))
+		}
+	}
+
+	if stack.Type == types.COMMITMENT_TYPE_QUANTITY && !perWindow && qty.IsPositive() {
+		if line.OverageRate != nil {
+			amount = qty.Mul(*line.OverageRate)
+		} else {
+			amount = r.cost(line.Price, qty)
+		}
+	}
+
+	switch {
+	case qty.IsPositive() && stack.Type == types.COMMITMENT_TYPE_AMOUNT:
+		return []dto.CreateInvoiceLineItemRequest{r.row(nil, line, types.CommitmentLineOnDemand, line.displayName(), proportionalQuantity(line, qty), amount)}
+	case qty.IsPositive():
+		return []dto.CreateInvoiceLineItemRequest{r.row(nil, line, types.CommitmentLineOnDemand, line.displayName(), qty, amount)}
+	case stack.Type == types.COMMITMENT_TYPE_AMOUNT && line.Cost.IsZero() && line.Quantity.IsPositive():
+		// Free usage takes no capacity, but its quantity still shows on the invoice.
+		return []dto.CreateInvoiceLineItemRequest{r.row(nil, line, types.CommitmentLineOnDemand, line.displayName(), line.Quantity, decimal.Zero)}
+	}
+
+	return nil
+}
+
+// row builds one invoice line; a nil commitment means a stack-level line with no commitment id.
+func (r lineRenderer) row(
+	c *commitment.Commitment,
+	line *usageLine,
+	kind types.CommitmentLineKind,
+	name string,
+	qty, amount decimal.Decimal,
+) dto.CreateInvoiceLineItemRequest {
+	out := dto.CreateInvoiceLineItemRequest{
+		DisplayName: lo.ToPtr(name),
+		Quantity:    qty,
+		Amount:      types.RoundToCurrencyPrecision(amount, r.currency),
+		PeriodStart: lo.ToPtr(r.periodStart),
+		PeriodEnd:   lo.ToPtr(r.periodEnd),
+		Metadata: types.Metadata{
+			types.MetadataKeyCommitmentLineKind: string(kind),
+		},
+	}
+
+	if c != nil {
+		out.CommitmentID = lo.ToPtr(c.ID)
+		out.Metadata[types.MetadataKeyCommitmentID] = c.ID
+		if c.InvoiceDescription != nil {
+			out.Metadata[types.MetadataKeyDescription] = *c.InvoiceDescription
+		}
+	}
+
+	if line == nil {
+		out.EntityType = lo.ToPtr(string(types.InvoiceLineItemEntityTypeCommitment))
+		out.EntityID = lo.ToPtr(c.ID)
+		return out
+	}
+
+	out.PriceID = lo.ToPtr(line.Item.PriceID)
+	out.PriceType = lo.ToPtr(string(line.Item.PriceType))
+	out.MeterID = lo.ToPtr(line.Item.MeterID)
+	out.MeterDisplayName = lo.ToPtr(line.Item.MeterDisplayName)
+	out.EntityID = lo.ToPtr(line.Item.EntityID)
+	out.EntityType = lo.ToPtr(string(line.Item.EntityType))
+	out.PlanDisplayName = lo.ToPtr(line.Item.PlanDisplayName)
+	out.SubscriptionLineItemID = lo.ToPtr(line.Item.ID)
 	return out
 }

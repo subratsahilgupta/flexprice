@@ -213,3 +213,24 @@ func TestCommitmentPeriods_SkipsBucketsBeforeStart(t *testing.T) {
 	require.Len(t, periods, 1)
 	require.Equal(t, int64(11), periods[0].ActiveBuckets) // 13:00 to 23:00; the 12:00 bucket starts before the term
 }
+
+func TestCommitmentPeriods_BucketStraddlingAPeriodBoundaryCountsOnce(t *testing.T) {
+	// Weekly (Monday) buckets on a monthly subscription: the bucket starting Mon 26 Jan 2026
+	// runs into February. It belongs to January; February's period must not count it again.
+	jan := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	c := &commitment.Commitment{
+		Type:        types.COMMITMENT_TYPE_QUANTITY,
+		Value:       decimal.NewFromInt(1),
+		Measurement: types.CommitmentMeasurementWindow,
+		Timezone:    "UTC",
+		StartDate:   jan,
+		EndDate:     time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	periods, err := commitmentPeriods(c, monthlySub(jan), decimal.NewFromInt(1), types.WindowSizeWeek)
+	require.NoError(t, err)
+	require.Len(t, periods, 2)
+	require.Equal(t, int64(4), periods[0].ActiveBuckets) // Mondays 5, 12, 19, 26 Jan; 29 Dec starts before the term
+	require.Equal(t, int64(4), periods[1].ActiveBuckets) // Mondays 2, 9, 16, 23 Feb; 26 Jan already counted in January
+	require.True(t, commitmentValue(periods).Equal(decimal.NewFromInt(8)))
+}
