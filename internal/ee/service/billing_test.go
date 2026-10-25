@@ -273,6 +273,12 @@ func (s *BillingServiceSuite) setupTestData() {
 	// Use CurrentPeriodEnd as BillingAnchor so the next period is a full month (same day-of-month),
 	// ensuring next-period advance charges (e.g. fixed price) are included when billing at period end.
 	currentPeriodEnd := s.testData.now.Add(6 * 24 * time.Hour)
+	// Keep the anchor day at or below 28: a later day makes AddDate(0, -1, 0) normalize past the
+	// month end, so the period no longer matches the billing grid and amounts prorate by a day.
+	if currentPeriodEnd.Day() > 28 {
+		currentPeriodEnd = time.Date(currentPeriodEnd.Year(), currentPeriodEnd.Month(), 28,
+			currentPeriodEnd.Hour(), currentPeriodEnd.Minute(), currentPeriodEnd.Second(), 0, time.UTC)
+	}
 	currentPeriodStart := currentPeriodEnd.AddDate(0, -1, 0)
 	s.testData.subscription = &subscription.Subscription{
 		ID:                 "sub_123",
