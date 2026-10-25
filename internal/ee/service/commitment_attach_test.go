@@ -220,3 +220,22 @@ func (s *CommitmentServiceSuite) TestAddonSync_SkipsPriceBreakingCommitment() {
 	s.NotContains(priceIDs, storage.ID)
 	s.requireInsertUnderLock(events, "create:"+api.ID)
 }
+
+func (s *CommitmentServiceSuite) TestLegacyFields_AllowedWhenLineEndsBeforeCommitmentStarts() {
+	march := time.Date(2027, 3, 1, 0, 0, 0, 0, time.UTC)
+	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	req.StartDate = march
+	_, err := s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+
+	gone := *s.fx.lineAPI
+	gone.ID, gone.EndDate = "subs_line_api_gone", time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)
+	gone.CommitmentAmount = lo.ToPtr(dec("50"))
+	s.Require().NoError(rejectLegacyCommitmentInScope(s.GetContext(), s.fullParams(), s.fx.sub, &gone))
+
+	// The same legacy line overlapping the commitment term is still rejected.
+	overlapping := gone
+	overlapping.ID, overlapping.EndDate = "subs_line_api_overlap", time.Date(2027, 4, 1, 0, 0, 0, 0, time.UTC)
+	err = rejectLegacyCommitmentInScope(s.GetContext(), s.fullParams(), s.fx.sub, &overlapping)
+	s.requireValidation(err, "legacy line-item commitment")
+}

@@ -2,12 +2,13 @@ package service
 
 import (
 	"context"
-	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/commitment"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 )
@@ -56,6 +57,13 @@ func rejectLegacyCommitmentInScope(
 		return err
 	}
 
+	// Serialise with commitment creation, which validates against committed legacy fields.
+	if err := params.DB.LockWithWait(ctx, postgres.LockRequest{Key: "commitments:" + sub.ID}); err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to lock subscription commitments").
+			Mark(ierr.ErrInternal)
+	}
+
 	f := commitment.NewNoLimitFilter()
 	f.SubscriptionIDs = []string{sub.ID}
 	f.Statuses = []types.CommitmentStatus{types.CommitmentStatusActive, types.CommitmentStatusTerminated}
@@ -69,9 +77,8 @@ func rejectLegacyCommitmentInScope(
 		return err
 	}
 
-	now := time.Now().UTC()
 	for _, c := range listed {
-		if !c.EndedBy(now) && commitmentCoversLine(c, li, p) {
+		if overlapsLine(c, li) && commitmentCoversLine(c, li, p) {
 			return invalidf(
 				"line item %s is covered by commitment %s; legacy line-item commitment fields are not allowed",
 				li.ID,
@@ -81,6 +88,15 @@ func rejectLegacyCommitmentInScope(
 	}
 
 	return nil
+}
+
+// overlapsLine reports whether the line's billing interval overlaps the commitment's effective term.
+func overlapsLine(c *commitment.Commitment, li *subscription.SubscriptionLineItem) bool {
+	if !li.StartDate.Before(c.EffectiveEnd()) {
+		return false
+	}
+
+	return li.EndDate.IsZero() || c.StartDate.Before(li.EndDate)
 }
 
 func commitmentCoversLine(c *commitment.Commitment, li *subscription.SubscriptionLineItem, p *price.Price) bool {
@@ -120,7 +136,8 @@ func createSyncLineItem(
 		return params.SubscriptionLineItemRepo.Create(txCtx, li)
 	})
 	if checkErr != nil && ierr.IsValidation(checkErr) {
-		params.Logger.Info(ctx, "price sync skipped a price that would break a commitment",
+		params.Logger.Info(ctx, "commitment.sync_price_skipped",
+			logger.Op("commitment.sync_price_skipped"),
 			"subscription_id", sub.ID, "price_id", p.ID, "commitment_id", commitmentID, "reason", checkErr.Error())
 		return false, nil
 	}

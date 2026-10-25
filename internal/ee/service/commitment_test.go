@@ -1193,3 +1193,25 @@ func (s *CommitmentServiceSuite) TestResponse_LoadsScopeOnlyForWindowMeasurement
 		})
 	}
 }
+
+func (s *CommitmentServiceSuite) TestTerminate_FeeBeforeCurrentPeriodIsRejected() {
+	created, err := s.svc.Create(s.GetContext(), validReq(s.fx.sub.ID, s.fx.priceAPI.ID))
+	s.Require().NoError(err)
+
+	sub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), s.fx.sub.ID)
+	s.Require().NoError(err)
+	sub.CurrentPeriodStart = sub.CurrentPeriodStart.AddDate(0, 2, 0)
+	sub.CurrentPeriodEnd = sub.CurrentPeriodStart.AddDate(0, 1, 0)
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), sub))
+
+	before := sub.CurrentPeriodStart.AddDate(0, -1, 0)
+	_, err = s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{
+		EffectiveAt:     &before,
+		CancellationFee: lo.ToPtr(dec("25")),
+	})
+	s.requireValidation(err, "current billing period")
+
+	// Without a fee the same retroactive date terminates fine.
+	_, err = s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{EffectiveAt: &before})
+	s.Require().NoError(err)
+}

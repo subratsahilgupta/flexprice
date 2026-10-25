@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
@@ -165,7 +166,8 @@ func (s *commitmentService) create(
 		return nil, err
 	}
 
-	s.Logger.Info(ctx, "commitment created",
+	s.Logger.Info(ctx, "commitment.created",
+		logger.Op("commitment.created"),
 		"commitment_id", out.ID,
 		"subscription_id", out.SubscriptionID,
 	)
@@ -398,7 +400,8 @@ func (s *commitmentService) Terminate(
 		return nil, err
 	}
 
-	s.Logger.Info(ctx, "commitment terminated",
+	s.Logger.Info(ctx, "commitment.terminated",
+		logger.Op("commitment.terminated"),
 		"commitment_id", out.ID,
 		"subscription_id", out.SubscriptionID,
 		"effective_at", effectiveAt,
@@ -455,7 +458,8 @@ func (s *commitmentService) TerminateForSubscription(
 					return err
 				}
 
-				s.Logger.Info(ctx, "commitment termination moved to subscription cancellation",
+				s.Logger.Info(ctx, "commitment.termination_rescheduled",
+					logger.Op("commitment.termination_rescheduled"),
 					"commitment_id", c.ID,
 					"subscription_id", subscriptionID,
 					"previous_terminated_at", *c.TerminatedAt,
@@ -472,7 +476,8 @@ func (s *commitmentService) TerminateForSubscription(
 				return err
 			}
 
-			s.Logger.Info(ctx, "commitment terminated",
+			s.Logger.Info(ctx, "commitment.terminated",
+				logger.Op("commitment.terminated"),
 				"commitment_id", c.ID,
 				"subscription_id", subscriptionID,
 				"effective_at", effectiveAt,
@@ -560,6 +565,14 @@ func (s *commitmentService) billCancellationFee(
 	sub, err := s.SubRepo.Get(ctx, c.SubscriptionID)
 	if err != nil {
 		return nil, err
+	}
+
+	// The fee invoice is dated at effective_at; a closed billing period must not gain charges.
+	if effectiveAt.Before(sub.CurrentPeriodStart) {
+		return nil, invalidf(
+			"effective_at with a cancellation_fee cannot precede the current billing period start %s",
+			sub.CurrentPeriodStart.Format(time.RFC3339),
+		)
 	}
 
 	metadata := types.Metadata{
