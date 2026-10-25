@@ -1033,14 +1033,30 @@ func (r *CreateSubscriptionRequest) validateCheckoutCompatibility() error {
 }
 
 // validateCommitments checks each inline commitment's shape on a copy, so no write happens for a bad request.
+// The subscription ID, unknown until create, stands in as "pending".
 func (r *CreateSubscriptionRequest) validateCommitments() error {
+	idempotencyKeys := make(map[string]bool, len(r.Commitments))
 	for i := range r.Commitments {
 		c := r.Commitments[i]
 		c.SubscriptionID = "pending"
+		if c.Scope.EntityType == types.CommitmentScopeSubscription && c.Scope.EntityID == "" {
+			c.Scope.EntityID = "pending"
+		}
+
 		c.ApplyDefaults(lo.CoalesceOrEmpty(r.Timezone, types.DefaultTimezone))
 		if err := c.Validate(); err != nil {
 			return err
 		}
+
+		if c.IdempotencyKey == nil {
+			continue
+		}
+
+		if idempotencyKeys[*c.IdempotencyKey] {
+			return ierr.Validationf("commitments carry the idempotency_key %s more than once", *c.IdempotencyKey)
+		}
+
+		idempotencyKeys[*c.IdempotencyKey] = true
 	}
 
 	return nil

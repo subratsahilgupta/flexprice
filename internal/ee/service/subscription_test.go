@@ -2165,6 +2165,104 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_InlineCommitmentReject
 	s.Len(subs, len(before))
 }
 
+func (s *SubscriptionServiceSuite) TestCreateSubscription_InlineSubscriptionScopeTakesTheNewSubscriptionID() {
+	ctx := s.GetContext()
+	setCommitmentsV2(s.T(), ctx, s.GetStores(), true)
+
+	req := s.inlineCommitmentRequest()
+	req.Commitments[0].Type, req.Commitments[0].CommittedPrice = types.COMMITMENT_TYPE_AMOUNT, nil
+	req.Commitments[0].Value = decimal.NewFromInt(100)
+	req.Commitments[0].Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeSubscription}
+	resp, err := s.service.CreateSubscription(ctx, req)
+	s.Require().NoError(err)
+
+	items, err := s.GetStores().CommitmentRepo.List(ctx, commitment.NewNoLimitFilter())
+	s.Require().NoError(err)
+	s.Require().Len(items, 1)
+	s.Equal(resp.ID, items[0].ScopeEntityID)
+}
+
+func (s *SubscriptionServiceSuite) TestCreateSubscription_InlinePriceScopeFollowsThePriceOverride() {
+	ctx := s.GetContext()
+	setCommitmentsV2(s.T(), ctx, s.GetStores(), true)
+
+	req := s.inlineCommitmentRequest()
+	req.OverrideLineItems = []dto.OverrideLineItemRequest{{
+		PriceID: s.testData.prices.storage.ID,
+		Amount:  lo.ToPtr(decimal.RequireFromString("0.2")),
+	}}
+	_, err := s.service.CreateSubscription(ctx, req)
+	s.Require().NoError(err)
+
+	items, err := s.GetStores().CommitmentRepo.List(ctx, commitment.NewNoLimitFilter())
+	s.Require().NoError(err)
+	s.Require().Len(items, 1)
+	s.NotEqual(s.testData.prices.storage.ID, items[0].ScopeEntityID, "the plan price is no longer billed")
+
+	scoped, err := s.GetStores().PriceRepo.Get(ctx, items[0].ScopeEntityID)
+	s.Require().NoError(err)
+	s.Equal(s.testData.prices.storage.ID, scoped.ParentPriceID)
+	s.True(scoped.Amount.Equal(decimal.RequireFromString("0.2")), "got %s", scoped.Amount)
+}
+
+func (s *SubscriptionServiceSuite) TestCreateSubscription_InlineCommitmentScopesAFirstPhaseLineItem() {
+	ctx := s.GetContext()
+	setCommitmentsV2(s.T(), ctx, s.GetStores(), true)
+
+	extrasPlan := &plan.Plan{ID: "plan_phase_extras", Name: "Phase extras", BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.Require().NoError(s.GetStores().PlanRepo.Create(ctx, extrasPlan))
+	phasePrice := &price.Price{
+		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+		Amount:             decimal.RequireFromString("0.05"),
+		Currency:           "usd",
+		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+		EntityID:           extrasPlan.ID,
+		Type:               types.PRICE_TYPE_USAGE,
+		MeterID:            s.testData.meters.apiCalls.ID,
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+		InvoiceCadence:     types.InvoiceCadenceArrear,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, phasePrice))
+
+	req := s.inlineCommitmentRequest()
+	req.Phases = []dto.SubscriptionPhaseCreateRequest{{
+		StartDate: lo.FromPtr(req.StartDate),
+		LineItems: []dto.CreateSubscriptionLineItemRequest{{PriceID: phasePrice.ID}},
+	}}
+	req.Commitments[0].Scope.EntityID = phasePrice.ID
+	_, err := s.service.CreateSubscription(ctx, req)
+	s.Require().NoError(err)
+
+	items, err := s.GetStores().CommitmentRepo.List(ctx, commitment.NewNoLimitFilter())
+	s.Require().NoError(err)
+	s.Require().Len(items, 1)
+	s.Equal(phasePrice.ID, items[0].ScopeEntityID)
+}
+
+func (s *SubscriptionServiceSuite) TestCreateSubscription_InlineIdempotencyKeyFromAnotherSubscriptionIsRejected() {
+	ctx := s.GetContext()
+	setCommitmentsV2(s.T(), ctx, s.GetStores(), true)
+
+	req := s.inlineCommitmentRequest()
+	req.Commitments[0].IdempotencyKey = lo.ToPtr("contract-inline")
+	first, err := s.service.CreateSubscription(ctx, req)
+	s.Require().NoError(err)
+
+	_, err = s.service.CreateSubscription(ctx, req)
+	s.Require().Error(err)
+	s.True(ierr.IsValidation(err), "got %v", err)
+	s.Contains(err.Error(), first.ID)
+
+	items, err := s.GetStores().CommitmentRepo.List(ctx, commitment.NewNoLimitFilter())
+	s.Require().NoError(err)
+	s.Require().Len(items, 1)
+	s.Equal(first.ID, items[0].SubscriptionID)
+}
+
 func (s *SubscriptionServiceSuite) TestCreateSubscription_AutoInvoiceThresholdRejectedWhenPlanHasFixedPrice() {
 	ctx := s.GetContext()
 	th := decimal.RequireFromString("50")

@@ -319,15 +319,17 @@ func (s *CommitmentServiceSuite) TestCreate_IdempotencyKeyReturnsExisting() {
 	s.Equal(1, n)
 }
 
-// lateKeyRepo misses the first idempotency lookup, as when a concurrent create commits while this one waits for the lock.
+// lateKeyRepo misses the first `misses` idempotency lookups, as when a concurrent create commits while this one
+// waits for the lock (one miss) or inserts after it (two misses).
 type lateKeyRepo struct {
 	commitment.Repository
+	misses  int
 	lookups int
 }
 
 func (r *lateKeyRepo) GetByIdempotencyKey(ctx context.Context, key string) (*commitment.Commitment, error) {
 	r.lookups++
-	if r.lookups == 1 {
+	if r.lookups <= r.misses {
 		return nil, ierr.NewError("not found").Mark(ierr.ErrNotFound)
 	}
 
@@ -346,7 +348,7 @@ func (s *CommitmentServiceSuite) TestCreate_KeyReplayedUnderLockReturnsOriginalW
 	publisher.Reset()
 
 	params := s.fullParams()
-	repo := &lateKeyRepo{Repository: params.CommitmentRepo}
+	repo := &lateKeyRepo{Repository: params.CommitmentRepo, misses: 1}
 	params.CommitmentRepo = repo
 	got, err := NewCommitmentService(params).Create(s.GetContext(), req)
 	s.Require().NoError(err)
@@ -356,6 +358,49 @@ func (s *CommitmentServiceSuite) TestCreate_KeyReplayedUnderLockReturnsOriginalW
 	s.Require().NoError(err)
 	s.Equal(pricesBefore, pricesAfter)
 	s.Empty(publisher.Events(), "a replayed key must not publish commitment.created again")
+}
+
+// Each replay site — before the transaction, under the lock, and after losing the insert race — rejects a key
+// that belongs to another subscription instead of returning that subscription's commitment.
+func (s *CommitmentServiceSuite) TestCreate_IdempotencyKeyFromAnotherSubscriptionIsRejected() {
+	ctx := s.GetContext()
+	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	req.IdempotencyKey = lo.ToPtr("contract-shared")
+	first, err := s.svc.Create(ctx, req)
+	s.Require().NoError(err)
+
+	other := *s.fx.sub
+	other.ID = "subs_cmt_other"
+	otherLine := *s.fx.lineAPI
+	otherLine.ID, otherLine.SubscriptionID = "subs_line_api_other", other.ID
+	s.Require().NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, &other,
+		[]*subscription.SubscriptionLineItem{&otherLine}))
+
+	tests := []struct {
+		name   string
+		misses int
+	}{
+		{"found before the transaction", 0},
+		{"found under the lock", 1},
+		{"found after the insert race", 2},
+	}
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			params := s.fullParams()
+			params.CommitmentRepo = &lateKeyRepo{Repository: params.CommitmentRepo, misses: tc.misses}
+			otherReq := validReq(other.ID, s.fx.priceAPI.ID)
+			otherReq.IdempotencyKey = req.IdempotencyKey
+			_, err := NewCommitmentService(params).Create(ctx, otherReq)
+			s.requireValidation(err, s.fx.sub.ID, other.ID)
+		})
+	}
+
+	replay, err := s.svc.Create(ctx, req)
+	s.Require().NoError(err)
+	s.Equal(first.ID, replay.ID, "the key still replays on its own subscription")
+	n, err := s.GetStores().CommitmentRepo.Count(ctx, commitment.NewNoLimitFilter())
+	s.Require().NoError(err)
+	s.Equal(1, n)
 }
 
 func (s *CommitmentServiceSuite) TestPreview_RejectedWhenDisabled() {

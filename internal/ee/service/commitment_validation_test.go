@@ -118,6 +118,8 @@ func TestCreateCommitmentRequest_Validate(t *testing.T) {
 		ok     bool
 	}{
 		{"valid", func(r *dto.CreateCommitmentRequest) {}, true},
+		{"standalone without subscription_id", func(r *dto.CreateCommitmentRequest) { r.SubscriptionID = "" }, false},
+		{"scope without entity_id", func(r *dto.CreateCommitmentRequest) { r.Scope.EntityID = "" }, false},
 		{"C6 zero value", func(r *dto.CreateCommitmentRequest) { r.Value = decimal.Zero }, false},
 		{"C7 quantity without committed price", func(r *dto.CreateCommitmentRequest) { r.CommittedPrice = nil }, false},
 		{"C7 amount with committed price", func(r *dto.CreateCommitmentRequest) { r.Type = types.COMMITMENT_TYPE_AMOUNT }, false},
