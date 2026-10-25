@@ -929,7 +929,7 @@ func (s *commitmentService) checkAttachAgainst(
 		)
 	}
 
-	return rejectWeekBuckets(got)
+	return rejectCalendarBuckets(got)
 }
 
 // checkAttachPairs requires commitments that now share the new price and overlap in time to agree on type,

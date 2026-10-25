@@ -42,6 +42,7 @@ type loadedScope struct {
 	items        []*subscription.SubscriptionLineItem // in fill order, limited to this call's line items
 	bucket       types.WindowSize
 	overagePrice *price.Price
+	amountOf     func(capacity decimal.Decimal) decimal.Decimal
 }
 
 // stackKey groups commitments that can share lines: same type and measurement, and bucket size for windows.
@@ -183,7 +184,7 @@ func (s *billingService) newCommitmentLoader(
 			l.handled[item.ID] = true
 		}
 
-		l.scopes[c.ID] = &loadedScope{items: items, bucket: bucket, overagePrice: overagePrice}
+		l.scopes[c.ID] = &loadedScope{items: items, bucket: bucket, overagePrice: overagePrice, amountOf: amountOf}
 		l.commitments = append(l.commitments, &stackedCommitment{C: c, CommittedPrice: committedPrice, Period: period})
 	}
 
@@ -441,12 +442,13 @@ func (l *commitmentLoader) fillWindowStack(ctx context.Context, stack *commitmen
 		}
 	}
 
+	// The floor counts the same buckets as the pools, over the whole window, so it never differs from the
+	// capacity the allocation grants once the window has elapsed.
+	full := generateBucketStarts(l.periodStart.In(loc), l.periodEnd.In(loc), bucket, &l.sub.BillingAnchor)
 	for _, sc := range stack.Commitments {
-		loc := sc.C.Location()
 		sc.PoolOf = make([]int, len(stack.Windows))
 		for w, t := range stack.Windows {
-			// A bucket starting before the period belongs to the period that already billed it.
-			if t.Before(l.periodStart) || !sc.C.IsActiveAt(t) || !sc.C.ActiveWindows.Contains(t, loc) {
+			if !l.holdsCapacity(sc.C, t) {
 				sc.PoolOf[w] = -1
 				continue
 			}
@@ -454,9 +456,19 @@ func (l *commitmentLoader) fillWindowStack(ctx context.Context, stack *commitmen
 			sc.PoolOf[w] = len(sc.Pools)
 			sc.Pools = append(sc.Pools, capacityPool{Capacity: sc.C.Value})
 		}
+
+		sc.Period.ActiveBuckets = int64(lo.CountBy(full, func(t time.Time) bool { return l.holdsCapacity(sc.C, t) }))
+		sc.Period.Capacity = sc.C.Value.Mul(decimal.NewFromInt(sc.Period.ActiveBuckets))
+		sc.Period.Amount = l.scopes[sc.C.ID].amountOf(sc.Period.Capacity)
 	}
 
 	return nil
+}
+
+// holdsCapacity reports whether the bucket starting at t is one of the commitment's pools in this window.
+// A bucket starting before the window belongs to the period that already billed it.
+func (l *commitmentLoader) holdsCapacity(c *commitment.Commitment, t time.Time) bool {
+	return !t.Before(l.periodStart) && c.IsActiveAt(t) && c.ActiveWindows.Contains(t, c.Location())
 }
 
 // fillPeriodStack gives the stack one window for the period, or one per stretch between commitment starts and

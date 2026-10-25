@@ -1349,24 +1349,37 @@ func (s *CommitmentServiceSuite) groupedBucketedPrice() *price.Price {
 	return &p
 }
 
-func (s *CommitmentServiceSuite) TestValidation_RejectsWeeklyWindowBuckets() {
-	ctx := s.GetContext()
-	weekly := *s.fx.priceAPI
-	weekly.ID, weekly.BucketSize = "price_api_weekly", types.WindowSizeWeek
-	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &weekly))
-	line := *s.fx.lineAPI
-	line.ID, line.PriceID = "subs_line_api_weekly", weekly.ID
-	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &line))
+func (s *CommitmentServiceSuite) TestValidation_RejectsCalendarWindowBuckets() {
+	tests := []struct {
+		size types.WindowSize
+		want []string
+	}{
+		{size: types.WindowSizeWeek, want: []string{"weekly buckets", "Sunday"}},
+		{size: types.WindowSizeMonth, want: []string{"monthly buckets", "UTC calendar date"}},
+	}
 
-	req := validReq(s.fx.sub.ID, weekly.ID)
-	req.Measurement = types.CommitmentMeasurementWindow
-	_, err := s.svc.Create(ctx, req)
-	s.requireValidation(err, "weekly buckets", "Sunday")
+	for _, tt := range tests {
+		s.Run(string(tt.size), func() {
+			s.SetupTest()
+			ctx := s.GetContext()
+			calendar := *s.fx.priceAPI
+			calendar.ID, calendar.BucketSize = "price_api_calendar", tt.size
+			s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &calendar))
+			line := *s.fx.lineAPI
+			line.ID, line.PriceID = "subs_line_api_calendar", calendar.ID
+			s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &line))
 
-	// Measured per billing period, the same price is fine.
-	req.Measurement = types.CommitmentMeasurementBillingPeriod
-	_, err = s.svc.Create(ctx, req)
-	s.Require().NoError(err)
+			req := validReq(s.fx.sub.ID, calendar.ID)
+			req.Measurement = types.CommitmentMeasurementWindow
+			_, err := s.svc.Create(ctx, req)
+			s.requireValidation(err, tt.want...)
+
+			// Measured per billing period, the same price is fine.
+			req.Measurement = types.CommitmentMeasurementBillingPeriod
+			_, err = s.svc.Create(ctx, req)
+			s.Require().NoError(err)
+		})
+	}
 }
 
 func (s *CommitmentServiceSuite) TestValidation_RejectsGroupedBucketedPriceInScope() {

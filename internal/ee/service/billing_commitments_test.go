@@ -811,6 +811,31 @@ func (s *BillingServiceSuite) TestCommitmentLoader_RawEventsDailyGridFollowsSubs
 	s.Equal(c.ID, stacks[0].Commitments[0].C.ID)
 }
 
+// Terminated at 01:30 IST on 10 Aug, the IST grid holds ten daily buckets where a UTC count would hold nine;
+// the floor follows the pools, so the true-up is exactly the unused capacity.
+func (s *BillingServiceSuite) TestCommitmentLoader_WindowFloorMatchesPoolCapacity() {
+	ctx := s.GetContext()
+	s.setupTestData()
+	s.enableCommitmentsV2()
+	sub, c, usage := s.istDailyWindowFixture()
+	c.CommitmentStatus, c.TerminatedAt = types.CommitmentStatusTerminated, lo.ToPtr(time.Date(2026, 8, 9, 20, 0, 0, 0, time.UTC))
+	_, err := s.GetStores().CommitmentRepo.Update(ctx, c)
+	s.Require().NoError(err)
+
+	l := s.loaderFor(sub, usage, sub.CurrentPeriodStart, sub.CurrentPeriodEnd, true)
+	_, allocs, err := l.Stacks(ctx)
+	s.Require().NoError(err)
+	s.True(allocs[0].Commitments[0].Capacity.Equal(dec("100")), "capacity %s", allocs[0].Commitments[0].Capacity)
+	s.True(allocs[0].Commitments[0].Used.Equal(dec("10")))
+
+	lines, _, err := l.InvoiceLines(ctx)
+	s.Require().NoError(err)
+	within, trueUp := s.loaderLine(lines, types.CommitmentLineWithin, c.ID), s.loaderLine(lines, types.CommitmentLineTrueUp, c.ID)
+	s.True(trueUp.Quantity.Equal(dec("90")), "true-up quantity %s", trueUp.Quantity)
+	s.True(trueUp.Amount.Equal(dec("45")), "true-up %s", trueUp.Amount)
+	s.True(within.Amount.Add(trueUp.Amount).Equal(dec("50")), "floor %s", within.Amount.Add(trueUp.Amount))
+}
+
 // An instant off the grid lands in the window containing it; one past the elapsed period is left out.
 func (s *BillingServiceSuite) TestCommitmentLoader_BucketsJoinTheWindowContainingThem() {
 	ctx := s.GetContext()
