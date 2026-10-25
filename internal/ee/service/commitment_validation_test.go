@@ -118,6 +118,8 @@ func TestCreateCommitmentRequest_Validate(t *testing.T) {
 		ok     bool
 	}{
 		{"valid", func(r *dto.CreateCommitmentRequest) {}, true},
+		{"standalone without subscription_id", func(r *dto.CreateCommitmentRequest) { r.SubscriptionID = "" }, false},
+		{"scope without entity_id", func(r *dto.CreateCommitmentRequest) { r.Scope.EntityID = "" }, false},
 		{"C6 zero value", func(r *dto.CreateCommitmentRequest) { r.Value = decimal.Zero }, false},
 		{"C7 quantity without committed price", func(r *dto.CreateCommitmentRequest) { r.CommittedPrice = nil }, false},
 		{"C7 amount with committed price", func(r *dto.CreateCommitmentRequest) { r.Type = types.COMMITMENT_TYPE_AMOUNT }, false},
@@ -360,7 +362,7 @@ func (s *CommitmentServiceSuite) TestAddonAttach_RejectsPriceBreakingCommitment(
 	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &addonPrice))
 
 	start := s.fx.sub.StartDate
-	_, err := NewSubscriptionService(s.fullParams()).AddAddonToSubscription(ctx, &dto.AddAddonRequest{
+	_, err := NewSubscriptionService(fullServiceParams(&s.BaseServiceTestSuite)).AddAddonToSubscription(ctx, &dto.AddAddonRequest{
 		SubscriptionID: s.fx.sub.ID,
 		AddAddonToSubscriptionRequest: dto.AddAddonToSubscriptionRequest{
 			AddonID:   "addon_storage",
@@ -393,7 +395,7 @@ func (s *CommitmentServiceSuite) TestPlanSync_SkipsPriceBreakingCommitment() {
 	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &storage))
 	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &api))
 
-	params := s.fullParams()
+	params := fullServiceParams(&s.BaseServiceTestSuite)
 	params.PlanPriceSyncRepo = s.GetStores().PlanPriceSyncRepo
 	_, err = NewPlanService(params).SyncPlanPricesV2(ctx, "plan_cmt")
 	s.Require().NoError(err)
@@ -412,7 +414,7 @@ func (s *CommitmentServiceSuite) TestLineItemUpdate_RejectsLegacyCommitmentInSco
 	_, err := s.svc.Create(s.GetContext(), req)
 	s.Require().NoError(err)
 
-	_, err = NewSubscriptionService(s.fullParams()).UpdateSubscriptionLineItem(s.GetContext(), s.fx.lineAPI.ID,
+	_, err = NewSubscriptionService(fullServiceParams(&s.BaseServiceTestSuite)).UpdateSubscriptionLineItem(s.GetContext(), s.fx.lineAPI.ID,
 		dto.UpdateSubscriptionLineItemRequest{
 			CommitmentAmount:        lo.ToPtr(dec("50")),
 			CommitmentType:          types.COMMITMENT_TYPE_AMOUNT,
@@ -441,7 +443,7 @@ func (s *CommitmentServiceSuite) plainUpdateOfLegacyLine(meterID string) ([]stri
 	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, line))
 
 	var events []string
-	params := s.fullParams()
+	params := fullServiceParams(&s.BaseServiceTestSuite)
 	params.DB = &recordingDB{IClient: s.GetDB(), events: &events}
 	params.SubscriptionLineItemRepo = &recordingLineItemRepo{LineItemRepository: s.GetStores().SubscriptionLineItemRepo, events: &events}
 	_, err = NewSubscriptionService(params).UpdateSubscriptionLineItem(ctx, s.fx.lineAPI.ID,
@@ -468,7 +470,7 @@ func (s *CommitmentServiceSuite) TestLineItemAdd_RejectsLegacyCommitmentInScope(
 	_, err := s.svc.Create(s.GetContext(), req)
 	s.Require().NoError(err)
 
-	_, err = NewSubscriptionService(s.fullParams()).AddSubscriptionLineItem(s.GetContext(), s.fx.sub.ID,
+	_, err = NewSubscriptionService(fullServiceParams(&s.BaseServiceTestSuite)).AddSubscriptionLineItem(s.GetContext(), s.fx.sub.ID,
 		dto.CreateSubscriptionLineItemRequest{
 			PriceID:          s.fx.priceOtherMeterInGroup.ID,
 			CommitmentAmount: lo.ToPtr(dec("50")),
@@ -538,10 +540,10 @@ func (s *CommitmentServiceSuite) TestLineItemUpdate_LegacyGuardCoversTerminatedC
 	line := *s.fx.lineAPI
 	line.CommitmentAmount, line.CommitmentType = lo.ToPtr(dec("50")), types.COMMITMENT_TYPE_AMOUNT
 	line.StartDate = cutoff.AddDate(0, 0, 5)
-	s.requireValidation(rejectLegacyCommitmentInScope(ctx, s.fullParams(), s.fx.sub, &line), "legacy line-item commitment")
+	s.requireValidation(rejectLegacyCommitmentInScope(ctx, fullServiceParams(&s.BaseServiceTestSuite), s.fx.sub, &line), "legacy line-item commitment")
 
 	line.StartDate = time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC)
-	s.Require().NoError(rejectLegacyCommitmentInScope(ctx, s.fullParams(), s.fx.sub, &line))
+	s.Require().NoError(rejectLegacyCommitmentInScope(ctx, fullServiceParams(&s.BaseServiceTestSuite), s.fx.sub, &line))
 }
 
 func (s *CommitmentServiceSuite) TestCreate_RejectsSamePriorityOverFutureCutoff() {
@@ -576,7 +578,7 @@ func (s *CommitmentServiceSuite) TestPlanSync_InsertsUsageLineUnderCommitmentsLo
 	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &api))
 
 	var events []string
-	params := s.fullParams()
+	params := fullServiceParams(&s.BaseServiceTestSuite)
 	params.PlanPriceSyncRepo = s.GetStores().PlanPriceSyncRepo
 	params.DB = &recordingDB{IClient: s.GetDB(), events: &events}
 	params.SubscriptionLineItemRepo = &recordingLineItemRepo{LineItemRepository: s.GetStores().SubscriptionLineItemRepo, events: &events}
@@ -615,7 +617,7 @@ func (s *CommitmentServiceSuite) TestAddonSync_SkipsPriceBreakingCommitment() {
 	}))
 
 	var events []string
-	params := s.fullParams()
+	params := fullServiceParams(&s.BaseServiceTestSuite)
 	params.DB = &recordingDB{IClient: s.GetDB(), events: &events}
 	params.SubscriptionLineItemRepo = &recordingLineItemRepo{LineItemRepository: s.GetStores().SubscriptionLineItemRepo, events: &events}
 	resp, err := NewAddonService(params).SyncAddonPrices(ctx, "addon_sync")
@@ -641,19 +643,19 @@ func (s *CommitmentServiceSuite) TestLegacyFields_AllowedWhenLineEndsBeforeCommi
 	gone := *s.fx.lineAPI
 	gone.ID, gone.EndDate = "subs_line_api_gone", time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)
 	gone.CommitmentAmount = lo.ToPtr(dec("50"))
-	s.Require().NoError(rejectLegacyCommitmentInScope(s.GetContext(), s.fullParams(), s.fx.sub, &gone))
+	s.Require().NoError(rejectLegacyCommitmentInScope(s.GetContext(), fullServiceParams(&s.BaseServiceTestSuite), s.fx.sub, &gone))
 
 	// The same legacy line overlapping the commitment term is still rejected.
 	overlapping := gone
 	overlapping.ID, overlapping.EndDate = "subs_line_api_overlap", time.Date(2027, 4, 1, 0, 0, 0, 0, time.UTC)
-	err = rejectLegacyCommitmentInScope(s.GetContext(), s.fullParams(), s.fx.sub, &overlapping)
+	err = rejectLegacyCommitmentInScope(s.GetContext(), fullServiceParams(&s.BaseServiceTestSuite), s.fx.sub, &overlapping)
 	s.requireValidation(err, "legacy line-item commitment")
 }
 
 func (s *CommitmentServiceSuite) detachCheck(lineItemID string, endDate time.Time) error {
 	li, err := s.GetStores().SubscriptionLineItemRepo.Get(s.GetContext(), lineItemID)
 	s.Require().NoError(err)
-	return checkLineItemCommitmentDetach(s.GetContext(), s.fullParams(), s.fx.sub, li, endDate)
+	return checkLineItemCommitmentDetach(s.GetContext(), fullServiceParams(&s.BaseServiceTestSuite), s.fx.sub, li, endDate)
 }
 
 func (s *CommitmentServiceSuite) TestLineItemDetach_RejectsEmptyingBindingCommitmentScope() {
@@ -745,7 +747,7 @@ func (s *CommitmentServiceSuite) TestLineItemDelete_EndsUsageLineUnderCommitment
 	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &past))
 
 	var events []string
-	params := s.fullParams()
+	params := fullServiceParams(&s.BaseServiceTestSuite)
 	params.DB = &recordingDB{IClient: s.GetDB(), events: &events}
 	params.SubscriptionLineItemRepo = &recordingLineItemRepo{LineItemRepository: s.GetStores().SubscriptionLineItemRepo, events: &events}
 	_, err := NewSubscriptionService(params).DeleteSubscriptionLineItem(ctx, past.ID, dto.DeleteSubscriptionLineItemRequest{})
@@ -760,7 +762,7 @@ func (s *CommitmentServiceSuite) TestLineItemDelete_RejectsCancellingTheOnlySche
 	created, err := s.svc.Create(ctx, validReq(s.fx.sub.ID, s.fx.priceAPI.ID))
 	s.Require().NoError(err)
 
-	_, err = NewSubscriptionService(s.fullParams()).DeleteSubscriptionLineItem(ctx, s.fx.lineAPI.ID, dto.DeleteSubscriptionLineItemRequest{})
+	_, err = NewSubscriptionService(fullServiceParams(&s.BaseServiceTestSuite)).DeleteSubscriptionLineItem(ctx, s.fx.lineAPI.ID, dto.DeleteSubscriptionLineItemRequest{})
 	s.requireValidation(err, created.ID, "terminate the commitment first")
 }
 
@@ -809,7 +811,7 @@ func (s *CommitmentServiceSuite) TestAddonChange_SwapKeepsBindingCommitmentScope
 			s.seedUsageAddon("addon_out", addonMeter.ID)
 			s.seedUsageAddon("addon_in", addonMeter.ID)
 
-			changes := NewAddonChangeService(s.fullParams())
+			changes := NewAddonChangeService(fullServiceParams(&s.BaseServiceTestSuite))
 			_, _, err := changes.Execute(ctx, AddonChangeRequest{
 				Subscription: s.fx.sub,
 				Adds:         []AddonAdd{s.addonAdd("addon_out", s.fx.sub.StartDate)},
@@ -860,7 +862,7 @@ func (s *CommitmentServiceSuite) TestLineItemUpdate_RejectsPriceOverrideEmptying
 	_, err := s.svc.Create(s.GetContext(), validReq(s.fx.sub.ID, s.fx.priceAPI.ID))
 	s.Require().NoError(err)
 
-	_, err = NewSubscriptionService(s.fullParams()).UpdateSubscriptionLineItem(s.GetContext(), s.fx.lineAPI.ID,
+	_, err = NewSubscriptionService(fullServiceParams(&s.BaseServiceTestSuite)).UpdateSubscriptionLineItem(s.GetContext(), s.fx.lineAPI.ID,
 		dto.UpdateSubscriptionLineItemRequest{
 			Amount:        lo.ToPtr(dec("0.07")),
 			EffectiveFrom: lo.ToPtr(s.fx.sub.StartDate.AddDate(0, 1, 0)),

@@ -39,6 +39,11 @@ type commitmentService struct {
 }
 
 func NewCommitmentService(params ServiceParams) CommitmentService {
+	return newCommitmentService(params)
+}
+
+// newCommitmentService hands same-package callers the concrete type, for create options beyond the public API.
+func newCommitmentService(params ServiceParams) *commitmentService {
 	return &commitmentService{ServiceParams: params}
 }
 
@@ -101,41 +106,36 @@ func (s *commitmentService) create(
 	req dto.CreateCommitmentRequest,
 	opts commitmentCreateOptions,
 ) (*dto.CommitmentResponse, error) {
-	if req.IdempotencyKey != nil {
-		existing, err := s.CommitmentRepo.GetByIdempotencyKey(ctx, *req.IdempotencyKey)
-		if err == nil {
-			return s.response(ctx, existing, nil)
-		}
+	existing, err := s.findReplay(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 
-		if !ierr.IsNotFound(err) {
-			return nil, err
-		}
+	if existing != nil {
+		return s.response(ctx, existing, nil)
 	}
 
 	var out *commitment.Commitment
 	var cc *commitmentContext
 	inserted := false
-	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+	err = s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		if err := s.DB.LockWithWait(txCtx, postgres.LockRequest{Key: "commitments:" + req.SubscriptionID}); err != nil {
 			return ierr.WithError(err).
 				WithHint("Failed to lock subscription commitments").
 				Mark(ierr.ErrInternal)
 		}
 
-		if req.IdempotencyKey != nil {
-			existing, err := s.CommitmentRepo.GetByIdempotencyKey(txCtx, *req.IdempotencyKey)
-			if err == nil {
-				out = existing
-				return nil
-			}
+		replayed, err := s.findReplay(txCtx, req)
+		if err != nil {
+			return err
+		}
 
-			if !ierr.IsNotFound(err) {
-				return err
-			}
+		if replayed != nil {
+			out = replayed
+			return nil
 		}
 
 		var c *commitment.Commitment
-		var err error
 		if c, cc, _, err = s.prepare(txCtx, &req, opts); err != nil {
 			return err
 		}
@@ -159,12 +159,14 @@ func (s *commitmentService) create(
 	if err != nil && req.IdempotencyKey != nil && ierr.IsAlreadyExists(err) {
 		// Lost a race with a concurrent retry on the same key. Only recoverable at top level: inside an
 		// outer transaction the failed insert has already aborted that transaction.
-		existing, getErr := s.CommitmentRepo.GetByIdempotencyKey(ctx, *req.IdempotencyKey)
-		if getErr != nil {
-			return nil, getErr
+		replayed, replayErr := s.findReplay(ctx, req)
+		if replayErr != nil {
+			return nil, replayErr
 		}
 
-		return s.response(ctx, existing, nil)
+		if replayed != nil {
+			return s.response(ctx, replayed, nil)
+		}
 	}
 
 	if err != nil {
@@ -182,6 +184,34 @@ func (s *commitmentService) create(
 	)
 	s.publishSystemEvent(ctx, types.WebhookEventCommitmentCreated, out)
 	return s.response(ctx, out, cc)
+}
+
+// findReplay returns the commitment already created under req's idempotency key, or nil when the key is unused.
+// A key used on another subscription is rejected rather than replayed.
+func (s *commitmentService) findReplay(ctx context.Context, req dto.CreateCommitmentRequest) (*commitment.Commitment, error) {
+	if req.IdempotencyKey == nil {
+		return nil, nil
+	}
+
+	existing, err := s.CommitmentRepo.GetByIdempotencyKey(ctx, *req.IdempotencyKey)
+	if ierr.IsNotFound(err) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	if existing.SubscriptionID != req.SubscriptionID {
+		return nil, ierr.Validationf(
+			"idempotency_key %s belongs to a commitment on subscription %s, not subscription %s",
+			*req.IdempotencyKey,
+			existing.SubscriptionID,
+			req.SubscriptionID,
+		)
+	}
+
+	return existing, nil
 }
 
 // prepare validates the request and builds the commitment and its value without persisting anything.

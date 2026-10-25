@@ -16,7 +16,8 @@ import (
 
 type CommitmentScopeInput struct {
 	EntityType types.CommitmentScopeType `json:"entity_type" validate:"required"`
-	EntityID   string                    `json:"entity_id" validate:"required"`
+	// EntityID may be omitted on an inline subscription-scoped commitment; the new subscription's ID is used.
+	EntityID string `json:"entity_id"`
 }
 
 // CommitmentPriceInput prices a commitment's committed or overage rate; billing_model defaults to FLAT_FEE.
@@ -80,7 +81,8 @@ func (in *CommitmentPriceInput) ToPrice(currency string) *price.Price {
 }
 
 type CreateCommitmentRequest struct {
-	SubscriptionID     string                            `json:"subscription_id" validate:"required"`
+	// SubscriptionID is required on POST /commitments and set server-side on inline commitments.
+	SubscriptionID     string                            `json:"subscription_id"`
 	IdempotencyKey     *string                           `json:"idempotency_key,omitempty" validate:"omitempty,max=128"`
 	Name               string                            `json:"name" validate:"required,max=255"`
 	InvoiceLabel       string                            `json:"invoice_label,omitempty" validate:"omitempty,max=255"`
@@ -144,6 +146,10 @@ func (r *CreateCommitmentRequest) Validate() error {
 	}
 
 	switch {
+	case r.SubscriptionID == "":
+		return ierr.Validation("subscription_id is required")
+	case r.Scope.EntityID == "":
+		return ierr.Validation("scope.entity_id is required")
 	case !r.Value.IsPositive():
 		return ierr.Validation("value must be greater than zero")
 	case !r.StartDate.Before(r.EndDate):

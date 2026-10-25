@@ -207,7 +207,7 @@ func TestCommitmentServiceSuite(t *testing.T) { suite.Run(t, new(CommitmentServi
 
 func (s *CommitmentServiceSuite) SetupTest() {
 	s.BaseServiceTestSuite.SetupTest()
-	s.svc = NewCommitmentService(s.fullParams())
+	s.svc = NewCommitmentService(fullServiceParams(&s.BaseServiceTestSuite))
 	s.fx = seedCommitmentFixtures(s.T(), s.GetContext(), s.GetStores())
 }
 
@@ -319,15 +319,17 @@ func (s *CommitmentServiceSuite) TestCreate_IdempotencyKeyReturnsExisting() {
 	s.Equal(1, n)
 }
 
-// lateKeyRepo misses the first idempotency lookup, as when a concurrent create commits while this one waits for the lock.
+// lateKeyRepo misses the first `misses` idempotency lookups, as when a concurrent create commits while this one
+// waits for the lock (one miss) or inserts after it (two misses).
 type lateKeyRepo struct {
 	commitment.Repository
+	misses  int
 	lookups int
 }
 
 func (r *lateKeyRepo) GetByIdempotencyKey(ctx context.Context, key string) (*commitment.Commitment, error) {
 	r.lookups++
-	if r.lookups == 1 {
+	if r.lookups <= r.misses {
 		return nil, ierr.NewError("not found").Mark(ierr.ErrNotFound)
 	}
 
@@ -345,8 +347,8 @@ func (s *CommitmentServiceSuite) TestCreate_KeyReplayedUnderLockReturnsOriginalW
 	publisher := s.GetWebhookPublisher().(*testutil.InMemoryWebhookPublisher)
 	publisher.Reset()
 
-	params := s.fullParams()
-	repo := &lateKeyRepo{Repository: params.CommitmentRepo}
+	params := fullServiceParams(&s.BaseServiceTestSuite)
+	repo := &lateKeyRepo{Repository: params.CommitmentRepo, misses: 1}
 	params.CommitmentRepo = repo
 	got, err := NewCommitmentService(params).Create(s.GetContext(), req)
 	s.Require().NoError(err)
@@ -356,6 +358,49 @@ func (s *CommitmentServiceSuite) TestCreate_KeyReplayedUnderLockReturnsOriginalW
 	s.Require().NoError(err)
 	s.Equal(pricesBefore, pricesAfter)
 	s.Empty(publisher.Events(), "a replayed key must not publish commitment.created again")
+}
+
+// Each replay site — before the transaction, under the lock, and after losing the insert race — rejects a key
+// that belongs to another subscription instead of returning that subscription's commitment.
+func (s *CommitmentServiceSuite) TestCreate_IdempotencyKeyFromAnotherSubscriptionIsRejected() {
+	ctx := s.GetContext()
+	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	req.IdempotencyKey = lo.ToPtr("contract-shared")
+	first, err := s.svc.Create(ctx, req)
+	s.Require().NoError(err)
+
+	other := *s.fx.sub
+	other.ID = "subs_cmt_other"
+	otherLine := *s.fx.lineAPI
+	otherLine.ID, otherLine.SubscriptionID = "subs_line_api_other", other.ID
+	s.Require().NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, &other,
+		[]*subscription.SubscriptionLineItem{&otherLine}))
+
+	tests := []struct {
+		name   string
+		misses int
+	}{
+		{"found before the transaction", 0},
+		{"found under the lock", 1},
+		{"found after the insert race", 2},
+	}
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			params := fullServiceParams(&s.BaseServiceTestSuite)
+			params.CommitmentRepo = &lateKeyRepo{Repository: params.CommitmentRepo, misses: tc.misses}
+			otherReq := validReq(other.ID, s.fx.priceAPI.ID)
+			otherReq.IdempotencyKey = req.IdempotencyKey
+			_, err := NewCommitmentService(params).Create(ctx, otherReq)
+			s.requireValidation(err, s.fx.sub.ID, other.ID)
+		})
+	}
+
+	replay, err := s.svc.Create(ctx, req)
+	s.Require().NoError(err)
+	s.Equal(first.ID, replay.ID, "the key still replays on its own subscription")
+	n, err := s.GetStores().CommitmentRepo.Count(ctx, commitment.NewNoLimitFilter())
+	s.Require().NoError(err)
+	s.Equal(1, n)
 }
 
 func (s *CommitmentServiceSuite) TestPreview_RejectedWhenDisabled() {
@@ -644,7 +689,7 @@ func (failingInvoiceRepo) CreateWithLineItems(context.Context, *invoice.Invoice)
 // commitment active here, and the transaction guarantees the same against a real database.
 func (s *CommitmentServiceSuite) TestTerminate_InvoiceFailureLeavesCommitmentActive() {
 	created := s.createChargeable(true)
-	params := s.fullParams()
+	params := fullServiceParams(&s.BaseServiceTestSuite)
 	params.InvoiceRepo = failingInvoiceRepo{params.InvoiceRepo}
 
 	at := created.StartDate.AddDate(0, 3, 0)
@@ -859,25 +904,32 @@ func (s *CommitmentServiceSuite) TestValidation_C16_SubscriptionScopeWithLegacyC
 	s.requireValidation(err, "legacy subscription-level commitment")
 }
 
-func (s *CommitmentServiceSuite) fullParams() ServiceParams {
+// fullServiceParams wires every in-memory store the commitment, subscription and billing flows touch.
+func fullServiceParams(s *testutil.BaseServiceTestSuite) ServiceParams {
 	st := s.GetStores()
 	return ServiceParams{
 		Logger:                       s.GetLogger(),
 		Config:                       s.GetConfig(),
 		DB:                           s.GetDB(),
+		EventRepo:                    st.EventRepo,
 		SubRepo:                      st.SubscriptionRepo,
 		SubscriptionLineItemRepo:     st.SubscriptionLineItemRepo,
 		SubscriptionPhaseRepo:        st.SubscriptionPhaseRepo,
 		SubScheduleRepo:              st.SubscriptionScheduleRepo,
 		PlanRepo:                     st.PlanRepo,
+		PlanPriceSyncRepo:            st.PlanPriceSyncRepo,
 		PriceRepo:                    st.PriceRepo,
 		PriceUnitRepo:                st.PriceUnitRepo,
 		MeterRepo:                    st.MeterRepo,
 		CustomerRepo:                 st.CustomerRepo,
+		TenantRepo:                   st.TenantRepo,
+		EnvironmentRepo:              st.EnvironmentRepo,
 		InvoiceRepo:                  st.InvoiceRepo,
 		InvoiceLineItemRepo:          st.InvoiceLineItemRepo,
 		HostedInvoiceTokenRepo:       st.HostedInvoiceTokenRepo,
+		PaymentRepo:                  st.PaymentRepo,
 		EntitlementRepo:              st.EntitlementRepo,
+		EntitlementGrantRepo:         st.EntitlementGrantRepo,
 		FeatureRepo:                  st.FeatureRepo,
 		AddonRepo:                    st.AddonRepo,
 		AddonAssociationRepo:         st.AddonAssociationRepo,
@@ -891,8 +943,11 @@ func (s *CommitmentServiceSuite) fullParams() ServiceParams {
 		TaxAssociationRepo:           st.TaxAssociationRepo,
 		TaxRateRepo:                  st.TaxRateRepo,
 		TaxAppliedRepo:               st.TaxAppliedRepo,
+		FXRateRepo:                   st.FXRateRepo,
 		WalletRepo:                   st.WalletRepo,
+		CouponRepo:                   st.CouponRepo,
 		CouponAssociationRepo:        st.CouponAssociationRepo,
+		CouponApplicationRepo:        st.CouponApplicationRepo,
 		ConnectionRepo:               st.ConnectionRepo,
 		EntityIntegrationMappingRepo: st.EntityIntegrationMappingRepo,
 		MeterUsageRepo:               st.MeterUsageRepo,
@@ -906,7 +961,7 @@ func (s *CommitmentServiceSuite) fullParams() ServiceParams {
 func (s *CommitmentServiceSuite) TestCancelSubscription_TerminatesCommitments() {
 	created, err := s.svc.Create(s.GetContext(), validReq(s.fx.sub.ID, s.fx.priceAPI.ID))
 	s.Require().NoError(err)
-	subSvc := NewSubscriptionService(s.fullParams())
+	subSvc := NewSubscriptionService(fullServiceParams(&s.BaseServiceTestSuite))
 	at := created.StartDate.AddDate(0, 2, 0)
 	s.Require().NoError(subSvc.TerminateSubscriptionResources(s.GetContext(), dto.TerminateSubscriptionResourcesRequest{
 		SubscriptionID: s.fx.sub.ID, EffectiveDate: at,
@@ -918,7 +973,7 @@ func (s *CommitmentServiceSuite) TestCancelSubscription_TerminatesCommitments() 
 
 func (s *CommitmentServiceSuite) TestTerminateResources_NoopWhenDisabled() {
 	setCommitmentsV2(s.T(), s.GetContext(), s.GetStores(), false)
-	subSvc := NewSubscriptionService(s.fullParams())
+	subSvc := NewSubscriptionService(fullServiceParams(&s.BaseServiceTestSuite))
 	s.Require().NoError(subSvc.TerminateSubscriptionResources(s.GetContext(), dto.TerminateSubscriptionResourcesRequest{
 		SubscriptionID: s.fx.sub.ID, EffectiveDate: s.fx.sub.StartDate.AddDate(0, 2, 0),
 	}))
@@ -929,7 +984,7 @@ func (s *CommitmentServiceSuite) TestAttachPrice_RejectsSecondMeterInQuantityGro
 	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeGroup, EntityID: s.fx.groupAPIOnly.ID}
 	_, err := s.svc.Create(s.GetContext(), req)
 	s.Require().NoError(err)
-	subSvc := NewSubscriptionService(s.fullParams())
+	subSvc := NewSubscriptionService(fullServiceParams(&s.BaseServiceTestSuite))
 	_, err = subSvc.AddSubscriptionLineItem(
 		s.GetContext(),
 		s.fx.sub.ID,
@@ -1267,7 +1322,7 @@ func (s *CommitmentServiceSuite) TestResponse_LoadsScopeOnlyForWindowMeasurement
 	}
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			params := s.fullParams()
+			params := fullServiceParams(&s.BaseServiceTestSuite)
 			repo := &listCountingLineItemRepo{LineItemRepository: params.SubscriptionLineItemRepo}
 			params.SubscriptionLineItemRepo = repo
 			got, err := NewCommitmentService(params).Get(s.GetContext(), tt.created.ID)
@@ -1402,7 +1457,7 @@ func (s *CommitmentServiceSuite) TestAttachPrice_RejectsGroupedBucketedPriceJoin
 	s.Require().NoError(err)
 
 	p := s.groupedBucketedPrice()
-	_, err = NewSubscriptionService(s.fullParams()).AddSubscriptionLineItem(ctx, s.fx.sub.ID, dto.CreateSubscriptionLineItemRequest{PriceID: p.ID})
+	_, err = NewSubscriptionService(fullServiceParams(&s.BaseServiceTestSuite)).AddSubscriptionLineItem(ctx, s.fx.sub.ID, dto.CreateSubscriptionLineItemRequest{PriceID: p.ID})
 	s.requireValidation(err, p.ID, "grouped bucketed")
 }
 

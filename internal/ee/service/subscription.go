@@ -117,6 +117,13 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 		return nil, err
 	}
 
+	commitmentSvc := newCommitmentService(s.ServiceParams)
+	if len(req.Commitments) > 0 {
+		if err := commitmentSvc.requireEnabled(ctx); err != nil {
+			return nil, err
+		}
+	}
+
 	// Get and validate customer
 	var customer *customer.Customer
 	var err error
@@ -416,7 +423,6 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 			return nil, err
 		}
 	}
-
 	// Prepare credit grants
 	creditGrantService := NewCreditGrantService(s.ServiceParams)
 	var creditGrantRequests []dto.CreateCreditGrantRequest
@@ -511,6 +517,29 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 					}
 				}
 			}
+		}
+	}
+
+	// Inline commitments run once every line item exists, so they can scope overridden and phase-one prices.
+	for _, commitmentReq := range req.Commitments {
+		commitmentReq.SubscriptionID = sub.ID
+		switch commitmentReq.Scope.EntityType {
+		case types.CommitmentScopeSubscription:
+			commitmentReq.Scope.EntityID = lo.CoalesceOrEmpty(commitmentReq.Scope.EntityID, sub.ID)
+		case types.CommitmentScopePrice:
+			// An overridden plan price is billed through its subscription-scoped replacement.
+			if lineItemID, ok := originalPriceToLineItemMap[commitmentReq.Scope.EntityID]; ok {
+				lineItem, found := lo.Find(sub.LineItems, func(li *subscription.SubscriptionLineItem) bool {
+					return li.ID == lineItemID
+				})
+				if found {
+					commitmentReq.Scope.EntityID = lineItem.PriceID
+				}
+			}
+		}
+
+		if _, err = commitmentSvc.create(ctx, commitmentReq, commitmentCreateOptions{allowPendingSubscription: true}); err != nil {
+			return nil, err
 		}
 	}
 
