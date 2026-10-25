@@ -104,7 +104,7 @@ func (s *CommitmentServiceSuite) TestLineItemUpdate_RejectsLegacyCommitmentInSco
 func (s *CommitmentServiceSuite) TestLineItemAdd_RejectsLegacyCommitmentInScope() {
 	req := validReq(s.fx.sub.ID, "")
 	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeSubscription, EntityID: s.fx.sub.ID}
-	req.Type, req.CommittedRate, req.Value = types.COMMITMENT_TYPE_AMOUNT, nil, dec("100")
+	req.Type, req.CommittedPrice, req.Value = types.COMMITMENT_TYPE_AMOUNT, nil, dec("100")
 	_, err := s.svc.Create(s.GetContext(), req)
 	s.Require().NoError(err)
 

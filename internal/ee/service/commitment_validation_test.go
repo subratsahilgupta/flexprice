@@ -7,6 +7,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/feature"
+	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -14,6 +15,23 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 )
+
+// ratePrice is a flat committed or overage price at amount.
+func ratePrice(amount string) *dto.CommitmentPriceInput {
+	return &dto.CommitmentPriceInput{Amount: lo.ToPtr(dec(amount))}
+}
+
+// tieredOverage charges 0.07 for the first 100 units and 0.05 after.
+func tieredOverage() *dto.CommitmentPriceInput {
+	return &dto.CommitmentPriceInput{
+		BillingModel: types.BILLING_MODEL_TIERED,
+		TierMode:     types.BILLING_TIER_SLAB,
+		Tiers: []dto.CreatePriceTier{
+			{UpTo: lo.ToPtr(uint64(100)), UnitAmount: dec("0.07")},
+			{UnitAmount: dec("0.05")},
+		},
+	}
+}
 
 func validReq(subID, priceID string) dto.CreateCommitmentRequest {
 	jan := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -23,7 +41,7 @@ func validReq(subID, priceID string) dto.CreateCommitmentRequest {
 		Scope:          dto.CommitmentScopeInput{EntityType: types.CommitmentScopePrice, EntityID: priceID},
 		Type:           types.COMMITMENT_TYPE_QUANTITY,
 		Value:          decimal.NewFromInt(8),
-		CommittedRate:  lo.ToPtr(dec("0.048")),
+		CommittedPrice: ratePrice("0.048"),
 		Measurement:    types.CommitmentMeasurementBillingPeriod,
 		StartDate:      jan,
 		EndDate:        jan.AddDate(1, 0, 0),
@@ -69,7 +87,7 @@ func (s *CommitmentServiceSuite) TestValidation_RejectsEntitledScopeMeter() {
 	// A disabled entitlement does not block the commitment.
 	s.entitleMeter(s.fx.meterStorage.ID, false)
 	storage := validReq(s.fx.sub.ID, s.fx.priceStorage.ID)
-	storage.Type, storage.CommittedRate = types.COMMITMENT_TYPE_AMOUNT, nil
+	storage.Type, storage.CommittedPrice = types.COMMITMENT_TYPE_AMOUNT, nil
 	_, err = s.svc.Create(s.GetContext(), storage)
 	s.Require().NoError(err)
 }
@@ -79,7 +97,7 @@ func (s *CommitmentServiceSuite) TestCheckPriceAttach_RejectsEntitledMeter() {
 	// entitlement afterwards, so a storage price may not join the scope.
 	req := validReq(s.fx.sub.ID, s.fx.sub.ID)
 	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeSubscription, EntityID: s.fx.sub.ID}
-	req.Type, req.CommittedRate = types.COMMITMENT_TYPE_AMOUNT, nil
+	req.Type, req.CommittedPrice = types.COMMITMENT_TYPE_AMOUNT, nil
 	_, err := s.svc.Create(s.GetContext(), req)
 	s.Require().NoError(err)
 
@@ -98,10 +116,35 @@ func TestCreateCommitmentRequest_Validate(t *testing.T) {
 	}{
 		{"valid", func(r *dto.CreateCommitmentRequest) {}, true},
 		{"C6 zero value", func(r *dto.CreateCommitmentRequest) { r.Value = decimal.Zero }, false},
-		{"C7 quantity without rate", func(r *dto.CreateCommitmentRequest) { r.CommittedRate = nil }, false},
-		{"C7 amount with rate", func(r *dto.CreateCommitmentRequest) { r.Type = types.COMMITMENT_TYPE_AMOUNT }, false},
+		{"C7 quantity without committed price", func(r *dto.CreateCommitmentRequest) { r.CommittedPrice = nil }, false},
+		{"C7 amount with committed price", func(r *dto.CreateCommitmentRequest) { r.Type = types.COMMITMENT_TYPE_AMOUNT }, false},
+		{"C7 zero committed amount", func(r *dto.CreateCommitmentRequest) { r.CommittedPrice = ratePrice("0") }, false},
+		{"C7 tiered committed price", func(r *dto.CreateCommitmentRequest) { r.CommittedPrice = tieredOverage() }, false},
+		{"C7 explicit flat committed price", func(r *dto.CreateCommitmentRequest) {
+			r.CommittedPrice.BillingModel = types.BILLING_MODEL_FLAT_FEE
+		}, true},
 		{"C8 overage on amount", func(r *dto.CreateCommitmentRequest) {
-			r.Type, r.CommittedRate, r.OverageRate = types.COMMITMENT_TYPE_AMOUNT, nil, lo.ToPtr(dec("0.07"))
+			r.Type, r.CommittedPrice, r.OveragePrice = types.COMMITMENT_TYPE_AMOUNT, nil, ratePrice("0.07")
+		}, false},
+		{"C8 flat overage", func(r *dto.CreateCommitmentRequest) { r.OveragePrice = ratePrice("0.07") }, true},
+		{"C8 zero flat overage", func(r *dto.CreateCommitmentRequest) { r.OveragePrice = ratePrice("0") }, true},
+		{"C8 negative overage", func(r *dto.CreateCommitmentRequest) { r.OveragePrice = ratePrice("-0.01") }, false},
+		{"C8 flat overage without amount", func(r *dto.CreateCommitmentRequest) {
+			r.OveragePrice = &dto.CommitmentPriceInput{}
+		}, false},
+		{"C8 tiered overage", func(r *dto.CreateCommitmentRequest) { r.OveragePrice = tieredOverage() }, true},
+		{"C8 tiered overage without tier mode", func(r *dto.CreateCommitmentRequest) {
+			r.OveragePrice = tieredOverage()
+			r.OveragePrice.TierMode = ""
+		}, false},
+		{"C8 package overage", func(r *dto.CreateCommitmentRequest) {
+			r.OveragePrice = ratePrice("1")
+			r.OveragePrice.BillingModel = types.BILLING_MODEL_PACKAGE
+			r.OveragePrice.TransformQuantity = &price.TransformQuantity{DivideBy: 1000}
+		}, true},
+		{"C8 unsupported overage model", func(r *dto.CreateCommitmentRequest) {
+			r.OveragePrice = ratePrice("1")
+			r.OveragePrice.BillingModel = types.BillingModel("SLAB")
 		}, false},
 		{"C10 windows with billing_period", func(r *dto.CreateCommitmentRequest) {
 			r.ActiveWindows = types.ActiveWindows{{Start: types.Bucket{Hour: 9}, End: types.Bucket{Hour: 21}}}

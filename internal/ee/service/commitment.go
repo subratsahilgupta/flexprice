@@ -139,16 +139,12 @@ func (s *commitmentService) create(
 
 		cc = prepared
 
-		meterID := ""
-		if lines := resolveScopeLines(c.ScopeEntityType, c.ScopeEntityID, cc, c.StartDate); len(lines) > 0 {
-			meterID = lines[0].MeterID
-		}
-
-		if c.CommittedPriceID, err = s.createRatePrice(txCtx, c, cc.Sub, meterID, req.CommittedRate, "committed"); err != nil {
+		meterID := scopeMeter(c, cc)
+		if c.CommittedPriceID, err = s.createRatePrice(txCtx, c, cc.Sub, meterID, req.CommittedPrice, "committed"); err != nil {
 			return err
 		}
 
-		if c.OveragePriceID, err = s.createRatePrice(txCtx, c, cc.Sub, meterID, req.OverageRate, "overage"); err != nil {
+		if c.OveragePriceID, err = s.createRatePrice(txCtx, c, cc.Sub, meterID, req.OveragePrice, "overage"); err != nil {
 			return err
 		}
 
@@ -202,12 +198,34 @@ func (s *commitmentService) prepare(
 	}
 
 	c := req.ToCommitment(ctx, cc.Sub)
-	periods, err := commitmentPeriods(c, cc.Sub, lo.FromPtr(req.CommittedRate), bucketFor(c, cc))
+	if req.OveragePrice != nil {
+		overage := req.OveragePrice.ToCreatePriceRequest(c, cc.Sub, scopeMeter(c, cc), "overage")
+		if err := overage.Validate(); err != nil {
+			return nil, nil, decimal.Zero, err
+		}
+	}
+
+	committedRate := decimal.Zero
+	if req.CommittedPrice != nil {
+		committedRate = lo.FromPtr(req.CommittedPrice.Amount)
+	}
+
+	periods, err := commitmentPeriods(c, cc.Sub, committedRate, bucketFor(c, cc))
 	if err != nil {
 		return nil, nil, decimal.Zero, err
 	}
 
 	return c, cc, commitmentValue(periods), nil
+}
+
+// scopeMeter returns the meter of the first scoped line at the commitment start, which backs its rate prices.
+func scopeMeter(c *commitment.Commitment, cc *commitmentContext) string {
+	lines := resolveScopeLines(c.ScopeEntityType, c.ScopeEntityID, cc, c.StartDate)
+	if len(lines) == 0 {
+		return ""
+	}
+
+	return lines[0].MeterID
 }
 
 // bucketFor returns the shared bucket size of the scoped prices for window measurement, otherwise "".
@@ -230,32 +248,14 @@ func (s *commitmentService) createRatePrice(
 	c *commitment.Commitment,
 	sub *subscription.Subscription,
 	meterID string,
-	rate *decimal.Decimal,
+	in *dto.CommitmentPriceInput,
 	kind string,
 ) (*string, error) {
-	if rate == nil {
+	if in == nil {
 		return nil, nil
 	}
 
-	resp, err := NewPriceService(s.ServiceParams).CreatePrice(ctx, dto.CreatePriceRequest{
-		Amount:               rate,
-		Currency:             c.Currency,
-		EntityType:           types.PRICE_ENTITY_TYPE_SUBSCRIPTION,
-		EntityID:             c.SubscriptionID,
-		Type:                 types.PRICE_TYPE_USAGE,
-		PriceUnitType:        types.PRICE_UNIT_TYPE_FIAT,
-		BillingPeriod:        sub.BillingPeriod,
-		BillingPeriodCount:   sub.BillingPeriodCount,
-		BillingModel:         types.BILLING_MODEL_FLAT_FEE,
-		InvoiceCadence:       types.InvoiceCadenceArrear,
-		MeterID:              meterID,
-		DisplayName:          c.Name + " (" + kind + ")",
-		SkipEntityValidation: true,
-		Metadata: map[string]string{
-			"commitment_id":   c.ID,
-			"commitment_rate": kind,
-		},
-	})
+	resp, err := NewPriceService(s.ServiceParams).CreatePrice(ctx, in.ToCreatePriceRequest(c, sub, meterID, kind))
 	if err != nil {
 		return nil, err
 	}
@@ -818,7 +818,7 @@ func (s *commitmentService) checkAttachAgainst(
 }
 
 // checkAttachPairs requires commitments that now share the new price and overlap in time to differ in
-// priority and agree on type, measurement and overage rate.
+// priority and agree on type, measurement and overage price.
 func (s *commitmentService) checkAttachPairs(ctx context.Context, inScope []*commitment.Commitment) (string, error) {
 	for i, a := range inScope {
 		for _, b := range inScope[i+1:] {
@@ -850,7 +850,7 @@ func (s *commitmentService) checkAttachPairs(ctx context.Context, inScope []*com
 
 			if !same {
 				return a.ID, invalidf(
-					"commitments %s and %s overlap on the new price but have different overage rates",
+					"commitments %s and %s overlap on the new price but have different overage prices; only equal flat overage amounts combine on the same usage",
 					a.ID,
 					b.ID,
 				)
@@ -861,6 +861,7 @@ func (s *commitmentService) checkAttachPairs(ctx context.Context, inScope []*com
 	return "", nil
 }
 
+// sameCommitmentOverage reports whether both have no overage price, or flat ones with the same amount.
 func (s *commitmentService) sameCommitmentOverage(ctx context.Context, a, b *commitment.Commitment) (bool, error) {
 	if a.OveragePriceID == nil || b.OveragePriceID == nil {
 		return a.OveragePriceID == nil && b.OveragePriceID == nil, nil
@@ -876,5 +877,6 @@ func (s *commitmentService) sameCommitmentOverage(ctx context.Context, a, b *com
 		return false, err
 	}
 
-	return pa.Amount.Equal(pb.Amount), nil
+	return pa.BillingModel == types.BILLING_MODEL_FLAT_FEE && pb.BillingModel == types.BILLING_MODEL_FLAT_FEE &&
+		pa.Amount.Equal(pb.Amount), nil
 }

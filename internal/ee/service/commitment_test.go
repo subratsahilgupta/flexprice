@@ -224,7 +224,7 @@ func (s *CommitmentServiceSuite) TestCreate_ComputesNoStoredTotalForPerPeriod() 
 
 func (s *CommitmentServiceSuite) TestCreate_CommittedAndOveragePricesAreSubscriptionScoped() {
 	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
-	req.OverageRate = lo.ToPtr(dec("0.07"))
+	req.OveragePrice = ratePrice("0.07")
 	resp, err := s.svc.Create(s.GetContext(), req)
 	s.Require().NoError(err)
 
@@ -243,9 +243,33 @@ func (s *CommitmentServiceSuite) TestCreate_CommittedAndOveragePricesAreSubscrip
 	}
 }
 
+func (s *CommitmentServiceSuite) TestCreate_TieredOveragePassesItsTiersThrough() {
+	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	req.OveragePrice = tieredOverage()
+	resp, err := s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+
+	p, err := s.GetStores().PriceRepo.Get(s.GetContext(), *resp.OveragePriceID)
+	s.Require().NoError(err)
+	s.Equal(types.BILLING_MODEL_TIERED, p.BillingModel)
+	s.Equal(types.BILLING_TIER_SLAB, p.TierMode)
+	s.Require().Len(p.Tiers, 2)
+	s.True(p.Tiers[0].UnitAmount.Equal(dec("0.07")), "got %s", p.Tiers[0].UnitAmount)
+	s.True(p.Tiers[1].UnitAmount.Equal(dec("0.05")), "got %s", p.Tiers[1].UnitAmount)
+	s.Equal(s.fx.meterAPI.ID, p.MeterID)
+}
+
+func (s *CommitmentServiceSuite) TestPreview_RejectsTieredOverageWithoutTiers() {
+	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	req.OveragePrice = tieredOverage()
+	req.OveragePrice.Tiers = nil
+	_, err := s.svc.Preview(s.GetContext(), req)
+	s.requireValidation(err, "tiers are required")
+}
+
 func (s *CommitmentServiceSuite) TestCreate_AmountCommitmentHasNoPrices() {
 	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
-	req.Type, req.CommittedRate, req.Value = types.COMMITMENT_TYPE_AMOUNT, nil, decimal.NewFromInt(100)
+	req.Type, req.CommittedPrice, req.Value = types.COMMITMENT_TYPE_AMOUNT, nil, decimal.NewFromInt(100)
 	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeGroup, EntityID: s.fx.group.ID}
 	resp, err := s.svc.Create(s.GetContext(), req)
 	s.Require().NoError(err)
@@ -435,7 +459,7 @@ func (s *CommitmentServiceSuite) TestTerminate_RejectsInvalidCancellationFee() {
 // so 1,200.00 in total and 100.00 earned per month.
 func (s *CommitmentServiceSuite) createChargeable(binding bool) *dto.CommitmentResponse {
 	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
-	req.Value, req.CommittedRate, req.Binding = decimal.NewFromInt(100), lo.ToPtr(dec("1")), lo.ToPtr(binding)
+	req.Value, req.CommittedPrice, req.Binding = decimal.NewFromInt(100), ratePrice("1"), lo.ToPtr(binding)
 	created, err := s.svc.Create(s.GetContext(), req)
 	s.Require().NoError(err)
 	return created
@@ -650,7 +674,7 @@ func (s *CommitmentServiceSuite) TestValidation_V2_QuantityOverGroupWithTwoMeter
 
 func (s *CommitmentServiceSuite) TestValidation_V3_AmountAndQuantityOverlap() {
 	amount := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
-	amount.Type, amount.CommittedRate, amount.Value = types.COMMITMENT_TYPE_AMOUNT, nil, decimal.NewFromInt(100)
+	amount.Type, amount.CommittedPrice, amount.Value = types.COMMITMENT_TYPE_AMOUNT, nil, decimal.NewFromInt(100)
 	_, err := s.svc.Create(s.GetContext(), amount)
 	s.Require().NoError(err)
 
@@ -675,20 +699,74 @@ func (s *CommitmentServiceSuite) TestValidation_V5_LegacyLineItemCommitment() {
 	s.requireValidation(err, "legacy line-item commitment")
 }
 
-func (s *CommitmentServiceSuite) TestValidation_V18_DifferentOverageRates() {
+func (s *CommitmentServiceSuite) TestValidation_V18_OverlapsMustShareOneFlatOverage() {
 	a := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
-	a.OverageRate = lo.ToPtr(dec("0.07"))
+	a.OveragePrice = ratePrice("0.07")
 	_, err := s.svc.Create(s.GetContext(), a)
 	s.Require().NoError(err)
 
 	b := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
-	b.Priority, b.OverageRate = 1, lo.ToPtr(dec("0.08"))
-	_, err = s.svc.Create(s.GetContext(), b)
-	s.requireValidation(err, "different overage rate")
+	b.Priority = 1
+	for name, overage := range map[string]*dto.CommitmentPriceInput{
+		"different flat amount": ratePrice("0.08"),
+		"no overage":            nil,
+		"tiered overage":        tieredOverage(),
+	} {
+		s.Run(name, func() {
+			b.OveragePrice = overage
+			_, err := s.svc.Create(s.GetContext(), b)
+			s.requireValidation(err, "different overage price")
+		})
+	}
 
-	b.OverageRate = lo.ToPtr(dec("0.07"))
+	b.OveragePrice = ratePrice("0.07")
 	_, err = s.svc.Create(s.GetContext(), b)
 	s.Require().NoError(err)
+}
+
+func (s *CommitmentServiceSuite) TestValidation_V18_TieredOverageNeverCombines() {
+	a := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	a.OveragePrice = tieredOverage()
+	_, err := s.svc.Create(s.GetContext(), a)
+	s.Require().NoError(err)
+
+	b := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	b.Priority, b.OveragePrice = 1, tieredOverage()
+	_, err = s.svc.Create(s.GetContext(), b)
+	s.requireValidation(err, "only equal flat overage amounts")
+}
+
+func (s *CommitmentServiceSuite) TestSameCommitmentOverage() {
+	ctx := s.GetContext()
+	store := func(id string, model types.BillingModel, amount string) *string {
+		p := *s.fx.priceAPI
+		p.ID, p.BillingModel, p.Amount = id, model, dec(amount)
+		s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &p))
+		return lo.ToPtr(id)
+	}
+	flat7, flat7b, flat8 := store("ovg_flat_7", types.BILLING_MODEL_FLAT_FEE, "0.07"), store("ovg_flat_7b", types.BILLING_MODEL_FLAT_FEE, "0.07"), store("ovg_flat_8", types.BILLING_MODEL_FLAT_FEE, "0.08")
+	tiered, tieredB := store("ovg_tiered", types.BILLING_MODEL_TIERED, "0"), store("ovg_tiered_b", types.BILLING_MODEL_TIERED, "0")
+
+	tests := []struct {
+		name string
+		a, b *string
+		want bool
+	}{
+		{"both without overage", nil, nil, true},
+		{"one without overage", flat7, nil, false},
+		{"equal flat amounts", flat7, flat7b, true},
+		{"different flat amounts", flat7, flat8, false},
+		{"tiered and flat", tiered, flat7, false},
+		{"two tiered", tiered, tieredB, false},
+	}
+	svc := s.svc.(*commitmentService)
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			got, err := svc.sameCommitmentOverage(ctx, &commitment.Commitment{OveragePriceID: tt.a}, &commitment.Commitment{OveragePriceID: tt.b})
+			s.Require().NoError(err)
+			s.Equal(tt.want, got)
+		})
+	}
 }
 
 func (s *CommitmentServiceSuite) TestValidation_C16_SubscriptionScopeWithLegacyCommitment() {
@@ -698,7 +776,7 @@ func (s *CommitmentServiceSuite) TestValidation_C16_SubscriptionScopeWithLegacyC
 	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), sub))
 
 	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
-	req.Type, req.CommittedRate, req.Value = types.COMMITMENT_TYPE_AMOUNT, nil, decimal.NewFromInt(100)
+	req.Type, req.CommittedPrice, req.Value = types.COMMITMENT_TYPE_AMOUNT, nil, decimal.NewFromInt(100)
 	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeSubscription, EntityID: s.fx.sub.ID}
 	_, err = s.svc.Create(s.GetContext(), req)
 	s.requireValidation(err, "legacy subscription-level commitment")
@@ -827,7 +905,7 @@ func (s *CommitmentServiceSuite) TestCheckPriceAttach_RejectsBucketMismatchForMe
 func (s *CommitmentServiceSuite) TestCheckPriceAttach_RejectsOverlappingCommitmentsThatDisagree() {
 	a := validReq(s.fx.sub.ID, "")
 	a.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeGroup, EntityID: s.fx.groupAPIOnly.ID}
-	a.Type, a.CommittedRate, a.Value = types.COMMITMENT_TYPE_AMOUNT, nil, decimal.NewFromInt(100)
+	a.Type, a.CommittedPrice, a.Value = types.COMMITMENT_TYPE_AMOUNT, nil, decimal.NewFromInt(100)
 	ca, err := s.svc.Create(s.GetContext(), a)
 	s.Require().NoError(err)
 
@@ -993,7 +1071,7 @@ func (s *CommitmentServiceSuite) TestValidation_ScopePriceMustBillEverySubscript
 func (s *CommitmentServiceSuite) TestCheckPriceAttach_RejectsPriceOnAnotherCadence() {
 	req := validReq(s.fx.sub.ID, "")
 	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeGroup, EntityID: s.fx.groupAPIOnly.ID}
-	req.Type, req.CommittedRate, req.Value = types.COMMITMENT_TYPE_AMOUNT, nil, decimal.NewFromInt(100)
+	req.Type, req.CommittedPrice, req.Value = types.COMMITMENT_TYPE_AMOUNT, nil, decimal.NewFromInt(100)
 	_, err := s.svc.Create(s.GetContext(), req)
 	s.Require().NoError(err)
 
@@ -1026,7 +1104,7 @@ func (s *CommitmentServiceSuite) TestCreate_RejectsIncompleteSubscription() {
 func (s *CommitmentServiceSuite) TestCheckPriceAttach_RejectsSamePriorityOverlap() {
 	a := validReq(s.fx.sub.ID, "")
 	a.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeGroup, EntityID: s.fx.groupAPIOnly.ID}
-	a.Type, a.CommittedRate, a.Value = types.COMMITMENT_TYPE_AMOUNT, nil, decimal.NewFromInt(100)
+	a.Type, a.CommittedPrice, a.Value = types.COMMITMENT_TYPE_AMOUNT, nil, decimal.NewFromInt(100)
 	_, err := s.svc.Create(s.GetContext(), a)
 	s.Require().NoError(err)
 

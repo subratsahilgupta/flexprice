@@ -231,9 +231,9 @@ func (s *commitmentService) validateAgainstSubscription(
 		return invalidf("meter %s has an active entitlement; a commitment cannot cover entitled usage", meterID)
 	}
 
-	if (req.Type == types.COMMITMENT_TYPE_QUANTITY || req.OverageRate != nil) && len(meters) != 1 {
+	if (req.Type == types.COMMITMENT_TYPE_QUANTITY || req.OveragePrice != nil) && len(meters) != 1 {
 		return invalidf(
-			"quantity commitments and custom overage rates need a scope with exactly one meter, found %d",
+			"quantity commitments and custom overage prices need a scope with exactly one meter, found %d",
 			len(meters),
 		)
 	}
@@ -283,7 +283,7 @@ func invalid(msg string) error {
 }
 
 // validateOverlaps requires active commitments sharing a line item to differ in priority and agree on
-// type, measurement and overage rate.
+// type, measurement and overage price.
 func (s *commitmentService) validateOverlaps(
 	ctx context.Context,
 	req *dto.CreateCommitmentRequest,
@@ -330,21 +330,28 @@ func (s *commitmentService) validateOverlaps(
 		}
 
 		if !same {
-			return invalidf("overlapping commitment %s has a different overage rate", other.ID)
+			return invalidf(
+				"overlapping commitment %s has a different overage price; only equal flat overage amounts combine on the same usage",
+				other.ID,
+			)
 		}
 	}
 
 	return nil
 }
 
-// sameOverage reports whether both sides have no custom overage rate, or the same one.
+// sameOverage reports whether both sides have no overage price, or flat ones with the same amount.
 func (s *commitmentService) sameOverage(
 	ctx context.Context,
 	other *commitment.Commitment,
 	req *dto.CreateCommitmentRequest,
 ) (bool, error) {
-	if other.OveragePriceID == nil || req.OverageRate == nil {
-		return other.OveragePriceID == nil && req.OverageRate == nil, nil
+	if other.OveragePriceID == nil || req.OveragePrice == nil {
+		return other.OveragePriceID == nil && req.OveragePrice == nil, nil
+	}
+
+	if req.OveragePrice.BillingModel != types.BILLING_MODEL_FLAT_FEE {
+		return false, nil
 	}
 
 	p, err := s.PriceRepo.Get(ctx, *other.OveragePriceID)
@@ -352,7 +359,7 @@ func (s *commitmentService) sameOverage(
 		return false, err
 	}
 
-	return p.Amount.Equal(*req.OverageRate), nil
+	return p.BillingModel == types.BILLING_MODEL_FLAT_FEE && p.Amount.Equal(lo.FromPtr(req.OveragePrice.Amount)), nil
 }
 
 // validateBoundary requires end to fall on a subscription billing-period end or the subscription end,

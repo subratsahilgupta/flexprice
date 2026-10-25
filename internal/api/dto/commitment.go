@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/commitment"
+	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -18,6 +19,46 @@ type CommitmentScopeInput struct {
 	EntityID   string                    `json:"entity_id" validate:"required"`
 }
 
+// CommitmentPriceInput prices a commitment's committed or overage rate; billing_model defaults to FLAT_FEE.
+type CommitmentPriceInput struct {
+	BillingModel      types.BillingModel       `json:"billing_model,omitempty"`
+	Amount            *decimal.Decimal         `json:"amount,omitempty" swaggertype:"string"`
+	TierMode          types.BillingTier        `json:"tier_mode,omitempty"`
+	Tiers             []CreatePriceTier        `json:"tiers,omitempty"`
+	TransformQuantity *price.TransformQuantity `json:"transform_quantity,omitempty"`
+}
+
+// ToCreatePriceRequest builds the subscription-scoped usage price backing the rate; kind is committed or overage.
+func (in *CommitmentPriceInput) ToCreatePriceRequest(
+	c *commitment.Commitment,
+	sub *subscription.Subscription,
+	meterID string,
+	kind string,
+) CreatePriceRequest {
+	return CreatePriceRequest{
+		Amount:               in.Amount,
+		Currency:             c.Currency,
+		EntityType:           types.PRICE_ENTITY_TYPE_SUBSCRIPTION,
+		EntityID:             c.SubscriptionID,
+		Type:                 types.PRICE_TYPE_USAGE,
+		PriceUnitType:        types.PRICE_UNIT_TYPE_FIAT,
+		BillingPeriod:        sub.BillingPeriod,
+		BillingPeriodCount:   sub.BillingPeriodCount,
+		BillingModel:         in.BillingModel,
+		TierMode:             in.TierMode,
+		Tiers:                in.Tiers,
+		TransformQuantity:    in.TransformQuantity,
+		InvoiceCadence:       types.InvoiceCadenceArrear,
+		MeterID:              meterID,
+		DisplayName:          c.Name + " (" + kind + ")",
+		SkipEntityValidation: true,
+		Metadata: map[string]string{
+			"commitment_id":   c.ID,
+			"commitment_rate": kind,
+		},
+	}
+}
+
 type CreateCommitmentRequest struct {
 	SubscriptionID     string                            `json:"subscription_id" validate:"required"`
 	IdempotencyKey     *string                           `json:"idempotency_key,omitempty" validate:"omitempty,max=128"`
@@ -27,8 +68,8 @@ type CreateCommitmentRequest struct {
 	Scope              CommitmentScopeInput              `json:"scope" validate:"required"`
 	Type               types.CommitmentType              `json:"type" validate:"required"`
 	Value              decimal.Decimal                   `json:"value" swaggertype:"string"`
-	CommittedRate      *decimal.Decimal                  `json:"committed_rate,omitempty" swaggertype:"string"`
-	OverageRate        *decimal.Decimal                  `json:"overage_rate,omitempty" swaggertype:"string"`
+	CommittedPrice     *CommitmentPriceInput             `json:"committed_price,omitempty"`
+	OveragePrice       *CommitmentPriceInput             `json:"overage_price,omitempty"`
 	Measurement        types.CommitmentMeasurement       `json:"measurement" validate:"required"`
 	ActiveWindows      types.ActiveWindows               `json:"active_windows,omitempty"`
 	Timezone           string                            `json:"timezone,omitempty"`
@@ -56,6 +97,12 @@ func (r *CreateCommitmentRequest) ApplyDefaults(subTimezone string) {
 
 	if *r.Binding && r.CollectionMethod == nil {
 		r.CollectionMethod = lo.ToPtr(types.CommitmentCollectionPerPeriod)
+	}
+
+	for _, p := range []*CommitmentPriceInput{r.CommittedPrice, r.OveragePrice} {
+		if p != nil && p.BillingModel == "" {
+			p.BillingModel = types.BILLING_MODEL_FLAT_FEE
+		}
 	}
 }
 
@@ -91,16 +138,18 @@ func (r *CreateCommitmentRequest) Validate() error {
 		return invalid("priority must be zero or greater")
 	case r.Type != types.COMMITMENT_TYPE_AMOUNT && r.Type != types.COMMITMENT_TYPE_QUANTITY:
 		return invalid("type must be amount or quantity")
-	case r.Type == types.COMMITMENT_TYPE_QUANTITY && (r.CommittedRate == nil || !r.CommittedRate.IsPositive()):
-		return invalid("committed_rate greater than zero is required for quantity commitments")
-	case r.Type == types.COMMITMENT_TYPE_AMOUNT && r.CommittedRate != nil:
-		return invalid("committed_rate is not allowed on amount commitments")
-	case r.OverageRate != nil && r.Type != types.COMMITMENT_TYPE_QUANTITY:
-		return invalid("overage_rate is supported only on quantity commitments")
-	case r.OverageRate != nil && r.OverageRate.IsNegative():
-		return invalid("overage_rate must be zero or greater")
+	case r.Type == types.COMMITMENT_TYPE_QUANTITY && r.CommittedPrice == nil:
+		return invalid("committed_price is required for quantity commitments")
+	case r.Type == types.COMMITMENT_TYPE_AMOUNT && r.CommittedPrice != nil:
+		return invalid("committed_price is not allowed on amount commitments")
+	case r.OveragePrice != nil && r.Type != types.COMMITMENT_TYPE_QUANTITY:
+		return invalid("overage_price is supported only on quantity commitments")
 	case len(r.ActiveWindows) > 0 && r.Measurement != types.CommitmentMeasurementWindow:
 		return invalid("active_windows require measurement=window")
+	}
+
+	if err := r.validatePrices(); err != nil {
+		return err
 	}
 
 	if _, err := time.LoadLocation(r.Timezone); err != nil || r.Timezone == "" {
@@ -128,6 +177,42 @@ func (r *CreateCommitmentRequest) Validate() error {
 
 	if r.InvoiceDescription != nil && len(*r.InvoiceDescription) > 500 {
 		return invalid("invoice_description must be at most 500 characters")
+	}
+
+	return nil
+}
+
+// validatePrices checks the rate shapes the commitment math relies on; the price request's own validation covers
+// tiers and packages once the scope meter is known.
+func (r *CreateCommitmentRequest) validatePrices() error {
+	// The commitment value is capacity × committed rate, so the committed price must be one flat amount.
+	if cp := r.CommittedPrice; cp != nil {
+		if cp.BillingModel != types.BILLING_MODEL_FLAT_FEE || cp.Amount == nil || !cp.Amount.IsPositive() ||
+			len(cp.Tiers) > 0 || cp.TransformQuantity != nil {
+			return invalid("committed_price must be FLAT_FEE with an amount greater than zero")
+		}
+	}
+
+	op := r.OveragePrice
+	if op == nil {
+		return nil
+	}
+
+	switch op.BillingModel {
+	case types.BILLING_MODEL_FLAT_FEE, types.BILLING_MODEL_PACKAGE:
+		if op.Amount == nil || op.Amount.IsNegative() {
+			return invalid("overage_price.amount must be zero or greater")
+		}
+	case types.BILLING_MODEL_TIERED:
+		if op.TierMode == "" {
+			return invalid("overage_price.tier_mode is required for TIERED")
+		}
+
+		if err := op.TierMode.Validate(); err != nil {
+			return err
+		}
+	default:
+		return invalid("overage_price.billing_model must be FLAT_FEE, TIERED or PACKAGE")
 	}
 
 	return nil

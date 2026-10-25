@@ -40,12 +40,12 @@ type capacityPool struct {
 
 // usageLine is one subscription line's usage, per window.
 type usageLine struct {
-	Item        *subscription.SubscriptionLineItem
-	Price       *price.Price
-	OverageRate *decimal.Decimal
-	Quantity    decimal.Decimal
-	Cost        decimal.Decimal
-	Usage       []decimal.Decimal // quantity for quantity stacks, cost for amount stacks
+	Item         *subscription.SubscriptionLineItem
+	Price        *price.Price
+	OveragePrice *price.Price // prices on-demand instead of Price when a covering commitment sets one
+	Quantity     decimal.Decimal
+	Cost         decimal.Decimal
+	Usage        []decimal.Decimal // quantity for quantity stacks, cost for amount stacks
 }
 
 // allocation is the result of filling a stack.
@@ -347,8 +347,9 @@ func (r lineRenderer) onDemandLines(
 	windows []decimal.Decimal,
 ) []dto.CreateInvoiceLineItemRequest {
 	qty, amount := decimal.Zero, decimal.Zero
-	// Window stacks price each window so bucketed prices match the normal path; the rest price the sum once.
-	perWindow := stack.Measurement == types.CommitmentMeasurementWindow && line.OverageRate == nil
+	// Window stacks price each window so bucketed prices match the normal path; the rest, and any overage price,
+	// price the sum once, so a tiered overage walks its tiers over the period total.
+	perWindow := stack.Measurement == types.CommitmentMeasurementWindow && line.OveragePrice == nil
 	for _, w := range windows {
 		if !w.IsPositive() {
 			continue
@@ -364,11 +365,7 @@ func (r lineRenderer) onDemandLines(
 	}
 
 	if stack.Type == types.COMMITMENT_TYPE_QUANTITY && !perWindow && qty.IsPositive() {
-		if line.OverageRate != nil {
-			amount = qty.Mul(*line.OverageRate)
-		} else {
-			amount = r.cost(line.Price, qty)
-		}
+		amount = r.cost(lo.Ternary(line.OveragePrice != nil, line.OveragePrice, line.Price), qty)
 	}
 
 	switch {
