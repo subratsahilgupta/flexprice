@@ -404,6 +404,11 @@ func (r lineRenderer) onDemandLines(
 
 // marginalCost prices the top qty units of full: what full costs beyond the covered units below them.
 func (r lineRenderer) marginalCost(p *price.Price, full, qty decimal.Decimal) decimal.Decimal {
+	// Volume tiers reprice every unit by the total, so a margin is undefined and can go negative; price qty afresh.
+	if p.BillingModel == types.BILLING_MODEL_TIERED && p.TierMode == types.BILLING_TIER_VOLUME {
+		return r.cost(p, qty)
+	}
+
 	return r.cost(p, full).Sub(r.cost(p, full.Sub(qty)))
 }
 

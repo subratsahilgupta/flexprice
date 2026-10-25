@@ -1055,3 +1055,33 @@ func TestCommitmentInvoiceLinesCappedWithinConservesTheFloorAcrossLines(t *testi
 		{types.CommitmentLineWithin, "Label c1", "10", "3.33"},
 	}, lines)
 }
+
+// A volume price reprices every unit by the total, so 150 used with 100 covered would difference to
+// cost(150)-cost(100) = 75-100 = -25; the 50 on demand are priced afresh instead.
+func TestCommitmentInvoiceLinesVolumeLinePricesOnDemandAfresh(t *testing.T) {
+	volumeCost := func(_ *price.Price, qty decimal.Decimal) decimal.Decimal {
+		if qty.GreaterThan(intDec(100)) {
+			return qty.Mul(dec("0.5"))
+		}
+
+		return qty
+	}
+
+	for _, perWindow := range []bool{false, true} {
+		line := invoiceLine("a", "150", "75", "150")
+		line.Price.BillingModel, line.Price.TierMode, line.PerWindow = types.BILLING_MODEL_TIERED, types.BILLING_TIER_VOLUME, perWindow
+		lines := renderStack(t, &commitmentStack{
+			Type:        types.COMMITMENT_TYPE_QUANTITY,
+			Measurement: types.CommitmentMeasurementBillingPeriod,
+			Windows:     engineWindows(1),
+			Lines:       []*usageLine{line},
+			Commitments: []*stackedCommitment{committed("c1", true, "100", []int{0}, []*usageLine{line}, "100")},
+		}, volumeCost)
+
+		// cost(50) lands in the first volume tier: 50 x 1 = 50.
+		requireLines(t, []wantLine{
+			{types.CommitmentLineWithin, "Label c1", "100", "100"},
+			{types.CommitmentLineOnDemand, "Usage a", "50", "50"},
+		}, lines)
+	}
+}

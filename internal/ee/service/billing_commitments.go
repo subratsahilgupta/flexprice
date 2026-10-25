@@ -425,9 +425,12 @@ func (l *commitmentLoader) fillWindowStack(ctx context.Context, stack *commitmen
 	}
 
 	for i, line := range stack.Lines {
-		if err := l.fillBucketLine(ctx, stack, line, meters[i], bucket); err != nil {
+		usage, err := l.bucketUsage(ctx, line, meters[i], bucket)
+		if err != nil {
 			return err
 		}
+
+		l.fillBucketLine(ctx, stack, line, usage)
 	}
 
 	// The floor counts the same buckets as the pools, over the whole window, so it never differs from the
@@ -473,17 +476,22 @@ func accrues(c *commitment.Commitment, t, from time.Time) bool {
 }
 
 // fillBucketLine lays a bucketed line's usage out one bucket per window, each priced on its own as normal billing
-// prices it.
+// prices it. A bucket joins the window containing its start, so an instant off the grid lands rather than vanishes;
+// one before the first window joins it.
 func (l *commitmentLoader) fillBucketLine(
 	ctx context.Context,
 	stack *commitmentStack,
 	line *usageLine,
-	m *meter.Meter,
-	bucket types.WindowSize,
-) error {
-	quantities, err := l.bucketQuantities(ctx, line, m, bucket, stack.Windows)
-	if err != nil {
-		return err
+	usage map[time.Time]decimal.Decimal,
+) {
+	quantities := make([]decimal.Decimal, len(stack.Windows))
+	for t, v := range usage {
+		if len(quantities) == 0 {
+			break
+		}
+
+		at := max(sort.Search(len(stack.Windows), func(i int) bool { return stack.Windows[i].After(t) })-1, 0)
+		quantities[at] = quantities[at].Add(v)
 	}
 
 	costs := make([]decimal.Decimal, len(quantities))
@@ -501,12 +509,10 @@ func (l *commitmentLoader) fillBucketLine(
 		// Each bucket keeps its own cost; spreading only reconciles them with the rounded total.
 		line.Usage = spreadCost(costs, line.Cost)
 	}
-
-	return nil
 }
 
-// fillPeriodStack gives the stack a window per stretch between commitment starts and ends, plus one per bucket of its
-// bucketed lines so each bucket prices alone; each commitment's single pool spans the windows it is in force.
+// fillPeriodStack gives the stack a window per stretch between commitment starts and ends, plus one per usage bucket of
+// its bucketed lines so each bucket prices alone; each commitment's single pool spans the windows it is in force.
 func (l *commitmentLoader) fillPeriodStack(ctx context.Context, stack *commitmentStack) error {
 	stretches := periodSplits(stack.Commitments, l.periodStart, l.periodEnd)
 	meters, err := l.linkLines(ctx, stack)
@@ -514,31 +520,37 @@ func (l *commitmentLoader) fillPeriodStack(ctx context.Context, stack *commitmen
 		return err
 	}
 
-	loc := l.usageLocation()
-	buckets := make([]types.WindowSize, len(stack.Lines))
+	// Windows start at the usage buckets' own keys, not a generated grid, which may disagree with them (ClickHouse
+	// weeks start on Sunday); a bucket starting before the period joins the first window, as it joins the first stretch.
+	usage := make([]map[time.Time]decimal.Decimal, len(stack.Lines))
 	windows := append([]time.Time(nil), stretches...)
 	for i, line := range stack.Lines {
-		if !price.IsBucketedMax(line.Price, meters[i]) && !price.IsBucketedSum(line.Price, meters[i]) {
+		m := meters[i]
+		if !price.IsBucketedMax(line.Price, m) && !price.IsBucketedSum(line.Price, m) {
 			continue
 		}
 
-		// A bucket starting before the period joins the period's first window, as it joins the first stretch.
-		buckets[i] = price.ResolveBucketSize(line.Price, meters[i])
-		grid := generateBucketStarts(l.periodStart.In(loc), minTime(l.periodEnd, l.asOf).In(loc), buckets[i], &l.sub.BillingAnchor)
-		windows = append(windows, lo.Filter(grid, func(t time.Time, _ int) bool { return t.After(l.periodStart) })...)
+		if usage[i], err = l.bucketUsage(ctx, line, m, price.ResolveBucketSize(line.Price, m)); err != nil {
+			return err
+		}
+
+		for t := range usage[i] {
+			if t.After(l.periodStart) {
+				windows = append(windows, t)
+			}
+		}
 	}
 
 	sort.Slice(windows, func(i, j int) bool { return windows[i].Before(windows[j]) })
 	stack.Windows = lo.UniqBy(windows, func(t time.Time) int64 { return t.UnixNano() })
 
 	for i, line := range stack.Lines {
-		if buckets[i] != "" {
-			err = l.fillBucketLine(ctx, stack, line, meters[i], buckets[i])
-		} else {
-			err = l.fillStretchLine(ctx, stack, line, meters[i], stretches)
+		if usage[i] != nil {
+			l.fillBucketLine(ctx, stack, line, usage[i])
+			continue
 		}
 
-		if err != nil {
+		if err := l.fillStretchLine(ctx, stack, line, meters[i], stretches); err != nil {
 			return err
 		}
 	}
@@ -651,17 +663,16 @@ func (l *commitmentLoader) splitQuantities(
 	return out, nil
 }
 
-// bucketQuantities returns the line's usage for each bucket start; buckets without usage are zero.
-func (l *commitmentLoader) bucketQuantities(
+// bucketUsage returns the line's usage per bucket in the elapsed period, keyed at each bucket's start.
+func (l *commitmentLoader) bucketUsage(
 	ctx context.Context,
 	line *usageLine,
 	m *meter.Meter,
 	bucket types.WindowSize,
-	starts []time.Time,
-) ([]decimal.Decimal, error) {
-	out := make([]decimal.Decimal, len(starts))
+) (map[time.Time]decimal.Decimal, error) {
+	out := map[time.Time]decimal.Decimal{}
 	charges := l.activeCharges(line.Item)
-	if len(charges) == 0 || len(starts) == 0 {
+	if len(charges) == 0 {
 		return out, nil
 	}
 
@@ -671,24 +682,19 @@ func (l *commitmentLoader) bucketQuantities(
 			Mark(ierr.ErrInvalidOperation)
 	}
 
+	end := minTime(l.periodEnd, l.asOf)
 	result := charges[0].BucketedUsageResult
 	if result == nil {
 		var err error
-		if result, err = l.lineUsage(ctx, m, line, l.periodStart, minTime(l.periodEnd, l.asOf)); err != nil {
+		if result, err = l.lineUsage(ctx, m, line, l.periodStart, end); err != nil {
 			return nil, err
 		}
 	}
 
-	// Each bucket goes to the window containing its start, so an instant off the grid lands rather than vanishes;
-	// one before the first window goes to it, and one past the elapsed period is left out.
-	end := minTime(l.periodEnd, l.asOf)
 	for t, v := range aggregateUsageResultsByWindow(result.Results, m.Aggregation.Type) {
-		if !t.Before(end) {
-			continue
+		if t.Before(end) {
+			out[t] = v
 		}
-
-		at := max(sort.Search(len(starts), func(i int) bool { return starts[i].After(t) })-1, 0)
-		out[at] = out[at].Add(v)
 	}
 
 	return out, nil

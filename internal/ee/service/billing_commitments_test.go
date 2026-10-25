@@ -911,9 +911,9 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodPricesEachBucket
 	stacks, _, err := l.Stacks(ctx)
 	s.Require().NoError(err)
 	line := stacks[0].Lines[0]
-	s.Len(stacks[0].Windows, 31)
+	s.Len(stacks[0].Windows, 3) // 1 Aug, then the 5 Aug and 20 Aug buckets
 	s.True(line.PerWindow)
-	s.True(line.Usage[4].Equal(dec("60")) && line.Usage[19].Equal(dec("60")), "usage %v", line.Usage)
+	s.True(line.Usage[1].Equal(dec("60")) && line.Usage[2].Equal(dec("60")), "usage %v", line.Usage)
 	s.True(line.Cost.Equal(dec("120")), "each 60-unit bucket costs 60 on its own, got %s", line.Cost)
 
 	// Bucket one: cost(60)-cost(1) = 59; bucket two: cost(60)-cost(0) = 60. The collapsed 119 would cost 100 + 1.90.
@@ -956,11 +956,11 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodMixedLinesShareO
 	gpuAt, apiAt := byItem[gpuLine.ID], byItem[apiLine.ID]
 	s.True(stacks[0].Lines[apiAt].Usage[0].Equal(dec("40")), "api usage %v", stacks[0].Lines[apiAt].Usage)
 	s.False(stacks[0].Lines[apiAt].PerWindow)
-	s.True(stacks[0].Lines[gpuAt].Usage[4].Equal(dec("60")), "gpu usage %v", stacks[0].Lines[gpuAt].Usage)
+	s.True(stacks[0].Lines[gpuAt].Usage[1].Equal(dec("60")), "gpu usage %v", stacks[0].Lines[gpuAt].Usage)
 
 	// 1 Aug: the api's 40 leave 10 of the 50; 5 Aug: the bucket's 60 take those 10 and 50 go on demand.
 	s.True(allocs[0].OnDemand[apiAt][0].IsZero())
-	s.True(allocs[0].OnDemand[gpuAt][4].Equal(dec("50")), "gpu on-demand %s", allocs[0].OnDemand[gpuAt][4])
+	s.True(allocs[0].OnDemand[gpuAt][1].Equal(dec("50")), "gpu on-demand %s", allocs[0].OnDemand[gpuAt][1])
 	_, total, err := l.InvoiceLines(ctx)
 	s.Require().NoError(err)
 	s.True(total.Equal(dec("100")), "total %s", total)
@@ -1047,20 +1047,92 @@ func (s *BillingServiceSuite) TestCommitmentLoader_PartialWithinIsCappedAtTheFlo
 	// within is capped at 16. The whole period: 40 calls within at 30 + 10 x 0.50 = 35, true-up 11, also 46.
 	split := time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC)
 	for _, tt := range []struct {
-		from, to time.Time
-		within   string
-		total    string
+		from, to  time.Time
+		withinQty string
+		within    string
+		total     string
 	}{
-		{from: sub.CurrentPeriodStart, to: split, within: "20", total: "30"},
-		{from: split, to: sub.CurrentPeriodEnd, within: "16", total: "16"},
-		{from: sub.CurrentPeriodStart, to: sub.CurrentPeriodEnd, within: "35", total: "46"},
+		{from: sub.CurrentPeriodStart, to: split, withinQty: "20", within: "20", total: "30"},
+		{from: split, to: sub.CurrentPeriodEnd, withinQty: "20", within: "16", total: "16"},
+		{from: sub.CurrentPeriodStart, to: sub.CurrentPeriodEnd, withinQty: "40", within: "35", total: "46"},
 	} {
 		lines, total, err := s.loaderFor(sub, s.rawUsageWindow(sub, tt.from, tt.to), tt.from, tt.to, true).InvoiceLines(ctx)
 		s.Require().NoError(err)
 		within := s.loaderLine(lines, types.CommitmentLineWithin, c.ID)
-		s.True(within.Quantity.Equal(dec("20")) || within.Quantity.Equal(dec("40")), "within quantity %s", within.Quantity)
+		s.True(within.Quantity.Equal(dec(tt.withinQty)), "within quantity %s for %s-%s", within.Quantity, tt.from, tt.to)
 		s.True(within.Amount.Equal(dec(tt.within)), "within %s for %s-%s", within.Amount, tt.from, tt.to)
 		s.True(total.Equal(dec(tt.total)), "total %s for %s-%s", total, tt.from, tt.to)
+	}
+}
+
+// ClickHouse weeks start on Sunday. In a period starting on Saturday 1 Aug 2026, the week keyed 26 Jul (holding 1 Aug)
+// and the week keyed 2 Aug each keep a window of their own, so each still prices alone as normal billing prices it.
+func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodWeeklyBucketsKeepTheirOwnWindows() {
+	tests := []struct {
+		name     string
+		typ      types.CommitmentType
+		value    string
+		onDemand string
+		total    string
+	}{
+		{
+			// 60 + 70 cost 60 + 70 = 130 per bucket; merged, 130 would cost 100 + 30 x 0.10 = 103.
+			name:     "amount stack bills the normal path's 130",
+			typ:      types.COMMITMENT_TYPE_AMOUNT,
+			value:    "100",
+			onDemand: "30",
+			total:    "130",
+		},
+		{
+			// The unit comes off the 26 Jul week: cost(60)-cost(1) = 59, then cost(70) = 70.
+			name:     "quantity stack prices on demand per bucket",
+			typ:      types.COMMITMENT_TYPE_QUANTITY,
+			value:    "1",
+			onDemand: "129",
+			total:    "129.5",
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			ctx := s.GetContext()
+			s.setupTestData()
+			s.enableCommitmentsV2()
+			m := &meter.Meter{
+				ID:          "meter_gpu_weekly",
+				Name:        "Weekly GPU",
+				EventName:   "gpu_weekly",
+				Aggregation: meter.Aggregation{Type: types.AggregationMax, Field: "gpus", BucketSize: types.WindowSizeWeek},
+				BaseModel:   types.GetDefaultBaseModel(ctx),
+			}
+			s.Require().NoError(s.GetStores().MeterRepo.CreateMeter(ctx, m))
+			p := s.usagePriceFor("price_gpu_weekly", m, "0")
+			p.BillingModel, p.TierMode = types.BILLING_MODEL_TIERED, types.BILLING_TIER_SLAB
+			p.Tiers = []price.PriceTier{{UpTo: lo.ToPtr(uint64(100)), UnitAmount: dec("1")}, {UnitAmount: dec("0.1")}}
+			s.Require().NoError(s.GetStores().PriceRepo.Update(ctx, p, false))
+			li := &subscription.SubscriptionLineItem{ID: "subs_line_gpu_weekly", PriceID: p.ID, MeterID: m.ID, DisplayName: "GPU"}
+			sub := s.fixedDateSub("sub_gpu_weekly", li)
+			c := s.newTestCommitment("cmt_gpu_weekly", sub, tt.typ, tt.value, p.ID, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
+			if tt.typ == types.COMMITMENT_TYPE_QUANTITY {
+				c.CommittedPriceID = lo.ToPtr(s.usagePriceFor("price_gpu_weekly_committed", nil, "0.5").ID)
+			}
+			s.storeCommitment(c)
+
+			usage := &dto.GetUsageBySubscriptionResponse{Currency: "usd", Charges: []*dto.SubscriptionUsageByMetersResponse{{
+				SubscriptionLineItemID: li.ID,
+				Price:                  p,
+				BucketedUsageResult: &events.AggregationResult{Results: []events.UsageResult{
+					{WindowSize: time.Date(2026, 7, 26, 0, 0, 0, 0, time.UTC), Value: dec("60")},
+					{WindowSize: time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC), Value: dec("70")},
+				}},
+			}}}
+			lines, total, err := s.loaderFor(sub, usage, sub.CurrentPeriodStart, sub.CurrentPeriodEnd, false).InvoiceLines(ctx)
+			s.Require().NoError(err)
+			onDemand := loaderLinesOfKind(lines, types.CommitmentLineOnDemand)
+			s.Require().Len(onDemand, 1)
+			s.True(onDemand[0].Amount.Equal(dec(tt.onDemand)), "on-demand %s", onDemand[0].Amount)
+			s.True(total.Equal(dec(tt.total)), "total %s", total)
+		})
 	}
 }
 
