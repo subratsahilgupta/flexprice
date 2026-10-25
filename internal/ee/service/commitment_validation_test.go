@@ -130,6 +130,17 @@ func TestCreateCommitmentRequest_Validate(t *testing.T) {
 		{"C7 flat committed price with tiers", func(r *dto.CreateCommitmentRequest) {
 			r.CommittedPrice.Tiers = tieredOverage().Tiers
 		}, false},
+		{"C7 slab committed price", func(r *dto.CreateCommitmentRequest) {
+			r.CommittedPrice = tieredOverage()
+		}, true},
+		{"C7 volume committed price", func(r *dto.CreateCommitmentRequest) {
+			r.CommittedPrice = tieredOverage()
+			r.CommittedPrice.TierMode = types.BILLING_TIER_VOLUME
+		}, false},
+		{"C8 volume overage", func(r *dto.CreateCommitmentRequest) {
+			r.OveragePrice = tieredOverage()
+			r.OveragePrice.TierMode = types.BILLING_TIER_VOLUME
+		}, true},
 		{"C7 package committed price", func(r *dto.CreateCommitmentRequest) {
 			r.CommittedPrice.BillingModel = types.BILLING_MODEL_PACKAGE
 			r.CommittedPrice.TransformQuantity = &price.TransformQuantity{DivideBy: 1000}
@@ -415,6 +426,41 @@ func (s *CommitmentServiceSuite) TestLineItemUpdate_RejectsLegacyCommitmentInSco
 	s.False(stored.HasAnyCommitment())
 }
 
+// plainUpdateOfLegacyLine edits the metadata of an API line that carries legacy commitment fields, with a
+// commitment on the given meter, and returns the recorded events.
+func (s *CommitmentServiceSuite) plainUpdateOfLegacyLine(meterID string) ([]string, error) {
+	ctx := s.GetContext()
+	req := validReq(s.fx.sub.ID, "")
+	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeMeter, EntityID: meterID}
+	_, err := s.svc.Create(ctx, req)
+	s.Require().NoError(err)
+
+	line, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.fx.lineAPI.ID)
+	s.Require().NoError(err)
+	line.CommitmentAmount, line.CommitmentType = lo.ToPtr(dec("50")), types.COMMITMENT_TYPE_AMOUNT
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, line))
+
+	var events []string
+	params := s.fullParams()
+	params.DB = &recordingDB{IClient: s.GetDB(), events: &events}
+	params.SubscriptionLineItemRepo = &recordingLineItemRepo{LineItemRepository: s.GetStores().SubscriptionLineItemRepo, events: &events}
+	_, err = NewSubscriptionService(params).UpdateSubscriptionLineItem(ctx, s.fx.lineAPI.ID,
+		dto.UpdateSubscriptionLineItemRequest{Metadata: map[string]string{"note": "edited"}})
+
+	return events, err
+}
+
+func (s *CommitmentServiceSuite) TestLineItemUpdate_PlainUpdateRunsGuardInTx() {
+	events, err := s.plainUpdateOfLegacyLine(s.fx.meterStorage.ID)
+	s.Require().NoError(err)
+	s.Equal([]string{"tx", "lock:commitments:" + s.fx.sub.ID, "update:" + s.fx.lineAPI.ID, "tx_end"}, events)
+}
+
+func (s *CommitmentServiceSuite) TestLineItemUpdate_PlainUpdateRejectsCoveringCommitment() {
+	_, err := s.plainUpdateOfLegacyLine(s.fx.meterAPI.ID)
+	s.requireValidation(err, "legacy line-item commitment")
+}
+
 func (s *CommitmentServiceSuite) TestLineItemAdd_RejectsLegacyCommitmentInScope() {
 	req := validReq(s.fx.sub.ID, "")
 	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeSubscription, EntityID: s.fx.sub.ID}
@@ -460,6 +506,56 @@ func (s *CommitmentServiceSuite) TestCheckPriceAttach_GuardsTerminatedCommitment
 	s.requireValidation(err, "different meter")
 
 	s.Require().NoError(s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, s.fx.priceOtherMeterInGroup, cutoff, nil))
+}
+
+func (s *CommitmentServiceSuite) TestCheckPriceAttach_GuardsTerminatedCommitmentThroughPeriodEnd() {
+	req := validReq(s.fx.sub.ID, "")
+	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeGroup, EntityID: s.fx.groupAPIOnly.ID}
+	created, err := s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+	cutoff := time.Date(2027, 5, 10, 0, 0, 0, 0, time.UTC)
+	_, err = s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{EffectiveAt: &cutoff})
+	s.Require().NoError(err)
+
+	err = s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, s.fx.priceOtherMeterInGroup, cutoff.AddDate(0, 0, 5), nil)
+	s.requireValidation(err, "different meter")
+
+	periodEnd := time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC)
+	s.Require().NoError(s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, s.fx.priceOtherMeterInGroup, periodEnd, nil))
+}
+
+func (s *CommitmentServiceSuite) TestLineItemUpdate_LegacyGuardCoversTerminatedCommitmentThroughPeriodEnd() {
+	ctx := s.GetContext()
+	req := validReq(s.fx.sub.ID, "")
+	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeMeter, EntityID: s.fx.meterAPI.ID}
+	created, err := s.svc.Create(ctx, req)
+	s.Require().NoError(err)
+	cutoff := time.Date(2027, 5, 10, 0, 0, 0, 0, time.UTC)
+	_, err = s.svc.Terminate(ctx, created.ID, dto.TerminateCommitmentRequest{EffectiveAt: &cutoff})
+	s.Require().NoError(err)
+
+	// A line starting in the cutoff's billing period overlaps the extended span; one starting at its end does not.
+	line := *s.fx.lineAPI
+	line.CommitmentAmount, line.CommitmentType = lo.ToPtr(dec("50")), types.COMMITMENT_TYPE_AMOUNT
+	line.StartDate = cutoff.AddDate(0, 0, 5)
+	s.requireValidation(rejectLegacyCommitmentInScope(ctx, s.fullParams(), s.fx.sub, &line), "legacy line-item commitment")
+
+	line.StartDate = time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC)
+	s.Require().NoError(rejectLegacyCommitmentInScope(ctx, s.fullParams(), s.fx.sub, &line))
+}
+
+func (s *CommitmentServiceSuite) TestCreate_RejectsSamePriorityOverFutureCutoff() {
+	a := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	created, err := s.svc.Create(s.GetContext(), a)
+	s.Require().NoError(err)
+	cutoff := time.Date(2027, 5, 10, 0, 0, 0, 0, time.UTC)
+	_, err = s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{EffectiveAt: &cutoff})
+	s.Require().NoError(err)
+
+	b := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	b.StartDate = time.Date(2027, 5, 1, 0, 0, 0, 0, time.UTC)
+	_, err = s.svc.Create(s.GetContext(), b)
+	s.requireValidation(err, "priority")
 }
 
 func (s *CommitmentServiceSuite) TestPlanSync_InsertsUsageLineUnderCommitmentsLock() {

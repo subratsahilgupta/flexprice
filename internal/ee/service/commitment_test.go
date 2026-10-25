@@ -1044,6 +1044,11 @@ func (r *recordingLineItemRepo) CreateBulk(ctx context.Context, items []*subscri
 	return r.LineItemRepository.CreateBulk(ctx, items)
 }
 
+func (r *recordingLineItemRepo) Update(ctx context.Context, li *subscription.SubscriptionLineItem) error {
+	*r.events = append(*r.events, "update:"+li.ID)
+	return r.LineItemRepository.Update(ctx, li)
+}
+
 // requireInsertUnderLock asserts the insert ran inside the transaction that took the commitments lock.
 func (s *CommitmentServiceSuite) requireInsertUnderLock(events []string, insert string) {
 	at := lo.IndexOf(events, insert)

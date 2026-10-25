@@ -794,7 +794,7 @@ func (s *commitmentService) checkPriceAttach(
 			Mark(ierr.ErrInternal)
 	}
 
-	inScope, err := s.commitmentsInScope(ctx, sub.ID, p, at, until)
+	inScope, err := s.commitmentsInScope(ctx, sub, p, at, until)
 	if err != nil || len(inScope) == 0 {
 		return "", err
 	}
@@ -825,43 +825,56 @@ func (s *commitmentService) checkPriceAttach(
 		}
 	}
 
-	return s.checkAttachPairs(ctx, inScope)
+	return s.checkAttachPairs(ctx, sub, inScope)
 }
 
 // commitmentsInScope returns commitments in force after `at` and starting before `until` (nil when open-ended)
-// whose scope includes the new usage price.
+// whose scope includes the new usage price. A terminated commitment stays in force through its extended span.
 func (s *commitmentService) commitmentsInScope(
 	ctx context.Context,
-	subscriptionID string,
+	sub *subscription.Subscription,
 	p *price.Price,
 	at time.Time,
 	until *time.Time,
 ) ([]*commitment.Commitment, error) {
 	f := commitment.NewNoLimitFilter()
-	f.SubscriptionIDs = []string{subscriptionID}
+	f.SubscriptionIDs = []string{sub.ID}
 	f.Statuses = []types.CommitmentStatus{types.CommitmentStatusActive, types.CommitmentStatusTerminated}
 	listed, err := s.CommitmentRepo.List(ctx, f)
 	if err != nil {
 		return nil, err
 	}
 
-	// A price-scoped commitment never includes a newly attached price (new ID).
-	return lo.Filter(listed, func(c *commitment.Commitment, _ int) bool {
-		if c.EndedBy(at) || (until != nil && !c.StartDate.Before(*until)) {
-			return false
+	var inScope []*commitment.Commitment
+	for _, c := range listed {
+		spanEnd, err := inForceEnd(sub, c)
+		if err != nil {
+			return nil, err
 		}
 
+		if !at.Before(spanEnd) || !c.StartDate.Before(spanEnd) || (until != nil && !c.StartDate.Before(*until)) {
+			continue
+		}
+
+		// A price-scoped commitment never includes a newly attached price (new ID).
 		switch c.ScopeEntityType {
 		case types.CommitmentScopeSubscription:
-			return true
 		case types.CommitmentScopeGroup:
-			return p.GroupID == c.ScopeEntityID
+			if p.GroupID != c.ScopeEntityID {
+				continue
+			}
 		case types.CommitmentScopeMeter:
-			return p.MeterID == c.ScopeEntityID
+			if p.MeterID != c.ScopeEntityID {
+				continue
+			}
+		default:
+			continue
 		}
 
-		return false
-	}), nil
+		inScope = append(inScope, c)
+	}
+
+	return inScope, nil
 }
 
 // checkAttachAgainst checks the meter and bucket-size rules for one commitment that the new price joins.
@@ -909,16 +922,31 @@ func (s *commitmentService) checkAttachAgainst(
 	return nil
 }
 
-// checkAttachPairs requires commitments that now share the new price and overlap in time to differ in
-// priority and agree on type, measurement and overage price.
-func (s *commitmentService) checkAttachPairs(ctx context.Context, inScope []*commitment.Commitment) (string, error) {
+// checkAttachPairs requires commitments that now share the new price and overlap in time to agree on type,
+// measurement and overage price, and those still allocating together to differ in priority.
+func (s *commitmentService) checkAttachPairs(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	inScope []*commitment.Commitment,
+) (string, error) {
 	for i, a := range inScope {
 		for _, b := range inScope[i+1:] {
-			if !a.StartDate.Before(b.EffectiveEnd()) || !b.StartDate.Before(a.EffectiveEnd()) {
+			aEnd, err := inForceEnd(sub, a)
+			if err != nil {
+				return "", err
+			}
+
+			bEnd, err := inForceEnd(sub, b)
+			if err != nil {
+				return "", err
+			}
+
+			if !a.StartDate.Before(bEnd) || !b.StartDate.Before(aEnd) {
 				continue
 			}
 
-			if a.Priority == b.Priority {
+			allocatingTogether := a.StartDate.Before(b.EffectiveEnd()) && b.StartDate.Before(a.EffectiveEnd())
+			if allocatingTogether && a.Priority == b.Priority {
 				return a.ID, ierr.Validationf(
 					"commitments %s and %s overlap on the new price with the same priority %d",
 					a.ID,

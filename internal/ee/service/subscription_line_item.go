@@ -919,11 +919,15 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			return nil, err
 		}
 
-		if err := rejectLegacyCommitmentInScope(ctx, s.ServiceParams, sub, existingLineItem); err != nil {
-			return nil, err
-		}
+		// The commitment guard takes an advisory lock, which needs a transaction.
+		err = s.DB.WithTx(ctx, func(txCtx context.Context) error {
+			if err := rejectLegacyCommitmentInScope(txCtx, s.ServiceParams, sub, existingLineItem); err != nil {
+				return err
+			}
 
-		if err := s.SubscriptionLineItemRepo.Update(ctx, existingLineItem); err != nil {
+			return s.SubscriptionLineItemRepo.Update(txCtx, existingLineItem)
+		})
+		if err != nil {
 			return nil, err
 		}
 

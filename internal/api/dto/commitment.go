@@ -240,6 +240,10 @@ func (in *CommitmentPriceInput) validate(field string, positive bool) error {
 			return err
 		}
 
+		if positive && in.TierMode == types.BILLING_TIER_VOLUME {
+			return ierr.Validationf("%s.tier_mode must be SLAB: committed prices must price marginally so usage never exceeds the commitment's value", field)
+		}
+
 		if len(in.Tiers) == 0 {
 			return ierr.Validationf("%s.tiers are required for TIERED", field)
 		}
