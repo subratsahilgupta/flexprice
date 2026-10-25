@@ -1236,3 +1236,45 @@ func (s *CommitmentServiceSuite) TestResponse_ResolvesWindowBucketAfterScopeLine
 	s.Require().NoError(err)
 	s.True(created.CommitmentValue.Equal(*got.CommitmentValue), "want %s, got %s", created.CommitmentValue, got.CommitmentValue)
 }
+
+// listCountingLineItemRepo counts line-item list reads.
+type listCountingLineItemRepo struct {
+	subscription.LineItemRepository
+	lists int
+}
+
+func (r *listCountingLineItemRepo) List(ctx context.Context, f *types.SubscriptionLineItemFilter) ([]*subscription.SubscriptionLineItem, error) {
+	r.lists++
+	return r.LineItemRepository.List(ctx, f)
+}
+
+func (s *CommitmentServiceSuite) TestResponse_LoadsScopeOnlyForWindowMeasurement() {
+	perPeriod, err := s.svc.Create(s.GetContext(), validReq(s.fx.sub.ID, s.fx.priceStorage.ID))
+	s.Require().NoError(err)
+
+	window := validReq(s.fx.sub.ID, "")
+	window.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeMeter, EntityID: s.fx.meterAPI.ID}
+	window.Measurement = types.CommitmentMeasurementWindow
+	windowed, err := s.svc.Create(s.GetContext(), window)
+	s.Require().NoError(err)
+
+	tests := []struct {
+		name      string
+		created   *dto.CommitmentResponse
+		wantLists int
+	}{
+		{"billing period reads only the subscription", perPeriod, 0},
+		{"window loads the scope lines", windowed, 1},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			params := s.fullParams()
+			repo := &listCountingLineItemRepo{LineItemRepository: params.SubscriptionLineItemRepo}
+			params.SubscriptionLineItemRepo = repo
+			got, err := NewCommitmentService(params).Get(s.GetContext(), tt.created.ID)
+			s.Require().NoError(err)
+			s.True(got.CommitmentValue.Equal(*tt.created.CommitmentValue), "want %s, got %s", tt.created.CommitmentValue, got.CommitmentValue)
+			s.Equal(tt.wantLists, repo.lists)
+		})
+	}
+}

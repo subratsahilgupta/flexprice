@@ -103,7 +103,7 @@ func (s *commitmentService) create(
 	if req.IdempotencyKey != nil {
 		existing, err := s.CommitmentRepo.GetByIdempotencyKey(ctx, *req.IdempotencyKey)
 		if err == nil {
-			return s.toResponse(ctx, existing)
+			return s.response(ctx, existing, nil)
 		}
 
 		if !ierr.IsNotFound(err) {
@@ -112,6 +112,7 @@ func (s *commitmentService) create(
 	}
 
 	var out *commitment.Commitment
+	var cc *commitmentContext
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		if err := s.DB.LockWithWait(txCtx, postgres.LockRequest{Key: "commitments:" + req.SubscriptionID}); err != nil {
 			return ierr.WithError(err).
@@ -131,10 +132,12 @@ func (s *commitmentService) create(
 			}
 		}
 
-		c, cc, _, err := s.prepare(txCtx, &req, opts)
+		c, prepared, _, err := s.prepare(txCtx, &req, opts)
 		if err != nil {
 			return err
 		}
+
+		cc = prepared
 
 		meterID := ""
 		if lines := resolveScopeLines(c.ScopeEntityType, c.ScopeEntityID, cc, c.StartDate); len(lines) > 0 {
@@ -160,7 +163,7 @@ func (s *commitmentService) create(
 			return nil, getErr
 		}
 
-		return s.toResponse(ctx, existing)
+		return s.response(ctx, existing, nil)
 	}
 
 	if err != nil {
@@ -171,7 +174,7 @@ func (s *commitmentService) create(
 		"commitment_id", out.ID,
 		"subscription_id", out.SubscriptionID,
 	)
-	return s.toResponse(ctx, out)
+	return s.response(ctx, out, cc)
 }
 
 // prepare validates the request and builds the commitment and its value without persisting anything.
@@ -266,7 +269,7 @@ func (s *commitmentService) Get(ctx context.Context, id string) (*dto.Commitment
 		return nil, err
 	}
 
-	return s.toResponse(ctx, c)
+	return s.response(ctx, c, nil)
 }
 
 func (s *commitmentService) List(ctx context.Context, filter *commitment.Filter) (*dto.ListCommitmentsResponse, error) {
@@ -304,7 +307,7 @@ func (s *commitmentService) List(ctx context.Context, filter *commitment.Filter)
 			contexts[c.SubscriptionID] = cc
 		}
 
-		resp, err := s.responseWithContext(ctx, c, cc)
+		resp, err := s.response(ctx, c, cc)
 		if err != nil {
 			return nil, err
 		}
@@ -366,7 +369,7 @@ func (s *commitmentService) Update(
 		return nil, err
 	}
 
-	return s.toResponse(ctx, updated)
+	return s.response(ctx, updated, nil)
 }
 
 // Terminate ends an active commitment at effective_at (default now). A cancellation fee and the unearned
@@ -404,7 +407,7 @@ func (s *commitmentService) Terminate(
 		"termination_invoice_id", lo.FromPtr(invoiceID),
 	)
 
-	resp, err := s.toResponse(ctx, out)
+	resp, err := s.response(ctx, out, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -709,15 +712,6 @@ func (s *commitmentService) ActiveForPeriod(
 	return s.CommitmentRepo.List(ctx, f)
 }
 
-func (s *commitmentService) toResponse(ctx context.Context, c *commitment.Commitment) (*dto.CommitmentResponse, error) {
-	cc, err := s.loadCommitmentContext(ctx, c.SubscriptionID)
-	if err != nil {
-		return nil, err
-	}
-
-	return s.responseWithContext(ctx, c, cc)
-}
-
 // committedRate returns the rate of the commitment's committed price, zero for amount commitments.
 func (s *commitmentService) committedRate(ctx context.Context, c *commitment.Commitment) (decimal.Decimal, error) {
 	if c.CommittedPriceID == nil {
@@ -732,8 +726,9 @@ func (s *commitmentService) committedRate(ctx context.Context, c *commitment.Com
 	return p.Amount, nil
 }
 
-// responseWithContext recomputes the commitment value; the committed rate comes from the committed price.
-func (s *commitmentService) responseWithContext(
+// response builds the API response, computing the commitment value. cc may be nil; List passes its
+// per-subscription context so the value math reuses it.
+func (s *commitmentService) response(
 	ctx context.Context,
 	c *commitment.Commitment,
 	cc *commitmentContext,
@@ -743,7 +738,22 @@ func (s *commitmentService) responseWithContext(
 		return nil, err
 	}
 
-	periods, err := commitmentPeriods(c, cc.Sub, committedRate, bucketFor(c, cc))
+	// Only window measurement needs the scope lines, for its bucket size; otherwise the subscription is enough.
+	if cc == nil && c.Measurement == types.CommitmentMeasurementWindow {
+		if cc, err = s.loadCommitmentContext(ctx, c.SubscriptionID); err != nil {
+			return nil, err
+		}
+	}
+
+	var sub *subscription.Subscription
+	var bucket types.WindowSize
+	if cc != nil {
+		sub, bucket = cc.Sub, bucketFor(c, cc)
+	} else if sub, err = s.SubRepo.Get(ctx, c.SubscriptionID); err != nil {
+		return nil, err
+	}
+
+	periods, err := commitmentPeriods(c, sub, committedRate, bucket)
 	if err != nil {
 		return nil, err
 	}
