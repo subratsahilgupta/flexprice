@@ -918,7 +918,8 @@ func (s *commitmentService) checkAttachAgainst(
 	}
 
 	want := price.ResolveBucketSize(cc.Prices[lines[0].PriceID], cc.Meters[lines[0].MeterID])
-	if got := price.ResolveBucketSize(p, m); got != want {
+	got := price.ResolveBucketSize(p, m)
+	if got != want {
 		return ierr.Validationf(
 			"commitment %s measures by window with bucket size %q; price %s has bucket size %q",
 			c.ID,
@@ -928,7 +929,7 @@ func (s *commitmentService) checkAttachAgainst(
 		)
 	}
 
-	return nil
+	return rejectWeekBuckets(got)
 }
 
 // checkAttachPairs requires commitments that now share the new price and overlap in time to agree on type,

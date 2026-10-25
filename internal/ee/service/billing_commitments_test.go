@@ -747,6 +747,90 @@ func (s *BillingServiceSuite) TestCommitmentLoader_PartialInvoicesSumToThePeriod
 	}
 }
 
+// istDailyWindowFixture stores an Asia/Kolkata subscription billed from 1 Aug IST with a daily-bucket line under a
+// 10-a-day window commitment, and returns usage keyed the way ClickHouse buckets raw events: at IST midnight.
+func (s *BillingServiceSuite) istDailyWindowFixture() (*subscription.Subscription, *commitment.Commitment, *dto.GetUsageBySubscriptionResponse) {
+	ctx := s.GetContext()
+	ist, err := time.LoadLocation("Asia/Kolkata")
+	s.Require().NoError(err)
+
+	dayMeter := &meter.Meter{
+		ID:          "meter_ist_daily",
+		Name:        "Daily GPU",
+		EventName:   "ist_daily",
+		Aggregation: meter.Aggregation{Type: types.AggregationMax, Field: "gpus", BucketSize: types.WindowSizeDay},
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().MeterRepo.CreateMeter(ctx, dayMeter))
+	p := s.usagePriceFor("price_ist_daily", dayMeter, "1")
+	li := &subscription.SubscriptionLineItem{ID: "subs_line_ist_daily", PriceID: p.ID, MeterID: dayMeter.ID, DisplayName: "GPU"}
+	sub := s.fixedDateSub("sub_ist_daily", li)
+
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, ist).UTC()
+	sub.Timezone, sub.StartDate, sub.BillingAnchor = "Asia/Kolkata", start, start
+	sub.CurrentPeriodStart, sub.CurrentPeriodEnd = start, time.Date(2026, 9, 1, 0, 0, 0, 0, ist).UTC()
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
+	li.StartDate = start
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, li))
+
+	committed := s.usagePriceFor("price_ist_daily_committed", dayMeter, "0.5")
+	c := s.newTestCommitment("cmt_ist_daily", sub, types.COMMITMENT_TYPE_QUANTITY, "10", p.ID, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
+	c.Measurement, c.CommittedPriceID = types.CommitmentMeasurementWindow, lo.ToPtr(committed.ID)
+	s.storeCommitment(c)
+
+	usage := &dto.GetUsageBySubscriptionResponse{Currency: "usd", Charges: []*dto.SubscriptionUsageByMetersResponse{{
+		SubscriptionLineItemID: li.ID,
+		Price:                  p,
+		BucketedUsageResult: &events.AggregationResult{Results: []events.UsageResult{
+			{WindowSize: time.Date(2026, 8, 5, 0, 0, 0, 0, ist), Value: dec("15")},
+			{WindowSize: time.Date(2026, 8, 20, 0, 0, 0, 0, ist), Value: dec("4")},
+		}},
+	}}}
+	return sub, c, usage
+}
+
+// Raw events bucket days in the subscription's timezone, so the raw-events grid is built there too.
+func (s *BillingServiceSuite) TestCommitmentLoader_RawEventsDailyGridFollowsSubscriptionTimezone() {
+	ctx := s.GetContext()
+	s.setupTestData()
+	s.enableCommitmentsV2()
+	sub, c, usage := s.istDailyWindowFixture()
+
+	stacks, allocs, err := s.loaderFor(sub, usage, sub.CurrentPeriodStart, sub.CurrentPeriodEnd, true).Stacks(ctx)
+	s.Require().NoError(err)
+	s.Require().Len(stacks, 1)
+	s.Len(stacks[0].Windows, 31)
+	s.True(stacks[0].Windows[4].Equal(usage.Charges[0].BucketedUsageResult.Results[0].WindowSize), "5 Aug IST is window %s", stacks[0].Windows[4])
+	s.True(stacks[0].Lines[0].Usage[4].Equal(dec("15")))
+	s.True(stacks[0].Lines[0].Usage[19].Equal(dec("4")))
+
+	// 10 of 5 Aug's 15 and all 4 of 20 Aug's fall within the commitment; the other 5 are on demand.
+	s.True(allocs[0].Commitments[0].Used.Equal(dec("14")), "used %s", allocs[0].Commitments[0].Used)
+	s.True(allocs[0].OnDemand[0][4].Equal(dec("5")))
+	s.True(allocs[0].Commitments[0].Capacity.Equal(dec("310")), "capacity %s", allocs[0].Commitments[0].Capacity)
+	s.Equal(c.ID, stacks[0].Commitments[0].C.ID)
+}
+
+// An instant off the grid lands in the window containing it; one past the elapsed period is left out.
+func (s *BillingServiceSuite) TestCommitmentLoader_BucketsJoinTheWindowContainingThem() {
+	ctx := s.GetContext()
+	s.setupTestData()
+	s.enableCommitmentsV2()
+	sub, _, usage := s.istDailyWindowFixture()
+
+	// meter_usage buckets in UTC, so its grid is UTC days and the IST-midnight instants sit 5h30 before them.
+	l := s.loaderFor(sub, usage, sub.CurrentPeriodStart, sub.CurrentPeriodEnd, false)
+	l.asOf = time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	stacks, allocs, err := l.Stacks(ctx)
+	s.Require().NoError(err)
+	windows, got := stacks[0].Windows, stacks[0].Lines[0].Usage
+	s.True(windows[0].Equal(time.Date(2026, 7, 31, 0, 0, 0, 0, time.UTC)), "first window %s", windows[0])
+	s.True(windows[4].Equal(time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC)))
+	s.True(got[4].Equal(dec("15")), "4 Aug UTC holds 5 Aug 00:00 IST, got %v", got)
+	s.True(stacks[0].Lines[0].Quantity.Equal(dec("15")), "20 Aug is past the elapsed period")
+	s.True(allocs[0].Commitments[0].Used.Equal(dec("10")))
+}
+
 func TestSpreadCost_ConservesTotalProportionally(t *testing.T) {
 	decs := func(vs ...string) []decimal.Decimal {
 		return lo.Map(vs, func(v string, _ int) decimal.Decimal { return dec(v) })

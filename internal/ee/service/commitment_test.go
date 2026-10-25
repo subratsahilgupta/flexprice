@@ -1349,6 +1349,26 @@ func (s *CommitmentServiceSuite) groupedBucketedPrice() *price.Price {
 	return &p
 }
 
+func (s *CommitmentServiceSuite) TestValidation_RejectsWeeklyWindowBuckets() {
+	ctx := s.GetContext()
+	weekly := *s.fx.priceAPI
+	weekly.ID, weekly.BucketSize = "price_api_weekly", types.WindowSizeWeek
+	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &weekly))
+	line := *s.fx.lineAPI
+	line.ID, line.PriceID = "subs_line_api_weekly", weekly.ID
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &line))
+
+	req := validReq(s.fx.sub.ID, weekly.ID)
+	req.Measurement = types.CommitmentMeasurementWindow
+	_, err := s.svc.Create(ctx, req)
+	s.requireValidation(err, "weekly buckets", "Sunday")
+
+	// Measured per billing period, the same price is fine.
+	req.Measurement = types.CommitmentMeasurementBillingPeriod
+	_, err = s.svc.Create(ctx, req)
+	s.Require().NoError(err)
+}
+
 func (s *CommitmentServiceSuite) TestValidation_RejectsGroupedBucketedPriceInScope() {
 	ctx := s.GetContext()
 	p := s.groupedBucketedPrice()

@@ -409,7 +409,8 @@ func (l *commitmentLoader) linkLines(ctx context.Context, stack *commitmentStack
 // fillWindowStack gives the stack one window per bucket in the elapsed period, so empty buckets still count as
 // capacity, and one pool per bucket each commitment is active in.
 func (l *commitmentLoader) fillWindowStack(ctx context.Context, stack *commitmentStack, bucket types.WindowSize) error {
-	stack.Windows = generateBucketStarts(l.periodStart, minTime(l.periodEnd, l.asOf), bucket, &l.sub.BillingAnchor)
+	loc := l.usageLocation()
+	stack.Windows = generateBucketStarts(l.periodStart.In(loc), minTime(l.periodEnd, l.asOf).In(loc), bucket, &l.sub.BillingAnchor)
 	meters, err := l.linkLines(ctx, stack)
 	if err != nil {
 		return err
@@ -640,16 +641,33 @@ func (l *commitmentLoader) bucketQuantities(
 		}
 	}
 
-	byWindow := map[int64]decimal.Decimal{}
+	// Each bucket goes to the window containing its start, so an instant off the grid lands rather than vanishes;
+	// one before the first window goes to it, and one past the elapsed period is left out.
+	end := minTime(l.periodEnd, l.asOf)
 	for t, v := range aggregateUsageResultsByWindow(result.Results, m.Aggregation.Type) {
-		byWindow[t.Unix()] = v
-	}
+		if !t.Before(end) {
+			continue
+		}
 
-	for i, t := range starts {
-		out[i] = byWindow[t.Unix()]
+		at := max(sort.Search(len(starts), func(i int) bool { return starts[i].After(t) })-1, 0)
+		out[at] = out[at].Add(v)
 	}
 
 	return out, nil
+}
+
+// usageLocation is where usage buckets start: raw events bucket in the subscription's timezone, meter_usage in UTC.
+func (l *commitmentLoader) usageLocation() *time.Location {
+	if !l.fromEvents {
+		return time.UTC
+	}
+
+	loc, err := time.LoadLocation(l.sub.Timezone)
+	if err != nil {
+		return time.UTC
+	}
+
+	return loc
 }
 
 // activeCharges returns the line's charges, or none when the line has not run during the elapsed period.

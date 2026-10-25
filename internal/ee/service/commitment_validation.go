@@ -240,6 +240,10 @@ func (s *commitmentService) validateAgainstSubscription(
 		if len(sizes) != 1 || sizes[0] == "" {
 			return ierr.Validation("window measurement needs bucketed prices that all share one bucket size")
 		}
+
+		if err := rejectWeekBuckets(sizes[0]); err != nil {
+			return err
+		}
 	}
 
 	if sub.CommitmentAmount != nil && sub.CommitmentAmount.IsPositive() {
@@ -278,6 +282,18 @@ func rejectGroupedBucketedPrice(p *price.Price, m *meter.Meter) error {
 
 	return ierr.NewErrorf("price %s is bucketed per %q group; commitments cannot cover grouped bucketed prices", p.ID, groupBy).
 		WithHint("Commitments cannot cover bucketed prices whose meter groups usage by a property").
+		Mark(ierr.ErrValidation)
+}
+
+// rejectWeekBuckets rejects weekly buckets for window measurement: usage weeks start on Sunday while the
+// commitment's bucket grid starts weeks on Monday, so no window would ever see its usage.
+func rejectWeekBuckets(size types.WindowSize) error {
+	if size != types.WindowSizeWeek {
+		return nil
+	}
+
+	return ierr.NewError("window measurement does not support weekly buckets: usage weeks start on Sunday, commitment windows on Monday").
+		WithHint("Use a daily or shorter bucket size for window commitments").
 		Mark(ierr.ErrValidation)
 }
 
