@@ -72,21 +72,29 @@ func commitmentPeriods(
 	return out, nil
 }
 
-// clipCommitmentPeriod returns p cut to end at until, with its capacity and amount recomputed.
+// clipCommitmentPeriod returns p cut to [from, until), with its capacity and amount recomputed.
+// Bounds within the same second as p's edges leave it whole, since computed billing dates drop sub-seconds.
 func clipCommitmentPeriod(
 	c *commitment.Commitment,
 	p commitmentPeriod,
-	until time.Time,
+	from, until time.Time,
 	amountOf func(capacity decimal.Decimal) decimal.Decimal,
 	bucket types.WindowSize,
 	anchor time.Time,
 ) commitmentPeriod {
-	if !until.Before(p.End) {
+	out := p
+	if from.Truncate(time.Second).After(p.Start.Truncate(time.Second)) {
+		out.Start = minTime(from, p.End)
+	}
+
+	if until.Truncate(time.Second).Before(p.End.Truncate(time.Second)) {
+		out.End = maxTime(until, out.Start)
+	}
+
+	if out.Start.Equal(p.Start) && out.End.Equal(p.End) {
 		return p
 	}
 
-	out := p
-	out.End = maxTime(until, p.Start)
 	fillPeriodValue(c, &out, amountOf, bucket, anchor)
 	return out
 }

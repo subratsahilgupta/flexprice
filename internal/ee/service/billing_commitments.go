@@ -171,10 +171,13 @@ func (s *billingService) newCommitmentLoader(
 			continue
 		}
 
-		// A mid-period termination prorates this period; the invoice still covers the whole subscription period.
+		// An invoice for part of the period, or a mid-period termination, prorates the period's value, so the
+		// partial invoices of one period sum to its full value.
+		until := periodEnd
 		if c.TerminatedAt != nil {
-			period = clipCommitmentPeriod(c, period, *c.TerminatedAt, amountOf, bucket, sub.BillingAnchor)
+			until = minTime(until, *c.TerminatedAt)
 		}
+		period = clipCommitmentPeriod(c, period, periodStart, until, amountOf, bucket, sub.BillingAnchor)
 
 		for _, item := range items {
 			l.handled[item.ID] = true

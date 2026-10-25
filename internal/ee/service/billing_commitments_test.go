@@ -717,6 +717,36 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodPoolsAcrossTheSp
 	s.True(total.Equal(dec("21")), "total %s", total)
 }
 
+// A paused and resumed subscription invoices one period in two parts; each bills its share of the floor.
+func (s *BillingServiceSuite) TestCommitmentLoader_PartialInvoicesSumToThePeriodFloor() {
+	ctx := s.GetContext()
+	s.setupTestData()
+	s.enableCommitmentsV2()
+	p := s.usagePriceFor("price_flat_api", s.testData.meters.apiCalls, "1")
+	li := &subscription.SubscriptionLineItem{ID: "subs_line_flat_api", PriceID: p.ID, MeterID: s.testData.meters.apiCalls.ID, DisplayName: "API"}
+	sub := s.fixedDateSub("sub_partial", li)
+	c := s.newTestCommitment("cmt_partial", sub, types.COMMITMENT_TYPE_AMOUNT, "100", p.ID, sub.CurrentPeriodStart, sub.CurrentPeriodStart.AddDate(0, 3, 0))
+	s.storeCommitment(c)
+
+	split := time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		from, to time.Time
+		want     string
+	}{
+		{from: sub.CurrentPeriodStart, to: split, want: "48.39"},
+		{from: split, to: sub.CurrentPeriodEnd, want: "51.61"},
+		{from: sub.CurrentPeriodStart, to: sub.CurrentPeriodEnd, want: "100"},
+	}
+
+	for _, tt := range tests {
+		l := s.loaderFor(sub, &dto.GetUsageBySubscriptionResponse{Currency: "usd"}, tt.from, tt.to, false)
+		lines, total, err := l.InvoiceLines(ctx)
+		s.Require().NoError(err)
+		s.True(s.loaderLine(lines, types.CommitmentLineTrueUp, c.ID).Amount.Equal(dec(tt.want)), "window %s-%s", tt.from, tt.to)
+		s.True(total.Equal(dec(tt.want)), "total %s for %s-%s", total, tt.from, tt.to)
+	}
+}
+
 func TestSpreadCost_ConservesTotalProportionally(t *testing.T) {
 	decs := func(vs ...string) []decimal.Decimal {
 		return lo.Map(vs, func(v string, _ int) decimal.Decimal { return dec(v) })
