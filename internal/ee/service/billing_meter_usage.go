@@ -188,7 +188,7 @@ func (s *billingService) CalculateMeterUsageCharges(
 	}
 
 	commitments, err := s.newCommitmentLoader(
-		ctx, sub, periodStart, periodEnd, asOf, chargesByLineItemID, meterMap, querySource, false,
+		ctx, sub, periodStart, periodEnd, asOf, chargesByLineItemID, meterMap, querySource,
 	)
 	if err != nil {
 		return nil, decimal.Zero, err

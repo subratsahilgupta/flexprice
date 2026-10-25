@@ -876,7 +876,7 @@ func (s *billingService) CalculateUsageCharges(
 	eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config, s.TracingSvc)
 
 	commitments, err := s.newCommitmentLoader(
-		ctx, sub, periodStart, periodEnd, time.Now().UTC(), rawChargesByLine(sub, usage), meterMap, "", true,
+		ctx, sub, periodStart, periodEnd, time.Now().UTC(), rawChargesByLine(sub, usage), meterMap, "",
 	)
 	if err != nil {
 		return nil, err

@@ -28,7 +28,6 @@ type commitmentLoader struct {
 	charges     map[string][]*dto.SubscriptionUsageByMetersResponse
 	meters      map[string]*meter.Meter
 	source      types.UsageSource
-	fromEvents  bool // read usage from raw events instead of meter_usage
 	context     *commitmentContext
 	priceSvc    PriceService
 	commitments []*stackedCommitment // in D5 order
@@ -60,7 +59,6 @@ func (s *billingService) newCommitmentLoader(
 	charges map[string][]*dto.SubscriptionUsageByMetersResponse,
 	meters map[string]*meter.Meter,
 	source types.UsageSource,
-	fromEvents bool,
 ) (*commitmentLoader, error) {
 	l := &commitmentLoader{
 		billing:     s,
@@ -71,7 +69,6 @@ func (s *billingService) newCommitmentLoader(
 		charges:     charges,
 		meters:      meters,
 		source:      source,
-		fromEvents:  fromEvents,
 		scopes:      map[string]*loadedScope{},
 		handled:     map[string]bool{},
 	}
@@ -354,7 +351,7 @@ func (l *commitmentLoader) UsageBreakdown(ctx context.Context) ([]*dto.Commitmen
 	return out, nil
 }
 
-// commitmentUsageBreakdown reports each commitment's usage for the window from the raw-events usage; nil when none applies.
+// commitmentUsageBreakdown reports each commitment's usage for the window from the usage response's charges; nil when none applies.
 func (s *billingService) commitmentUsageBreakdown(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -362,7 +359,7 @@ func (s *billingService) commitmentUsageBreakdown(
 	start, end time.Time,
 ) ([]*dto.CommitmentUsageBreakdown, error) {
 	loader, err := s.newCommitmentLoader(
-		ctx, sub, start, end, time.Now().UTC(), rawChargesByLine(sub, usage), nil, "", true,
+		ctx, sub, start, end, time.Now().UTC(), rawChargesByLine(sub, usage), nil, "",
 	)
 	if err != nil || len(loader.commitments) == 0 {
 		return nil, err
@@ -417,8 +414,7 @@ func (l *commitmentLoader) linkLines(ctx context.Context, stack *commitmentStack
 // fillWindowStack gives the stack one window per bucket in the elapsed period, so empty buckets still count as
 // capacity, and one pool per bucket each commitment is active in.
 func (l *commitmentLoader) fillWindowStack(ctx context.Context, stack *commitmentStack, bucket types.WindowSize) error {
-	loc := l.usageLocation()
-	stack.Windows = generateBucketStarts(l.periodStart.In(loc), minTime(l.periodEnd, l.asOf).In(loc), bucket, &l.sub.BillingAnchor)
+	stack.Windows = generateBucketStarts(l.periodStart.UTC(), minTime(l.periodEnd, l.asOf).UTC(), bucket, &l.sub.BillingAnchor)
 	meters, err := l.linkLines(ctx, stack)
 	if err != nil {
 		return err
@@ -464,8 +460,7 @@ func (l *commitmentLoader) fillWindowStack(ctx context.Context, stack *commitmen
 
 // activeBuckets counts the buckets of the usage grid starting in [from, to) that hold the commitment's capacity.
 func (l *commitmentLoader) activeBuckets(c *commitment.Commitment, from, to time.Time, bucket types.WindowSize) int64 {
-	loc := l.usageLocation()
-	starts := generateBucketStarts(from.In(loc), to.In(loc), bucket, &l.sub.BillingAnchor)
+	starts := generateBucketStarts(from.UTC(), to.UTC(), bucket, &l.sub.BillingAnchor)
 	return int64(lo.CountBy(starts, func(t time.Time) bool { return accrues(c, t, from) }))
 }
 
@@ -700,20 +695,6 @@ func (l *commitmentLoader) bucketUsage(
 	return out, nil
 }
 
-// usageLocation is where usage buckets start: raw events bucket in the subscription's timezone, meter_usage in UTC.
-func (l *commitmentLoader) usageLocation() *time.Location {
-	if !l.fromEvents {
-		return time.UTC
-	}
-
-	loc, err := time.LoadLocation(l.sub.Timezone)
-	if err != nil {
-		return time.UTC
-	}
-
-	return loc
-}
-
 // activeCharges returns the line's charges, or none when the line has not run during the elapsed period.
 func (l *commitmentLoader) activeCharges(item *subscription.SubscriptionLineItem) []*dto.SubscriptionUsageByMetersResponse {
 	if _, _, active := elapsedLineItemWindow(item, l.periodStart, l.periodEnd, l.asOf); !active {
@@ -762,7 +743,7 @@ func (l *commitmentLoader) lineDeps(ctx context.Context, item *subscription.Subs
 	return p, m, nil
 }
 
-// lineUsage reads the line's usage in [start, end), bucketed when its price is, from raw events on the raw-events path.
+// lineUsage reads the line's usage in [start, end) from meter_usage, bucketed when its price is.
 func (l *commitmentLoader) lineUsage(
 	ctx context.Context,
 	m *meter.Meter,
@@ -776,42 +757,25 @@ func (l *commitmentLoader) lineUsage(
 	}
 
 	item, p, s := line.Item, line.Price, l.billing
-	if !l.fromEvents {
-		if price.IsBucketed(p, m) {
-			return s.queryBucketedMeterUsageDirect(ctx, m, p, item, l.sub, extIDs, start, end, l.source)
-		}
-
-		result, err := s.MeterUsageRepo.GetUsage(ctx, &events.MeterUsageQueryParams{
-			TenantID:            types.GetTenantID(ctx),
-			EnvironmentID:       types.GetEnvironmentID(ctx),
-			ExternalCustomerIDs: extIDs,
-			MeterID:             item.MeterID,
-			StartTime:           item.GetPeriodStart(start),
-			EndTime:             item.GetPeriodEnd(end),
-			AggregationType:     m.Aggregation.Type,
-			UseFinal:            l.source.UseFinal(),
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		return &events.AggregationResult{Value: result.TotalValue}, nil
+	if price.IsBucketed(p, m) {
+		return s.queryBucketedMeterUsageDirect(ctx, m, p, item, l.sub, extIDs, start, end, l.source)
 	}
 
-	eventSvc := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config, s.TracingSvc)
-	return eventSvc.GetUsageByMeter(ctx, &dto.GetUsageByMeterRequest{
-		MeterID:             item.MeterID,
-		PriceID:             item.PriceID,
-		Price:               p,
+	result, err := s.MeterUsageRepo.GetUsage(ctx, &events.MeterUsageQueryParams{
+		TenantID:            types.GetTenantID(ctx),
+		EnvironmentID:       types.GetEnvironmentID(ctx),
 		ExternalCustomerIDs: extIDs,
+		MeterID:             item.MeterID,
 		StartTime:           item.GetPeriodStart(start),
 		EndTime:             item.GetPeriodEnd(end),
-		WindowSize:          price.ResolveBucketSize(p, m),
-		BillingAnchor:       &l.sub.BillingAnchor,
-		Filters:             m.ToFilterMap(),
-		Meter:               m,
-		Timezone:            l.sub.Timezone,
+		AggregationType:     m.Aggregation.Type,
+		UseFinal:            l.source.UseFinal(),
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &events.AggregationResult{Value: result.TotalValue}, nil
 }
 
 func (l *commitmentLoader) externalIDs(ctx context.Context) ([]string, error) {
