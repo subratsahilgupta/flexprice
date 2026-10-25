@@ -1883,7 +1883,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-scope": "read"
             },
             "put": {
                 "security": [
@@ -17968,11 +17969,11 @@ const docTemplate = `{
         "CommitmentScopeInput": {
             "type": "object",
             "required": [
-                "entity_id",
                 "entity_type"
             ],
             "properties": {
                 "entity_id": {
+                    "description": "EntityID may be omitted on an inline subscription-scoped commitment; the new subscription's ID is used.",
                     "type": "string"
                 },
                 "entity_type": {
@@ -18638,7 +18639,6 @@ const docTemplate = `{
                 "name",
                 "scope",
                 "start_date",
-                "subscription_id",
                 "type"
             ],
             "properties": {
@@ -18696,6 +18696,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "subscription_id": {
+                    "description": "SubscriptionID is required on POST /commitments and set server-side on inline commitments.",
                     "type": "string"
                 },
                 "timezone": {
@@ -20085,7 +20086,7 @@ const docTemplate = `{
                     ]
                 },
                 "commitments": {
-                    "description": "Commitments are created with the subscription; their subscription_id is set server-side.",
+                    "description": "Commitments are created with the subscription. subscription_id, and entity_id on a subscription scope,\nare set server-side.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/CreateCommitmentRequest"
@@ -28065,7 +28066,18 @@ const docTemplate = `{
         },
         "TriggerForceRunRequest": {
             "type": "object",
+            "required": [
+                "customer_external_ids"
+            ],
             "properties": {
+                "customer_external_ids": {
+                    "description": "Limits a wallet_ledger export to these customers; empty means every customer.",
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "end_time": {
                     "type": "string"
                 },

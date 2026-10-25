@@ -2256,7 +2256,8 @@
           {
             "ApiKeyAuth": []
           }
-        ]
+        ],
+        "x-scope": "read"
       },
       "put": {
         "tags": [
@@ -20571,13 +20572,13 @@
       },
       "CommitmentScopeInput": {
         "required": [
-          "entity_id",
           "entity_type"
         ],
         "type": "object",
         "properties": {
           "entity_id": {
-            "type": "string"
+            "type": "string",
+            "description": "EntityID may be omitted on an inline subscription-scoped commitment; the new subscription's ID is used."
           },
           "entity_type": {
             "$ref": "#/components/schemas/types.CommitmentScopeType"
@@ -21230,7 +21231,6 @@
           "name",
           "scope",
           "start_date",
-          "subscription_id",
           "type"
         ],
         "type": "object",
@@ -21291,7 +21291,8 @@
             "format": "date-time"
           },
           "subscription_id": {
-            "type": "string"
+            "type": "string",
+            "description": "SubscriptionID is required on POST /commitments and set server-side on inline commitments."
           },
           "timezone": {
             "type": "string"
@@ -22562,7 +22563,7 @@
           },
           "commitments": {
             "type": "array",
-            "description": "Commitments are created with the subscription; their subscription_id is set server-side.",
+            "description": "Commitments are created with the subscription. subscription_id, and entity_id on a subscription scope,\nare set server-side.",
             "items": {
               "$ref": "#/components/schemas/CreateCommitmentRequest"
             }
@@ -30110,8 +30111,19 @@
         ]
       },
       "TriggerForceRunRequest": {
+        "required": [
+          "customer_external_ids"
+        ],
         "type": "object",
         "properties": {
+          "customer_external_ids": {
+            "maxItems": 100,
+            "type": "array",
+            "description": "Limits a wallet_ledger export to these customers; empty means every customer.",
+            "items": {
+              "type": "string"
+            }
+          },
           "end_time": {
             "type": "string",
             "format": "date-time"
