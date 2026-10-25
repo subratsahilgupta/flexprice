@@ -667,9 +667,9 @@ func NewRouter(
 		commitments := v1Private.Group("/commitments")
 		{
 			commitments.POST("", write(types.EntityCommitment, types.ActionWrite), handlers.Commitment.CreateCommitment)
-			commitments.POST("/preview", handlers.Commitment.PreviewCommitment)
-			commitments.POST("/search", handlers.Commitment.QueryCommitments)
-			commitments.GET("/:id", handlers.Commitment.GetCommitment)
+			commitments.POST("/preview", read(types.EntityCommitment, types.ActionRead), handlers.Commitment.PreviewCommitment)
+			commitments.POST("/search", read(types.EntityCommitment, types.ActionRead), handlers.Commitment.QueryCommitments)
+			commitments.GET("/:id", read(types.EntityCommitment, types.ActionRead), handlers.Commitment.GetCommitment)
 			commitments.PUT("/:id", write(types.EntityCommitment, types.ActionWrite), handlers.Commitment.UpdateCommitment)
 			commitments.POST("/:id/terminate", write(types.EntityCommitment, types.ActionWrite), handlers.Commitment.TerminateCommitment)
 		}
