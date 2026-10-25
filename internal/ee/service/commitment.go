@@ -229,7 +229,7 @@ func (s *commitmentService) prepare(
 	// Valued from the request so a preview matches the commitment once its price rows exist.
 	amountOf := identityAmount
 	if req.CommittedPrice != nil {
-		amountOf = s.priceAmountFn(ctx, req.CommittedPrice.ToPrice(c.Currency))
+		amountOf = priceAmountFn(ctx, s.ServiceParams, req.CommittedPrice.ToPrice(c.Currency))
 	}
 
 	periods, err := commitmentPeriods(c, cc.Sub, amountOf, bucketFor(c, cc))
@@ -696,8 +696,8 @@ func (s *commitmentService) ActiveForPeriod(
 func identityAmount(capacity decimal.Decimal) decimal.Decimal { return capacity }
 
 // priceAmountFn values a quantity by applying p, the way billing prices usage.
-func (s *commitmentService) priceAmountFn(ctx context.Context, p *price.Price) func(decimal.Decimal) decimal.Decimal {
-	prices := NewPriceService(s.ServiceParams)
+func priceAmountFn(ctx context.Context, params ServiceParams, p *price.Price) func(decimal.Decimal) decimal.Decimal {
+	prices := NewPriceService(params)
 	return func(qty decimal.Decimal) decimal.Decimal { return prices.CalculateCost(ctx, p, qty) }
 }
 
@@ -719,7 +719,7 @@ func (s *commitmentService) committedAmountFn(
 		}
 	}
 
-	return s.priceAmountFn(ctx, p), nil
+	return priceAmountFn(ctx, s.ServiceParams, p), nil
 }
 
 // response builds the API response, computing the commitment value. cc may be nil; List passes its

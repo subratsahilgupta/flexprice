@@ -105,7 +105,7 @@ func (s *billingService) newCommitmentLoader(
 	})
 
 	for _, c := range active {
-		effectiveEnd := commitmentEffectiveEnd(c)
+		effectiveEnd := c.EffectiveEnd()
 		if !effectiveEnd.After(periodStart) {
 			continue
 		}
@@ -137,7 +137,7 @@ func (s *billingService) newCommitmentLoader(
 				}
 
 				committedPrice = p
-				amountOf = (&commitmentService{ServiceParams: s.ServiceParams}).priceAmountFn(ctx, p)
+				amountOf = priceAmountFn(ctx, s.ServiceParams, p)
 			}
 		}
 
@@ -513,7 +513,7 @@ func (l *commitmentLoader) fillPeriodStack(ctx context.Context, stack *commitmen
 		sc.PoolOf = make([]int, len(starts))
 		for w, t := range starts {
 			// Start is compared at whole seconds, as the period edges are.
-			inForce := !sc.C.StartDate.Truncate(time.Second).After(t) && commitmentEffectiveEnd(sc.C).After(t)
+			inForce := !sc.C.StartDate.Truncate(time.Second).After(t) && sc.C.EffectiveEnd().After(t)
 			if len(starts) > 1 && !inForce {
 				sc.PoolOf[w] = -1
 			}
@@ -529,7 +529,7 @@ func periodSplits(commitments []*stackedCommitment, start time.Time, end time.Ti
 	from, to := start.Truncate(time.Second), end.Truncate(time.Second)
 	out := []time.Time{start}
 	for _, sc := range commitments {
-		for _, t := range []time.Time{sc.C.StartDate, commitmentEffectiveEnd(sc.C)} {
+		for _, t := range []time.Time{sc.C.StartDate, sc.C.EffectiveEnd()} {
 			sec := t.Truncate(time.Second)
 			if sec.After(from) && sec.Before(to) {
 				out = append(out, t)
@@ -876,13 +876,4 @@ func containingPeriod(periods []commitmentPeriod, start, end time.Time) (commitm
 	}
 
 	return commitmentPeriod{}, false
-}
-
-// commitmentEffectiveEnd is when the commitment stops running: its end, or termination if earlier.
-func commitmentEffectiveEnd(c *commitment.Commitment) time.Time {
-	if c.TerminatedAt != nil {
-		return minTime(c.EndDate, *c.TerminatedAt)
-	}
-
-	return c.EndDate
 }
