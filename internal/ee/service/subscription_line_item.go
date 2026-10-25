@@ -398,7 +398,7 @@ func (s *subscriptionService) DeleteSubscriptionLineItem(ctx context.Context, li
 				}).
 				Mark(ierr.ErrValidation)
 		}
-		resp, err := s.cancelScheduledLineItem(ctx, lineItem)
+		resp, err := s.cancelScheduledLineItem(ctx, sub, lineItem)
 		if err != nil {
 			return nil, err
 		}
@@ -406,7 +406,28 @@ func (s *subscriptionService) DeleteSubscriptionLineItem(ctx context.Context, li
 		return resp, nil
 	}
 
-	resp, err := s.deleteSubscriptionLineItem(ctx, lineItemID, req)
+	endDate := now
+	if req.EffectiveFrom != nil {
+		endDate = req.EffectiveFrom.UTC()
+	}
+
+	var resp *dto.SubscriptionLineItemResponse
+	detach := func(ctx context.Context) error {
+		if err := checkLineItemCommitmentDetach(ctx, s.ServiceParams, sub, lineItem, endDate); err != nil {
+			return err
+		}
+
+		var err error
+		resp, err = s.deleteSubscriptionLineItem(ctx, lineItemID, req)
+		return err
+	}
+
+	// A usage line ends under the commitments lock; other lines settle proration, which stays out of the transaction.
+	if lineItem.PriceType == types.PRICE_TYPE_USAGE {
+		err = s.DB.WithTx(ctx, detach)
+	} else {
+		err = detach(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -529,7 +550,11 @@ func (s *subscriptionService) deleteSubscriptionLineItem(ctx context.Context, li
 
 // cancelScheduledLineItem removes a line item that has not started yet and
 // reopens the predecessor this successor replaced, if one was recorded.
-func (s *subscriptionService) cancelScheduledLineItem(ctx context.Context, lineItem *subscription.SubscriptionLineItem) (*dto.SubscriptionLineItemResponse, error) {
+func (s *subscriptionService) cancelScheduledLineItem(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	lineItem *subscription.SubscriptionLineItem,
+) (*dto.SubscriptionLineItemResponse, error) {
 	err := s.DB.WithTx(ctx, func(ctx context.Context) error {
 		if predID := predecessorLineItemID(lineItem); predID != "" {
 			pred, err := s.SubscriptionLineItemRepo.Get(ctx, predID)
@@ -545,7 +570,12 @@ func (s *subscriptionService) cancelScheduledLineItem(ctx context.Context, lineI
 		}
 
 		lineItem.Status = types.StatusDeleted
-		return s.SubscriptionLineItemRepo.Update(ctx, lineItem)
+		if err := s.SubscriptionLineItemRepo.Update(ctx, lineItem); err != nil {
+			return err
+		}
+
+		// The line never runs, so it is ended at its start; a reopened predecessor counts as cover.
+		return checkLineItemCommitmentDetach(ctx, s.ServiceParams, sub, lineItem, lineItem.StartDate)
 	})
 	if err != nil {
 		return nil, err
@@ -760,6 +790,7 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			// locked and the repo's copy can be the same object, so this must be read
 			// before deleteSubscriptionLineItem below overwrites EndDate in place.
 			oldEndDate := locked.EndDate
+			endedLineItem := *locked // price overrides repoint locked, so keep the line as it was
 
 			price, err := NewPriceService(s.ServiceParams).GetPrice(ctx, locked.PriceID)
 			if err != nil {
@@ -862,6 +893,9 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			}
 			predecessor, err := s.SubscriptionLineItemRepo.Get(ctx, lineItemID)
 			if err != nil {
+				return err
+			}
+			if err := checkLineItemCommitmentDetach(ctx, s.ServiceParams, sub, &endedLineItem, endDate); err != nil {
 				return err
 			}
 			predecessor.SuccessorLineItemID = lo.ToPtr(newLineItem.ID)

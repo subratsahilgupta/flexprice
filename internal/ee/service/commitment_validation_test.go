@@ -649,3 +649,221 @@ func (s *CommitmentServiceSuite) TestLegacyFields_AllowedWhenLineEndsBeforeCommi
 	err = rejectLegacyCommitmentInScope(s.GetContext(), s.fullParams(), s.fx.sub, &overlapping)
 	s.requireValidation(err, "legacy line-item commitment")
 }
+
+func (s *CommitmentServiceSuite) detachCheck(lineItemID string, endDate time.Time) error {
+	li, err := s.GetStores().SubscriptionLineItemRepo.Get(s.GetContext(), lineItemID)
+	s.Require().NoError(err)
+	return checkLineItemCommitmentDetach(s.GetContext(), s.fullParams(), s.fx.sub, li, endDate)
+}
+
+func (s *CommitmentServiceSuite) TestLineItemDetach_RejectsEmptyingBindingCommitmentScope() {
+	created, err := s.svc.Create(s.GetContext(), validReq(s.fx.sub.ID, s.fx.priceAPI.ID))
+	s.Require().NoError(err)
+
+	err = s.detachCheck(s.fx.lineAPI.ID, time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC))
+	s.requireValidation(err, created.ID, "terminate the commitment first")
+}
+
+func (s *CommitmentServiceSuite) TestLineItemDetach_AllowsWhenAnotherScopedLineRemains() {
+	req := validReq(s.fx.sub.ID, "")
+	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeMeter, EntityID: s.fx.meterAPI.ID}
+	_, err := s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+
+	s.Require().NoError(s.detachCheck(s.fx.lineAPI.ID, time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)))
+}
+
+func (s *CommitmentServiceSuite) TestLineItemDetach_AllowsEndDateWithSuccessorOnSamePrice() {
+	_, err := s.svc.Create(s.GetContext(), validReq(s.fx.sub.ID, s.fx.priceAPI.ID))
+	s.Require().NoError(err)
+
+	feb := time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)
+	successor := *s.fx.lineAPI
+	successor.ID, successor.StartDate = "subs_line_api_successor", feb
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(s.GetContext(), &successor))
+
+	s.Require().NoError(s.detachCheck(s.fx.lineAPI.ID, feb))
+}
+
+func (s *CommitmentServiceSuite) TestLineItemDetach_IgnoresNonBindingCommitment() {
+	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	req.Binding = lo.ToPtr(false)
+	_, err := s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+
+	s.Require().NoError(s.detachCheck(s.fx.lineAPI.ID, time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)))
+}
+
+func (s *CommitmentServiceSuite) TestLineItemDetach_RequiresContinuousCoverage() {
+	feb := time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)
+	jun := time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name      string
+		nextStart *time.Time // a further API-meter line, open-ended from here
+		wantErr   bool
+	}{
+		{name: "the remaining line ends mid-term", wantErr: true},
+		{name: "a second line takes over before the first ends", nextStart: lo.ToPtr(time.Date(2027, 5, 1, 0, 0, 0, 0, time.UTC))},
+		{name: "a second line takes over on the day the first ends", nextStart: lo.ToPtr(jun)},
+		{name: "a second line leaves a gap", nextStart: lo.ToPtr(time.Date(2027, 7, 1, 0, 0, 0, 0, time.UTC)), wantErr: true},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			s.SetupTest()
+			ctx := s.GetContext()
+			req := validReq(s.fx.sub.ID, "")
+			req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeMeter, EntityID: s.fx.meterAPI.ID}
+			_, err := s.svc.Create(ctx, req)
+			s.Require().NoError(err)
+
+			other, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, "subs_line_api_only")
+			s.Require().NoError(err)
+			other.EndDate = jun
+			s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, other))
+			if tt.nextStart != nil {
+				next := *other
+				next.ID, next.StartDate, next.EndDate = "subs_line_api_next", *tt.nextStart, time.Time{}
+				s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &next))
+			}
+
+			err = s.detachCheck(s.fx.lineAPI.ID, feb)
+			if tt.wantErr {
+				s.requireValidation(err, "terminate the commitment first")
+				return
+			}
+
+			s.Require().NoError(err)
+		})
+	}
+}
+
+func (s *CommitmentServiceSuite) TestLineItemDelete_EndsUsageLineUnderCommitmentsLock() {
+	ctx := s.GetContext()
+	past := *s.fx.lineStorage
+	past.ID, past.StartDate = "subs_line_storage_past", time.Now().UTC().AddDate(0, -1, 0)
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &past))
+
+	var events []string
+	params := s.fullParams()
+	params.DB = &recordingDB{IClient: s.GetDB(), events: &events}
+	params.SubscriptionLineItemRepo = &recordingLineItemRepo{LineItemRepository: s.GetStores().SubscriptionLineItemRepo, events: &events}
+	_, err := NewSubscriptionService(params).DeleteSubscriptionLineItem(ctx, past.ID, dto.DeleteSubscriptionLineItemRequest{})
+	s.Require().NoError(err)
+
+	s.requireInsertUnderLock(events, "update:"+past.ID)
+}
+
+func (s *CommitmentServiceSuite) TestLineItemDelete_RejectsCancellingTheOnlyScheduledScopedLine() {
+	ctx := s.GetContext()
+	s.Require().True(s.fx.lineAPI.StartDate.After(time.Now()), "the fixture line must not have started")
+	created, err := s.svc.Create(ctx, validReq(s.fx.sub.ID, s.fx.priceAPI.ID))
+	s.Require().NoError(err)
+
+	_, err = NewSubscriptionService(s.fullParams()).DeleteSubscriptionLineItem(ctx, s.fx.lineAPI.ID, dto.DeleteSubscriptionLineItemRequest{})
+	s.requireValidation(err, created.ID, "terminate the commitment first")
+}
+
+// seedUsageAddon stores an addon with one usage price on m.
+func (s *CommitmentServiceSuite) seedUsageAddon(id string, meterID string) {
+	ctx := s.GetContext()
+	s.Require().NoError(s.GetStores().AddonRepo.Create(ctx, &addon.Addon{
+		ID:        id,
+		LookupKey: id,
+		Name:      id,
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}))
+
+	p := *s.fx.priceAPI
+	p.ID, p.EntityType, p.EntityID, p.MeterID, p.GroupID = "price_"+id, types.PRICE_ENTITY_TYPE_ADDON, id, meterID, ""
+	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &p))
+}
+
+func (s *CommitmentServiceSuite) addonAdd(id string, at time.Time) AddonAdd {
+	return AddonAdd{Request: &dto.AddAddonToSubscriptionRequest{
+		AddonID:           id,
+		Cadence:           types.AddonCadenceRecurring,
+		StartDate:         lo.ToPtr(at),
+		ProrationBehavior: types.ProrationBehaviorNone,
+	}}
+}
+
+func (s *CommitmentServiceSuite) TestAddonChange_SwapKeepsBindingCommitmentScopeCovered() {
+	feb := time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name    string
+		swapIn  bool
+		wantErr bool
+	}{
+		{name: "swapping the only scoped addon for one on the same meter passes", swapIn: true},
+		{name: "removing it alone is rejected", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			s.SetupTest()
+			ctx := s.GetContext()
+			addonMeter := *s.fx.meterStorage
+			addonMeter.ID, addonMeter.EventName = "meter_addon", "addon_usage"
+			s.Require().NoError(s.GetStores().MeterRepo.CreateMeter(ctx, &addonMeter))
+			s.seedUsageAddon("addon_out", addonMeter.ID)
+			s.seedUsageAddon("addon_in", addonMeter.ID)
+
+			changes := NewAddonChangeService(s.fullParams())
+			_, _, err := changes.Execute(ctx, AddonChangeRequest{
+				Subscription: s.fx.sub,
+				Adds:         []AddonAdd{s.addonAdd("addon_out", s.fx.sub.StartDate)},
+			})
+			s.Require().NoError(err)
+
+			req := validReq(s.fx.sub.ID, "")
+			req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeMeter, EntityID: addonMeter.ID}
+			created, err := s.svc.Create(ctx, req)
+			s.Require().NoError(err)
+
+			assocs, err := s.GetStores().AddonAssociationRepo.List(ctx, &types.AddonAssociationFilter{
+				QueryFilter: types.NewNoLimitQueryFilter(),
+				AddonIDs:    []string{"addon_out"},
+			})
+			s.Require().NoError(err)
+			s.Require().Len(assocs, 1)
+
+			change := AddonChangeRequest{
+				Subscription: s.fx.sub,
+				Removes: []*dto.RemoveAddonRequest{{
+					AddonAssociationID: assocs[0].ID,
+					ProrationBehavior:  types.ProrationBehaviorNone,
+					EffectiveDate:      lo.ToPtr(feb),
+				}},
+			}
+			if tt.swapIn {
+				change.Adds = []AddonAdd{s.addonAdd("addon_in", feb)}
+			}
+
+			_, _, err = changes.Execute(ctx, change)
+			if tt.wantErr {
+				s.requireValidation(err, created.ID, "terminate the commitment first")
+				return
+			}
+
+			s.Require().NoError(err)
+			_, items, err := s.GetStores().SubscriptionRepo.GetWithLineItems(ctx, s.fx.sub.ID)
+			s.Require().NoError(err)
+			incoming, ok := lo.Find(items, func(li *subscription.SubscriptionLineItem) bool { return li.PriceID == "price_addon_in" })
+			s.Require().True(ok, "the incoming addon line exists")
+			s.True(incoming.StartDate.Equal(feb))
+		})
+	}
+}
+
+func (s *CommitmentServiceSuite) TestLineItemUpdate_RejectsPriceOverrideEmptyingBindingCommitmentScope() {
+	_, err := s.svc.Create(s.GetContext(), validReq(s.fx.sub.ID, s.fx.priceAPI.ID))
+	s.Require().NoError(err)
+
+	_, err = NewSubscriptionService(s.fullParams()).UpdateSubscriptionLineItem(s.GetContext(), s.fx.lineAPI.ID,
+		dto.UpdateSubscriptionLineItemRequest{
+			Amount:        lo.ToPtr(dec("0.07")),
+			EffectiveFrom: lo.ToPtr(s.fx.sub.StartDate.AddDate(0, 1, 0)),
+		})
+	s.requireValidation(err, "terminate the commitment first")
+}

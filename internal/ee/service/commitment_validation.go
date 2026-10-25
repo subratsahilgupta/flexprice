@@ -240,6 +240,10 @@ func (s *commitmentService) validateAgainstSubscription(
 		if len(sizes) != 1 || sizes[0] == "" {
 			return ierr.Validation("window measurement needs bucketed prices that all share one bucket size")
 		}
+
+		if err := rejectCalendarBuckets(sizes[0]); err != nil {
+			return err
+		}
 	}
 
 	if sub.CommitmentAmount != nil && sub.CommitmentAmount.IsPositive() {
@@ -249,6 +253,10 @@ func (s *commitmentService) validateAgainstSubscription(
 	for _, li := range termLines {
 		if li.HasAnyCommitment() {
 			return ierr.Validationf("price %s already has a legacy line-item commitment", li.PriceID)
+		}
+
+		if err := rejectGroupedBucketedPrice(cc.Prices[li.PriceID], cc.Meters[li.MeterID]); err != nil {
+			return err
 		}
 
 		if !billsEverySubscriptionPeriod(sub, li.BillingPeriod, li.BillingPeriodCount) {
@@ -262,6 +270,37 @@ func (s *commitmentService) validateAgainstSubscription(
 	}
 
 	return s.validateOverlaps(ctx, req, cc, termLines)
+}
+
+// rejectGroupedBucketedPrice rejects a bucketed MAX price grouped by a property: normal billing prices each group's
+// buckets separately, which commitment allocation cannot reproduce yet.
+func rejectGroupedBucketedPrice(p *price.Price, m *meter.Meter) error {
+	groupBy := price.BucketedGroupBy(p, m)
+	if groupBy == "" {
+		return nil
+	}
+
+	return ierr.NewErrorf("price %s is bucketed per %q group; commitments cannot cover grouped bucketed prices", p.ID, groupBy).
+		WithHint("Commitments cannot cover bucketed prices whose meter groups usage by a property").
+		Mark(ierr.ErrValidation)
+}
+
+// rejectCalendarBuckets rejects weekly and monthly buckets for window measurement: their usage buckets do not
+// start where the commitment's windows do, so usage would be allocated to a shifted window.
+func rejectCalendarBuckets(size types.WindowSize) error {
+	var reason string
+	switch size {
+	case types.WindowSizeWeek:
+		reason = "window measurement does not support weekly buckets: usage weeks start on Sunday, commitment windows on Monday"
+	case types.WindowSizeMonth:
+		reason = "window measurement does not support monthly buckets: usage months start on a UTC calendar date, commitment windows at local midnight"
+	default:
+		return nil
+	}
+
+	return ierr.NewError(reason).
+		WithHint("Use a daily or shorter bucket size for window commitments").
+		Mark(ierr.ErrValidation)
 }
 
 // billsEverySubscriptionPeriod reports whether a price bills on the subscription's own cadence, so its invoice
@@ -324,13 +363,18 @@ func (s *commitmentService) validateOverlaps(
 
 		if req.Measurement == types.CommitmentMeasurementWindow {
 			want := price.ResolveBucketSize(cc.Prices[lines[0].PriceID], cc.Meters[lines[0].MeterID])
-			if got := bucketFor(other, cc); got != "" && got != want {
-				return ierr.Validationf(
-					"overlapping commitment %s measures by window with bucket size %q; this commitment has bucket size %q",
-					other.ID,
-					got,
-					want,
-				)
+			sizes := lo.Map(otherLines, func(li *subscription.SubscriptionLineItem, _ int) types.WindowSize {
+				return price.ResolveBucketSize(cc.Prices[li.PriceID], cc.Meters[li.MeterID])
+			})
+			for _, got := range append(sizes, bucketFor(other, cc)) {
+				if got != "" && got != want {
+					return ierr.Validationf(
+						"overlapping commitment %s measures by window with bucket size %q; this commitment has bucket size %q",
+						other.ID,
+						got,
+						want,
+					)
+				}
 			}
 		}
 
@@ -658,4 +702,99 @@ func createSyncLineItem(
 	}
 
 	return true, nil
+}
+
+// checkLineItemCommitmentDetach rejects ending a usage line item at endDate when an active binding commitment
+// scopes it and the other lines in its scope do not cover the rest of its term without a gap, which would
+// silently stop billing its minimum. Call it inside the write's transaction, after any replacement line exists.
+func checkLineItemCommitmentDetach(
+	ctx context.Context,
+	params ServiceParams,
+	sub *subscription.Subscription,
+	li *subscription.SubscriptionLineItem,
+	endDate time.Time,
+) error {
+	if li == nil || li.PriceType != types.PRICE_TYPE_USAGE {
+		return nil
+	}
+
+	svc := &commitmentService{ServiceParams: params}
+	enabled, err := svc.IsEnabled(ctx)
+	if err != nil || !enabled {
+		return err
+	}
+
+	// Serialise with other scope changes, so two removals cannot each see the other's line as cover.
+	if err := params.DB.LockWithWait(ctx, postgres.LockRequest{Key: "commitments:" + sub.ID}); err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to lock subscription commitments").
+			Mark(ierr.ErrInternal)
+	}
+
+	f := commitment.NewNoLimitFilter()
+	f.SubscriptionIDs = []string{sub.ID}
+	f.Statuses = []types.CommitmentStatus{types.CommitmentStatusActive}
+	active, err := params.CommitmentRepo.List(ctx, f)
+	if err != nil || len(active) == 0 {
+		return err
+	}
+
+	cc, err := svc.loadCommitmentContext(ctx, sub.ID)
+	if err != nil {
+		return err
+	}
+
+	p := cc.Prices[li.PriceID]
+	if p == nil {
+		if p, err = params.PriceRepo.Get(ctx, li.PriceID); err != nil {
+			return err
+		}
+	}
+
+	for _, c := range active {
+		end := c.EffectiveEnd()
+		from := maxTime(endDate, c.StartDate)
+		if !c.Binding || !from.Before(end) || !li.StartDate.Before(end) || !commitmentCoversLine(c, li, p) {
+			continue
+		}
+
+		remaining := lo.Filter(cc.Items, func(other *subscription.SubscriptionLineItem, _ int) bool {
+			op := cc.Prices[other.PriceID]
+			return other.ID != li.ID && other.PriceType == types.PRICE_TYPE_USAGE && op != nil && commitmentCoversLine(c, other, op)
+		})
+		if !coversContinuously(remaining, from, end) {
+			return ierr.Validationf(
+				"line item %s is the last line in scope of binding commitment %s for part of its term; terminate the commitment first",
+				li.ID,
+				c.ID,
+			)
+		}
+	}
+
+	return nil
+}
+
+// coversContinuously reports whether the lines together run through all of [from, to) without a gap.
+func coversContinuously(lines []*subscription.SubscriptionLineItem, from, to time.Time) bool {
+	sorted := append([]*subscription.SubscriptionLineItem(nil), lines...)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].StartDate.Before(sorted[j].StartDate) })
+
+	covered := from
+	for _, li := range sorted {
+		if !covered.Before(to) {
+			return true
+		}
+
+		if li.StartDate.After(covered) {
+			return false
+		}
+
+		if li.EndDate.IsZero() {
+			return true
+		}
+
+		covered = maxTime(covered, li.EndDate)
+	}
+
+	return !covered.Before(to)
 }

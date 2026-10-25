@@ -887,6 +887,7 @@ func (s *CommitmentServiceSuite) fullParams() ServiceParams {
 		SettingsRepo:                 st.SettingsRepo,
 		AddonPriceSyncRepo:           st.AddonPriceSyncRepo,
 		CommitmentRepo:               st.CommitmentRepo,
+		CheckoutSessionRepo:          st.CheckoutSessionRepo,
 		TaxAssociationRepo:           st.TaxAssociationRepo,
 		TaxRateRepo:                  st.TaxRateRepo,
 		TaxAppliedRepo:               st.TaxAppliedRepo,
@@ -1296,5 +1297,141 @@ func (s *CommitmentServiceSuite) TestTerminate_FeeBeforeCurrentPeriodIsRejected(
 
 	// Without a fee the same retroactive date terminates fine.
 	_, err = s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{EffectiveAt: &before})
+	s.Require().NoError(err)
+}
+
+// splitAPILinesAt ends the API-meter lines at at and starts one on a new price with the given bucket size.
+func (s *CommitmentServiceSuite) splitAPILinesAt(at time.Time, bucket types.WindowSize) {
+	ctx := s.GetContext()
+	for _, id := range []string{s.fx.lineAPI.ID, "subs_line_api_only"} {
+		li, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, id)
+		s.Require().NoError(err)
+		li.EndDate = at
+		s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, li))
+	}
+
+	next := *s.fx.priceAPI
+	next.ID, next.GroupID, next.BucketSize = "price_api_succ", "", bucket
+	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &next))
+
+	line := *s.fx.lineAPI
+	line.ID, line.PriceID, line.StartDate, line.EndDate = "subs_line_api_succ", next.ID, at, time.Time{}
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &line))
+}
+
+func (s *CommitmentServiceSuite) windowMeterCommitment(priority int, start time.Time) dto.CreateCommitmentRequest {
+	req := validReq(s.fx.sub.ID, "")
+	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeMeter, EntityID: s.fx.meterAPI.ID}
+	req.Measurement = types.CommitmentMeasurementWindow
+	req.Priority, req.StartDate = priority, start
+	return req
+}
+
+func (s *CommitmentServiceSuite) TestValidation_OverlapRejectsBucketSizeMismatch() {
+	feb := time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)
+	first, err := s.svc.Create(s.GetContext(), s.windowMeterCommitment(0, s.fx.sub.StartDate))
+	s.Require().NoError(err)
+
+	s.splitAPILinesAt(feb, types.WindowSizeHour)
+	_, err = s.svc.Create(s.GetContext(), s.windowMeterCommitment(1, feb))
+	s.requireValidation(err, first.ID, string(types.WindowSizeHour), string(types.WindowSizeMinute))
+}
+
+// groupedBucketedPrice stores a bucketed MAX price in grp_1 whose meter groups usage by region.
+func (s *CommitmentServiceSuite) groupedBucketedPrice() *price.Price {
+	ctx := s.GetContext()
+	m := *s.fx.meterAPI
+	m.ID, m.EventName, m.Aggregation.GroupBy = "meter_grouped", "grouped", "region"
+	s.Require().NoError(s.GetStores().MeterRepo.CreateMeter(ctx, &m))
+	p := *s.fx.priceAPI
+	p.ID, p.MeterID = "price_grouped", m.ID
+	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &p))
+	return &p
+}
+
+func (s *CommitmentServiceSuite) TestValidation_RejectsCalendarWindowBuckets() {
+	tests := []struct {
+		size types.WindowSize
+		want []string
+	}{
+		{size: types.WindowSizeWeek, want: []string{"weekly buckets", "Sunday"}},
+		{size: types.WindowSizeMonth, want: []string{"monthly buckets", "UTC calendar date"}},
+	}
+
+	for _, tt := range tests {
+		s.Run(string(tt.size), func() {
+			s.SetupTest()
+			ctx := s.GetContext()
+			calendar := *s.fx.priceAPI
+			calendar.ID, calendar.BucketSize = "price_api_calendar", tt.size
+			s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &calendar))
+			line := *s.fx.lineAPI
+			line.ID, line.PriceID = "subs_line_api_calendar", calendar.ID
+			s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &line))
+
+			req := validReq(s.fx.sub.ID, calendar.ID)
+			req.Measurement = types.CommitmentMeasurementWindow
+			_, err := s.svc.Create(ctx, req)
+			s.requireValidation(err, tt.want...)
+
+			// Measured per billing period, the same price is fine.
+			req.Measurement = types.CommitmentMeasurementBillingPeriod
+			_, err = s.svc.Create(ctx, req)
+			s.Require().NoError(err)
+		})
+	}
+}
+
+func (s *CommitmentServiceSuite) TestValidation_RejectsGroupedBucketedPriceInScope() {
+	ctx := s.GetContext()
+	p := s.groupedBucketedPrice()
+	line := *s.fx.lineAPI
+	line.ID, line.PriceID, line.MeterID = "subs_line_grouped", p.ID, p.MeterID
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &line))
+
+	_, err := s.svc.Create(ctx, validReq(s.fx.sub.ID, p.ID))
+	s.requireValidation(err, p.ID, "region", "grouped bucketed")
+}
+
+func (s *CommitmentServiceSuite) TestAttachPrice_RejectsGroupedBucketedPriceJoiningScope() {
+	ctx := s.GetContext()
+	req := validReq(s.fx.sub.ID, "")
+	req.Type, req.CommittedPrice, req.Value = types.COMMITMENT_TYPE_AMOUNT, nil, dec("100")
+	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeGroup, EntityID: s.fx.group.ID}
+	_, err := s.svc.Create(ctx, req)
+	s.Require().NoError(err)
+
+	p := s.groupedBucketedPrice()
+	_, err = NewSubscriptionService(s.fullParams()).AddSubscriptionLineItem(ctx, s.fx.sub.ID, dto.CreateSubscriptionLineItemRequest{PriceID: p.ID})
+	s.requireValidation(err, p.ID, "grouped bucketed")
+}
+
+func (s *CommitmentServiceSuite) TestValidation_OverlapChecksEveryLineOfTheOtherScope() {
+	ctx := s.GetContext()
+	feb := time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)
+	first, err := s.svc.Create(ctx, s.windowMeterCommitment(0, s.fx.sub.StartDate))
+	s.Require().NoError(err)
+
+	// An hourly line joins the first commitment's scope beside the minute lines it started with.
+	hourly := *s.fx.priceAPI
+	hourly.ID, hourly.GroupID, hourly.BucketSize = "price_api_hourly", "", types.WindowSizeHour
+	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &hourly))
+	line := *s.fx.lineAPI
+	line.ID, line.PriceID, line.StartDate = "subs_line_api_hourly", hourly.ID, feb
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &line))
+
+	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	req.Measurement, req.Priority, req.StartDate = types.CommitmentMeasurementWindow, 1, feb
+	_, err = s.svc.Create(ctx, req)
+	s.requireValidation(err, first.ID, string(types.WindowSizeHour), string(types.WindowSizeMinute))
+}
+
+func (s *CommitmentServiceSuite) TestValidation_OverlapAcceptsMatchingBucketSize() {
+	feb := time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)
+	_, err := s.svc.Create(s.GetContext(), s.windowMeterCommitment(0, s.fx.sub.StartDate))
+	s.Require().NoError(err)
+
+	s.splitAPILinesAt(feb, "")
+	_, err = s.svc.Create(s.GetContext(), s.windowMeterCommitment(1, feb))
 	s.Require().NoError(err)
 }

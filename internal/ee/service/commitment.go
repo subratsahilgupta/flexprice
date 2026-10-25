@@ -229,7 +229,7 @@ func (s *commitmentService) prepare(
 	// Valued from the request so a preview matches the commitment once its price rows exist.
 	amountOf := identityAmount
 	if req.CommittedPrice != nil {
-		amountOf = s.priceAmountFn(ctx, req.CommittedPrice.ToPrice(c.Currency))
+		amountOf = priceAmountFn(ctx, s.ServiceParams, req.CommittedPrice.ToPrice(c.Currency))
 	}
 
 	periods, err := commitmentPeriods(c, cc.Sub, amountOf, bucketFor(c, cc))
@@ -696,8 +696,8 @@ func (s *commitmentService) ActiveForPeriod(
 func identityAmount(capacity decimal.Decimal) decimal.Decimal { return capacity }
 
 // priceAmountFn values a quantity by applying p, the way billing prices usage.
-func (s *commitmentService) priceAmountFn(ctx context.Context, p *price.Price) func(decimal.Decimal) decimal.Decimal {
-	prices := NewPriceService(s.ServiceParams)
+func priceAmountFn(ctx context.Context, params ServiceParams, p *price.Price) func(decimal.Decimal) decimal.Decimal {
+	prices := NewPriceService(params)
 	return func(qty decimal.Decimal) decimal.Decimal { return prices.CalculateCost(ctx, p, qty) }
 }
 
@@ -719,7 +719,7 @@ func (s *commitmentService) committedAmountFn(
 		}
 	}
 
-	return s.priceAmountFn(ctx, p), nil
+	return priceAmountFn(ctx, s.ServiceParams, p), nil
 }
 
 // response builds the API response, computing the commitment value. cc may be nil; List passes its
@@ -812,6 +812,15 @@ func (s *commitmentService) checkPriceAttach(
 		).
 			WithHint("commitments require scope prices billed every subscription period").
 			Mark(ierr.ErrValidation)
+	}
+
+	m, err := s.MeterRepo.GetMeter(ctx, p.MeterID)
+	if err != nil {
+		return "", err
+	}
+
+	if err := rejectGroupedBucketedPrice(p, m); err != nil {
+		return inScope[0].ID, err
 	}
 
 	cc, err := s.loadCommitmentContext(ctx, sub.ID)
@@ -909,7 +918,8 @@ func (s *commitmentService) checkAttachAgainst(
 	}
 
 	want := price.ResolveBucketSize(cc.Prices[lines[0].PriceID], cc.Meters[lines[0].MeterID])
-	if got := price.ResolveBucketSize(p, m); got != want {
+	got := price.ResolveBucketSize(p, m)
+	if got != want {
 		return ierr.Validationf(
 			"commitment %s measures by window with bucket size %q; price %s has bucket size %q",
 			c.ID,
@@ -919,7 +929,7 @@ func (s *commitmentService) checkAttachAgainst(
 		)
 	}
 
-	return nil
+	return rejectCalendarBuckets(got)
 }
 
 // checkAttachPairs requires commitments that now share the new price and overlap in time to agree on type,
