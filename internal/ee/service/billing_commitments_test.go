@@ -856,6 +856,116 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BucketsJoinTheWindowContainin
 	s.True(allocs[0].Commitments[0].Used.Equal(dec("10")))
 }
 
+// dailyGPUPrice stores a daily-bucket MAX meter and a slab-tiered usage price on it; each bucket walks the tiers alone.
+func (s *BillingServiceSuite) dailyGPUPrice(id string, tiers ...price.PriceTier) *price.Price {
+	ctx := s.GetContext()
+	m := &meter.Meter{
+		ID:          "meter_" + id,
+		Name:        "Daily GPU",
+		EventName:   id,
+		Aggregation: meter.Aggregation{Type: types.AggregationMax, Field: "gpus", BucketSize: types.WindowSizeDay},
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().MeterRepo.CreateMeter(ctx, m))
+	p := s.usagePriceFor("price_"+id, m, "0")
+	p.BillingModel, p.TierMode, p.Tiers = types.BILLING_MODEL_TIERED, types.BILLING_TIER_SLAB, tiers
+	s.Require().NoError(s.GetStores().PriceRepo.Update(ctx, p, false))
+	return p
+}
+
+// bucketCharge is a charge for li with one daily bucket per value, keyed at UTC midnight of the given August days.
+func bucketCharge(li *subscription.SubscriptionLineItem, p *price.Price, days map[int]string) *dto.SubscriptionUsageByMetersResponse {
+	var results []events.UsageResult
+	for d, v := range days {
+		results = append(results, events.UsageResult{WindowSize: time.Date(2026, 8, d, 0, 0, 0, 0, time.UTC), Value: dec(v)})
+	}
+
+	return &dto.SubscriptionUsageByMetersResponse{
+		SubscriptionLineItemID: li.ID,
+		Price:                  p,
+		BucketedUsageResult:    &events.AggregationResult{Results: results},
+	}
+}
+
+// A billing-period commitment over a bucketed price prices each bucket on its own: the covered unit comes off the
+// first bucket and the rest of each bucket is charged at the margin above what was covered in it.
+func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodPricesEachBucketAtTheMargin() {
+	ctx := s.GetContext()
+	s.setupTestData()
+	s.enableCommitmentsV2()
+	p := s.dailyGPUPrice("gpu_margin",
+		price.PriceTier{UpTo: lo.ToPtr(uint64(100)), UnitAmount: dec("1")},
+		price.PriceTier{UnitAmount: dec("0.1")},
+	)
+	li := &subscription.SubscriptionLineItem{ID: "subs_line_gpu_margin", PriceID: p.ID, MeterID: p.MeterID, DisplayName: "GPU"}
+	sub := s.fixedDateSub("sub_gpu_margin", li)
+	committed := s.usagePriceFor("price_gpu_margin_committed", nil, "0.5")
+	c := s.newTestCommitment("cmt_gpu_margin", sub, types.COMMITMENT_TYPE_QUANTITY, "1", p.ID, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
+	c.CommittedPriceID = lo.ToPtr(committed.ID)
+	s.storeCommitment(c)
+
+	usage := &dto.GetUsageBySubscriptionResponse{Currency: "usd", Charges: []*dto.SubscriptionUsageByMetersResponse{
+		bucketCharge(li, p, map[int]string{5: "60", 20: "60"}),
+	}}
+	l := s.loaderFor(sub, usage, sub.CurrentPeriodStart, sub.CurrentPeriodEnd, false)
+	stacks, _, err := l.Stacks(ctx)
+	s.Require().NoError(err)
+	line := stacks[0].Lines[0]
+	s.Len(stacks[0].Windows, 31)
+	s.True(line.PerWindow)
+	s.True(line.Usage[4].Equal(dec("60")) && line.Usage[19].Equal(dec("60")), "usage %v", line.Usage)
+	s.True(line.Cost.Equal(dec("120")), "each 60-unit bucket costs 60 on its own, got %s", line.Cost)
+
+	// Bucket one: cost(60)-cost(1) = 59; bucket two: cost(60)-cost(0) = 60. The collapsed 119 would cost 100 + 1.90.
+	lines, total, err := l.InvoiceLines(ctx)
+	s.Require().NoError(err)
+	within := s.loaderLine(lines, types.CommitmentLineWithin, c.ID)
+	s.True(within.Quantity.Equal(dec("1")) && within.Amount.Equal(dec("0.5")), "within %s for %s", within.Amount, within.Quantity)
+	onDemand := loaderLinesOfKind(lines, types.CommitmentLineOnDemand)
+	s.Require().Len(onDemand, 1)
+	s.True(onDemand[0].Quantity.Equal(dec("119")), "on-demand quantity %s", onDemand[0].Quantity)
+	s.True(onDemand[0].Amount.Equal(dec("119")), "on-demand %s", onDemand[0].Amount)
+	s.Empty(loaderLinesOfKind(lines, types.CommitmentLineTrueUp))
+	s.True(total.Equal(dec("119.5")), "total %s", total)
+}
+
+// In a billing-period stack mixing bucketed and unbucketed lines, the unbucketed line's usage sits at the start of its
+// stretch, so it draws the shared pool before the buckets that follow it.
+func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodMixedLinesShareOnePool() {
+	ctx := s.GetContext()
+	s.setupTestData()
+	s.enableCommitmentsV2()
+	gpu := s.dailyGPUPrice("gpu_mixed", price.PriceTier{UnitAmount: dec("1")})
+	gpuLine := &subscription.SubscriptionLineItem{ID: "subs_line_gpu_mixed", PriceID: gpu.ID, MeterID: gpu.MeterID, DisplayName: "GPU"}
+	api := s.usagePriceFor("price_flat_api", s.testData.meters.apiCalls, "1")
+	apiLine := &subscription.SubscriptionLineItem{ID: "subs_line_flat_api", PriceID: api.ID, MeterID: s.testData.meters.apiCalls.ID, DisplayName: "API"}
+	sub := s.fixedDateSub("sub_mixed", gpuLine, apiLine)
+	c := s.newTestCommitment("cmt_mixed", sub, types.COMMITMENT_TYPE_AMOUNT, "50", "", sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
+	c.ScopeEntityType = types.CommitmentScopeSubscription
+	s.storeCommitment(c)
+
+	usage := &dto.GetUsageBySubscriptionResponse{Currency: "usd", Charges: []*dto.SubscriptionUsageByMetersResponse{
+		bucketCharge(gpuLine, gpu, map[int]string{5: "60"}),
+		{SubscriptionLineItemID: apiLine.ID, Price: api, Quantity: 40, Amount: 40},
+	}}
+	l := s.loaderFor(sub, usage, sub.CurrentPeriodStart, sub.CurrentPeriodEnd, false)
+	stacks, allocs, err := l.Stacks(ctx)
+	s.Require().NoError(err)
+	s.Require().Len(stacks, 1)
+	byItem := lo.SliceToMap(stacks[0].Lines, func(line *usageLine) (string, int) { return line.Item.ID, lo.IndexOf(stacks[0].Lines, line) })
+	gpuAt, apiAt := byItem[gpuLine.ID], byItem[apiLine.ID]
+	s.True(stacks[0].Lines[apiAt].Usage[0].Equal(dec("40")), "api usage %v", stacks[0].Lines[apiAt].Usage)
+	s.False(stacks[0].Lines[apiAt].PerWindow)
+	s.True(stacks[0].Lines[gpuAt].Usage[4].Equal(dec("60")), "gpu usage %v", stacks[0].Lines[gpuAt].Usage)
+
+	// 1 Aug: the api's 40 leave 10 of the 50; 5 Aug: the bucket's 60 take those 10 and 50 go on demand.
+	s.True(allocs[0].OnDemand[apiAt][0].IsZero())
+	s.True(allocs[0].OnDemand[gpuAt][4].Equal(dec("50")), "gpu on-demand %s", allocs[0].OnDemand[gpuAt][4])
+	_, total, err := l.InvoiceLines(ctx)
+	s.Require().NoError(err)
+	s.True(total.Equal(dec("100")), "total %s", total)
+}
+
 func TestSpreadCost_ConservesTotalProportionally(t *testing.T) {
 	decs := func(vs ...string) []decimal.Decimal {
 		return lo.Map(vs, func(v string, _ int) decimal.Decimal { return dec(v) })

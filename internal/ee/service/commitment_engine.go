@@ -46,6 +46,7 @@ type usageLine struct {
 	Quantity     decimal.Decimal
 	Cost         decimal.Decimal
 	Usage        []decimal.Decimal // quantity for quantity stacks, cost for amount stacks
+	PerWindow    bool              // each window is one bucket and prices on its own, as bucketed prices do
 }
 
 // allocation is the result of filling a stack.
@@ -352,25 +353,29 @@ func (r lineRenderer) onDemandLines(
 	windows []decimal.Decimal,
 ) []dto.CreateInvoiceLineItemRequest {
 	qty, amount := decimal.Zero, decimal.Zero
-	// Window stacks price each window so bucketed prices match the normal path; the rest, and any overage price,
-	// price the sum once, so a tiered overage walks its tiers over the period total.
-	perWindow := stack.Measurement == types.CommitmentMeasurementWindow && line.OveragePrice == nil
-	for _, w := range windows {
-		if !w.IsPositive() {
+	// The line's own price charges on-demand units at the margin above the covered ones, per bucket for bucketed
+	// lines; an overage price charges the period's on-demand total afresh.
+	perWindow := line.PerWindow && line.OveragePrice == nil
+	for w, od := range windows {
+		if !od.IsPositive() {
 			continue
 		}
 
-		qty = qty.Add(w)
+		qty = qty.Add(od)
 		switch {
 		case stack.Type == types.COMMITMENT_TYPE_AMOUNT:
-			amount = amount.Add(w)
+			amount = amount.Add(od)
 		case perWindow:
-			amount = amount.Add(r.cost(line.Price, w))
+			amount = amount.Add(r.marginalCost(line.Price, line.Usage[w], od))
 		}
 	}
 
 	if stack.Type == types.COMMITMENT_TYPE_QUANTITY && !perWindow && qty.IsPositive() {
-		amount = r.cost(lo.Ternary(line.OveragePrice != nil, line.OveragePrice, line.Price), qty)
+		if line.OveragePrice != nil {
+			amount = r.cost(line.OveragePrice, qty)
+		} else {
+			amount = r.marginalCost(line.Price, line.Quantity, qty)
+		}
 	}
 
 	switch {
@@ -384,6 +389,11 @@ func (r lineRenderer) onDemandLines(
 	}
 
 	return nil
+}
+
+// marginalCost prices the top qty units of full: what full costs beyond the covered units below them.
+func (r lineRenderer) marginalCost(p *price.Price, full, qty decimal.Decimal) decimal.Decimal {
+	return r.cost(p, full).Sub(r.cost(p, full.Sub(qty)))
 }
 
 // row builds one invoice line; a nil commitment means a stack-level line with no commitment id.

@@ -418,27 +418,8 @@ func (l *commitmentLoader) fillWindowStack(ctx context.Context, stack *commitmen
 	}
 
 	for i, line := range stack.Lines {
-		quantities, err := l.bucketQuantities(ctx, line, meters[i], bucket, stack.Windows)
-		if err != nil {
+		if err := l.fillBucketLine(ctx, stack, line, meters[i], bucket); err != nil {
 			return err
-		}
-
-		// Bucketed prices price each window on its own, so each window weighs its own cost.
-		costs := make([]decimal.Decimal, len(quantities))
-		raw := decimal.Zero
-		for w, q := range quantities {
-			line.Quantity = line.Quantity.Add(q)
-			cost := l.priceSvc.CalculateCost(ctx, line.Price, q)
-			raw = raw.Add(cost)
-			if q.IsPositive() {
-				costs[w] = cost
-			}
-		}
-
-		line.Cost = types.RoundToCurrencyPrecision(raw, line.Price.Currency)
-		line.Usage = quantities
-		if stack.Type == types.COMMITMENT_TYPE_AMOUNT {
-			line.Usage = spreadCost(costs, line.Cost)
 		}
 	}
 
@@ -471,53 +452,123 @@ func (l *commitmentLoader) holdsCapacity(c *commitment.Commitment, t time.Time) 
 	return !t.Before(l.periodStart) && c.IsActiveAt(t) && c.ActiveWindows.Contains(t, c.Location())
 }
 
-// fillPeriodStack gives the stack one window for the period, or one per stretch between commitment starts and
-// ends inside it. Each commitment has a single pool spanning the stretches it is in force.
+// fillBucketLine lays a bucketed line's usage out one bucket per window, each priced on its own as normal billing
+// prices it.
+func (l *commitmentLoader) fillBucketLine(
+	ctx context.Context,
+	stack *commitmentStack,
+	line *usageLine,
+	m *meter.Meter,
+	bucket types.WindowSize,
+) error {
+	quantities, err := l.bucketQuantities(ctx, line, m, bucket, stack.Windows)
+	if err != nil {
+		return err
+	}
+
+	costs := make([]decimal.Decimal, len(quantities))
+	raw := decimal.Zero
+	for w, q := range quantities {
+		line.Quantity = line.Quantity.Add(q)
+		costs[w] = l.priceSvc.CalculateCost(ctx, line.Price, q)
+		raw = raw.Add(costs[w])
+	}
+
+	line.Cost = types.RoundToCurrencyPrecision(raw, line.Price.Currency)
+	line.Usage = quantities
+	line.PerWindow = true
+	if stack.Type == types.COMMITMENT_TYPE_AMOUNT {
+		// Each bucket keeps its own cost; spreading only reconciles them with the rounded total.
+		line.Usage = spreadCost(costs, line.Cost)
+	}
+
+	return nil
+}
+
+// fillPeriodStack gives the stack a window per stretch between commitment starts and ends, plus one per bucket of its
+// bucketed lines so each bucket prices alone; each commitment's single pool spans the windows it is in force.
 func (l *commitmentLoader) fillPeriodStack(ctx context.Context, stack *commitmentStack) error {
-	starts := periodSplits(stack.Commitments, l.periodStart, l.periodEnd)
-	stack.Windows = starts
+	stretches := periodSplits(stack.Commitments, l.periodStart, l.periodEnd)
 	meters, err := l.linkLines(ctx, stack)
 	if err != nil {
 		return err
 	}
 
+	loc := l.usageLocation()
+	buckets := make([]types.WindowSize, len(stack.Lines))
+	windows := append([]time.Time(nil), stretches...)
 	for i, line := range stack.Lines {
-		bucketed, err := l.periodTotals(ctx, line, meters[i])
-		if err != nil {
-			return err
-		}
-
-		line.Usage = []decimal.Decimal{line.Quantity}
-		if stack.Type == types.COMMITMENT_TYPE_AMOUNT {
-			line.Usage = []decimal.Decimal{line.Cost}
-		}
-
-		if len(starts) == 1 {
+		if !price.IsBucketedMax(line.Price, meters[i]) && !price.IsBucketedSum(line.Price, meters[i]) {
 			continue
 		}
 
-		quantities, err := l.splitQuantities(ctx, line, meters[i], bucketed, starts)
-		if err != nil {
-			return err
+		// A bucket starting before the period joins the period's first window, as it joins the first stretch.
+		buckets[i] = price.ResolveBucketSize(line.Price, meters[i])
+		grid := generateBucketStarts(l.periodStart.In(loc), minTime(l.periodEnd, l.asOf).In(loc), buckets[i], &l.sub.BillingAnchor)
+		windows = append(windows, lo.Filter(grid, func(t time.Time, _ int) bool { return t.After(l.periodStart) })...)
+	}
+
+	sort.Slice(windows, func(i, j int) bool { return windows[i].Before(windows[j]) })
+	stack.Windows = lo.UniqBy(windows, func(t time.Time) int64 { return t.UnixNano() })
+
+	for i, line := range stack.Lines {
+		if buckets[i] != "" {
+			err = l.fillBucketLine(ctx, stack, line, meters[i], buckets[i])
+		} else {
+			err = l.fillStretchLine(ctx, stack, line, meters[i], stretches)
 		}
 
-		line.Usage = quantities
-		if stack.Type == types.COMMITMENT_TYPE_AMOUNT {
-			// Pricing each stretch alone would walk tiers per stretch; spreading the period cost conserves it.
-			line.Usage = spreadCost(quantities, line.Cost)
+		if err != nil {
+			return err
 		}
 	}
 
 	for _, sc := range stack.Commitments {
 		sc.Pools = []capacityPool{{Capacity: sc.Period.Capacity}}
-		sc.PoolOf = make([]int, len(starts))
-		for w, t := range starts {
+		sc.PoolOf = make([]int, len(stack.Windows))
+		for w, t := range stack.Windows {
 			// Start is compared at whole seconds, as the period edges are.
-			inForce := !sc.C.StartDate.Truncate(time.Second).After(t) && sc.C.EffectiveEnd().After(t)
-			if len(starts) > 1 && !inForce {
+			if sc.C.StartDate.Truncate(time.Second).After(t) || !sc.C.EffectiveEnd().After(t) {
 				sc.PoolOf[w] = -1
 			}
 		}
+	}
+
+	return nil
+}
+
+// fillStretchLine prices an unbucketed line's period quantity the way the normal path does and lays its usage out
+// per stretch, each at the window where the stretch starts.
+func (l *commitmentLoader) fillStretchLine(
+	ctx context.Context,
+	stack *commitmentStack,
+	line *usageLine,
+	m *meter.Meter,
+	stretches []time.Time,
+) error {
+	for _, c := range l.activeCharges(line.Item) {
+		line.Quantity = line.Quantity.Add(c.QuantityDecimal())
+	}
+
+	line.Cost = types.RoundToCurrencyPrecision(l.priceSvc.CalculateCost(ctx, line.Price, line.Quantity), line.Price.Currency)
+	quantities := []decimal.Decimal{line.Quantity}
+	if len(stretches) > 1 {
+		var err error
+		if quantities, err = l.splitQuantities(ctx, line, m, stretches); err != nil {
+			return err
+		}
+	}
+
+	values := quantities
+	if stack.Type == types.COMMITMENT_TYPE_AMOUNT {
+		// Pricing each stretch alone would walk tiers per stretch; spreading the period cost conserves it.
+		values = spreadCost(quantities, line.Cost)
+	}
+
+	line.Usage = make([]decimal.Decimal, len(stack.Windows))
+	for i, t := range stretches {
+		at := sort.Search(len(stack.Windows), func(w int) bool { return !stack.Windows[w].Before(t) })
+		line.Usage[at] = values[i]
 	}
 
 	return nil
@@ -541,13 +592,12 @@ func periodSplits(commitments []*stackedCommitment, start time.Time, end time.Ti
 	return lo.UniqBy(out, func(t time.Time) int64 { return t.UnixNano() })
 }
 
-// splitQuantities returns the line's usage in each stretch from its buckets, or one read per stretch but the last.
+// splitQuantities returns the line's usage in each stretch, one read per stretch but the last.
 // Stretches are capped in time order so they sum to the period quantity; the last takes the remainder.
 func (l *commitmentLoader) splitQuantities(
 	ctx context.Context,
 	line *usageLine,
 	m *meter.Meter,
-	bucketed *events.AggregationResult,
 	starts []time.Time,
 ) ([]decimal.Decimal, error) {
 	out := make([]decimal.Decimal, len(starts))
@@ -557,27 +607,18 @@ func (l *commitmentLoader) splitQuantities(
 		return out, nil
 	}
 
-	if bucketed != nil {
-		// A bucket belongs to the stretch it starts in; buckets starting before the period go to the first.
-		for t, v := range aggregateUsageResultsByWindow(bucketed.Results, m.Aggregation.Type) {
-			next := sort.Search(len(starts), func(i int) bool { return starts[i].After(t) })
-			at := max(next-1, 0)
-			out[at] = out[at].Add(v)
+	for i := 0; i < last; i++ {
+		from, to := line.Item.GetPeriodStart(starts[i]), line.Item.GetPeriodEnd(starts[i+1])
+		if !from.Before(to) {
+			continue
 		}
-	} else {
-		for i := 0; i < last; i++ {
-			from, to := line.Item.GetPeriodStart(starts[i]), line.Item.GetPeriodEnd(starts[i+1])
-			if !from.Before(to) {
-				continue
-			}
 
-			result, err := l.lineUsage(ctx, m, line, starts[i], starts[i+1])
-			if err != nil {
-				return nil, err
-			}
-
-			out[i] = result.Value
+		result, err := l.lineUsage(ctx, m, line, starts[i], starts[i+1])
+		if err != nil {
+			return nil, err
 		}
+
+		out[i] = result.Value
 	}
 
 	remaining := line.Quantity
@@ -588,41 +629,6 @@ func (l *commitmentLoader) splitQuantities(
 
 	out[last] = remaining
 	return out, nil
-}
-
-// periodTotals sets the line's period quantity and cost the way the normal meter-usage path prices them,
-// and returns the bucketed usage it priced, if any.
-func (l *commitmentLoader) periodTotals(
-	ctx context.Context,
-	line *usageLine,
-	m *meter.Meter,
-) (*events.AggregationResult, error) {
-	charges := l.activeCharges(line.Item)
-	if len(charges) == 0 {
-		return nil, nil
-	}
-
-	if price.IsBucketedMax(line.Price, m) || price.IsBucketedSum(line.Price, m) {
-		result := charges[0].BucketedUsageResult
-		if result == nil {
-			var err error
-			if result, err = l.lineUsage(ctx, m, line, l.periodStart, l.periodEnd); err != nil {
-				return nil, err
-			}
-		}
-
-		cost := calculateBucketedMeterCost(ctx, l.priceSvc, line.Price, result, price.BucketedGroupBy(line.Price, m) != "")
-		line.Quantity = cost.Quantity
-		line.Cost = types.RoundToCurrencyPrecision(cost.Amount, line.Price.Currency)
-		return result, nil
-	}
-
-	for _, c := range charges {
-		line.Quantity = line.Quantity.Add(c.QuantityDecimal())
-	}
-
-	line.Cost = types.RoundToCurrencyPrecision(l.priceSvc.CalculateCost(ctx, line.Price, line.Quantity), line.Price.Currency)
-	return nil, nil
 }
 
 // bucketQuantities returns the line's usage for each bucket start; buckets without usage are zero.

@@ -510,13 +510,10 @@ func requireLines(t *testing.T, want []wantLine, got []dto.CreateInvoiceLineItem
 
 func TestCommitmentInvoiceLines(t *testing.T) {
 	unitCost := func(_ *price.Price, qty decimal.Decimal) decimal.Decimal { return qty }
-	// Stepped pricing makes per-window and summed pricing differ: a window over 35 units costs 2 each.
-	stepCost := func(_ *price.Price, qty decimal.Decimal) decimal.Decimal {
-		if qty.GreaterThan(intDec(35)) {
-			return qty.Mul(intDec(2))
-		}
-
-		return qty
+	// slabCost charges 1 per unit up to 120 and 2 per unit above, so the units on demand cost by where they sit.
+	slabCost := func(_ *price.Price, qty decimal.Decimal) decimal.Decimal {
+		first := decimal.Min(qty, intDec(120))
+		return first.Add(qty.Sub(first).Mul(intDec(2)))
 	}
 	// overageCost prices only overage prices: flat at qty × amount, tiered at 3 for the first 20 units and 5 after.
 	overageCost := func(p *price.Price, qty decimal.Decimal) decimal.Decimal {
@@ -702,9 +699,10 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 			},
 		},
 		{
-			name: "window measured on demand is priced per window",
+			name: "a per window line prices each window's on demand above the units covered in it",
 			build: func() *commitmentStack {
 				line := invoiceLine("a", "280", "0", "130", "150")
+				line.PerWindow = true
 				return &commitmentStack{
 					Type:        types.COMMITMENT_TYPE_QUANTITY,
 					Measurement: types.CommitmentMeasurementWindow,
@@ -713,15 +711,16 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 					Commitments: []*stackedCommitment{committed("c1", true, "200", []int{0, 1}, []*usageLine{line}, "100", "100")},
 				}
 			},
-			cost: stepCost,
-			// On demand is 30 and 50: 30*1 + 50*2 = 130, where the summed 80 would cost 160.
+			cost: slabCost,
+			// Each window covers 100: cost(130)-cost(100) = 140-100 = 40 and cost(150)-cost(100) = 180-100 = 80, where
+			// the summed line would cost cost(280)-cost(200) = 440-280 = 160.
 			want: []wantLine{
 				{types.CommitmentLineWithin, "Label c1", "200", "200"},
-				{types.CommitmentLineOnDemand, "Usage a", "80", "130"},
+				{types.CommitmentLineOnDemand, "Usage a", "80", "120"},
 			},
 		},
 		{
-			name: "billing period on demand is priced once on the summed quantity",
+			name: "billing period on demand is priced once on the line's units above the covered ones",
 			build: func() *commitmentStack {
 				line := invoiceLine("a", "180", "0", "60", "60", "60")
 				return &commitmentStack{
@@ -732,11 +731,35 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 					Commitments: []*stackedCommitment{committed("c1", true, "100", []int{0, 0, 0}, []*usageLine{line}, "100")},
 				}
 			},
-			cost: stepCost,
-			// On demand is 0, 20 and 60 across windows: 80*2 = 160, where per window would cost 20 + 120.
+			cost: slabCost,
+			// 100 of 180 covered: cost(180)-cost(100) = 240-100 = 140, where per window would cost
+			// cost(60)-cost(40) + cost(60) = 20 + 60 = 80.
 			want: []wantLine{
 				{types.CommitmentLineWithin, "Label c1", "100", "100"},
-				{types.CommitmentLineOnDemand, "Usage a", "80", "160"},
+				{types.CommitmentLineOnDemand, "Usage a", "80", "140"},
+			},
+		},
+		{
+			name: "a tiered line half covered prices its on demand from the covered quantity up, not from tier zero",
+			build: func() *commitmentStack {
+				line := invoiceLine("a", "200", "150", "200")
+				return &commitmentStack{
+					Type:        types.COMMITMENT_TYPE_QUANTITY,
+					Measurement: types.CommitmentMeasurementBillingPeriod,
+					Windows:     engineWindows(1),
+					Lines:       []*usageLine{line},
+					Commitments: []*stackedCommitment{committed("c1", true, "100", []int{0}, []*usageLine{line}, "100")},
+				}
+			},
+			// 100 at 1 then 0.50: the 100 on demand are units 101-200, cost(200)-cost(100) = 150-100 = 50; restarting
+			// at tier zero would charge cost(100) = 100.
+			cost: func(_ *price.Price, qty decimal.Decimal) decimal.Decimal {
+				first := decimal.Min(qty, intDec(100))
+				return first.Add(qty.Sub(first).Mul(dec("0.5")))
+			},
+			want: []wantLine{
+				{types.CommitmentLineWithin, "Label c1", "100", "100"},
+				{types.CommitmentLineOnDemand, "Usage a", "100", "50"},
 			},
 		},
 		{
