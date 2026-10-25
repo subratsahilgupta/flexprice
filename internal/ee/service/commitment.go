@@ -858,7 +858,7 @@ func (s *commitmentService) commitmentsInScope(
 
 	// A price-scoped commitment never includes a newly attached price (new ID).
 	return lo.Filter(listed, func(c *commitment.Commitment, _ int) bool {
-		if !inForceAfter(c, at) || (until != nil && !c.StartDate.Before(*until)) {
+		if c.EndedBy(at) || (until != nil && !c.StartDate.Before(*until)) {
 			return false
 		}
 
@@ -873,12 +873,6 @@ func (s *commitmentService) commitmentsInScope(
 
 		return false
 	}), nil
-}
-
-// inForceAfter reports whether c still bills after `at`; a terminated commitment bills until terminated_at.
-func inForceAfter(c *commitment.Commitment, at time.Time) bool {
-	end := c.EffectiveEnd()
-	return at.Before(end) && c.StartDate.Before(end)
 }
 
 // checkAttachAgainst checks the meter and bucket-size rules for one commitment that the new price joins.

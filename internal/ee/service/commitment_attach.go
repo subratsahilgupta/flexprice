@@ -71,7 +71,7 @@ func rejectLegacyCommitmentInScope(
 
 	now := time.Now().UTC()
 	for _, c := range listed {
-		if inForceAfter(c, now) && commitmentCoversLine(c, li, p) {
+		if !c.EndedBy(now) && commitmentCoversLine(c, li, p) {
 			return invalidf(
 				"line item %s is covered by commitment %s; legacy line-item commitment fields are not allowed",
 				li.ID,

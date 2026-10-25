@@ -60,6 +60,13 @@ func (c *Commitment) EffectiveEnd() time.Time {
 	return c.EndDate
 }
 
+// EndedBy reports whether the commitment has no term left after t: t is past its effective end,
+// or it was terminated before it ever started.
+func (c *Commitment) EndedBy(t time.Time) bool {
+	end := c.EffectiveEnd()
+	return !t.Before(end) || !c.StartDate.Before(end)
+}
+
 // Location returns the commitment timezone, falling back to UTC.
 func (c *Commitment) Location() *time.Location {
 	if c == nil {
