@@ -43,6 +43,7 @@ type loadedScope struct {
 	bucket       types.WindowSize
 	overagePrice *price.Price
 	amountOf     func(capacity decimal.Decimal) decimal.Decimal
+	periodStart  time.Time // where the commitment period's capacity starts accruing, before any clip to the invoice
 }
 
 // stackKey groups commitments that can share lines: same type and measurement, and bucket size for windows.
@@ -178,14 +179,20 @@ func (s *billingService) newCommitmentLoader(
 		if c.TerminatedAt != nil {
 			until = minTime(until, *c.TerminatedAt)
 		}
-		period = clipCommitmentPeriod(c, period, periodStart, until, amountOf, bucket, sub.BillingAnchor)
+		clipped := clipCommitmentPeriod(c, period, periodStart, until, amountOf, bucket, sub.BillingAnchor)
 
 		for _, item := range items {
 			l.handled[item.ID] = true
 		}
 
-		l.scopes[c.ID] = &loadedScope{items: items, bucket: bucket, overagePrice: overagePrice, amountOf: amountOf}
-		l.commitments = append(l.commitments, &stackedCommitment{C: c, CommittedPrice: committedPrice, Period: period})
+		l.scopes[c.ID] = &loadedScope{
+			items:        items,
+			bucket:       bucket,
+			overagePrice: overagePrice,
+			amountOf:     amountOf,
+			periodStart:  period.Start,
+		}
+		l.commitments = append(l.commitments, &stackedCommitment{C: c, CommittedPrice: committedPrice, Period: clipped})
 	}
 
 	sortCommitmentStack(l.commitments)
@@ -424,12 +431,11 @@ func (l *commitmentLoader) fillWindowStack(ctx context.Context, stack *commitmen
 	}
 
 	// The floor counts the same buckets as the pools, over the whole window, so it never differs from the
-	// capacity the allocation grants once the window has elapsed.
-	full := generateBucketStarts(l.periodStart.In(loc), l.periodEnd.In(loc), bucket, &l.sub.BillingAnchor)
+	// capacity the allocation grants once the window has elapsed; it accrues from the commitment period's start.
 	for _, sc := range stack.Commitments {
 		sc.PoolOf = make([]int, len(stack.Windows))
 		for w, t := range stack.Windows {
-			if !l.holdsCapacity(sc.C, t) {
+			if !accrues(sc.C, t, l.periodStart) {
 				sc.PoolOf[w] = -1
 				continue
 			}
@@ -438,18 +444,32 @@ func (l *commitmentLoader) fillWindowStack(ctx context.Context, stack *commitmen
 			sc.Pools = append(sc.Pools, capacityPool{Capacity: sc.C.Value})
 		}
 
-		sc.Period.ActiveBuckets = int64(lo.CountBy(full, func(t time.Time) bool { return l.holdsCapacity(sc.C, t) }))
+		scope := l.scopes[sc.C.ID]
+		before := l.activeBuckets(sc.C, scope.periodStart, l.periodStart, bucket)
+		sc.Period.ActiveBuckets = l.activeBuckets(sc.C, l.periodStart, l.periodEnd, bucket)
 		sc.Period.Capacity = sc.C.Value.Mul(decimal.NewFromInt(sc.Period.ActiveBuckets))
-		sc.Period.Amount = l.scopes[sc.C.ID].amountOf(sc.Period.Capacity)
+		sc.Period.Amount = accruedAmount(
+			scope.amountOf,
+			sc.C.Value.Mul(decimal.NewFromInt(before)),
+			sc.C.Value.Mul(decimal.NewFromInt(before+sc.Period.ActiveBuckets)),
+			sc.C.Currency,
+		)
 	}
 
 	return nil
 }
 
-// holdsCapacity reports whether the bucket starting at t is one of the commitment's pools in this window.
-// A bucket starting before the window belongs to the period that already billed it.
-func (l *commitmentLoader) holdsCapacity(c *commitment.Commitment, t time.Time) bool {
-	return !t.Before(l.periodStart) && c.IsActiveAt(t) && c.ActiveWindows.Contains(t, c.Location())
+// activeBuckets counts the buckets of the usage grid starting in [from, to) that hold the commitment's capacity.
+func (l *commitmentLoader) activeBuckets(c *commitment.Commitment, from, to time.Time, bucket types.WindowSize) int64 {
+	loc := l.usageLocation()
+	starts := generateBucketStarts(from.In(loc), to.In(loc), bucket, &l.sub.BillingAnchor)
+	return int64(lo.CountBy(starts, func(t time.Time) bool { return accrues(c, t, from) }))
+}
+
+// accrues reports whether the bucket starting at t holds the commitment's capacity in a span starting at from.
+// A bucket starting before the span belongs to the span before it, which already counted it.
+func accrues(c *commitment.Commitment, t, from time.Time) bool {
+	return !t.Before(from) && c.IsActiveAt(t) && c.ActiveWindows.Contains(t, c.Location())
 }
 
 // fillBucketLine lays a bucketed line's usage out one bucket per window, each priced on its own as normal billing

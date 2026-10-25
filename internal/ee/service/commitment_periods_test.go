@@ -258,3 +258,89 @@ func TestCommitmentPeriods_CountsPartialEdgeBuckets(t *testing.T) {
 	// 10:01 through 12:00 inclusive: the 10:00 bucket starts before the term, 12:00 starts before its end.
 	require.Equal(t, int64(120), periods[0].ActiveBuckets)
 }
+
+func TestClipCommitmentPeriod_PartialFloorsSumToTheRoundedWhole(t *testing.T) {
+	apr := time.Date(2027, 4, 1, 0, 0, 0, 0, time.UTC)
+	aug := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	// halfThenHalfRate charges 1 per unit for the first 50 and 0.50 after, so 100 units cost 75.
+	halfThenHalfRate := func(q decimal.Decimal) decimal.Decimal {
+		first := decimal.Min(q, decimal.NewFromInt(50))
+		return first.Add(q.Sub(first).Mul(decimal.RequireFromString("0.5")))
+	}
+	day := func(start time.Time, d int) time.Time { return start.AddDate(0, 0, d-1) }
+
+	tests := []struct {
+		name     string
+		typ      types.CommitmentType
+		value    string
+		amountOf func(decimal.Decimal) decimal.Decimal
+		month    time.Time
+		bounds   []time.Time // invoice edges inside the month
+		want     []string
+	}{
+		{
+			name:     "tiered halves bill the first 50 units at 1 and the next 50 at 0.50",
+			typ:      types.COMMITMENT_TYPE_QUANTITY,
+			value:    "100",
+			amountOf: halfThenHalfRate,
+			month:    apr,
+			bounds:   []time.Time{day(apr, 16)},
+			want:     []string{"50", "25"},
+		},
+		{
+			name:     "a one cent period split evenly bills the cent once",
+			typ:      types.COMMITMENT_TYPE_AMOUNT,
+			value:    "0.01",
+			amountOf: identityAmount,
+			month:    apr,
+			bounds:   []time.Time{day(apr, 16)},
+			want:     []string{"0.01", "0"},
+		},
+		{
+			name:     "flat halves of a 31 day month keep their prorated shares",
+			typ:      types.COMMITMENT_TYPE_AMOUNT,
+			value:    "100",
+			amountOf: identityAmount,
+			month:    aug,
+			bounds:   []time.Time{day(aug, 16)},
+			want:     []string{"48.39", "51.61"},
+		},
+		{
+			name:     "thirds of 100 sum to exactly 100",
+			typ:      types.COMMITMENT_TYPE_AMOUNT,
+			value:    "100",
+			amountOf: identityAmount,
+			month:    apr,
+			bounds:   []time.Time{day(apr, 11), day(apr, 21)},
+			want:     []string{"33.33", "33.34", "33.33"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			end := tc.month.AddDate(0, 1, 0)
+			c := &commitment.Commitment{
+				Type:        tc.typ,
+				Value:       decimal.RequireFromString(tc.value),
+				Currency:    "usd",
+				Measurement: types.CommitmentMeasurementBillingPeriod,
+				Timezone:    "UTC",
+				StartDate:   tc.month,
+				EndDate:     end,
+			}
+			periods, err := commitmentPeriods(c, monthlySub(tc.month), tc.amountOf, "")
+			require.NoError(t, err)
+			require.Len(t, periods, 1)
+
+			edges := append(append([]time.Time{tc.month}, tc.bounds...), end)
+			sum := decimal.Zero
+			for i, want := range tc.want {
+				part := clipCommitmentPeriod(c, periods[0], edges[i], edges[i+1], tc.amountOf, "", tc.month)
+				require.True(t, part.Amount.Equal(decimal.RequireFromString(want)), "part %d: want %s, got %s", i, want, part.Amount)
+				sum = sum.Add(part.Amount)
+			}
+
+			require.True(t, sum.Equal(types.RoundToCurrencyPrecision(periods[0].Amount, "usd")), "sum %s", sum)
+		})
+	}
+}

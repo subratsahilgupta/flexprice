@@ -966,6 +966,68 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodMixedLinesShareO
 	s.True(total.Equal(dec("100")), "total %s", total)
 }
 
+// A tiered committed price prorates each partial invoice's floor as the step in the period's cumulative floor, so the
+// halves sum to the whole period's floor instead of each walking the tiers from zero.
+func (s *BillingServiceSuite) TestCommitmentLoader_TieredPartialFloorsSumToThePeriodFloor() {
+	ctx := s.GetContext()
+	tiered := func(id string, firstTier uint64) string {
+		p, err := s.GetStores().PriceRepo.Get(ctx, id)
+		s.Require().NoError(err)
+		p.BillingModel, p.TierMode = types.BILLING_MODEL_TIERED, types.BILLING_TIER_SLAB
+		p.Tiers = []price.PriceTier{{UpTo: lo.ToPtr(firstTier), UnitAmount: dec("1")}, {UnitAmount: dec("0.5")}}
+		s.Require().NoError(s.GetStores().PriceRepo.Update(ctx, p, false))
+		return p.ID
+	}
+
+	none := &dto.GetUsageBySubscriptionResponse{Currency: "usd"}
+	s.Run("billing period", func() {
+		s.setupTestData()
+		s.enableCommitmentsV2()
+		sub, p := s.apiFixture("sub_tiered_floor")
+		committed := s.usagePriceFor("price_tiered_floor_committed", s.testData.meters.apiCalls, "0")
+		c := s.newTestCommitment("cmt_tiered_floor", sub, types.COMMITMENT_TYPE_QUANTITY, "62", p.ID, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
+		c.CommittedPriceID = lo.ToPtr(tiered(committed.ID, 30))
+		s.storeCommitment(c)
+
+		// 62 units a month: 30 by 16 Aug cost 30, all 62 cost 30 + 32 x 0.50 = 46, so the second half bills 16.
+		split := time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC)
+		for _, tt := range []struct {
+			from, to time.Time
+			want     string
+		}{
+			{from: sub.CurrentPeriodStart, to: split, want: "30"},
+			{from: split, to: sub.CurrentPeriodEnd, want: "16"},
+			{from: sub.CurrentPeriodStart, to: sub.CurrentPeriodEnd, want: "46"},
+		} {
+			_, total, err := s.loaderFor(sub, none, tt.from, tt.to, false).InvoiceLines(ctx)
+			s.Require().NoError(err)
+			s.True(total.Equal(dec(tt.want)), "total %s for %s-%s", total, tt.from, tt.to)
+		}
+	})
+
+	s.Run("window", func() {
+		s.setupTestData()
+		s.enableCommitmentsV2()
+		sub, _, _ := s.istDailyWindowFixture()
+		tiered("price_ist_daily_committed", 200)
+
+		// 10 a day: 150 by 16 Aug IST cost 150, all 310 cost 200 + 110 x 0.50 = 255, so the second half bills 105.
+		split := time.Date(2026, 8, 15, 18, 30, 0, 0, time.UTC)
+		for _, tt := range []struct {
+			from, to time.Time
+			want     string
+		}{
+			{from: sub.CurrentPeriodStart, to: split, want: "150"},
+			{from: split, to: sub.CurrentPeriodEnd, want: "105"},
+			{from: sub.CurrentPeriodStart, to: sub.CurrentPeriodEnd, want: "255"},
+		} {
+			_, total, err := s.loaderFor(sub, none, tt.from, tt.to, true).InvoiceLines(ctx)
+			s.Require().NoError(err)
+			s.True(total.Equal(dec(tt.want)), "total %s for %s-%s", total, tt.from, tt.to)
+		}
+	})
+}
+
 func TestSpreadCost_ConservesTotalProportionally(t *testing.T) {
 	decs := func(vs ...string) []decimal.Decimal {
 		return lo.Map(vs, func(v string, _ int) decimal.Decimal { return dec(v) })
