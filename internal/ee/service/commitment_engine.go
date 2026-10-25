@@ -253,9 +253,9 @@ func commitmentInvoiceLines(
 	return out
 }
 
-// commitmentLines renders one commitment's within lines and its true-up; for a binding commitment
-// the rows sum to the rounded period amount. A quantity commitment prices its whole usage once on the
-// committed price, so tiers walk the total, and splits that value across lines by quantity.
+// commitmentLines renders one commitment's within lines and its true-up; for a binding commitment the rows sum
+// to the rounded period amount, and a partial period's within is capped there. A quantity commitment prices its
+// whole usage once on the committed price, so tiers walk the total, and splits that value across lines by quantity.
 func (r lineRenderer) commitmentLines(
 	stack *commitmentStack,
 	sc *stackedCommitment,
@@ -286,7 +286,18 @@ func (r lineRenderer) commitmentLines(
 		return rows
 	}
 
-	trueUp := types.RoundToCurrencyPrecision(sc.Period.Amount, r.currency).Sub(withinValue)
+	floor := types.RoundToCurrencyPrecision(sc.Period.Amount, r.currency)
+	if sc.Period.Clipped && withinValue.GreaterThan(floor) {
+		// A partial floor is the period's value accrued in this window; usage valued from tier zero cannot exceed it.
+		for i := range rows {
+			rows[i].Amount = types.RoundToCurrencyPrecision(rows[i].Amount.Mul(floor).Div(withinValue), r.currency)
+		}
+
+		r.absorbDrift(rows, floor)
+		return rows
+	}
+
+	trueUp := floor.Sub(withinValue)
 	if !trueUp.IsPositive() {
 		return rows
 	}

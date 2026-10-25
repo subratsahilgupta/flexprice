@@ -936,3 +936,122 @@ func TestAllocateRejectsPoolIndexBelowSentinel(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "references pool")
 }
+
+// partialHalves renders a binding 100-unit April commitment, committed at 50 x 1 then 0.50, over its two half-month
+// invoices with the given usage in each.
+func partialHalves(t *testing.T, binding bool, used ...string) [][]dto.CreateInvoiceLineItemRequest {
+	t.Helper()
+	apr := time.Date(2027, 4, 1, 0, 0, 0, 0, time.UTC)
+	split, may := apr.AddDate(0, 0, 15), apr.AddDate(0, 1, 0)
+	tiers := []price.PriceTier{{UpTo: lo.ToPtr(uint64(50)), UnitAmount: intDec(1)}, {UnitAmount: dec("0.5")}}
+	committedPrice := &price.Price{ID: "committed_price_c1", BillingModel: types.BILLING_MODEL_TIERED, TierMode: types.BILLING_TIER_SLAB, Tiers: tiers}
+	amountOf := func(q decimal.Decimal) decimal.Decimal { return withCommittedPrices(nil)(committedPrice, q) }
+	c := &commitment.Commitment{
+		ID:          "c1",
+		Type:        types.COMMITMENT_TYPE_QUANTITY,
+		Value:       intDec(100),
+		Currency:    "usd",
+		Measurement: types.CommitmentMeasurementBillingPeriod,
+		Timezone:    "UTC",
+		StartDate:   apr,
+		EndDate:     may,
+	}
+	periods, err := commitmentPeriods(c, monthlySub(apr), amountOf, "")
+	require.NoError(t, err)
+	require.Len(t, periods, 1)
+
+	edges := []time.Time{apr, split, may}
+	out := make([][]dto.CreateInvoiceLineItemRequest, len(used))
+	for i, u := range used {
+		part := clipCommitmentPeriod(c, periods[0], edges[i], edges[i+1], amountOf, "", apr)
+		line := invoiceLine("a", u, "0", u)
+		sc := committed("c1", binding, "0", []int{0}, []*usageLine{line}, part.Capacity.String())
+		sc.CommittedPrice, sc.Period = committedPrice, part
+		out[i] = renderStack(t, &commitmentStack{
+			Type:        types.COMMITMENT_TYPE_QUANTITY,
+			Measurement: types.CommitmentMeasurementBillingPeriod,
+			Windows:     engineWindows(1),
+			Lines:       []*usageLine{line},
+			Commitments: []*stackedCommitment{sc},
+		}, func(_ *price.Price, qty decimal.Decimal) decimal.Decimal { return qty })
+	}
+
+	return out
+}
+
+func TestCommitmentInvoiceLinesPartialWithinIsCappedAtTheFloor(t *testing.T) {
+	tests := []struct {
+		name    string
+		binding bool
+		used    []string
+		want    [][]wantLine
+		total   string
+	}{
+		{
+			name:    "fully used halves bill the whole period's 75, not 50 + 50",
+			binding: true,
+			used:    []string{"50", "50"},
+			// Floors are 50 and 75-50 = 25; the second half's cost(50) = 50 within is capped at its 25.
+			want: [][]wantLine{
+				{{types.CommitmentLineWithin, "Label c1", "50", "50"}},
+				{{types.CommitmentLineWithin, "Label c1", "50", "25"}},
+			},
+			total: "75",
+		},
+		{
+			name:    "an under-used first half trues up and an over-the-cap second half is capped",
+			binding: true,
+			used:    []string{"30", "50"},
+			// Half one: within cost(30) = 30, true-up 50-30 = 20. Half two: within 50 capped at 25.
+			want: [][]wantLine{
+				{{types.CommitmentLineWithin, "Label c1", "30", "30"}, {types.CommitmentLineTrueUp, "Label c1 (unused)", "20", "20"}},
+				{{types.CommitmentLineWithin, "Label c1", "50", "25"}},
+			},
+			total: "75",
+		},
+		{
+			name:    "a non-binding commitment has no floor, so its partial within restarts the tiers",
+			binding: false,
+			used:    []string{"50", "50"},
+			want: [][]wantLine{
+				{{types.CommitmentLineWithin, "Label c1", "50", "50"}},
+				{{types.CommitmentLineWithin, "Label c1", "50", "50"}},
+			},
+			total: "100",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			total := decimal.Zero
+			for i, lines := range partialHalves(t, tt.binding, tt.used...) {
+				requireLines(t, tt.want[i], lines)
+				for _, l := range lines {
+					total = total.Add(l.Amount)
+				}
+			}
+
+			require.True(t, total.Equal(dec(tt.total)), "total %s", total)
+		})
+	}
+}
+
+func TestCommitmentInvoiceLinesCappedWithinConservesTheFloorAcrossLines(t *testing.T) {
+	a, b, c := invoiceLine("a", "10", "0", "10"), invoiceLine("b", "10", "0", "10"), invoiceLine("c", "10", "0", "10")
+	sc := committed("c1", true, "10", []int{0}, []*usageLine{a, b, c}, "30")
+	sc.Period.Clipped = true
+	lines := renderStack(t, &commitmentStack{
+		Type:        types.COMMITMENT_TYPE_QUANTITY,
+		Measurement: types.CommitmentMeasurementBillingPeriod,
+		Windows:     engineWindows(1),
+		Lines:       []*usageLine{a, b, c},
+		Commitments: []*stackedCommitment{sc},
+	}, func(_ *price.Price, qty decimal.Decimal) decimal.Decimal { return qty })
+
+	// 30 within capped at 10 scales each row to 3.33; the cent left over lands on the first, largest row.
+	requireLines(t, []wantLine{
+		{types.CommitmentLineWithin, "Label c1", "10", "3.34"},
+		{types.CommitmentLineWithin, "Label c1", "10", "3.33"},
+		{types.CommitmentLineWithin, "Label c1", "10", "3.33"},
+	}, lines)
+}

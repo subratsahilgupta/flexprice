@@ -1028,6 +1028,42 @@ func (s *BillingServiceSuite) TestCommitmentLoader_TieredPartialFloorsSumToThePe
 	})
 }
 
+// With usage, each partial invoice of a binding commitment bills at most its floor, so the partials still sum to the
+// whole period's bill even though each values its usage from the committed price's first tier.
+func (s *BillingServiceSuite) TestCommitmentLoader_PartialWithinIsCappedAtTheFloor() {
+	ctx := s.GetContext()
+	s.setupTestData()
+	s.enableCommitmentsV2()
+	sub, p := s.apiFixture("sub_capped_within")
+	committed := s.usagePriceFor("price_capped_within_committed", s.testData.meters.apiCalls, "0")
+	committed.BillingModel, committed.TierMode = types.BILLING_MODEL_TIERED, types.BILLING_TIER_SLAB
+	committed.Tiers = []price.PriceTier{{UpTo: lo.ToPtr(uint64(30)), UnitAmount: dec("1")}, {UnitAmount: dec("0.5")}}
+	s.Require().NoError(s.GetStores().PriceRepo.Update(ctx, committed, false))
+	c := s.newTestCommitment("cmt_capped_within", sub, types.COMMITMENT_TYPE_QUANTITY, "62", p.ID, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
+	c.CommittedPriceID = lo.ToPtr(committed.ID)
+	s.storeCommitment(c)
+
+	// Floors are 30 and 46-30 = 16. 20 calls in each half: the first values at 20 and trues up 10; the second's 20
+	// within is capped at 16. The whole period: 40 calls within at 30 + 10 x 0.50 = 35, true-up 11, also 46.
+	split := time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC)
+	for _, tt := range []struct {
+		from, to time.Time
+		within   string
+		total    string
+	}{
+		{from: sub.CurrentPeriodStart, to: split, within: "20", total: "30"},
+		{from: split, to: sub.CurrentPeriodEnd, within: "16", total: "16"},
+		{from: sub.CurrentPeriodStart, to: sub.CurrentPeriodEnd, within: "35", total: "46"},
+	} {
+		lines, total, err := s.loaderFor(sub, s.rawUsageWindow(sub, tt.from, tt.to), tt.from, tt.to, true).InvoiceLines(ctx)
+		s.Require().NoError(err)
+		within := s.loaderLine(lines, types.CommitmentLineWithin, c.ID)
+		s.True(within.Quantity.Equal(dec("20")) || within.Quantity.Equal(dec("40")), "within quantity %s", within.Quantity)
+		s.True(within.Amount.Equal(dec(tt.within)), "within %s for %s-%s", within.Amount, tt.from, tt.to)
+		s.True(total.Equal(dec(tt.total)), "total %s for %s-%s", total, tt.from, tt.to)
+	}
+}
+
 func TestSpreadCost_ConservesTotalProportionally(t *testing.T) {
 	decs := func(vs ...string) []decimal.Decimal {
 		return lo.Map(vs, func(v string, _ int) decimal.Decimal { return dec(v) })

@@ -19,6 +19,7 @@ type commitmentPeriod struct {
 	ActiveBuckets int64 // window measurement only
 	Capacity      decimal.Decimal
 	Amount        decimal.Decimal // money value of Capacity
+	Clipped       bool            // cut to part of the period by the invoice window or a termination
 }
 
 // commitmentPeriods returns the subscription billing periods clipped to the commitment term, with their value;
@@ -96,6 +97,7 @@ func clipCommitmentPeriod(
 		return p
 	}
 
+	out.Clipped = true
 	out.ActiveBuckets, out.Capacity = periodCapacity(c, p, out.Start, out.End, bucket, anchor)
 	_, before := periodCapacity(c, p, p.Start, out.Start, bucket, anchor)
 	_, through := periodCapacity(c, p, p.Start, out.End, bucket, anchor)
