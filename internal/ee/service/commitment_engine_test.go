@@ -415,7 +415,7 @@ func invoiceLine(id string, quantity, cost string, usage ...string) *usageLine {
 			PlanDisplayName:  "Plan " + id,
 			DisplayName:      "Usage " + id,
 		},
-		Price:    &price.Price{ID: "price_" + id, DisplayName: "Price " + id},
+		Price:    &price.Price{ID: "price_" + id, DisplayName: "Price " + id, BillingModel: types.BILLING_MODEL_FLAT_FEE},
 		Quantity: dec(quantity),
 		Cost:     dec(cost),
 		Usage:    windows,
@@ -1082,6 +1082,31 @@ func TestCommitmentInvoiceLinesVolumeLinePricesOnDemandAfresh(t *testing.T) {
 		requireLines(t, []wantLine{
 			{types.CommitmentLineWithin, "Label c1", "100", "100"},
 			{types.CommitmentLineOnDemand, "Usage a", "50", "50"},
+		}, lines)
+	}
+}
+
+// A package price bills whole packages, so differencing 100 used against 50 covered would price the 50 on demand at
+// cost(100)-cost(50) = $0; the remainder is priced afresh as one package.
+func TestCommitmentInvoiceLinesPackageLinePricesOnDemandAfresh(t *testing.T) {
+	packageCost := func(_ *price.Price, qty decimal.Decimal) decimal.Decimal {
+		return qty.Div(intDec(100)).Ceil().Mul(intDec(10))
+	}
+
+	for _, perWindow := range []bool{false, true} {
+		line := invoiceLine("a", "100", "10", "100")
+		line.Price.BillingModel, line.PerWindow = types.BILLING_MODEL_PACKAGE, perWindow
+		lines := renderStack(t, &commitmentStack{
+			Type:        types.COMMITMENT_TYPE_QUANTITY,
+			Measurement: types.CommitmentMeasurementBillingPeriod,
+			Windows:     engineWindows(1),
+			Lines:       []*usageLine{line},
+			Commitments: []*stackedCommitment{committed("c1", true, "50", []int{0}, []*usageLine{line}, "50")},
+		}, packageCost)
+
+		requireLines(t, []wantLine{
+			{types.CommitmentLineWithin, "Label c1", "50", "50"},
+			{types.CommitmentLineOnDemand, "Usage a", "50", "10"},
 		}, lines)
 	}
 }

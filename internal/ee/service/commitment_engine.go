@@ -402,10 +402,11 @@ func (r lineRenderer) onDemandLines(
 	return nil
 }
 
-// marginalCost prices the top qty units of full: what full costs beyond the covered units below them.
+// marginalCost prices the top qty units of full. A margin is well defined only for monotone marginal models (flat
+// fee, slab tiers); every other model prices qty afresh, as entitlement remainders do.
 func (r lineRenderer) marginalCost(p *price.Price, full, qty decimal.Decimal) decimal.Decimal {
-	// Volume tiers reprice every unit by the total, so a margin is undefined and can go negative; price qty afresh.
-	if p.BillingModel == types.BILLING_MODEL_TIERED && p.TierMode == types.BILLING_TIER_VOLUME {
+	isSlab := p.BillingModel == types.BILLING_MODEL_TIERED && p.TierMode == types.BILLING_TIER_SLAB
+	if p.BillingModel != types.BILLING_MODEL_FLAT_FEE && !isSlab {
 		return r.cost(p, qty)
 	}
 
