@@ -617,7 +617,6 @@ type ClickHouseConfig struct {
 
 // ReportsConfig is the reports ClickHouse login.
 type ReportsConfig struct {
-	// Empty uses clickhouse.address.
 	Address              string `mapstructure:"address"`
 	Database             string `mapstructure:"database"`
 	UsageDatabase        string `mapstructure:"usage_database"`

@@ -10,6 +10,7 @@ import (
 	"hash"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	clickhouse_go "github.com/ClickHouse/clickhouse-go/v2"
@@ -35,6 +36,7 @@ type ReportsRepository struct {
 	cfg    config.ReportsConfig
 	logger *logger.Logger
 	cache  cache.RedisCache
+	source string
 }
 
 func NewReportsRepository(cfg *config.Configuration, log *logger.Logger, rc cache.RedisCache) (*ReportsRepository, error) {
@@ -52,6 +54,7 @@ func NewReportsRepository(cfg *config.Configuration, log *logger.Logger, rc cach
 	if r.cfg.Address != "" {
 		opts.Addr = []string{r.cfg.Address}
 	}
+	r.source = strings.Join(opts.Addr, ",")
 	opts.Auth = clickhouse_go.Auth{
 		Database: r.cfg.Database,
 		Username: r.cfg.Username,
@@ -139,7 +142,7 @@ func (r *ReportsRepository) cached(ctx context.Context, q *reportQuery, fetch fu
 	if !r.resultCacheOn() {
 		return fetch()
 	}
-	key := reportCacheKey(ctx, q)
+	key := reportCacheKey(ctx, r.source, q)
 	if v, ok := r.cache.Get(ctx, key); ok {
 		if rows, ok := cache.UnmarshalCacheValue[[][]string](v); ok {
 			return *rows, nil
@@ -156,8 +159,9 @@ func (r *ReportsRepository) cached(ctx context.Context, q *reportQuery, fetch fu
 }
 
 // Params carry tenant and environment.
-func reportCacheKey(ctx context.Context, q *reportQuery) string {
+func reportCacheKey(ctx context.Context, source string, q *reportQuery) string {
 	h := sha256.New()
+	writeLengthPrefixed(h, source)
 	writeLengthPrefixed(h, q.SQL)
 	for _, k := range slices.Sorted(maps.Keys(q.Params)) {
 		writeLengthPrefixed(h, k)
