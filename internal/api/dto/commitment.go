@@ -173,16 +173,10 @@ type UpdateCommitmentRequest struct {
 	Metadata           types.Metadata `json:"metadata,omitempty"`
 }
 
+// TerminateCommitmentRequest ends a commitment early; cancellation_fee is a flat amount in the commitment currency.
 type TerminateCommitmentRequest struct {
-	EffectiveAt     *time.Time                 `json:"effective_at,omitempty"`
-	CancellationFee *CommitmentCancellationFee `json:"cancellation_fee,omitempty"`
-	BillRemaining   bool                       `json:"bill_remaining,omitempty"`
-}
-
-// CommitmentCancellationFee is charged on early termination; value is a percent for percent_of_remaining.
-type CommitmentCancellationFee struct {
-	Type  types.CommitmentCancellationFeeType `json:"type" validate:"required"`
-	Value decimal.Decimal                     `json:"value" swaggertype:"string"`
+	EffectiveAt     *time.Time       `json:"effective_at,omitempty"`
+	CancellationFee *decimal.Decimal `json:"cancellation_fee,omitempty" swaggertype:"string"`
 }
 
 func (r *TerminateCommitmentRequest) Validate() error {
@@ -190,20 +184,8 @@ func (r *TerminateCommitmentRequest) Validate() error {
 		return err
 	}
 
-	fee := r.CancellationFee
-	if fee == nil {
-		return nil
-	}
-
-	if err := fee.Type.Validate(); err != nil {
-		return err
-	}
-
-	switch {
-	case !fee.Value.IsPositive():
-		return invalid("cancellation_fee.value must be greater than zero")
-	case fee.Type == types.CommitmentCancellationFeePercentOfRemaining && fee.Value.GreaterThan(decimal.NewFromInt(100)):
-		return invalid("cancellation_fee.value must be at most 100 for percent_of_remaining")
+	if r.CancellationFee != nil && !r.CancellationFee.IsPositive() {
+		return invalid("cancellation_fee must be greater than zero")
 	}
 
 	return nil

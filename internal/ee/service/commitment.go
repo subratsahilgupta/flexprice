@@ -372,8 +372,8 @@ func (s *commitmentService) Update(
 	return s.response(ctx, updated, nil)
 }
 
-// Terminate ends an active commitment at effective_at (default now). A cancellation fee and the unearned
-// remainder are billed on one immediate one-off invoice, created in the same transaction as the status change.
+// Terminate ends an active commitment at effective_at (default now). A cancellation fee is billed on an immediate
+// one-off invoice, created in the same transaction as the status change.
 func (s *commitmentService) Terminate(
 	ctx context.Context,
 	id string,
@@ -388,12 +388,11 @@ func (s *commitmentService) Terminate(
 	}
 
 	effectiveAt := lo.FromPtrOr(req.EffectiveAt, time.Now().UTC())
-	charges := terminationCharges{fee: req.CancellationFee, billRemaining: req.BillRemaining}
 	var out *commitment.Commitment
 	var invoiceID *string
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		var err error
-		out, invoiceID, err = s.terminate(txCtx, id, effectiveAt, charges)
+		out, invoiceID, err = s.terminate(txCtx, id, effectiveAt, req.CancellationFee)
 		return err
 	})
 	if err != nil {
@@ -470,7 +469,7 @@ func (s *commitmentService) TerminateForSubscription(
 				continue
 			}
 
-			if _, _, err := s.terminate(txCtx, c.ID, effectiveAt, terminationCharges{}); err != nil {
+			if _, _, err := s.terminate(txCtx, c.ID, effectiveAt, nil); err != nil {
 				return err
 			}
 
@@ -496,21 +495,13 @@ func (s *commitmentService) lockCommitment(ctx context.Context, id string) error
 	return nil
 }
 
-// terminationCharges are the amounts a termination bills; the zero value bills nothing.
-type terminationCharges struct {
-	fee           *dto.CommitmentCancellationFee
-	billRemaining bool
-}
-
-func (t terminationCharges) any() bool { return t.fee != nil || t.billRemaining }
-
-// terminate re-reads the commitment under its lock and must run inside a transaction. The invoice is created
+// terminate re-reads the commitment under its lock and must run inside a transaction. The fee invoice is created
 // before the status change so a billing failure leaves the commitment active.
 func (s *commitmentService) terminate(
 	ctx context.Context,
 	id string,
 	effectiveAt time.Time,
-	charges terminationCharges,
+	fee *decimal.Decimal,
 ) (*commitment.Commitment, *string, error) {
 	if err := s.lockCommitment(ctx, id); err != nil {
 		return nil, nil, err
@@ -532,13 +523,13 @@ func (s *commitmentService) terminate(
 	}
 
 	var invoiceID *string
-	if charges.any() {
-		if invoiceID, err = s.billTermination(ctx, c, effectiveAt, charges); err != nil {
+	if fee != nil {
+		if invoiceID, err = s.billCancellationFee(ctx, c, effectiveAt, *fee); err != nil {
 			return nil, nil, err
 		}
 	}
 
-	// Kept as requested, even before start_date: the settlement invoice is chosen from it and nothing is earned.
+	// Kept as requested, even before start_date, where nothing is earned.
 	terminated := commitment.NewCommitmentBuilder(c).
 		WithStatus(types.CommitmentStatusTerminated).
 		WithTerminatedAt(effectiveAt).
@@ -551,150 +542,68 @@ func (s *commitmentService) terminate(
 	return out, invoiceID, nil
 }
 
-// billTermination creates the one-off invoice for the charges, or returns nil when they amount to nothing.
-func (s *commitmentService) billTermination(
+// billCancellationFee bills the fee on a one-off invoice, or returns nil when it rounds to nothing.
+func (s *commitmentService) billCancellationFee(
 	ctx context.Context,
 	c *commitment.Commitment,
 	effectiveAt time.Time,
-	charges terminationCharges,
+	fee decimal.Decimal,
 ) (*string, error) {
 	if !c.Binding {
-		return nil, invalid("cancellation fee and bill_remaining require a binding commitment")
+		return nil, invalid("cancellation_fee requires a binding commitment")
 	}
 
-	cc, err := s.loadCommitmentContext(ctx, c.SubscriptionID)
+	amount := types.RoundToCurrencyPrecision(fee, c.Currency)
+	if !amount.IsPositive() {
+		return nil, nil
+	}
+
+	sub, err := s.SubRepo.Get(ctx, c.SubscriptionID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Earlier periods are already invoiced with their within and true-up lines.
-	if effectiveAt.Before(cc.Sub.CurrentPeriodStart) {
-		return nil, invalidf(
-			"effective_at must not be before the subscription's current_period_start %s when charging on termination",
-			cc.Sub.CurrentPeriodStart.Format(time.RFC3339),
-		)
+	metadata := types.Metadata{
+		types.MetadataKeyCommitmentLineKind: string(types.CommitmentLineCancellationFee),
+		types.MetadataKeyCommitmentID:       c.ID,
+	}
+	if c.InvoiceDescription != nil {
+		metadata[types.MetadataKeyDescription] = *c.InvoiceDescription
 	}
 
-	var lines []dto.CreateInvoiceLineItemRequest
-	total := decimal.Zero
-	addLine := func(kind types.CommitmentLineKind, title string, amount decimal.Decimal) {
-		if !amount.IsPositive() {
-			return
-		}
-
-		metadata := types.Metadata{
-			types.MetadataKeyCommitmentLineKind: string(kind),
-			types.MetadataKeyCommitmentID:       c.ID,
-		}
-		if c.InvoiceDescription != nil {
-			metadata[types.MetadataKeyDescription] = *c.InvoiceDescription
-		}
-
-		lines = append(lines, dto.CreateInvoiceLineItemRequest{
-			DisplayName:  lo.ToPtr(title),
-			Quantity:     decimal.NewFromInt(1),
-			Amount:       amount,
-			PeriodStart:  lo.ToPtr(effectiveAt),
-			PeriodEnd:    lo.ToPtr(c.EndDate),
-			CommitmentID: lo.ToPtr(c.ID),
-			EntityType:   lo.ToPtr(string(types.InvoiceLineItemEntityTypeCommitment)),
-			EntityID:     lo.ToPtr(c.ID),
-			Metadata:     metadata,
-		})
-		total = total.Add(amount)
-	}
-
-	if charges.fee != nil {
-		fee, err := s.cancellationFeeAmount(ctx, c, cc, charges.fee, effectiveAt)
-		if err != nil {
-			return nil, err
-		}
-
-		addLine(types.CommitmentLineCancellationFee, c.InvoiceLabel+" (cancellation fee)", fee)
-	}
-
-	if charges.billRemaining {
-		remaining, err := s.remainingValue(ctx, c, cc, effectiveAt)
-		if err != nil {
-			return nil, err
-		}
-
-		addLine(types.CommitmentLineSettlement, c.InvoiceLabel+" (remaining commitment)", types.RoundToCurrencyPrecision(remaining, c.Currency))
-	}
-
-	if len(lines) == 0 {
-		return nil, nil
-	}
-
-	billingPeriod := string(cc.Sub.BillingPeriod)
+	billingPeriod := string(sub.BillingPeriod)
 	inv, err := NewInvoiceService(s.ServiceParams).CreateInvoice(ctx, dto.CreateInvoiceRequest{
-		CustomerID:     cc.Sub.GetInvoicingCustomerID(),
-		SubscriptionID: lo.ToPtr(cc.Sub.ID),
+		CustomerID:     sub.GetInvoicingCustomerID(),
+		SubscriptionID: lo.ToPtr(sub.ID),
 		InvoiceType:    types.InvoiceTypeOneOff,
 		Currency:       c.Currency,
 		BillingReason:  types.InvoiceBillingReasonProration,
-		AmountDue:      total,
-		Total:          total,
-		Subtotal:       total,
+		AmountDue:      amount,
+		Total:          amount,
+		Subtotal:       amount,
 		PeriodStart:    lo.ToPtr(effectiveAt),
 		PeriodEnd:      lo.ToPtr(c.EndDate),
 		BillingPeriod:  &billingPeriod,
 		IdempotencyKey: lo.ToPtr("commitment_termination_" + c.ID),
-		LineItems:      lines,
+		LineItems: []dto.CreateInvoiceLineItemRequest{
+			{
+				DisplayName:  lo.ToPtr(c.InvoiceLabel + " (cancellation fee)"),
+				Quantity:     decimal.NewFromInt(1),
+				Amount:       amount,
+				PeriodStart:  lo.ToPtr(effectiveAt),
+				PeriodEnd:    lo.ToPtr(c.EndDate),
+				CommitmentID: lo.ToPtr(c.ID),
+				EntityType:   lo.ToPtr(string(types.InvoiceLineItemEntityTypeCommitment)),
+				EntityID:     lo.ToPtr(c.ID),
+				Metadata:     metadata,
+			},
+		},
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	return lo.ToPtr(inv.ID), nil
-}
-
-// remainingValue is the commitment value not yet earned at `at`: the full value less the value of the term cut there.
-func (s *commitmentService) remainingValue(
-	ctx context.Context,
-	c *commitment.Commitment,
-	cc *commitmentContext,
-	at time.Time,
-) (decimal.Decimal, error) {
-	committedRate, err := s.committedRate(ctx, c)
-	if err != nil {
-		return decimal.Zero, err
-	}
-
-	bucket := bucketFor(c, cc)
-	periods, err := commitmentPeriods(c, cc.Sub, committedRate, bucket)
-	if err != nil {
-		return decimal.Zero, err
-	}
-
-	earnedUntil := maxTime(at, c.StartDate)
-	earned := decimal.Zero
-	for _, p := range periods {
-		earned = earned.Add(clipCommitmentPeriod(c, p, earnedUntil, committedRate, bucket, cc.Sub.BillingAnchor).Amount)
-	}
-
-	return commitmentValue(periods).Sub(earned), nil
-}
-
-// cancellationFeeAmount prices the fee in the commitment currency; a percent fee applies to the value not yet
-// earned at `at`.
-func (s *commitmentService) cancellationFeeAmount(
-	ctx context.Context,
-	c *commitment.Commitment,
-	cc *commitmentContext,
-	fee *dto.CommitmentCancellationFee,
-	at time.Time,
-) (decimal.Decimal, error) {
-	if fee.Type == types.CommitmentCancellationFeeFlat {
-		return types.RoundToCurrencyPrecision(fee.Value, c.Currency), nil
-	}
-
-	remaining, err := s.remainingValue(ctx, c, cc, at)
-	if err != nil {
-		return decimal.Zero, err
-	}
-
-	return types.RoundToCurrencyPrecision(remaining.Mul(fee.Value).Div(decimal.NewFromInt(100)), c.Currency), nil
 }
 
 // ActiveForPeriod returns commitments whose term overlaps [from, to), including terminated ones,

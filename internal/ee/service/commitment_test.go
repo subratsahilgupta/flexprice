@@ -409,55 +409,11 @@ func (s *CommitmentServiceSuite) TestTerminate_RejectsInvalidCancellationFee() {
 	tests := []struct {
 		name string
 		at   time.Time
-		fee  dto.CommitmentCancellationFee
+		fee  decimal.Decimal
 	}{
-		{
-			name: "unknown type",
-			at:   midTerm,
-			fee: dto.CommitmentCancellationFee{
-				Type:  "percent",
-				Value: decimal.NewFromInt(10),
-			},
-		},
-		{
-			name: "missing type",
-			at:   midTerm,
-			fee: dto.CommitmentCancellationFee{
-				Value: decimal.NewFromInt(10),
-			},
-		},
-		{
-			name: "zero value",
-			at:   midTerm,
-			fee: dto.CommitmentCancellationFee{
-				Type:  types.CommitmentCancellationFeeFlat,
-				Value: decimal.Zero,
-			},
-		},
-		{
-			name: "negative value",
-			at:   midTerm,
-			fee: dto.CommitmentCancellationFee{
-				Type:  types.CommitmentCancellationFeeFlat,
-				Value: decimal.NewFromInt(-5),
-			},
-		},
-		{
-			name: "percent above 100",
-			at:   midTerm,
-			fee: dto.CommitmentCancellationFee{
-				Type:  types.CommitmentCancellationFeePercentOfRemaining,
-				Value: dec("100.01"),
-			},
-		},
-		{
-			name: "terminate at end_date",
-			at:   created.EndDate,
-			fee: dto.CommitmentCancellationFee{
-				Type:  types.CommitmentCancellationFeeFlat,
-				Value: decimal.NewFromInt(10),
-			},
-		},
+		{name: "zero fee", at: midTerm, fee: decimal.Zero},
+		{name: "negative fee", at: midTerm, fee: decimal.NewFromInt(-5)},
+		{name: "terminate at end_date", at: created.EndDate, fee: decimal.NewFromInt(10)},
 	}
 
 	for _, tt := range tests {
@@ -506,7 +462,7 @@ func (s *CommitmentServiceSuite) TestTerminate_FlatFeeBillsOneOffInvoice() {
 	at := created.StartDate.AddDate(0, 3, 0)
 	resp, err := s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{
 		EffectiveAt:     &at,
-		CancellationFee: &dto.CommitmentCancellationFee{Type: types.CommitmentCancellationFeeFlat, Value: dec("250.5")},
+		CancellationFee: lo.ToPtr(dec("250.5")),
 	})
 	s.Require().NoError(err)
 	s.Equal(types.CommitmentStatusTerminated, resp.CommitmentStatus)
@@ -524,87 +480,7 @@ func (s *CommitmentServiceSuite) TestTerminate_FlatFeeBillsOneOffInvoice() {
 	s.Equal(created.InvoiceLabel+" (cancellation fee)", lo.FromPtr(lines[0].DisplayName))
 }
 
-func (s *CommitmentServiceSuite) TestTerminate_PercentFeeAppliesToUnearnedValue() {
-	created := s.createChargeable(true)
-	// 3 of 12 monthly periods earned: 900.00 unearned, so 10% is 90.00.
-	at := created.StartDate.AddDate(0, 3, 0)
-	resp, err := s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{
-		EffectiveAt: &at,
-		CancellationFee: &dto.CommitmentCancellationFee{
-			Type:  types.CommitmentCancellationFeePercentOfRemaining,
-			Value: decimal.NewFromInt(10),
-		},
-	})
-	s.Require().NoError(err)
-	s.Require().NotNil(resp.TerminationInvoiceID)
-	lines := s.invoiceLines(*resp.TerminationInvoiceID)
-	s.Require().Len(lines, 1)
-	s.requireLine(lines[0], types.CommitmentLineCancellationFee, "90", created.ID)
-}
-
-// billRemaining terminates with bill_remaining and returns the single settlement line.
-func (s *CommitmentServiceSuite) billRemaining(created *dto.CommitmentResponse, at time.Time) *invoice.InvoiceLineItem {
-	resp, err := s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{
-		EffectiveAt:   &at,
-		BillRemaining: true,
-	})
-	s.Require().NoError(err)
-	s.Require().NotNil(resp.TerminationInvoiceID)
-	lines := s.invoiceLines(*resp.TerminationInvoiceID)
-	s.Require().Len(lines, 1)
-	s.Equal(created.InvoiceLabel+" (remaining commitment)", lo.FromPtr(lines[0].DisplayName))
-	return lines[0]
-}
-
-func (s *CommitmentServiceSuite) TestTerminate_BillRemainingOnPeriodBoundary() {
-	created := s.createChargeable(true)
-	line := s.billRemaining(created, created.StartDate.AddDate(0, 3, 0))
-	s.requireLine(line, types.CommitmentLineSettlement, "900", created.ID)
-}
-
-func (s *CommitmentServiceSuite) TestTerminate_BillRemainingProratesMidPeriod() {
-	created := s.createChargeable(true)
-	// January has 31 days: 15/31 of 100.00 is earned, so 1200 - 48.3871 = 1151.61.
-	line := s.billRemaining(created, created.StartDate.AddDate(0, 0, 15))
-	s.requireLine(line, types.CommitmentLineSettlement, "1151.61", created.ID)
-}
-
-func (s *CommitmentServiceSuite) TestTerminate_BillRemainingBeforeTermStartBillsFullValue() {
-	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
-	req.Value, req.CommittedRate = decimal.NewFromInt(100), lo.ToPtr(dec("1"))
-	req.StartDate = req.StartDate.AddDate(0, 2, 0)
-	req.EndDate = req.StartDate.AddDate(1, 0, 0)
-	created, err := s.svc.Create(s.GetContext(), req)
-	s.Require().NoError(err)
-
-	line := s.billRemaining(created, created.StartDate.AddDate(0, -1, 0))
-	s.requireLine(line, types.CommitmentLineSettlement, "1200", created.ID)
-}
-
-func (s *CommitmentServiceSuite) TestTerminate_FeeAndBillRemainingShareOneInvoice() {
-	created := s.createChargeable(true)
-	at := created.StartDate.AddDate(0, 3, 0)
-	resp, err := s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{
-		EffectiveAt:     &at,
-		CancellationFee: &dto.CommitmentCancellationFee{Type: types.CommitmentCancellationFeeFlat, Value: decimal.NewFromInt(50)},
-		BillRemaining:   true,
-	})
-	s.Require().NoError(err)
-	s.Require().NotNil(resp.TerminationInvoiceID)
-
-	invoices, err := s.GetStores().InvoiceRepo.List(s.GetContext(), types.NewNoLimitInvoiceFilter())
-	s.Require().NoError(err)
-	s.Require().Len(invoices, 1)
-	s.True(invoices[0].AmountDue.Equal(decimal.NewFromInt(950)), "got %s", invoices[0].AmountDue)
-
-	lines := s.invoiceLines(*resp.TerminationInvoiceID)
-	s.Require().Len(lines, 2)
-	byKind := lo.KeyBy(lines, func(l *invoice.InvoiceLineItem) string { return l.Metadata[types.MetadataKeyCommitmentLineKind] })
-	s.requireLine(byKind[string(types.CommitmentLineCancellationFee)], types.CommitmentLineCancellationFee, "50", created.ID)
-	s.requireLine(byKind[string(types.CommitmentLineSettlement)], types.CommitmentLineSettlement, "900", created.ID)
-}
-
-func (s *CommitmentServiceSuite) TestTerminate_WithoutChargesCreatesNoInvoice() {
+func (s *CommitmentServiceSuite) TestTerminate_WithoutFeeCreatesNoInvoice() {
 	created := s.createChargeable(true)
 	at := created.StartDate.AddDate(0, 3, 0)
 	resp, err := s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{EffectiveAt: &at})
@@ -616,63 +492,24 @@ func (s *CommitmentServiceSuite) TestTerminate_WithoutChargesCreatesNoInvoice() 
 	s.Empty(invoices)
 }
 
-func (s *CommitmentServiceSuite) TestTerminate_ChargesRequireBindingCommitment() {
+func (s *CommitmentServiceSuite) TestTerminate_FeeRequiresBindingCommitment() {
 	created := s.createChargeable(false)
 	at := created.StartDate.AddDate(0, 3, 0)
-	for name, req := range map[string]dto.TerminateCommitmentRequest{
-		"fee": {
-			EffectiveAt:     &at,
-			CancellationFee: &dto.CommitmentCancellationFee{Type: types.CommitmentCancellationFeeFlat, Value: decimal.NewFromInt(5)},
-		},
-		"bill remaining": {EffectiveAt: &at, BillRemaining: true},
-	} {
-		s.Run(name, func() {
-			_, err := s.svc.Terminate(s.GetContext(), created.ID, req)
-			s.requireValidation(err, "binding")
-		})
-	}
+	_, err := s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{
+		EffectiveAt:     &at,
+		CancellationFee: lo.ToPtr(decimal.NewFromInt(5)),
+	})
+	s.requireValidation(err, "binding")
 
 	got, err := s.svc.Get(s.GetContext(), created.ID)
 	s.Require().NoError(err)
 	s.Equal(types.CommitmentStatusActive, got.CommitmentStatus)
 }
 
-func (s *CommitmentServiceSuite) TestTerminate_ChargesCannotReachBackIntoInvoicedPeriods() {
-	created := s.createChargeable(true)
-	sub := *s.fx.sub
-	sub.CurrentPeriodStart = created.StartDate.AddDate(0, 2, 0)
-	sub.CurrentPeriodEnd = created.StartDate.AddDate(0, 3, 0)
-	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), &sub))
-
-	at := created.StartDate.AddDate(0, 1, 14)
-	_, err := s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{EffectiveAt: &at, BillRemaining: true})
-	s.requireValidation(err, "current_period_start")
-
-	// Without a charge only the end_date bound applies.
-	resp, err := s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{EffectiveAt: &at})
-	s.Require().NoError(err)
-	s.Equal(types.CommitmentStatusTerminated, resp.CommitmentStatus)
-}
-
-func (s *CommitmentServiceSuite) TestTerminate_ChargesAtCurrentPeriodStartAreAllowed() {
-	created := s.createChargeable(true)
-	at := s.fx.sub.CurrentPeriodStart
-	resp, err := s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{EffectiveAt: &at, BillRemaining: true})
-	s.Require().NoError(err)
-	s.Require().NotNil(resp.TerminationInvoiceID)
-}
-
-func (s *CommitmentServiceSuite) TestTerminate_ChargesRejectedAtOrAfterEnd() {
-	created := s.createChargeable(true)
-	at := created.EndDate
-	_, err := s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{EffectiveAt: &at, BillRemaining: true})
-	s.True(ierr.IsValidation(err), "got %v", err)
-}
-
 func (s *CommitmentServiceSuite) TestTerminate_SecondTerminateBillsNothing() {
 	created := s.createChargeable(true)
 	at := created.StartDate.AddDate(0, 3, 0)
-	req := dto.TerminateCommitmentRequest{EffectiveAt: &at, BillRemaining: true}
+	req := dto.TerminateCommitmentRequest{EffectiveAt: &at, CancellationFee: lo.ToPtr(decimal.NewFromInt(50))}
 	_, err := s.svc.Terminate(s.GetContext(), created.ID, req)
 	s.Require().NoError(err)
 
@@ -711,8 +548,8 @@ func (s *CommitmentServiceSuite) TestTerminate_InvoiceFailureLeavesCommitmentAct
 
 	at := created.StartDate.AddDate(0, 3, 0)
 	_, err := NewCommitmentService(params).Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{
-		EffectiveAt:   &at,
-		BillRemaining: true,
+		EffectiveAt:     &at,
+		CancellationFee: lo.ToPtr(decimal.NewFromInt(50)),
 	})
 	s.Require().Error(err)
 
