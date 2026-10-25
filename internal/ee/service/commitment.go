@@ -39,6 +39,11 @@ type commitmentService struct {
 }
 
 func NewCommitmentService(params ServiceParams) CommitmentService {
+	return newCommitmentService(params)
+}
+
+// newCommitmentService hands same-package callers the concrete type, for create options beyond the public API.
+func newCommitmentService(params ServiceParams) *commitmentService {
 	return &commitmentService{ServiceParams: params}
 }
 
