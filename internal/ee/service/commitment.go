@@ -132,12 +132,11 @@ func (s *commitmentService) create(
 			}
 		}
 
-		c, prepared, _, err := s.prepare(txCtx, &req, opts)
-		if err != nil {
+		var c *commitment.Commitment
+		var err error
+		if c, cc, _, err = s.prepare(txCtx, &req, opts); err != nil {
 			return err
 		}
-
-		cc = prepared
 
 		meterID := scopeMeter(c, cc)
 		if c.CommittedPriceID, err = s.createRatePrice(txCtx, c, cc.Sub, meterID, req.CommittedPrice, "committed"); err != nil {
