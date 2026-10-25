@@ -13911,6 +13911,75 @@ const docTemplate = `{
                 }
             }
         },
+        "/webhook-events/commitment.created": {
+            "post": {
+                "description": "Fired when a commitment is created on a subscription. Doc-only for parsing.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhook Events"
+                ],
+                "summary": "commitment.created",
+                "responses": {
+                    "200": {
+                        "description": "Webhook payload",
+                        "schema": {
+                            "$ref": "#/definitions/webhookDto.CommitmentWebhookPayload"
+                        }
+                    }
+                }
+            }
+        },
+        "/webhook-events/commitment.terminated": {
+            "post": {
+                "description": "Fired when a commitment is terminated. Doc-only for parsing.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhook Events"
+                ],
+                "summary": "commitment.terminated",
+                "responses": {
+                    "200": {
+                        "description": "Webhook payload",
+                        "schema": {
+                            "$ref": "#/definitions/webhookDto.CommitmentWebhookPayload"
+                        }
+                    }
+                }
+            }
+        },
+        "/webhook-events/commitment.updated": {
+            "post": {
+                "description": "Fired when a commitment's descriptive fields are updated. Doc-only for parsing.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhook Events"
+                ],
+                "summary": "commitment.updated",
+                "responses": {
+                    "200": {
+                        "description": "Webhook payload",
+                        "schema": {
+                            "$ref": "#/definitions/webhookDto.CommitmentWebhookPayload"
+                        }
+                    }
+                }
+            }
+        },
         "/webhook-events/credit_note.created": {
             "post": {
                 "description": "Fired when a new credit note is created. Doc-only for parsing.",
@@ -34677,6 +34746,9 @@ const docTemplate = `{
                 "entitlement.created",
                 "entitlement.updated",
                 "entitlement.deleted",
+                "commitment.created",
+                "commitment.updated",
+                "commitment.terminated",
                 "wallet.created",
                 "wallet.updated",
                 "wallet.terminated",
@@ -34741,6 +34813,9 @@ const docTemplate = `{
                 "WebhookEventEntitlementCreated",
                 "WebhookEventEntitlementUpdated",
                 "WebhookEventEntitlementDeleted",
+                "WebhookEventCommitmentCreated",
+                "WebhookEventCommitmentUpdated",
+                "WebhookEventCommitmentTerminated",
                 "WebhookEventWalletCreated",
                 "WebhookEventWalletUpdated",
                 "WebhookEventWalletTerminated",
@@ -35894,6 +35969,17 @@ const docTemplate = `{
             "properties": {
                 "checkout_session": {
                     "$ref": "#/definitions/webhookDto.CheckoutSession"
+                },
+                "event_type": {
+                    "$ref": "#/definitions/types.WebhookEventName"
+                }
+            }
+        },
+        "webhookDto.CommitmentWebhookPayload": {
+            "type": "object",
+            "properties": {
+                "commitment": {
+                    "$ref": "#/definitions/CommitmentResponse"
                 },
                 "event_type": {
                     "$ref": "#/definitions/types.WebhookEventName"

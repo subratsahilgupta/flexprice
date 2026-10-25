@@ -14056,6 +14056,9 @@ definitions:
     - entitlement.created
     - entitlement.updated
     - entitlement.deleted
+    - commitment.created
+    - commitment.updated
+    - commitment.terminated
     - wallet.created
     - wallet.updated
     - wallet.terminated
@@ -14120,6 +14123,9 @@ definitions:
     - WebhookEventEntitlementCreated
     - WebhookEventEntitlementUpdated
     - WebhookEventEntitlementDeleted
+    - WebhookEventCommitmentCreated
+    - WebhookEventCommitmentUpdated
+    - WebhookEventCommitmentTerminated
     - WebhookEventWalletCreated
     - WebhookEventWalletUpdated
     - WebhookEventWalletTerminated
@@ -14997,6 +15003,13 @@ definitions:
     properties:
       checkout_session:
         $ref: '#/definitions/webhookDto.CheckoutSession'
+      event_type:
+        $ref: '#/definitions/types.WebhookEventName'
+    type: object
+  webhookDto.CommitmentWebhookPayload:
+    properties:
+      commitment:
+        $ref: '#/definitions/CommitmentResponse'
       event_type:
         $ref: '#/definitions/types.WebhookEventName'
     type: object
@@ -25131,6 +25144,53 @@ paths:
           schema:
             $ref: '#/definitions/webhookDto.CheckoutSessionWebhookPayload'
       summary: checkout.session.initiated
+      tags:
+      - Webhook Events
+  /webhook-events/commitment.created:
+    post:
+      consumes:
+      - application/json
+      description: Fired when a commitment is created on a subscription. Doc-only
+        for parsing.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Webhook payload
+          schema:
+            $ref: '#/definitions/webhookDto.CommitmentWebhookPayload'
+      summary: commitment.created
+      tags:
+      - Webhook Events
+  /webhook-events/commitment.terminated:
+    post:
+      consumes:
+      - application/json
+      description: Fired when a commitment is terminated. Doc-only for parsing.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Webhook payload
+          schema:
+            $ref: '#/definitions/webhookDto.CommitmentWebhookPayload'
+      summary: commitment.terminated
+      tags:
+      - Webhook Events
+  /webhook-events/commitment.updated:
+    post:
+      consumes:
+      - application/json
+      description: Fired when a commitment's descriptive fields are updated. Doc-only
+        for parsing.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Webhook payload
+          schema:
+            $ref: '#/definitions/webhookDto.CommitmentWebhookPayload'
+      summary: commitment.updated
       tags:
       - Webhook Events
   /webhook-events/credit_note.created:

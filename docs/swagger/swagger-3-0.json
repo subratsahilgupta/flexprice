@@ -16767,6 +16767,69 @@
         }
       }
     },
+    "/webhook-events/commitment.created": {
+      "post": {
+        "tags": [
+          "Webhook Events"
+        ],
+        "summary": "commitment.created",
+        "description": "Fired when a commitment is created on a subscription. Doc-only for parsing.",
+        "responses": {
+          "200": {
+            "description": "Webhook payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/webhookDto.CommitmentWebhookPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhook-events/commitment.terminated": {
+      "post": {
+        "tags": [
+          "Webhook Events"
+        ],
+        "summary": "commitment.terminated",
+        "description": "Fired when a commitment is terminated. Doc-only for parsing.",
+        "responses": {
+          "200": {
+            "description": "Webhook payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/webhookDto.CommitmentWebhookPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhook-events/commitment.updated": {
+      "post": {
+        "tags": [
+          "Webhook Events"
+        ],
+        "summary": "commitment.updated",
+        "description": "Fired when a commitment's descriptive fields are updated. Doc-only for parsing.",
+        "responses": {
+          "200": {
+            "description": "Webhook payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/webhookDto.CommitmentWebhookPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/webhook-events/credit_note.created": {
       "post": {
         "tags": [
@@ -36797,6 +36860,9 @@
           "entitlement.created",
           "entitlement.updated",
           "entitlement.deleted",
+          "commitment.created",
+          "commitment.updated",
+          "commitment.terminated",
           "wallet.created",
           "wallet.updated",
           "wallet.terminated",
@@ -36861,6 +36927,9 @@
           "WebhookEventEntitlementCreated",
           "WebhookEventEntitlementUpdated",
           "WebhookEventEntitlementDeleted",
+          "WebhookEventCommitmentCreated",
+          "WebhookEventCommitmentUpdated",
+          "WebhookEventCommitmentTerminated",
           "WebhookEventWalletCreated",
           "WebhookEventWalletUpdated",
           "WebhookEventWalletTerminated",
@@ -38004,6 +38073,17 @@
         "properties": {
           "checkout_session": {
             "$ref": "#/components/schemas/webhookDto.CheckoutSession"
+          },
+          "event_type": {
+            "$ref": "#/components/schemas/types.WebhookEventName"
+          }
+        }
+      },
+      "webhookDto.CommitmentWebhookPayload": {
+        "type": "object",
+        "properties": {
+          "commitment": {
+            "$ref": "#/components/schemas/CommitmentResponse"
           },
           "event_type": {
             "$ref": "#/components/schemas/types.WebhookEventName"
