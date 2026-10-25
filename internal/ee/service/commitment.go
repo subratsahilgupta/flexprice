@@ -114,6 +114,7 @@ func (s *commitmentService) create(
 
 	var out *commitment.Commitment
 	var cc *commitmentContext
+	inserted := false
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		if err := s.DB.LockWithWait(txCtx, postgres.LockRequest{Key: "commitments:" + req.SubscriptionID}); err != nil {
 			return ierr.WithError(err).
@@ -148,8 +149,12 @@ func (s *commitmentService) create(
 			return err
 		}
 
-		out, err = s.CommitmentRepo.Create(txCtx, c)
-		return err
+		if out, err = s.CommitmentRepo.Create(txCtx, c); err != nil {
+			return err
+		}
+
+		inserted = true
+		return nil
 	})
 	if err != nil && req.IdempotencyKey != nil && ierr.IsAlreadyExists(err) {
 		// Lost a race with a concurrent retry on the same key. Only recoverable at top level: inside an
@@ -164,6 +169,10 @@ func (s *commitmentService) create(
 
 	if err != nil {
 		return nil, err
+	}
+
+	if !inserted {
+		return s.response(ctx, out, nil)
 	}
 
 	s.Logger.Info(ctx, "commitment.created",

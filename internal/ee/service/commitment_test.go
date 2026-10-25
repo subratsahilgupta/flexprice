@@ -342,6 +342,9 @@ func (s *CommitmentServiceSuite) TestCreate_KeyReplayedUnderLockReturnsOriginalW
 	pricesBefore, err := s.GetStores().PriceRepo.Count(s.GetContext(), types.NewNoLimitPriceFilter())
 	s.Require().NoError(err)
 
+	publisher := s.GetWebhookPublisher().(*testutil.InMemoryWebhookPublisher)
+	publisher.Reset()
+
 	params := s.fullParams()
 	repo := &lateKeyRepo{Repository: params.CommitmentRepo}
 	params.CommitmentRepo = repo
@@ -352,6 +355,7 @@ func (s *CommitmentServiceSuite) TestCreate_KeyReplayedUnderLockReturnsOriginalW
 	pricesAfter, err := s.GetStores().PriceRepo.Count(s.GetContext(), types.NewNoLimitPriceFilter())
 	s.Require().NoError(err)
 	s.Equal(pricesBefore, pricesAfter)
+	s.Empty(publisher.Events(), "a replayed key must not publish commitment.created again")
 }
 
 func (s *CommitmentServiceSuite) TestPreview_RejectedWhenDisabled() {
