@@ -9,7 +9,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
-	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
@@ -168,7 +167,7 @@ func (s *commitmentService) create(
 	}
 
 	s.Logger.Info(ctx, "commitment.created",
-		logger.Op("commitment.created"),
+		"operation", "commitment.created",
 		"commitment_id", out.ID,
 		"subscription_id", out.SubscriptionID,
 	)
@@ -415,7 +414,7 @@ func (s *commitmentService) Terminate(
 	}
 
 	s.Logger.Info(ctx, "commitment.terminated",
-		logger.Op("commitment.terminated"),
+		"operation", "commitment.terminated",
 		"commitment_id", out.ID,
 		"subscription_id", out.SubscriptionID,
 		"effective_at", effectiveAt,
@@ -474,7 +473,7 @@ func (s *commitmentService) TerminateForSubscription(
 				}
 
 				s.Logger.Info(ctx, "commitment.termination_rescheduled",
-					logger.Op("commitment.termination_rescheduled"),
+					"operation", "commitment.termination_rescheduled",
 					"commitment_id", c.ID,
 					"subscription_id", subscriptionID,
 					"previous_terminated_at", *c.TerminatedAt,
@@ -494,7 +493,7 @@ func (s *commitmentService) TerminateForSubscription(
 
 			s.publishSystemEvent(txCtx, types.WebhookEventCommitmentTerminated, out)
 			s.Logger.Info(ctx, "commitment.terminated",
-				logger.Op("commitment.terminated"),
+				"operation", "commitment.terminated",
 				"commitment_id", c.ID,
 				"subscription_id", subscriptionID,
 				"effective_at", effectiveAt,

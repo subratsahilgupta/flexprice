@@ -11,7 +11,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
-	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -630,7 +629,7 @@ func createSyncLineItem(
 	})
 	if checkErr != nil && ierr.IsValidation(checkErr) {
 		params.Logger.Info(ctx, "commitment.sync_price_skipped",
-			logger.Op("commitment.sync_price_skipped"),
+			"operation", "commitment.sync_price_skipped",
 			"subscription_id", sub.ID, "price_id", p.ID, "commitment_id", commitmentID, "reason", checkErr.Error())
 		return false, nil
 	}
