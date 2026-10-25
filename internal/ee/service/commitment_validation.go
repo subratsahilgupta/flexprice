@@ -179,7 +179,12 @@ func (s *commitmentService) validateAgainstSubscription(
 	opts commitmentCreateOptions,
 ) error {
 	sub := cc.Sub
-	if !commitmentAcceptsSubscriptionStatus(sub.SubscriptionStatus, opts) {
+	accepted := []types.SubscriptionStatus{types.SubscriptionStatusActive, types.SubscriptionStatusTrialing}
+	if opts.allowPendingSubscription {
+		accepted = append(accepted, types.SubscriptionStatusIncomplete, types.SubscriptionStatusDraft)
+	}
+
+	if !lo.Contains(accepted, sub.SubscriptionStatus) {
 		return invalidf("subscription %s must be active or trialing", sub.ID)
 	}
 
@@ -269,17 +274,6 @@ func errScopeCadence(priceID string) error {
 	return ierr.NewErrorf("commitments require scope prices billed every subscription period; price %s bills on another cadence", priceID).
 		WithHint("commitments require scope prices billed every subscription period").
 		Mark(ierr.ErrValidation)
-}
-
-func commitmentAcceptsSubscriptionStatus(status types.SubscriptionStatus, opts commitmentCreateOptions) bool {
-	switch status {
-	case types.SubscriptionStatusActive, types.SubscriptionStatusTrialing:
-		return true
-	case types.SubscriptionStatusIncomplete, types.SubscriptionStatusDraft:
-		return opts.allowPendingSubscription
-	}
-
-	return false
 }
 
 func invalid(msg string) error {

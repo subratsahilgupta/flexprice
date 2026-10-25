@@ -93,14 +93,8 @@ func (s *commitmentService) Create(
 	return s.create(ctx, req, commitmentCreateOptions{})
 }
 
-// createInline creates a commitment sent with a new subscription, which may not be active yet.
-func (s *commitmentService) createInline(
-	ctx context.Context,
-	req dto.CreateCommitmentRequest,
-) (*dto.CommitmentResponse, error) {
-	return s.create(ctx, req, commitmentCreateOptions{allowPendingSubscription: true})
-}
-
+// create runs under the subscription's commitments lock so the overlap checks see committed rows; a key replayed
+// while waiting for the lock returns the original commitment (first write wins).
 func (s *commitmentService) create(
 	ctx context.Context,
 	req dto.CreateCommitmentRequest,
@@ -119,8 +113,43 @@ func (s *commitmentService) create(
 
 	var out *commitment.Commitment
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
-		var err error
-		out, err = s.createLocked(txCtx, &req, opts)
+		if err := s.DB.LockWithWait(txCtx, postgres.LockRequest{Key: "commitments:" + req.SubscriptionID}); err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to lock subscription commitments").
+				Mark(ierr.ErrInternal)
+		}
+
+		if req.IdempotencyKey != nil {
+			existing, err := s.CommitmentRepo.GetByIdempotencyKey(txCtx, *req.IdempotencyKey)
+			if err == nil {
+				out = existing
+				return nil
+			}
+
+			if !ierr.IsNotFound(err) {
+				return err
+			}
+		}
+
+		c, cc, _, err := s.prepare(txCtx, &req, opts)
+		if err != nil {
+			return err
+		}
+
+		meterID := ""
+		if lines := resolveScopeLines(c.ScopeEntityType, c.ScopeEntityID, cc, c.StartDate); len(lines) > 0 {
+			meterID = lines[0].MeterID
+		}
+
+		if c.CommittedPriceID, err = s.createRatePrice(txCtx, c, cc.Sub, meterID, req.CommittedRate, "committed"); err != nil {
+			return err
+		}
+
+		if c.OveragePriceID, err = s.createRatePrice(txCtx, c, cc.Sub, meterID, req.OverageRate, "overage"); err != nil {
+			return err
+		}
+
+		out, err = s.CommitmentRepo.Create(txCtx, c)
 		return err
 	})
 	if err != nil && req.IdempotencyKey != nil && ierr.IsAlreadyExists(err) {
@@ -143,49 +172,6 @@ func (s *commitmentService) create(
 		"subscription_id", out.SubscriptionID,
 	)
 	return s.toResponse(ctx, out)
-}
-
-// createLocked serialises creates per subscription so the overlap checks see committed rows,
-// and must run inside a transaction. A replayed idempotency key returns the original commitment (first write wins).
-func (s *commitmentService) createLocked(
-	ctx context.Context,
-	req *dto.CreateCommitmentRequest,
-	opts commitmentCreateOptions,
-) (*commitment.Commitment, error) {
-	if err := s.lockSubscriptionCommitments(ctx, req.SubscriptionID); err != nil {
-		return nil, err
-	}
-
-	if req.IdempotencyKey != nil {
-		existing, err := s.CommitmentRepo.GetByIdempotencyKey(ctx, *req.IdempotencyKey)
-		if err == nil {
-			return existing, nil
-		}
-
-		if !ierr.IsNotFound(err) {
-			return nil, err
-		}
-	}
-
-	c, cc, _, err := s.prepare(ctx, req, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	meterID := ""
-	if lines := resolveScopeLines(c.ScopeEntityType, c.ScopeEntityID, cc, c.StartDate); len(lines) > 0 {
-		meterID = lines[0].MeterID
-	}
-
-	if c.CommittedPriceID, err = s.createRatePrice(ctx, c, cc.Sub, meterID, req.CommittedRate, "committed"); err != nil {
-		return nil, err
-	}
-
-	if c.OveragePriceID, err = s.createRatePrice(ctx, c, cc.Sub, meterID, req.OverageRate, "overage"); err != nil {
-		return nil, err
-	}
-
-	return s.CommitmentRepo.Create(ctx, c)
 }
 
 // prepare validates the request and builds the commitment and its value without persisting anything.
@@ -435,8 +421,10 @@ func (s *commitmentService) TerminateForSubscription(
 	effectiveAt time.Time,
 ) error {
 	return s.DB.WithTx(ctx, func(txCtx context.Context) error {
-		if err := s.lockSubscriptionCommitments(txCtx, subscriptionID); err != nil {
-			return err
+		if err := s.DB.LockWithWait(txCtx, postgres.LockRequest{Key: "commitments:" + subscriptionID}); err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to lock subscription commitments").
+				Mark(ierr.ErrInternal)
 		}
 
 		f := commitment.NewNoLimitFilter()
@@ -492,18 +480,6 @@ func (s *commitmentService) TerminateForSubscription(
 
 		return nil
 	})
-}
-
-// lockSubscriptionCommitments serialises commitment creates, attach checks and cancellation on one
-// subscription, and must run inside a transaction.
-func (s *commitmentService) lockSubscriptionCommitments(ctx context.Context, subscriptionID string) error {
-	if err := s.DB.LockWithWait(ctx, postgres.LockRequest{Key: "commitments:" + subscriptionID}); err != nil {
-		return ierr.WithError(err).
-			WithHint("Failed to lock subscription commitments").
-			Mark(ierr.ErrInternal)
-	}
-
-	return nil
 }
 
 // lockCommitment serialises writes to one commitment and must run inside a transaction.
@@ -805,9 +781,11 @@ func (s *commitmentService) checkPriceAttach(
 		return "", err
 	}
 
-	// Serialise with createLocked before reading, so a concurrent create is seen.
-	if err := s.lockSubscriptionCommitments(ctx, sub.ID); err != nil {
-		return "", err
+	// Serialise with create before reading, so a concurrent create is seen.
+	if err := s.DB.LockWithWait(ctx, postgres.LockRequest{Key: "commitments:" + sub.ID}); err != nil {
+		return "", ierr.WithError(err).
+			WithHint("Failed to lock subscription commitments").
+			Mark(ierr.ErrInternal)
 	}
 
 	inScope, err := s.commitmentsInScope(ctx, sub.ID, p, at, until)

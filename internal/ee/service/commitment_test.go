@@ -277,7 +277,22 @@ func (s *CommitmentServiceSuite) TestCreate_IdempotencyKeyReturnsExisting() {
 	s.Equal(1, n)
 }
 
-func (s *CommitmentServiceSuite) TestCreateLocked_ReplayedKeyReturnsOriginalWithoutWrites() {
+// lateKeyRepo misses the first idempotency lookup, as when a concurrent create commits while this one waits for the lock.
+type lateKeyRepo struct {
+	commitment.Repository
+	lookups int
+}
+
+func (r *lateKeyRepo) GetByIdempotencyKey(ctx context.Context, key string) (*commitment.Commitment, error) {
+	r.lookups++
+	if r.lookups == 1 {
+		return nil, ierr.NewError("not found").Mark(ierr.ErrNotFound)
+	}
+
+	return r.Repository.GetByIdempotencyKey(ctx, key)
+}
+
+func (s *CommitmentServiceSuite) TestCreate_KeyReplayedUnderLockReturnsOriginalWithoutWrites() {
 	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
 	req.IdempotencyKey = lo.ToPtr("contract-2")
 	first, err := s.svc.Create(s.GetContext(), req)
@@ -285,9 +300,13 @@ func (s *CommitmentServiceSuite) TestCreateLocked_ReplayedKeyReturnsOriginalWith
 	pricesBefore, err := s.GetStores().PriceRepo.Count(s.GetContext(), types.NewNoLimitPriceFilter())
 	s.Require().NoError(err)
 
-	got, err := s.svc.(*commitmentService).createLocked(s.GetContext(), &req, commitmentCreateOptions{})
+	params := s.fullParams()
+	repo := &lateKeyRepo{Repository: params.CommitmentRepo}
+	params.CommitmentRepo = repo
+	got, err := NewCommitmentService(params).Create(s.GetContext(), req)
 	s.Require().NoError(err)
 	s.Equal(first.ID, got.ID)
+	s.Equal(2, repo.lookups)
 	pricesAfter, err := s.GetStores().PriceRepo.Count(s.GetContext(), types.NewNoLimitPriceFilter())
 	s.Require().NoError(err)
 	s.Equal(pricesBefore, pricesAfter)

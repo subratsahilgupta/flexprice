@@ -24,7 +24,7 @@ func checkLineItemCommitmentAttach(
 		return nil
 	}
 
-	svc := &commitmentService{ServiceParams: params}
+	svc := NewCommitmentService(params)
 	enabled, err := svc.IsEnabled(ctx)
 	if err != nil || !enabled {
 		return err
@@ -50,7 +50,7 @@ func rejectLegacyCommitmentInScope(
 		return nil
 	}
 
-	svc := &commitmentService{ServiceParams: params}
+	svc := NewCommitmentService(params)
 	enabled, err := svc.IsEnabled(ctx)
 	if err != nil || !enabled {
 		return err
