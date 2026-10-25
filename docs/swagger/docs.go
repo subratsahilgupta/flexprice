@@ -17754,17 +17754,26 @@ const docTemplate = `{
                 }
             }
         },
-        "CommitmentCancellationFee": {
+        "CommitmentPriceInput": {
             "type": "object",
-            "required": [
-                "type"
-            ],
             "properties": {
-                "type": {
-                    "$ref": "#/definitions/types.CommitmentCancellationFeeType"
-                },
-                "value": {
+                "amount": {
                     "type": "string"
+                },
+                "billing_model": {
+                    "$ref": "#/definitions/types.BillingModel"
+                },
+                "tier_mode": {
+                    "$ref": "#/definitions/types.BillingTier"
+                },
+                "tiers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/CreatePriceTier"
+                    }
+                },
+                "transform_quantity": {
+                    "$ref": "#/definitions/price.TransformQuantity"
                 }
             }
         },
@@ -18577,8 +18586,8 @@ const docTemplate = `{
                 "collection_method": {
                     "$ref": "#/definitions/types.CommitmentCollectionMethod"
                 },
-                "committed_rate": {
-                    "type": "string"
+                "committed_price": {
+                    "$ref": "#/definitions/CommitmentPriceInput"
                 },
                 "end_date": {
                     "type": "string"
@@ -18605,8 +18614,8 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 255
                 },
-                "overage_rate": {
-                    "type": "string"
+                "overage_price": {
+                    "$ref": "#/definitions/CommitmentPriceInput"
                 },
                 "priority": {
                     "type": "integer"
@@ -26322,6 +26331,10 @@ const docTemplate = `{
                 "plan_display_name": {
                     "type": "string"
                 },
+                "predecessor_line_item_id": {
+                    "description": "Version lineage, set by the service when a line item is replaced by a new version",
+                    "type": "string"
+                },
                 "price": {
                     "$ref": "#/definitions/PriceResponse"
                 },
@@ -26350,6 +26363,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "subscription_phase_id": {
+                    "type": "string"
+                },
+                "successor_line_item_id": {
                     "type": "string"
                 },
                 "tenant_id": {
@@ -27843,11 +27859,8 @@ const docTemplate = `{
         "TerminateCommitmentRequest": {
             "type": "object",
             "properties": {
-                "bill_remaining": {
-                    "type": "boolean"
-                },
                 "cancellation_fee": {
-                    "$ref": "#/definitions/CommitmentCancellationFee"
+                    "type": "string"
                 },
                 "effective_at": {
                     "type": "string"
@@ -35461,6 +35474,10 @@ const docTemplate = `{
                 "plan_display_name": {
                     "type": "string"
                 },
+                "predecessor_line_item_id": {
+                    "description": "Version lineage, set by the service when a line item is replaced by a new version",
+                    "type": "string"
+                },
                 "price": {
                     "$ref": "#/definitions/price.Price"
                 },
@@ -35489,6 +35506,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "subscription_phase_id": {
+                    "type": "string"
+                },
+                "successor_line_item_id": {
                     "type": "string"
                 },
                 "tenant_id": {
@@ -35648,17 +35668,6 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
-        },
-        "types.CommitmentCancellationFeeType": {
-            "type": "string",
-            "enum": [
-                "flat",
-                "percent_of_remaining"
-            ],
-            "x-enum-varnames": [
-                "CommitmentCancellationFeeFlat",
-                "CommitmentCancellationFeePercentOfRemaining"
-            ]
         },
         "types.CommitmentCollectionMethod": {
             "type": "string",

@@ -1667,14 +1667,20 @@ definitions:
       true_up_enabled:
         type: boolean
     type: object
-  CommitmentCancellationFee:
+  CommitmentPriceInput:
     properties:
-      type:
-        $ref: '#/definitions/types.CommitmentCancellationFeeType'
-      value:
+      amount:
         type: string
-    required:
-    - type
+      billing_model:
+        $ref: '#/definitions/types.BillingModel'
+      tier_mode:
+        $ref: '#/definitions/types.BillingTier'
+      tiers:
+        items:
+          $ref: '#/definitions/CreatePriceTier'
+        type: array
+      transform_quantity:
+        $ref: '#/definitions/price.TransformQuantity'
     type: object
   CommitmentResponse:
     properties:
@@ -2216,8 +2222,8 @@ definitions:
         type: boolean
       collection_method:
         $ref: '#/definitions/types.CommitmentCollectionMethod'
-      committed_rate:
-        type: string
+      committed_price:
+        $ref: '#/definitions/CommitmentPriceInput'
       end_date:
         type: string
       idempotency_key:
@@ -2236,8 +2242,8 @@ definitions:
       name:
         maxLength: 255
         type: string
-      overage_rate:
-        type: string
+      overage_price:
+        $ref: '#/definitions/CommitmentPriceInput'
       priority:
         type: integer
       scope:
@@ -7882,6 +7888,10 @@ definitions:
         type: string
       plan_display_name:
         type: string
+      predecessor_line_item_id:
+        description: Version lineage, set by the service when a line item is replaced
+          by a new version
+        type: string
       price:
         $ref: '#/definitions/PriceResponse'
       price_id:
@@ -7901,6 +7911,8 @@ definitions:
       subscription_id:
         type: string
       subscription_phase_id:
+        type: string
+      successor_line_item_id:
         type: string
       tenant_id:
         type: string
@@ -9002,10 +9014,8 @@ definitions:
     type: object
   TerminateCommitmentRequest:
     properties:
-      bill_remaining:
-        type: boolean
       cancellation_fee:
-        $ref: '#/definitions/CommitmentCancellationFee'
+        type: string
       effective_at:
         type: string
     type: object
@@ -14688,6 +14698,10 @@ definitions:
         type: string
       plan_display_name:
         type: string
+      predecessor_line_item_id:
+        description: Version lineage, set by the service when a line item is replaced
+          by a new version
+        type: string
       price:
         $ref: '#/definitions/price.Price'
       price_id:
@@ -14707,6 +14721,8 @@ definitions:
       subscription_id:
         type: string
       subscription_phase_id:
+        type: string
+      successor_line_item_id:
         type: string
       tenant_id:
         type: string
@@ -14818,14 +14834,6 @@ definitions:
       quantity:
         type: string
     type: object
-  types.CommitmentCancellationFeeType:
-    enum:
-    - flat
-    - percent_of_remaining
-    type: string
-    x-enum-varnames:
-    - CommitmentCancellationFeeFlat
-    - CommitmentCancellationFeePercentOfRemaining
   types.CommitmentCollectionMethod:
     enum:
     - per_period

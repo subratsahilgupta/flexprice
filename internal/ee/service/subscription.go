@@ -432,7 +432,7 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	commitmentService := &commitmentService{ServiceParams: s.ServiceParams}
 	for _, commitmentReq := range req.Commitments {
 		commitmentReq.SubscriptionID = sub.ID
-		if _, err = commitmentService.createInline(ctx, commitmentReq); err != nil {
+		if _, err = commitmentService.create(ctx, commitmentReq, commitmentCreateOptions{allowPendingSubscription: true}); err != nil {
 			return nil, err
 		}
 	}

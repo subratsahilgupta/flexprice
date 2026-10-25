@@ -20359,17 +20359,26 @@
           }
         }
       },
-      "CommitmentCancellationFee": {
-        "required": [
-          "type"
-        ],
+      "CommitmentPriceInput": {
         "type": "object",
         "properties": {
-          "type": {
-            "$ref": "#/components/schemas/types.CommitmentCancellationFeeType"
-          },
-          "value": {
+          "amount": {
             "type": "string"
+          },
+          "billing_model": {
+            "$ref": "#/components/schemas/types.BillingModel"
+          },
+          "tier_mode": {
+            "$ref": "#/components/schemas/types.BillingTier"
+          },
+          "tiers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreatePriceTier"
+            }
+          },
+          "transform_quantity": {
+            "$ref": "#/components/schemas/price.TransformQuantity"
           }
         }
       },
@@ -21176,8 +21185,8 @@
           "collection_method": {
             "$ref": "#/components/schemas/types.CommitmentCollectionMethod"
           },
-          "committed_rate": {
-            "type": "string"
+          "committed_price": {
+            "$ref": "#/components/schemas/CommitmentPriceInput"
           },
           "end_date": {
             "type": "string",
@@ -21205,8 +21214,8 @@
             "maxLength": 255,
             "type": "string"
           },
-          "overage_rate": {
-            "type": "string"
+          "overage_price": {
+            "$ref": "#/components/schemas/CommitmentPriceInput"
           },
           "priority": {
             "type": "integer"
@@ -28474,6 +28483,10 @@
           "plan_display_name": {
             "type": "string"
           },
+          "predecessor_line_item_id": {
+            "type": "string",
+            "description": "Version lineage, set by the service when a line item is replaced by a new version"
+          },
           "price": {
             "$ref": "#/components/schemas/PriceResponse"
           },
@@ -28503,6 +28516,9 @@
             "type": "string"
           },
           "subscription_phase_id": {
+            "type": "string"
+          },
+          "successor_line_item_id": {
             "type": "string"
           },
           "tenant_id": {
@@ -29918,11 +29934,8 @@
       "TerminateCommitmentRequest": {
         "type": "object",
         "properties": {
-          "bill_remaining": {
-            "type": "boolean"
-          },
           "cancellation_fee": {
-            "$ref": "#/components/schemas/CommitmentCancellationFee"
+            "type": "string"
           },
           "effective_at": {
             "type": "string",
@@ -37546,6 +37559,10 @@
           "plan_display_name": {
             "type": "string"
           },
+          "predecessor_line_item_id": {
+            "type": "string",
+            "description": "Version lineage, set by the service when a line item is replaced by a new version"
+          },
           "price": {
             "$ref": "#/components/schemas/price.Price"
           },
@@ -37575,6 +37592,9 @@
             "type": "string"
           },
           "subscription_phase_id": {
+            "type": "string"
+          },
+          "successor_line_item_id": {
             "type": "string"
           },
           "tenant_id": {
@@ -37743,18 +37763,6 @@
           }
         },
         "x-speakeasy-name-override": "AddonPriceOverrideRef"
-      },
-      "types.CommitmentCancellationFeeType": {
-        "type": "string",
-        "enum": [
-          "flat",
-          "percent_of_remaining"
-        ],
-        "x-enum-varnames": [
-          "CommitmentCancellationFeeFlat",
-          "CommitmentCancellationFeePercentOfRemaining"
-        ],
-        "x-speakeasy-name-override": "CommitmentCancellationFeeType"
       },
       "types.CommitmentCollectionMethod": {
         "type": "string",

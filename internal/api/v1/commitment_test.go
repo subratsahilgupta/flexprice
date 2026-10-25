@@ -16,7 +16,6 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/rest/middleware"
-	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
@@ -148,34 +147,24 @@ func TestCommitmentHandler_TerminateEmptyBodyOfUnknownLength(t *testing.T) {
 func TestCommitmentHandler_TerminatePassesWholeRequestToService(t *testing.T) {
 	svc := &stubCommitmentService{}
 	router := setupCommitmentRouter(t, svc)
-	body := `{"effective_at":"2027-04-01T00:00:00Z","bill_remaining":true,"cancellation_fee":{"type":"flat","value":"5"}}`
+	body := `{"effective_at":"2027-04-01T00:00:00Z","cancellation_fee":"5"}`
 	w := doCommitmentRequest(router, http.MethodPost, "/v1/commitments/cmt_4/terminate", body)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	require.Equal(t, "cmt_4", svc.gotID)
-	require.True(t, svc.gotTerminate.BillRemaining)
 	require.NotNil(t, svc.gotTerminate.EffectiveAt)
 	require.True(t, svc.gotTerminate.EffectiveAt.Equal(time.Date(2027, 4, 1, 0, 0, 0, 0, time.UTC)))
 	require.NotNil(t, svc.gotTerminate.CancellationFee)
-	require.Equal(t, types.CommitmentCancellationFeeFlat, svc.gotTerminate.CancellationFee.Type)
-	require.True(t, svc.gotTerminate.CancellationFee.Value.Equal(decimal.NewFromInt(5)))
+	require.True(t, svc.gotTerminate.CancellationFee.Equal(decimal.NewFromInt(5)))
 }
 
-func TestCommitmentHandler_TerminateBillRemainingDefaultsToFalse(t *testing.T) {
-	svc := &stubCommitmentService{}
-	router := setupCommitmentRouter(t, svc)
-	w := doCommitmentRequest(router, http.MethodPost, "/v1/commitments/cmt_5/terminate", `{}`)
-	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	require.False(t, svc.gotTerminate.BillRemaining)
-}
-
-func TestCommitmentHandler_TerminateChargeOnNonBindingIsBadRequest(t *testing.T) {
-	svcErr := ierr.NewError("bill_remaining requires a binding commitment").
+func TestCommitmentHandler_TerminateFeeOnNonBindingIsBadRequest(t *testing.T) {
+	svcErr := ierr.NewError("a cancellation fee requires a binding commitment").
 		WithHint("Only binding commitments can be charged on termination").
 		Mark(ierr.ErrValidation)
 	svc := &stubCommitmentService{err: svcErr}
 	router := setupCommitmentRouter(t, svc)
-	w := doCommitmentRequest(router, http.MethodPost, "/v1/commitments/cmt_6/terminate", `{"bill_remaining":true}`)
+	w := doCommitmentRequest(router, http.MethodPost, "/v1/commitments/cmt_6/terminate", `{"cancellation_fee":"5"}`)
 	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
-	require.True(t, svc.gotTerminate.BillRemaining)
+	require.NotNil(t, svc.gotTerminate.CancellationFee)
 	require.Contains(t, w.Body.String(), "binding")
 }
