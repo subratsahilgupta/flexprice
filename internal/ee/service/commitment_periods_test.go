@@ -23,16 +23,21 @@ func monthlySub(start time.Time) *subscription.Subscription {
 	}
 }
 
+// mulFn values capacity at a flat rate.
+func mulFn(rate decimal.Decimal) func(decimal.Decimal) decimal.Decimal {
+	return func(q decimal.Decimal) decimal.Decimal { return q.Mul(rate) }
+}
+
 func TestCommitmentPeriods(t *testing.T) {
 	jan := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
 	tests := []struct {
-		name          string
-		c             *commitment.Commitment
-		committedRate decimal.Decimal
-		bucket        types.WindowSize
-		wantPeriods   int
-		wantFirst     string
-		wantTotal     string
+		name        string
+		c           *commitment.Commitment
+		amountOf    func(decimal.Decimal) decimal.Decimal
+		bucket      types.WindowSize
+		wantPeriods int
+		wantFirst   string
+		wantTotal   string
 	}{
 		{
 			name: "P1 amount, aligned 12 months",
@@ -44,10 +49,10 @@ func TestCommitmentPeriods(t *testing.T) {
 				StartDate:   jan,
 				EndDate:     jan.AddDate(1, 0, 0),
 			},
-			committedRate: decimal.NewFromInt(1),
-			wantPeriods:   12,
-			wantFirst:     "100",
-			wantTotal:     "1200",
+			amountOf:    mulFn(decimal.NewFromInt(1)),
+			wantPeriods: 12,
+			wantFirst:   "100",
+			wantTotal:   "1200",
 		},
 		{
 			name: "P2 mid-period start on 15 Jan is prorated",
@@ -59,10 +64,10 @@ func TestCommitmentPeriods(t *testing.T) {
 				StartDate:   time.Date(2027, 1, 15, 0, 0, 0, 0, time.UTC),
 				EndDate:     jan.AddDate(1, 0, 0),
 			},
-			committedRate: decimal.NewFromInt(1),
-			wantPeriods:   12,
-			wantFirst:     "54.83870968",
-			wantTotal:     "1154.83870968",
+			amountOf:    mulFn(decimal.NewFromInt(1)),
+			wantPeriods: 12,
+			wantFirst:   "54.83870968",
+			wantTotal:   "1154.83870968",
 		},
 		{
 			name: "P3 quantity per minute, August only",
@@ -74,16 +79,16 @@ func TestCommitmentPeriods(t *testing.T) {
 				StartDate:   time.Date(2027, 8, 1, 0, 0, 0, 0, time.UTC),
 				EndDate:     time.Date(2027, 9, 1, 0, 0, 0, 0, time.UTC),
 			},
-			committedRate: decimal.RequireFromString("0.048"),
-			bucket:        types.WindowSizeMinute,
-			wantPeriods:   1,
-			wantFirst:     "17141.76",
-			wantTotal:     "17141.76",
+			amountOf:    mulFn(decimal.RequireFromString("0.048")),
+			bucket:      types.WindowSizeMinute,
+			wantPeriods: 1,
+			wantFirst:   "17141.76",
+			wantTotal:   "17141.76",
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			periods, err := commitmentPeriods(tc.c, monthlySub(jan), tc.committedRate, tc.bucket)
+			periods, err := commitmentPeriods(tc.c, monthlySub(jan), tc.amountOf, tc.bucket)
 			require.NoError(t, err)
 			require.Len(t, periods, tc.wantPeriods)
 			require.True(
@@ -127,7 +132,7 @@ func TestCommitmentPeriods_ActiveWindowsIST(t *testing.T) {
 	periods, err := commitmentPeriods(
 		c,
 		sub,
-		decimal.RequireFromString("0.0491667"),
+		mulFn(decimal.RequireFromString("0.0491667")),
 		types.WindowSizeMinute,
 	)
 	require.NoError(t, err)
@@ -179,7 +184,7 @@ func TestCommitmentPeriods_ProratesAgainstTheFullBillingPeriod(t *testing.T) {
 				EndDate:     tc.end,
 			}
 
-			periods, err := commitmentPeriods(c, tc.sub, decimal.NewFromInt(1), "")
+			periods, err := commitmentPeriods(c, tc.sub, mulFn(decimal.NewFromInt(1)), "")
 			require.NoError(t, err)
 			require.Len(t, periods, 1)
 			require.True(
@@ -206,7 +211,7 @@ func TestCommitmentPeriods_SkipsBucketsBeforeStart(t *testing.T) {
 	periods, err := commitmentPeriods(
 		c,
 		monthlySub(jan),
-		decimal.NewFromInt(1),
+		mulFn(decimal.NewFromInt(1)),
 		types.WindowSizeHour,
 	)
 	require.NoError(t, err)
@@ -227,10 +232,29 @@ func TestCommitmentPeriods_BucketStraddlingAPeriodBoundaryCountsOnce(t *testing.
 		EndDate:     time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
 	}
 
-	periods, err := commitmentPeriods(c, monthlySub(jan), decimal.NewFromInt(1), types.WindowSizeWeek)
+	periods, err := commitmentPeriods(c, monthlySub(jan), mulFn(decimal.NewFromInt(1)), types.WindowSizeWeek)
 	require.NoError(t, err)
 	require.Len(t, periods, 2)
 	require.Equal(t, int64(4), periods[0].ActiveBuckets) // Mondays 5, 12, 19, 26 Jan; 29 Dec starts before the term
 	require.Equal(t, int64(4), periods[1].ActiveBuckets) // Mondays 2, 9, 16, 23 Feb; 26 Jan already counted in January
 	require.True(t, commitmentValue(periods).Equal(decimal.NewFromInt(8)))
+}
+
+func TestCommitmentPeriods_CountsPartialEdgeBuckets(t *testing.T) {
+	// A term starting mid-minute skips the straddling bucket; one ending mid-minute keeps its last.
+	jan := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	c := &commitment.Commitment{
+		Type:        types.COMMITMENT_TYPE_QUANTITY,
+		Value:       decimal.NewFromInt(1),
+		Measurement: types.CommitmentMeasurementWindow,
+		Timezone:    "UTC",
+		StartDate:   jan.Add(10*time.Hour + 30*time.Second),
+		EndDate:     jan.Add(12*time.Hour + 10*time.Second),
+	}
+
+	periods, err := commitmentPeriods(c, monthlySub(jan), mulFn(decimal.NewFromInt(1)), types.WindowSizeMinute)
+	require.NoError(t, err)
+	require.Len(t, periods, 1)
+	// 10:01 through 12:00 inclusive: the 10:00 bucket starts before the term, 12:00 starts before its end.
+	require.Equal(t, int64(120), periods[0].ActiveBuckets)
 }

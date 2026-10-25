@@ -78,6 +78,14 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 			s.applySubscriptionScopedLineItemDefaults(lineItem, sub, price)
 		}
 
+		if err := NewCommitmentService(s.ServiceParams).CheckPriceAttach(txCtx, sub, price.Price, lineItem.StartDate, lo.EmptyableToPtr(lineItem.EndDate)); err != nil {
+			return err
+		}
+
+		if err := rejectLegacyCommitmentInScope(txCtx, s.ServiceParams, sub, lineItem); err != nil {
+			return err
+		}
+
 		// Materialize bucket prices: create a SUBSCRIPTION-scoped Price for each
 		// CommitmentTimeBuckets entry and assign the resulting slice (with PriceIDs
 		// and stable UUIDs) onto the line item. This must happen inside the
@@ -840,6 +848,14 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 				return err
 			}
 
+			if err := rejectLegacyCommitmentInScope(ctx, s.ServiceParams, sub, newLineItem); err != nil {
+				return err
+			}
+
+			if err := checkLineItemCommitmentAttach(ctx, s.ServiceParams, sub, newLineItem); err != nil {
+				return err
+			}
+
 			// Create the line item directly using repository
 			if err := s.SubscriptionLineItemRepo.Create(ctx, newLineItem); err != nil {
 				return err
@@ -903,7 +919,15 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			return nil, err
 		}
 
-		if err := s.SubscriptionLineItemRepo.Update(ctx, existingLineItem); err != nil {
+		// The commitment guard takes an advisory lock, which needs a transaction.
+		err = s.DB.WithTx(ctx, func(txCtx context.Context) error {
+			if err := rejectLegacyCommitmentInScope(txCtx, s.ServiceParams, sub, existingLineItem); err != nil {
+				return err
+			}
+
+			return s.SubscriptionLineItemRepo.Update(txCtx, existingLineItem)
+		})
+		if err != nil {
 			return nil, err
 		}
 

@@ -21,11 +21,12 @@ type commitmentPeriod struct {
 	Amount        decimal.Decimal // money value of Capacity
 }
 
-// commitmentPeriods returns the subscription billing periods clipped to the commitment term, with their value.
+// commitmentPeriods returns the subscription billing periods clipped to the commitment term, with their value;
+// amountOf turns a period's capacity into money.
 func commitmentPeriods(
 	c *commitment.Commitment,
 	sub *subscription.Subscription,
-	committedRate decimal.Decimal,
+	amountOf func(capacity decimal.Decimal) decimal.Decimal,
 	bucket types.WindowSize,
 ) ([]commitmentPeriod, error) {
 	full, err := types.CalculateBillingPeriods(&types.CalculateBillingPeriodsParams{
@@ -64,7 +65,7 @@ func commitmentPeriods(
 			FullStart: regular.Start,
 			FullEnd:   regular.End,
 		}
-		fillPeriodValue(c, &cp, committedRate, bucket, sub.BillingAnchor)
+		fillPeriodValue(c, &cp, amountOf, bucket, sub.BillingAnchor)
 		out = append(out, cp)
 	}
 
@@ -76,7 +77,7 @@ func clipCommitmentPeriod(
 	c *commitment.Commitment,
 	p commitmentPeriod,
 	until time.Time,
-	committedRate decimal.Decimal,
+	amountOf func(capacity decimal.Decimal) decimal.Decimal,
 	bucket types.WindowSize,
 	anchor time.Time,
 ) commitmentPeriod {
@@ -86,7 +87,7 @@ func clipCommitmentPeriod(
 
 	out := p
 	out.End = maxTime(until, p.Start)
-	fillPeriodValue(c, &out, committedRate, bucket, anchor)
+	fillPeriodValue(c, &out, amountOf, bucket, anchor)
 	return out
 }
 
@@ -94,27 +95,30 @@ func clipCommitmentPeriod(
 func fillPeriodValue(
 	c *commitment.Commitment,
 	cp *commitmentPeriod,
-	committedRate decimal.Decimal,
+	amountOf func(capacity decimal.Decimal) decimal.Decimal,
 	bucket types.WindowSize,
 	anchor time.Time,
 ) {
-	rate := committedRate
-	if c.Type == types.COMMITMENT_TYPE_AMOUNT {
-		rate = decimal.NewFromInt(1)
-	}
-
 	cp.ActiveBuckets = 0
 	if c.Measurement == types.CommitmentMeasurementWindow {
-		loc := c.Location()
-		for _, b := range generateBucketStarts(cp.Start, cp.End, bucket, &anchor) {
-			// The first bucket can start before the period (or the term): it belongs to the
-			// period containing its start, which already counted it.
-			if b.Before(cp.Start) {
-				continue
-			}
+		// A bucket starting before the period belongs to the period that already counted it.
+		first := truncateToBucketStart(cp.Start, bucket, &anchor)
+		if first.Before(cp.Start) {
+			first = nextBucketStart(first, bucket, &anchor)
+		}
 
-			if c.ActiveWindows.Contains(b, loc) {
-				cp.ActiveBuckets++
+		if dur, fixed := bucketDuration(bucket); fixed && len(c.ActiveWindows) == 0 {
+			// Clock-aligned buckets with no active windows count arithmetically: a minute-bucket
+			// year would otherwise walk half a million instants on every value computation.
+			if first.Before(cp.End) {
+				cp.ActiveBuckets = int64(cp.End.Sub(first)-1)/int64(dur) + 1
+			}
+		} else {
+			loc := c.Location()
+			for b := first; b.Before(cp.End); b = nextBucketStart(b, bucket, &anchor) {
+				if c.ActiveWindows.Contains(b, loc) {
+					cp.ActiveBuckets++
+				}
 			}
 		}
 
@@ -124,7 +128,7 @@ func fillPeriodValue(
 		cp.Capacity = c.Value.Mul(fraction)
 	}
 
-	cp.Amount = cp.Capacity.Mul(rate)
+	cp.Amount = amountOf(cp.Capacity)
 }
 
 // commitmentValue sums the money value of all periods.
@@ -151,4 +155,27 @@ func minTime(a, b time.Time) time.Time {
 	}
 
 	return b
+}
+
+// bucketDuration returns the fixed step of clock-aligned bucket sizes; calendar sizes (day, week,
+// month) step by calendar rules and return false.
+func bucketDuration(size types.WindowSize) (time.Duration, bool) {
+	switch size {
+	case types.WindowSizeMinute:
+		return time.Minute, true
+	case types.WindowSize15Min:
+		return 15 * time.Minute, true
+	case types.WindowSize30Min:
+		return 30 * time.Minute, true
+	case types.WindowSizeHour:
+		return time.Hour, true
+	case types.WindowSize3Hour:
+		return 3 * time.Hour, true
+	case types.WindowSize6Hour:
+		return 6 * time.Hour, true
+	case types.WindowSize12Hour:
+		return 12 * time.Hour, true
+	default:
+		return 0, false
+	}
 }

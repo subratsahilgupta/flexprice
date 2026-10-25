@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -436,11 +437,11 @@ func committed(id string, binding bool, periodAmount string, poolOf []int, lines
 			InvoiceDescription: lo.ToPtr("Description " + id),
 			CommittedPriceID:   lo.ToPtr("committed_price_" + id),
 		},
-		CommittedRate: decimal.NewFromInt(1),
-		Period:        commitmentPeriod{Amount: dec(periodAmount)},
-		Lines:         lines,
-		Pools:         pools,
-		PoolOf:        poolOf,
+		CommittedPrice: &price.Price{ID: "committed_price_" + id, BillingModel: types.BILLING_MODEL_FLAT_FEE, Amount: intDec(1)},
+		Period:         commitmentPeriod{Amount: dec(periodAmount)},
+		Lines:          lines,
+		Pools:          pools,
+		PoolOf:         poolOf,
 	}
 }
 
@@ -451,13 +452,48 @@ type wantLine struct {
 	amount string
 }
 
+// withCommittedPrices prices committed prices by their flat amount or slab tiers, and every other price with cost.
+func withCommittedPrices(cost lineCost) lineCost {
+	return func(p *price.Price, qty decimal.Decimal) decimal.Decimal {
+		if !strings.HasPrefix(p.ID, "committed_price_") {
+			return cost(p, qty)
+		}
+
+		if p.BillingModel != types.BILLING_MODEL_TIERED {
+			return qty.Mul(p.Amount)
+		}
+
+		total, from := decimal.Zero, decimal.Zero
+		for _, tier := range p.Tiers {
+			upTo := qty
+			if tier.UpTo != nil {
+				upTo = decimal.Min(qty, decimal.NewFromUint64(*tier.UpTo))
+			}
+
+			if upTo.GreaterThan(from) {
+				total = total.Add(upTo.Sub(from).Mul(tier.UnitAmount))
+				from = upTo
+			}
+		}
+
+		return total
+	}
+}
+
 func renderStack(t *testing.T, stack *commitmentStack, cost lineCost) []dto.CreateInvoiceLineItemRequest {
 	t.Helper()
 	alloc, err := allocate(stack)
 	require.NoError(t, err)
 
 	start := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
-	return commitmentInvoiceLines([]*commitmentStack{stack}, []*allocation{alloc}, "usd", start, start.AddDate(0, 1, 0), cost)
+	return commitmentInvoiceLines(
+		[]*commitmentStack{stack},
+		[]*allocation{alloc},
+		"usd",
+		start,
+		start.AddDate(0, 1, 0),
+		withCommittedPrices(cost),
+	)
 }
 
 func requireLines(t *testing.T, want []wantLine, got []dto.CreateInvoiceLineItemRequest) {
@@ -481,6 +517,19 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 		}
 
 		return qty
+	}
+	// overageCost prices only overage prices: flat at qty × amount, tiered at 3 for the first 20 units and 5 after.
+	overageCost := func(p *price.Price, qty decimal.Decimal) decimal.Decimal {
+		if p.ID != "overage_a" {
+			t.Errorf("cost called with price %s, want the overage price", p.ID)
+		}
+
+		if p.BillingModel == types.BILLING_MODEL_TIERED {
+			first := decimal.Min(qty, intDec(20))
+			return first.Mul(intDec(3)).Add(qty.Sub(first).Mul(intDec(5)))
+		}
+
+		return qty.Mul(p.Amount)
 	}
 
 	tests := []struct {
@@ -512,7 +561,7 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 			build: func() *commitmentStack {
 				line := invoiceLine("a", "60", "0", "60")
 				sc := committed("c1", true, "200", []int{0}, []*usageLine{line}, "100")
-				sc.CommittedRate = intDec(2)
+				sc.CommittedPrice.Amount = intDec(2)
 				return &commitmentStack{
 					Type:        types.COMMITMENT_TYPE_QUANTITY,
 					Measurement: types.CommitmentMeasurementBillingPeriod,
@@ -525,6 +574,36 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 			want: []wantLine{
 				{types.CommitmentLineWithin, "Label c1", "60", "120"},
 				{types.CommitmentLineTrueUp, "Label c1 (unused)", "40", "80"},
+			},
+		},
+		{
+			name: "tiered committed price walks its tiers once over the commitment's usage and splits it by quantity",
+			build: func() *commitmentStack {
+				a := invoiceLine("a", "80", "0", "80")
+				b := invoiceLine("b", "40", "0", "40")
+				sc := committed("c1", true, "125", []int{0}, []*usageLine{a, b}, "150")
+				sc.CommittedPrice = &price.Price{
+					ID:           "committed_price_c1",
+					BillingModel: types.BILLING_MODEL_TIERED,
+					TierMode:     types.BILLING_TIER_SLAB,
+					Tiers: []price.PriceTier{
+						{UpTo: lo.ToPtr(uint64(100)), UnitAmount: intDec(1)},
+						{UnitAmount: dec("0.5")},
+					},
+				}
+				return &commitmentStack{
+					Type:        types.COMMITMENT_TYPE_QUANTITY,
+					Measurement: types.CommitmentMeasurementBillingPeriod,
+					Windows:     engineWindows(1),
+					Lines:       []*usageLine{a, b},
+					Commitments: []*stackedCommitment{sc},
+				}
+			},
+			cost: unitCost,
+			want: []wantLine{
+				{types.CommitmentLineWithin, "Label c1", "80", "73.33"},
+				{types.CommitmentLineWithin, "Label c1", "40", "36.67"},
+				{types.CommitmentLineTrueUp, "Label c1 (unused)", "30", "15"},
 			},
 		},
 		{
@@ -584,10 +663,10 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 			},
 		},
 		{
-			name: "E12 custom overage rate prices on demand without the cost function",
+			name: "E12 flat overage price prices on demand instead of the line's price",
 			build: func() *commitmentStack {
 				line := invoiceLine("a", "130", "0", "130")
-				line.OverageRate = lo.ToPtr(intDec(3))
+				line.OveragePrice = &price.Price{ID: "overage_a", BillingModel: types.BILLING_MODEL_FLAT_FEE, Amount: intDec(3)}
 				return &commitmentStack{
 					Type:        types.COMMITMENT_TYPE_QUANTITY,
 					Measurement: types.CommitmentMeasurementBillingPeriod,
@@ -596,13 +675,30 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 					Commitments: []*stackedCommitment{committed("c1", true, "100", []int{0}, []*usageLine{line}, "100")},
 				}
 			},
-			cost: func(*price.Price, decimal.Decimal) decimal.Decimal {
-				t.Error("cost must not be called when the line has an overage rate")
-				return decimal.Zero
-			},
+			cost: overageCost,
 			want: []wantLine{
 				{types.CommitmentLineWithin, "Label c1", "100", "100"},
 				{types.CommitmentLineOnDemand, "Usage a", "30", "90"},
+			},
+		},
+		{
+			name: "tiered overage price walks its tiers over the period total of a window stack",
+			build: func() *commitmentStack {
+				line := invoiceLine("a", "230", "0", "110", "120")
+				line.OveragePrice = &price.Price{ID: "overage_a", BillingModel: types.BILLING_MODEL_TIERED}
+				return &commitmentStack{
+					Type:        types.COMMITMENT_TYPE_QUANTITY,
+					Measurement: types.CommitmentMeasurementWindow,
+					Windows:     engineWindows(2),
+					Lines:       []*usageLine{line},
+					Commitments: []*stackedCommitment{committed("c1", true, "200", []int{0, 1}, []*usageLine{line}, "100", "100")},
+				}
+			},
+			cost: overageCost,
+			// On demand is 10 and 20: the summed 30 is 20*3 + 10*5 = 110, where per window would cost 10*3 + 20*3 = 90.
+			want: []wantLine{
+				{types.CommitmentLineWithin, "Label c1", "200", "200"},
+				{types.CommitmentLineOnDemand, "Usage a", "30", "110"},
 			},
 		},
 		{
