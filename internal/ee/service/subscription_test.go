@@ -2104,14 +2104,14 @@ func (s *SubscriptionServiceSuite) inlineCommitmentRequest() dto.CreateSubscript
 		BillingPeriodCount: 1,
 		BillingCycle:       types.BillingCycleAnniversary,
 		Commitments: []dto.CreateCommitmentRequest{{
-			Name:          "Storage floor",
-			Scope:         dto.CommitmentScopeInput{EntityType: types.CommitmentScopePrice, EntityID: s.testData.prices.storage.ID},
-			Type:          types.COMMITMENT_TYPE_QUANTITY,
-			Value:         decimal.NewFromInt(8),
+			Name:           "Storage floor",
+			Scope:          dto.CommitmentScopeInput{EntityType: types.CommitmentScopePrice, EntityID: s.testData.prices.storage.ID},
+			Type:           types.COMMITMENT_TYPE_QUANTITY,
+			Value:          decimal.NewFromInt(8),
 			CommittedPrice: &dto.CommitmentPriceInput{Amount: lo.ToPtr(decimal.RequireFromString("0.048"))},
-			Measurement:   types.CommitmentMeasurementBillingPeriod,
-			StartDate:     start,
-			EndDate:       start.AddDate(1, 0, 0),
+			Measurement:    types.CommitmentMeasurementBillingPeriod,
+			StartDate:      start,
+			EndDate:        start.AddDate(1, 0, 0),
 		}},
 	}
 }

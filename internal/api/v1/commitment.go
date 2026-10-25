@@ -16,12 +16,12 @@ import (
 )
 
 type CommitmentHandler struct {
-	service service.CommitmentService
-	logger  *logger.Logger
+	commitmentService service.CommitmentService
+	logger            *logger.Logger
 }
 
-func NewCommitmentHandler(service service.CommitmentService, logger *logger.Logger) *CommitmentHandler {
-	return &CommitmentHandler{service: service, logger: logger}
+func NewCommitmentHandler(commitmentService service.CommitmentService, logger *logger.Logger) *CommitmentHandler {
+	return &CommitmentHandler{commitmentService: commitmentService, logger: logger}
 }
 
 // @Summary Preview commitment
@@ -46,7 +46,7 @@ func (h *CommitmentHandler) PreviewCommitment(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.service.Preview(c.Request.Context(), req)
+	resp, err := h.commitmentService.Preview(c.Request.Context(), req)
 	if err != nil {
 		c.Error(err)
 		return
@@ -77,7 +77,7 @@ func (h *CommitmentHandler) CreateCommitment(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.service.Create(c.Request.Context(), req)
+	resp, err := h.commitmentService.Create(c.Request.Context(), req)
 	if err != nil {
 		c.Error(err)
 		return
@@ -92,6 +92,7 @@ func (h *CommitmentHandler) CreateCommitment(c *gin.Context) {
 // @Tags Commitments
 // @Produce json
 // @Security ApiKeyAuth
+// @x-scope "read"
 // @Param id path string true "Commitment ID"
 // @Success 200 {object} dto.CommitmentResponse
 // @Failure 400 {object} ierr.ErrorResponse "Invalid request"
@@ -107,7 +108,7 @@ func (h *CommitmentHandler) GetCommitment(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.service.Get(c.Request.Context(), id)
+	resp, err := h.commitmentService.Get(c.Request.Context(), id)
 	if err != nil {
 		c.Error(err)
 		return
@@ -146,7 +147,7 @@ func (h *CommitmentHandler) QueryCommitments(c *gin.Context) {
 		filter.Limit = lo.ToPtr(types.GetDefaultFilter().Limit)
 	}
 
-	resp, err := h.service.List(c.Request.Context(), &filter)
+	resp, err := h.commitmentService.List(c.Request.Context(), &filter)
 	if err != nil {
 		c.Error(err)
 		return
@@ -186,7 +187,7 @@ func (h *CommitmentHandler) UpdateCommitment(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.service.Update(c.Request.Context(), id, req)
+	resp, err := h.commitmentService.Update(c.Request.Context(), id, req)
 	if err != nil {
 		c.Error(err)
 		return
@@ -230,7 +231,7 @@ func (h *CommitmentHandler) TerminateCommitment(c *gin.Context) {
 		}
 	}
 
-	resp, err := h.service.Terminate(c.Request.Context(), id, req)
+	resp, err := h.commitmentService.Terminate(c.Request.Context(), id, req)
 	if err != nil {
 		c.Error(err)
 		return

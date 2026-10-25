@@ -666,7 +666,8 @@ type CreateSubscriptionRequest struct {
 
 	Checkout *CheckoutParams `json:"checkout,omitempty"`
 
-	// Commitments are created with the subscription; their subscription_id is set server-side.
+	// Commitments are created with the subscription. subscription_id, and entity_id on a subscription scope,
+	// are set server-side.
 	Commitments []CreateCommitmentRequest `json:"commitments,omitempty"`
 
 	SubscriptionCreationConfig
