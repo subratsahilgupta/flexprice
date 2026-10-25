@@ -164,7 +164,9 @@ func (s *billingService) newCommitmentLoader(
 
 		period, ok := containingPeriod(periods, periodStart, periodEnd)
 		if !ok {
-			s.Logger.Info(ctx, "skipping commitment for a window outside its billing periods",
+			s.Logger.Debug(ctx, "commitment.skipped",
+				"operation", "commitment.skipped",
+				"reason", "window outside its billing periods",
 				"commitment_id", c.ID, "subscription_id", sub.ID, "period_start", periodStart, "period_end", periodEnd)
 			continue
 		}

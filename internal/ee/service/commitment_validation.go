@@ -324,13 +324,18 @@ func (s *commitmentService) validateOverlaps(
 
 		if req.Measurement == types.CommitmentMeasurementWindow {
 			want := price.ResolveBucketSize(cc.Prices[lines[0].PriceID], cc.Meters[lines[0].MeterID])
-			if got := bucketFor(other, cc); got != "" && got != want {
-				return ierr.Validationf(
-					"overlapping commitment %s measures by window with bucket size %q; this commitment has bucket size %q",
-					other.ID,
-					got,
-					want,
-				)
+			sizes := lo.Map(otherLines, func(li *subscription.SubscriptionLineItem, _ int) types.WindowSize {
+				return price.ResolveBucketSize(cc.Prices[li.PriceID], cc.Meters[li.MeterID])
+			})
+			for _, got := range append(sizes, bucketFor(other, cc)) {
+				if got != "" && got != want {
+					return ierr.Validationf(
+						"overlapping commitment %s measures by window with bucket size %q; this commitment has bucket size %q",
+						other.ID,
+						got,
+						want,
+					)
+				}
 			}
 		}
 

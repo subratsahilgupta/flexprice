@@ -1296,6 +1296,7 @@ func (s *CommitmentServiceSuite) TestTerminate_FeeBeforeCurrentPeriodIsRejected(
 
 	// Without a fee the same retroactive date terminates fine.
 	_, err = s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{EffectiveAt: &before})
+	s.Require().NoError(err)
 }
 
 // splitAPILinesAt ends the API-meter lines at at and starts one on a new price with the given bucket size.
@@ -1332,6 +1333,26 @@ func (s *CommitmentServiceSuite) TestValidation_OverlapRejectsBucketSizeMismatch
 
 	s.splitAPILinesAt(feb, types.WindowSizeHour)
 	_, err = s.svc.Create(s.GetContext(), s.windowMeterCommitment(1, feb))
+	s.requireValidation(err, first.ID, string(types.WindowSizeHour), string(types.WindowSizeMinute))
+}
+
+func (s *CommitmentServiceSuite) TestValidation_OverlapChecksEveryLineOfTheOtherScope() {
+	ctx := s.GetContext()
+	feb := time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)
+	first, err := s.svc.Create(ctx, s.windowMeterCommitment(0, s.fx.sub.StartDate))
+	s.Require().NoError(err)
+
+	// An hourly line joins the first commitment's scope beside the minute lines it started with.
+	hourly := *s.fx.priceAPI
+	hourly.ID, hourly.GroupID, hourly.BucketSize = "price_api_hourly", "", types.WindowSizeHour
+	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &hourly))
+	line := *s.fx.lineAPI
+	line.ID, line.PriceID, line.StartDate = "subs_line_api_hourly", hourly.ID, feb
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &line))
+
+	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	req.Measurement, req.Priority, req.StartDate = types.CommitmentMeasurementWindow, 1, feb
+	_, err = s.svc.Create(ctx, req)
 	s.requireValidation(err, first.ID, string(types.WindowSizeHour), string(types.WindowSizeMinute))
 }
 
