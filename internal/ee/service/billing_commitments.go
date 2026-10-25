@@ -418,17 +418,22 @@ func (l *commitmentLoader) fillWindowStack(ctx context.Context, stack *commitmen
 			return err
 		}
 
-		unitCost := func(q decimal.Decimal) decimal.Decimal { return l.priceSvc.CalculateCost(ctx, line.Price, q) }
+		// Bucketed prices price each window on its own, so each window weighs its own cost.
+		costs := make([]decimal.Decimal, len(quantities))
 		raw := decimal.Zero
-		for _, q := range quantities {
+		for w, q := range quantities {
 			line.Quantity = line.Quantity.Add(q)
-			raw = raw.Add(unitCost(q))
+			cost := l.priceSvc.CalculateCost(ctx, line.Price, q)
+			raw = raw.Add(cost)
+			if q.IsPositive() {
+				costs[w] = cost
+			}
 		}
 
 		line.Cost = types.RoundToCurrencyPrecision(raw, line.Price.Currency)
 		line.Usage = quantities
 		if stack.Type == types.COMMITMENT_TYPE_AMOUNT {
-			line.Usage = spreadWindowCosts(quantities, line.Cost, unitCost)
+			line.Usage = spreadCost(costs, line.Cost)
 		}
 	}
 
@@ -482,8 +487,8 @@ func (l *commitmentLoader) fillPeriodStack(ctx context.Context, stack *commitmen
 
 		line.Usage = quantities
 		if stack.Type == types.COMMITMENT_TYPE_AMOUNT {
-			unitCost := func(q decimal.Decimal) decimal.Decimal { return l.priceSvc.CalculateCost(ctx, line.Price, q) }
-			line.Usage = spreadWindowCosts(quantities, line.Cost, unitCost)
+			// Pricing each stretch alone would walk tiers per stretch; spreading the period cost conserves it.
+			line.Usage = spreadCost(quantities, line.Cost)
 		}
 	}
 
@@ -783,32 +788,40 @@ func rawChargesByLine(
 	return out
 }
 
-// spreadWindowCosts prices each window and puts the rounding residue on the last window with usage,
-// so the windows sum exactly to the line's period cost.
-func spreadWindowCosts(
-	quantities []decimal.Decimal,
-	total decimal.Decimal,
-	unitCost func(decimal.Decimal) decimal.Decimal,
-) []decimal.Decimal {
-	out := make([]decimal.Decimal, len(quantities))
-	if len(quantities) == 0 {
+// spreadCost splits total across windows in proportion to their weights, summing to it exactly and never
+// negative; with no positive weight it all lands on the last window.
+func spreadCost(weights []decimal.Decimal, total decimal.Decimal) []decimal.Decimal {
+	out := make([]decimal.Decimal, len(weights))
+	if len(weights) == 0 {
 		return out
 	}
 
-	sum := decimal.Zero
-	last := len(quantities) - 1
-	for i, q := range quantities {
-		if q.IsZero() {
-			out[i] = decimal.Zero
+	sum, last := decimal.Zero, len(weights)-1
+	for i, w := range weights {
+		if w.IsPositive() {
+			sum, last = sum.Add(w), i
+		}
+	}
+
+	if !sum.IsPositive() {
+		out[last] = total
+		return out
+	}
+
+	// Shares are taken off a running total, so each is non-negative and the last positive one ends at total.
+	cum, given := decimal.Zero, decimal.Zero
+	for i := 0; i < last; i++ {
+		if !weights[i].IsPositive() {
 			continue
 		}
 
-		out[i] = unitCost(q)
-		sum = sum.Add(out[i])
-		last = i
+		cum = cum.Add(weights[i])
+		upTo := total.Mul(cum).Div(sum)
+		out[i] = upTo.Sub(given)
+		given = upTo
 	}
 
-	out[last] = out[last].Add(total.Sub(sum))
+	out[last] = total.Sub(given)
 	return out
 }
 

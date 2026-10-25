@@ -717,23 +717,102 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodPoolsAcrossTheSp
 	s.True(total.Equal(dec("21")), "total %s", total)
 }
 
-func TestCommitmentLoader_SpreadWindowCosts_ConservesLineCost(t *testing.T) {
-	third := func(q decimal.Decimal) decimal.Decimal { return q.Mul(dec("0.333333")) }
-	got := spreadWindowCosts([]decimal.Decimal{dec("1"), dec("1"), dec("1"), dec("0")}, dec("1.00"), third)
-	require.Len(t, got, 4)
-	sum := decimal.Zero
-	for _, v := range got {
-		sum = sum.Add(v)
+func TestSpreadCost_ConservesTotalProportionally(t *testing.T) {
+	decs := func(vs ...string) []decimal.Decimal {
+		return lo.Map(vs, func(v string, _ int) decimal.Decimal { return dec(v) })
 	}
 
-	require.True(t, sum.Equal(dec("1.00")), "sum %s", sum)
-	require.True(t, got[0].Equal(dec("0.333333")))
-	require.True(t, got[2].Equal(dec("0.333334")), "residue lands on the last non-zero window, got %s", got[2])
-	require.True(t, got[3].IsZero())
+	tests := []struct {
+		name    string
+		weights []decimal.Decimal
+		total   decimal.Decimal
+		want    []decimal.Decimal
+	}{
+		{
+			name:    "weights summing to the total are kept as they are",
+			weights: decs("0.333333", "0.333333", "0.333334", "0"),
+			total:   dec("1.00"),
+			want:    decs("0.333333", "0.333333", "0.333334", "0"),
+		},
+		{
+			name:    "equal weights split the total and leave the residue on the last positive one",
+			weights: decs("1", "1", "1", "0"),
+			total:   dec("1.00"),
+			want:    decs("0.3333333333333333", "0.3333333333333334", "0.3333333333333333", "0"),
+		},
+		{
+			name:    "a volume-priced period cost below its stretches' stand-alone prices splits by quantity",
+			weights: decs("20", "10"),
+			total:   dec("30"),
+			want:    decs("20", "10"),
+		},
+		{
+			name:    "a tiny last weight never goes negative",
+			weights: decs("1", "0.0000000000000000001"),
+			total:   dec("0.01"),
+			want:    decs("0.01", "0"),
+		},
+		{
+			name:    "no positive weight puts the total on the last window",
+			weights: decs("0", "0"),
+			total:   dec("5"),
+			want:    decs("0", "5"),
+		},
+	}
 
-	// No usage in any window: the line cost (if any) lands on the last window.
-	got = spreadWindowCosts([]decimal.Decimal{dec("0"), dec("0")}, dec("0"), third)
-	require.True(t, got[0].IsZero() && got[1].IsZero())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := spreadCost(tt.weights, tt.total)
+			require.Len(t, got, len(tt.want))
+			sum := decimal.Zero
+			for i, v := range got {
+				require.False(t, v.IsNegative(), "window %d is %s", i, v)
+				require.True(t, v.Equal(tt.want[i]), "window %d: want %s, got %s", i, tt.want[i], v)
+				sum = sum.Add(v)
+			}
+
+			require.True(t, sum.Equal(tt.total), "sum %s", sum)
+		})
+	}
+}
+
+// A volume price charges each stretch more on its own than the period as a whole; stretches still sum to the period cost.
+func (s *BillingServiceSuite) TestCommitmentLoader_AmountStretchesSpreadThePeriodCost() {
+	ctx := s.GetContext()
+	s.setupTestData()
+	s.enableCommitmentsV2()
+	p := s.usagePriceFor("price_volume_api", s.testData.meters.apiCalls, "0")
+	p.BillingModel, p.TierMode = types.BILLING_MODEL_TIERED, types.BILLING_TIER_VOLUME
+	p.Tiers = []price.PriceTier{
+		{UpTo: lo.ToPtr(uint64(20)), UnitAmount: dec("2")},
+		{UnitAmount: dec("1")},
+	}
+	s.Require().NoError(s.GetStores().PriceRepo.Update(ctx, p, false))
+	li := &subscription.SubscriptionLineItem{ID: "subs_line_volume_api", PriceID: p.ID, MeterID: s.testData.meters.apiCalls.ID, DisplayName: "API"}
+	sub := s.fixedDateSub("sub_volume", li)
+	s.seedAPICalls(sub, time.Date(2026, 8, 5, 0, 0, 0, 0, time.UTC), 20)
+	s.seedAPICalls(sub, time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC), 10)
+	startAt := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+	c := s.newTestCommitment("cmt_volume", sub, types.COMMITMENT_TYPE_AMOUNT, "100", p.ID, startAt, sub.CurrentPeriodEnd)
+	s.storeCommitment(c)
+
+	// 30 calls cost $30 at the volume rate; alone, the 20 before the start would cost $40.
+	l := s.loaderFor(sub, s.meterUsage(sub), sub.CurrentPeriodStart, sub.CurrentPeriodEnd, false)
+	stacks, _, err := l.Stacks(ctx)
+	s.Require().NoError(err)
+	usage := stacks[0].Lines[0].Usage
+	s.Require().Len(usage, 2)
+	s.True(usage[0].Equal(dec("20")) && usage[1].Equal(dec("10")), "stretches %v", usage)
+
+	lines, total, err := l.InvoiceLines(ctx)
+	s.Require().NoError(err)
+	s.True(s.loaderLine(lines, types.CommitmentLineWithin, c.ID).Amount.Equal(dec("10")))
+	onDemand := loaderLinesOfKind(lines, types.CommitmentLineOnDemand)
+	s.Require().Len(onDemand, 1)
+	s.True(onDemand[0].Amount.Equal(dec("20")), "on-demand %s", onDemand[0].Amount)
+	// $100 for the 17 days from 15 Aug is $54.84, of which $10 is used.
+	s.True(s.loaderLine(lines, types.CommitmentLineTrueUp, c.ID).Amount.Equal(dec("44.84")))
+	s.True(total.Equal(dec("74.84")), "total %s", total)
 }
 
 // The states below are only reachable by bypassing create validation, so the loader fails closed on them.
