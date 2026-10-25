@@ -259,6 +259,22 @@ func (s *CommitmentServiceSuite) TestCreate_TieredOveragePassesItsTiersThrough()
 	s.Equal(s.fx.meterAPI.ID, p.MeterID)
 }
 
+func (s *CommitmentServiceSuite) TestCreate_TieredCommittedPriceValuesEachPeriodOnItsTiers() {
+	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	req.Value, req.CommittedPrice = dec("150"), tieredOverage()
+	preview, err := s.svc.Preview(s.GetContext(), req)
+	s.Require().NoError(err)
+
+	created, err := s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+
+	got, err := s.svc.Get(s.GetContext(), created.ID)
+	s.Require().NoError(err)
+	for _, v := range []*decimal.Decimal{preview.CommitmentValue, created.CommitmentValue, got.CommitmentValue} {
+		s.True(v.Equal(dec("114")), "got %s", v)
+	}
+}
+
 func (s *CommitmentServiceSuite) TestPreview_RejectsTieredOverageWithoutTiers() {
 	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
 	req.OveragePrice = tieredOverage()

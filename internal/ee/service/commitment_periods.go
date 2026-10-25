@@ -21,11 +21,12 @@ type commitmentPeriod struct {
 	Amount        decimal.Decimal // money value of Capacity
 }
 
-// commitmentPeriods returns the subscription billing periods clipped to the commitment term, with their value.
+// commitmentPeriods returns the subscription billing periods clipped to the commitment term, with their value;
+// amountOf turns a period's capacity into money.
 func commitmentPeriods(
 	c *commitment.Commitment,
 	sub *subscription.Subscription,
-	committedRate decimal.Decimal,
+	amountOf func(capacity decimal.Decimal) decimal.Decimal,
 	bucket types.WindowSize,
 ) ([]commitmentPeriod, error) {
 	full, err := types.CalculateBillingPeriods(&types.CalculateBillingPeriodsParams{
@@ -64,7 +65,7 @@ func commitmentPeriods(
 			FullStart: regular.Start,
 			FullEnd:   regular.End,
 		}
-		fillPeriodValue(c, &cp, committedRate, bucket, sub.BillingAnchor)
+		fillPeriodValue(c, &cp, amountOf, bucket, sub.BillingAnchor)
 		out = append(out, cp)
 	}
 
@@ -76,7 +77,7 @@ func clipCommitmentPeriod(
 	c *commitment.Commitment,
 	p commitmentPeriod,
 	until time.Time,
-	committedRate decimal.Decimal,
+	amountOf func(capacity decimal.Decimal) decimal.Decimal,
 	bucket types.WindowSize,
 	anchor time.Time,
 ) commitmentPeriod {
@@ -86,7 +87,7 @@ func clipCommitmentPeriod(
 
 	out := p
 	out.End = maxTime(until, p.Start)
-	fillPeriodValue(c, &out, committedRate, bucket, anchor)
+	fillPeriodValue(c, &out, amountOf, bucket, anchor)
 	return out
 }
 
@@ -94,15 +95,10 @@ func clipCommitmentPeriod(
 func fillPeriodValue(
 	c *commitment.Commitment,
 	cp *commitmentPeriod,
-	committedRate decimal.Decimal,
+	amountOf func(capacity decimal.Decimal) decimal.Decimal,
 	bucket types.WindowSize,
 	anchor time.Time,
 ) {
-	rate := committedRate
-	if c.Type == types.COMMITMENT_TYPE_AMOUNT {
-		rate = decimal.NewFromInt(1)
-	}
-
 	cp.ActiveBuckets = 0
 	if c.Measurement == types.CommitmentMeasurementWindow {
 		// A bucket starting before the period belongs to the period that already counted it.
@@ -132,7 +128,7 @@ func fillPeriodValue(
 		cp.Capacity = c.Value.Mul(fraction)
 	}
 
-	cp.Amount = cp.Capacity.Mul(rate)
+	cp.Amount = amountOf(cp.Capacity)
 }
 
 // commitmentValue sums the money value of all periods.

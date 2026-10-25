@@ -122,7 +122,21 @@ func TestCreateCommitmentRequest_Validate(t *testing.T) {
 		{"C7 quantity without committed price", func(r *dto.CreateCommitmentRequest) { r.CommittedPrice = nil }, false},
 		{"C7 amount with committed price", func(r *dto.CreateCommitmentRequest) { r.Type = types.COMMITMENT_TYPE_AMOUNT }, false},
 		{"C7 zero committed amount", func(r *dto.CreateCommitmentRequest) { r.CommittedPrice = ratePrice("0") }, false},
-		{"C7 tiered committed price", func(r *dto.CreateCommitmentRequest) { r.CommittedPrice = tieredOverage() }, false},
+		{"C7 tiered committed price", func(r *dto.CreateCommitmentRequest) { r.CommittedPrice = tieredOverage() }, true},
+		{"C7 tiered committed price without tiers", func(r *dto.CreateCommitmentRequest) {
+			r.CommittedPrice = tieredOverage()
+			r.CommittedPrice.Tiers = nil
+		}, false},
+		{"C7 flat committed price with tiers", func(r *dto.CreateCommitmentRequest) {
+			r.CommittedPrice.Tiers = tieredOverage().Tiers
+		}, false},
+		{"C7 package committed price", func(r *dto.CreateCommitmentRequest) {
+			r.CommittedPrice.BillingModel = types.BILLING_MODEL_PACKAGE
+			r.CommittedPrice.TransformQuantity = &price.TransformQuantity{DivideBy: 1000}
+		}, true},
+		{"C7 package committed price without transform", func(r *dto.CreateCommitmentRequest) {
+			r.CommittedPrice.BillingModel = types.BILLING_MODEL_PACKAGE
+		}, false},
 		{"C7 explicit flat committed price", func(r *dto.CreateCommitmentRequest) {
 			r.CommittedPrice.BillingModel = types.BILLING_MODEL_FLAT_FEE
 		}, true},

@@ -59,6 +59,26 @@ func (in *CommitmentPriceInput) ToCreatePriceRequest(
 	}
 }
 
+// ToPrice materialises the rate as a transient price, for valuing a commitment before its price rows exist.
+func (in *CommitmentPriceInput) ToPrice(currency string) *price.Price {
+	transform := price.JSONBTransformQuantity{DivideBy: 1}
+	if in.TransformQuantity != nil {
+		transform = price.JSONBTransformQuantity(*in.TransformQuantity)
+	}
+
+	tiers, _ := (&CreatePriceRequest{}).convertTiers(in.Tiers)
+	return &price.Price{
+		Amount:            lo.FromPtrOr(in.Amount, decimal.Zero),
+		Currency:          currency,
+		PriceUnitType:     types.PRICE_UNIT_TYPE_FIAT,
+		Type:              types.PRICE_TYPE_USAGE,
+		BillingModel:      in.BillingModel,
+		TierMode:          in.TierMode,
+		Tiers:             tiers,
+		TransformQuantity: transform,
+	}
+}
+
 type CreateCommitmentRequest struct {
 	SubscriptionID     string                            `json:"subscription_id" validate:"required"`
 	IdempotencyKey     *string                           `json:"idempotency_key,omitempty" validate:"omitempty,max=128"`
@@ -176,37 +196,55 @@ func (r *CreateCommitmentRequest) Validate() error {
 	return nil
 }
 
-// validatePrices checks the rate shapes the commitment math relies on; the price request's own validation covers
-// tiers and packages once the scope meter is known.
+// validatePrices checks each rate against its billing model; the price request's own validation covers tier and
+// package details once the scope meter is known.
 func (r *CreateCommitmentRequest) validatePrices() error {
-	// The commitment value is capacity × committed rate, so the committed price must be one flat amount.
-	if cp := r.CommittedPrice; cp != nil {
-		if cp.BillingModel != types.BILLING_MODEL_FLAT_FEE || cp.Amount == nil || !cp.Amount.IsPositive() ||
-			len(cp.Tiers) > 0 || cp.TransformQuantity != nil {
-			return ierr.Validation("committed_price must be FLAT_FEE with an amount greater than zero")
-		}
-	}
-
-	op := r.OveragePrice
-	if op == nil {
-		return nil
-	}
-
-	switch op.BillingModel {
-	case types.BILLING_MODEL_FLAT_FEE, types.BILLING_MODEL_PACKAGE:
-		if op.Amount == nil || op.Amount.IsNegative() {
-			return ierr.Validation("overage_price.amount must be zero or greater")
-		}
-	case types.BILLING_MODEL_TIERED:
-		if op.TierMode == "" {
-			return ierr.Validation("overage_price.tier_mode is required for TIERED")
-		}
-
-		if err := op.TierMode.Validate(); err != nil {
+	if r.CommittedPrice != nil {
+		if err := r.CommittedPrice.validate("committed_price", true); err != nil {
 			return err
 		}
+	}
+
+	if r.OveragePrice != nil {
+		return r.OveragePrice.validate("overage_price", false)
+	}
+
+	return nil
+}
+
+// validate checks the rate against its billing model; positive requires a FLAT_FEE or PACKAGE amount above zero.
+func (in *CommitmentPriceInput) validate(field string, positive bool) error {
+	if in.BillingModel != types.BILLING_MODEL_TIERED && len(in.Tiers) > 0 {
+		return ierr.Validationf("%s.tiers can only be set on a TIERED price", field)
+	}
+
+	switch in.BillingModel {
+	case types.BILLING_MODEL_FLAT_FEE, types.BILLING_MODEL_PACKAGE:
+		if in.Amount == nil || in.Amount.IsNegative() {
+			return ierr.Validationf("%s.amount must be zero or greater", field)
+		}
+
+		if positive && !in.Amount.IsPositive() {
+			return ierr.Validationf("%s.amount must be greater than zero", field)
+		}
+
+		if in.BillingModel == types.BILLING_MODEL_PACKAGE && in.TransformQuantity == nil {
+			return ierr.Validationf("%s.transform_quantity is required for PACKAGE", field)
+		}
+	case types.BILLING_MODEL_TIERED:
+		if in.TierMode == "" {
+			return ierr.Validationf("%s.tier_mode is required for TIERED", field)
+		}
+
+		if err := in.TierMode.Validate(); err != nil {
+			return err
+		}
+
+		if len(in.Tiers) == 0 {
+			return ierr.Validationf("%s.tiers are required for TIERED", field)
+		}
 	default:
-		return ierr.Validation("overage_price.billing_model must be FLAT_FEE, TIERED or PACKAGE")
+		return ierr.Validationf("%s.billing_model must be FLAT_FEE, TIERED or PACKAGE", field)
 	}
 
 	return nil

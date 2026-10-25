@@ -25,12 +25,12 @@ type commitmentStack struct {
 
 // stackedCommitment is a commitment with its capacity laid out per window.
 type stackedCommitment struct {
-	C             *commitment.Commitment
-	CommittedRate decimal.Decimal
-	Period        commitmentPeriod
-	Lines         []*usageLine // in fill order
-	Pools         []capacityPool
-	PoolOf        []int // window index to pool index, -1 when the commitment has no capacity in that window
+	C              *commitment.Commitment
+	CommittedPrice *price.Price // nil for amount stacks
+	Period         commitmentPeriod
+	Lines          []*usageLine // in fill order
+	Pools          []capacityPool
+	PoolOf         []int // window index to pool index, -1 when the commitment has no capacity in that window
 }
 
 // capacityPool is a capacity that one or more windows draw from.
@@ -253,25 +253,30 @@ func commitmentInvoiceLines(
 }
 
 // commitmentLines renders one commitment's within lines and its true-up; for a binding commitment
-// the rows sum to the rounded period amount.
+// the rows sum to the rounded period amount. A quantity commitment prices its whole usage once on the
+// committed price, so tiers walk the total, and splits that value across lines by quantity.
 func (r lineRenderer) commitmentLines(
 	stack *commitmentStack,
 	sc *stackedCommitment,
 	used commitmentAllocation,
 ) []dto.CreateInvoiceLineItemRequest {
+	usedValue := used.Used
+	if stack.Type == types.COMMITMENT_TYPE_QUANTITY && used.Used.IsPositive() {
+		usedValue = r.cost(sc.CommittedPrice, used.Used)
+	}
+
 	var rows []dto.CreateInvoiceLineItemRequest
-	usedValue := decimal.Zero
 	for li, line := range sc.Lines {
-		if !used.UsedByLine[li].IsPositive() {
+		share := used.UsedByLine[li]
+		if !share.IsPositive() {
 			continue
 		}
 
-		qty, amount := used.UsedByLine[li], used.UsedByLine[li].Mul(sc.CommittedRate)
+		qty, amount := share, usedValue.Mul(share).Div(used.Used)
 		if stack.Type == types.COMMITMENT_TYPE_AMOUNT {
-			qty, amount = proportionalQuantity(line, used.UsedByLine[li]), used.UsedByLine[li]
+			qty, amount = proportionalQuantity(line, share), share
 		}
 
-		usedValue = usedValue.Add(amount)
 		rows = append(rows, r.row(sc.C, line, types.CommitmentLineWithin, sc.C.InvoiceLabel, qty, amount))
 	}
 

@@ -199,19 +199,30 @@ func (s *commitmentService) prepare(
 	}
 
 	c := req.ToCommitment(ctx, cc.Sub)
-	if req.OveragePrice != nil {
-		overage := req.OveragePrice.ToCreatePriceRequest(c, cc.Sub, scopeMeter(c, cc), "overage")
-		if err := overage.Validate(); err != nil {
+	for _, rate := range []struct {
+		in   *dto.CommitmentPriceInput
+		kind string
+	}{
+		{in: req.CommittedPrice, kind: "committed"},
+		{in: req.OveragePrice, kind: "overage"},
+	} {
+		if rate.in == nil {
+			continue
+		}
+
+		priceReq := rate.in.ToCreatePriceRequest(c, cc.Sub, scopeMeter(c, cc), rate.kind)
+		if err := priceReq.Validate(); err != nil {
 			return nil, nil, decimal.Zero, err
 		}
 	}
 
-	committedRate := decimal.Zero
+	// Valued from the request so a preview matches the commitment once its price rows exist.
+	amountOf := identityAmount
 	if req.CommittedPrice != nil {
-		committedRate = lo.FromPtr(req.CommittedPrice.Amount)
+		amountOf = s.priceAmountFn(ctx, req.CommittedPrice.ToPrice(c.Currency))
 	}
 
-	periods, err := commitmentPeriods(c, cc.Sub, committedRate, bucketFor(c, cc))
+	periods, err := commitmentPeriods(c, cc.Sub, amountOf, bucketFor(c, cc))
 	if err != nil {
 		return nil, nil, decimal.Zero, err
 	}
@@ -633,18 +644,34 @@ func (s *commitmentService) ActiveForPeriod(
 	return s.CommitmentRepo.List(ctx, f)
 }
 
-// committedRate returns the rate of the commitment's committed price, zero for amount commitments.
-func (s *commitmentService) committedRate(ctx context.Context, c *commitment.Commitment) (decimal.Decimal, error) {
-	if c.CommittedPriceID == nil {
-		return decimal.Zero, nil
+// identityAmount values an amount commitment, whose capacity is already money.
+func identityAmount(capacity decimal.Decimal) decimal.Decimal { return capacity }
+
+// priceAmountFn values a quantity by applying p, the way billing prices usage.
+func (s *commitmentService) priceAmountFn(ctx context.Context, p *price.Price) func(decimal.Decimal) decimal.Decimal {
+	prices := NewPriceService(s.ServiceParams)
+	return func(qty decimal.Decimal) decimal.Decimal { return prices.CalculateCost(ctx, p, qty) }
+}
+
+// committedAmountFn values the commitment's capacity: identity for amount commitments, the committed price otherwise.
+func (s *commitmentService) committedAmountFn(
+	ctx context.Context,
+	c *commitment.Commitment,
+) (func(decimal.Decimal) decimal.Decimal, error) {
+	if c.Type == types.COMMITMENT_TYPE_AMOUNT {
+		return identityAmount, nil
 	}
 
-	p, err := s.PriceRepo.Get(ctx, *c.CommittedPriceID)
-	if err != nil {
-		return decimal.Zero, err
+	// A quantity commitment without a committed price values to zero.
+	var p *price.Price
+	if c.CommittedPriceID != nil {
+		var err error
+		if p, err = s.PriceRepo.Get(ctx, *c.CommittedPriceID); err != nil {
+			return nil, err
+		}
 	}
 
-	return p.Amount, nil
+	return s.priceAmountFn(ctx, p), nil
 }
 
 // response builds the API response, computing the commitment value. cc may be nil; List passes its
@@ -654,7 +681,7 @@ func (s *commitmentService) response(
 	c *commitment.Commitment,
 	cc *commitmentContext,
 ) (*dto.CommitmentResponse, error) {
-	committedRate, err := s.committedRate(ctx, c)
+	amountOf, err := s.committedAmountFn(ctx, c)
 	if err != nil {
 		return nil, err
 	}
@@ -674,7 +701,7 @@ func (s *commitmentService) response(
 		return nil, err
 	}
 
-	periods, err := commitmentPeriods(c, sub, committedRate, bucket)
+	periods, err := commitmentPeriods(c, sub, amountOf, bucket)
 	if err != nil {
 		return nil, err
 	}
