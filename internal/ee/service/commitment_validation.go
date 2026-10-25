@@ -11,6 +11,8 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 )
@@ -20,12 +22,6 @@ type commitmentContext struct {
 	Items  []*subscription.SubscriptionLineItem
 	Prices map[string]*price.Price
 	Meters map[string]*meter.Meter
-}
-
-func invalidf(format string, args ...any) error {
-	return ierr.NewErrorf(format, args...).
-		WithHintf(format, args...).
-		Mark(ierr.ErrValidation)
 }
 
 // loadCommitmentContext loads a subscription with every line item it has had, and their prices and meters,
@@ -185,11 +181,11 @@ func (s *commitmentService) validateAgainstSubscription(
 	}
 
 	if !lo.Contains(accepted, sub.SubscriptionStatus) {
-		return invalidf("subscription %s must be active or trialing", sub.ID)
+		return ierr.Validationf("subscription %s must be active or trialing", sub.ID)
 	}
 
 	if req.StartDate.Before(sub.StartDate) {
-		return invalidf("start_date cannot be before the subscription start %s", sub.StartDate.Format(time.RFC3339))
+		return ierr.Validationf("start_date cannot be before the subscription start %s", sub.StartDate.Format(time.RFC3339))
 	}
 
 	if err := validateBoundary(sub, req.EndDate); err != nil {
@@ -197,7 +193,7 @@ func (s *commitmentService) validateAgainstSubscription(
 	}
 
 	if req.Scope.EntityType == types.CommitmentScopeSubscription && req.Scope.EntityID != sub.ID {
-		return invalidf("subscription scope must reference subscription %s", sub.ID)
+		return ierr.Validationf("subscription scope must reference subscription %s", sub.ID)
 	}
 
 	if req.Scope.EntityType == types.CommitmentScopeGroup {
@@ -207,13 +203,13 @@ func (s *commitmentService) validateAgainstSubscription(
 		}
 
 		if g.EntityType != types.GroupEntityTypePrice {
-			return invalidf("group %s must be a price group", g.ID)
+			return ierr.Validationf("group %s must be a price group", g.ID)
 		}
 	}
 
 	lines := resolveScopeLines(req.Scope.EntityType, req.Scope.EntityID, cc, req.StartDate)
 	if len(lines) == 0 {
-		return invalidf(
+		return ierr.Validationf(
 			"scope %s/%s covers no usage prices on the subscription",
 			req.Scope.EntityType,
 			req.Scope.EntityID,
@@ -228,11 +224,11 @@ func (s *commitmentService) validateAgainstSubscription(
 	if meterID, err := s.entitledMeter(ctx, sub, meters); err != nil {
 		return err
 	} else if meterID != "" {
-		return invalidf("meter %s has an active entitlement; a commitment cannot cover entitled usage", meterID)
+		return ierr.Validationf("meter %s has an active entitlement; a commitment cannot cover entitled usage", meterID)
 	}
 
 	if (req.Type == types.COMMITMENT_TYPE_QUANTITY || req.OveragePrice != nil) && len(meters) != 1 {
-		return invalidf(
+		return ierr.Validationf(
 			"quantity commitments and custom overage prices need a scope with exactly one meter, found %d",
 			len(meters),
 		)
@@ -243,21 +239,26 @@ func (s *commitmentService) validateAgainstSubscription(
 			return price.ResolveBucketSize(cc.Prices[li.PriceID], cc.Meters[li.MeterID])
 		}))
 		if len(sizes) != 1 || sizes[0] == "" {
-			return invalid("window measurement needs bucketed prices that all share one bucket size")
+			return ierr.Validation("window measurement needs bucketed prices that all share one bucket size")
 		}
 	}
 
 	if sub.CommitmentAmount != nil && sub.CommitmentAmount.IsPositive() {
-		return invalid("subscription has a legacy subscription-level commitment; remove it before adding a commitment")
+		return ierr.Validation("subscription has a legacy subscription-level commitment; remove it before adding a commitment")
 	}
 
 	for _, li := range termLines {
 		if li.HasAnyCommitment() {
-			return invalidf("price %s already has a legacy line-item commitment", li.PriceID)
+			return ierr.Validationf("price %s already has a legacy line-item commitment", li.PriceID)
 		}
 
 		if !billsEverySubscriptionPeriod(sub, li.BillingPeriod, li.BillingPeriodCount) {
-			return errScopeCadence(li.PriceID)
+			return ierr.NewErrorf(
+				"commitments require scope prices billed every subscription period; price %s bills on another cadence",
+				li.PriceID,
+			).
+				WithHint("commitments require scope prices billed every subscription period").
+				Mark(ierr.ErrValidation)
 		}
 	}
 
@@ -268,18 +269,6 @@ func (s *commitmentService) validateAgainstSubscription(
 // window is the subscription period.
 func billsEverySubscriptionPeriod(sub *subscription.Subscription, period types.BillingPeriod, count int) bool {
 	return period == sub.BillingPeriod && max(count, 1) == max(sub.BillingPeriodCount, 1)
-}
-
-func errScopeCadence(priceID string) error {
-	return ierr.NewErrorf("commitments require scope prices billed every subscription period; price %s bills on another cadence", priceID).
-		WithHint("commitments require scope prices billed every subscription period").
-		Mark(ierr.ErrValidation)
-}
-
-func invalid(msg string) error {
-	return ierr.NewError(msg).
-		WithHint(msg).
-		Mark(ierr.ErrValidation)
 }
 
 // validateOverlaps requires active commitments sharing a line item to differ in priority, and active or
@@ -329,17 +318,17 @@ func (s *commitmentService) validateOverlaps(
 		}
 
 		if other.CommitmentStatus == types.CommitmentStatusActive && other.Priority == req.Priority {
-			return invalidf("priority %d is already used by overlapping commitment %s", req.Priority, other.ID)
+			return ierr.Validationf("priority %d is already used by overlapping commitment %s", req.Priority, other.ID)
 		}
 
 		if other.Type != req.Type || other.Measurement != req.Measurement {
-			return invalidf("overlapping commitment %s has a different type or measurement", other.ID)
+			return ierr.Validationf("overlapping commitment %s has a different type or measurement", other.ID)
 		}
 
 		if req.Measurement == types.CommitmentMeasurementWindow {
 			want := price.ResolveBucketSize(cc.Prices[lines[0].PriceID], cc.Meters[lines[0].MeterID])
 			if got := bucketFor(other, cc); got != "" && got != want {
-				return invalidf(
+				return ierr.Validationf(
 					"overlapping commitment %s measures by window with bucket size %q; this commitment has bucket size %q",
 					other.ID,
 					got,
@@ -354,7 +343,7 @@ func (s *commitmentService) validateOverlaps(
 		}
 
 		if !same {
-			return invalidf(
+			return ierr.Validationf(
 				"overlapping commitment %s has a different overage price; only equal flat overage amounts combine on the same usage",
 				other.ID,
 			)
@@ -426,7 +415,7 @@ func validateBoundary(sub *subscription.Subscription, end time.Time) error {
 		}
 
 		if end.After(*sub.EndDate) {
-			return invalidf("end_date cannot be after the subscription end %s", sub.EndDate.Format(time.RFC3339))
+			return ierr.Validationf("end_date cannot be after the subscription end %s", sub.EndDate.Format(time.RFC3339))
 		}
 	}
 
@@ -473,18 +462,18 @@ func validateBoundary(sub *subscription.Subscription, end time.Time) error {
 	const layout = "2 Jan 2006"
 	switch {
 	case before != nil && after != nil:
-		return invalidf(
+		return ierr.Validationf(
 			"end_date must fall on a billing date; nearest are %s and %s",
 			before.Format(layout),
 			after.Format(layout),
 		)
 	case after != nil:
-		return invalidf("end_date must fall on a billing date; nearest is %s", after.Format(layout))
+		return ierr.Validationf("end_date must fall on a billing date; nearest is %s", after.Format(layout))
 	case before != nil:
-		return invalidf("end_date must fall on a billing date; nearest is %s", before.Format(layout))
+		return ierr.Validationf("end_date must fall on a billing date; nearest is %s", before.Format(layout))
 	}
 
-	return invalid("end_date must fall on a billing date")
+	return ierr.Validation("end_date must fall on a billing date")
 }
 
 // entitledMeter returns the first of the meters carrying an enabled metered entitlement on the
@@ -515,4 +504,140 @@ func (s *commitmentService) entitledMeter(
 	}
 
 	return "", nil
+}
+
+// checkLineItemCommitmentAttach runs the commitment price-attach guard for a usage line item joining sub.
+// Other lines cost nothing; with commitments disabled the cost is the cached settings read.
+func checkLineItemCommitmentAttach(
+	ctx context.Context,
+	params ServiceParams,
+	sub *subscription.Subscription,
+	li *subscription.SubscriptionLineItem,
+) error {
+	if li == nil || li.PriceType != types.PRICE_TYPE_USAGE {
+		return nil
+	}
+
+	svc := NewCommitmentService(params)
+	enabled, err := svc.IsEnabled(ctx)
+	if err != nil || !enabled {
+		return err
+	}
+
+	p, err := params.PriceRepo.Get(ctx, li.PriceID)
+	if err != nil {
+		return err
+	}
+
+	return svc.CheckPriceAttach(ctx, sub, p, li.StartDate, lo.EmptyableToPtr(li.EndDate))
+}
+
+// rejectLegacyCommitmentInScope rejects legacy line-item commitment fields on a line that a commitment still
+// in force covers, since the two would bill the same usage twice.
+func rejectLegacyCommitmentInScope(
+	ctx context.Context,
+	params ServiceParams,
+	sub *subscription.Subscription,
+	li *subscription.SubscriptionLineItem,
+) error {
+	if li == nil || !li.HasAnyCommitment() {
+		return nil
+	}
+
+	svc := NewCommitmentService(params)
+	enabled, err := svc.IsEnabled(ctx)
+	if err != nil || !enabled {
+		return err
+	}
+
+	// Serialise with commitment creation, which validates against committed legacy fields.
+	if err := params.DB.LockWithWait(ctx, postgres.LockRequest{Key: "commitments:" + sub.ID}); err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to lock subscription commitments").
+			Mark(ierr.ErrInternal)
+	}
+
+	f := commitment.NewNoLimitFilter()
+	f.SubscriptionIDs = []string{sub.ID}
+	f.Statuses = []types.CommitmentStatus{types.CommitmentStatusActive, types.CommitmentStatusTerminated}
+	listed, err := params.CommitmentRepo.List(ctx, f)
+	if err != nil || len(listed) == 0 {
+		return err
+	}
+
+	p, err := params.PriceRepo.Get(ctx, li.PriceID)
+	if err != nil {
+		return err
+	}
+
+	for _, c := range listed {
+		if overlapsLine(c, li) && commitmentCoversLine(c, li, p) {
+			return ierr.Validationf(
+				"line item %s is covered by commitment %s; legacy line-item commitment fields are not allowed",
+				li.ID,
+				c.ID,
+			)
+		}
+	}
+
+	return nil
+}
+
+// overlapsLine reports whether the line's billing interval overlaps the commitment's effective term.
+func overlapsLine(c *commitment.Commitment, li *subscription.SubscriptionLineItem) bool {
+	if !li.StartDate.Before(c.EffectiveEnd()) {
+		return false
+	}
+
+	return li.EndDate.IsZero() || c.StartDate.Before(li.EndDate)
+}
+
+func commitmentCoversLine(c *commitment.Commitment, li *subscription.SubscriptionLineItem, p *price.Price) bool {
+	switch c.ScopeEntityType {
+	case types.CommitmentScopeSubscription:
+		return true
+	case types.CommitmentScopeGroup:
+		return p.GroupID == c.ScopeEntityID
+	case types.CommitmentScopeMeter:
+		return li.MeterID == c.ScopeEntityID
+	case types.CommitmentScopePrice:
+		return li.PriceID == c.ScopeEntityID
+	}
+
+	return false
+}
+
+// createSyncLineItem inserts a price-sync usage line item in the same transaction as the commitment attach
+// check, under the subscription's commitments lock. A violation is logged and the line skipped, so one
+// subscription never fails the whole sync; it reports whether the line was created.
+func createSyncLineItem(
+	ctx context.Context,
+	params ServiceParams,
+	sub *subscription.Subscription,
+	p *price.Price,
+	li *subscription.SubscriptionLineItem,
+) (bool, error) {
+	svc := &commitmentService{ServiceParams: params}
+	var commitmentID string
+	var checkErr error
+	err := params.DB.WithTx(ctx, func(txCtx context.Context) error {
+		commitmentID, checkErr = svc.checkPriceAttach(txCtx, sub, p, li.StartDate, lo.EmptyableToPtr(li.EndDate))
+		if checkErr != nil {
+			return checkErr
+		}
+
+		return params.SubscriptionLineItemRepo.Create(txCtx, li)
+	})
+	if checkErr != nil && ierr.IsValidation(checkErr) {
+		params.Logger.Info(ctx, "commitment.sync_price_skipped",
+			logger.Op("commitment.sync_price_skipped"),
+			"subscription_id", sub.ID, "price_id", p.ID, "commitment_id", commitmentID, "reason", checkErr.Error())
+		return false, nil
+	}
+
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }

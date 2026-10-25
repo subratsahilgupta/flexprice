@@ -106,12 +106,6 @@ func (r *CreateCommitmentRequest) ApplyDefaults(subTimezone string) {
 	}
 }
 
-func invalid(msg string) error {
-	return ierr.NewError(msg).
-		WithHint(msg).
-		Mark(ierr.ErrValidation)
-}
-
 // Validate checks the rules that need only the request. Call ApplyDefaults first.
 func (r *CreateCommitmentRequest) Validate() error {
 	if err := validator.ValidateRequest(r); err != nil {
@@ -131,21 +125,21 @@ func (r *CreateCommitmentRequest) Validate() error {
 
 	switch {
 	case !r.Value.IsPositive():
-		return invalid("value must be greater than zero")
+		return ierr.Validation("value must be greater than zero")
 	case !r.StartDate.Before(r.EndDate):
-		return invalid("start_date must be before end_date")
+		return ierr.Validation("start_date must be before end_date")
 	case r.Priority < 0:
-		return invalid("priority must be zero or greater")
+		return ierr.Validation("priority must be zero or greater")
 	case r.Type != types.COMMITMENT_TYPE_AMOUNT && r.Type != types.COMMITMENT_TYPE_QUANTITY:
-		return invalid("type must be amount or quantity")
+		return ierr.Validation("type must be amount or quantity")
 	case r.Type == types.COMMITMENT_TYPE_QUANTITY && r.CommittedPrice == nil:
-		return invalid("committed_price is required for quantity commitments")
+		return ierr.Validation("committed_price is required for quantity commitments")
 	case r.Type == types.COMMITMENT_TYPE_AMOUNT && r.CommittedPrice != nil:
-		return invalid("committed_price is not allowed on amount commitments")
+		return ierr.Validation("committed_price is not allowed on amount commitments")
 	case r.OveragePrice != nil && r.Type != types.COMMITMENT_TYPE_QUANTITY:
-		return invalid("overage_price is supported only on quantity commitments")
+		return ierr.Validation("overage_price is supported only on quantity commitments")
 	case len(r.ActiveWindows) > 0 && r.Measurement != types.CommitmentMeasurementWindow:
-		return invalid("active_windows require measurement=window")
+		return ierr.Validation("active_windows require measurement=window")
 	}
 
 	if err := r.validatePrices(); err != nil {
@@ -153,12 +147,12 @@ func (r *CreateCommitmentRequest) Validate() error {
 	}
 
 	if _, err := time.LoadLocation(r.Timezone); err != nil || r.Timezone == "" {
-		return invalid("timezone must be a valid IANA name")
+		return ierr.Validation("timezone must be a valid IANA name")
 	}
 
 	binding := lo.FromPtrOr(r.Binding, false)
 	if !binding && r.CollectionMethod != nil {
-		return invalid("non-binding commitments take no collection_method")
+		return ierr.Validation("non-binding commitments take no collection_method")
 	}
 
 	if r.CollectionMethod != nil {
@@ -167,16 +161,16 @@ func (r *CreateCommitmentRequest) Validate() error {
 		}
 
 		if *r.CollectionMethod == types.CommitmentCollectionBillingTerms {
-			return invalid("collection_method billing_terms is not yet supported")
+			return ierr.Validation("collection_method billing_terms is not yet supported")
 		}
 	}
 
 	if len(r.Name) == 0 || len(r.Name) > 255 || len(r.InvoiceLabel) > 255 {
-		return invalid("name and invoice_label must be 1-255 characters")
+		return ierr.Validation("name and invoice_label must be 1-255 characters")
 	}
 
 	if r.InvoiceDescription != nil && len(*r.InvoiceDescription) > 500 {
-		return invalid("invoice_description must be at most 500 characters")
+		return ierr.Validation("invoice_description must be at most 500 characters")
 	}
 
 	return nil
@@ -189,7 +183,7 @@ func (r *CreateCommitmentRequest) validatePrices() error {
 	if cp := r.CommittedPrice; cp != nil {
 		if cp.BillingModel != types.BILLING_MODEL_FLAT_FEE || cp.Amount == nil || !cp.Amount.IsPositive() ||
 			len(cp.Tiers) > 0 || cp.TransformQuantity != nil {
-			return invalid("committed_price must be FLAT_FEE with an amount greater than zero")
+			return ierr.Validation("committed_price must be FLAT_FEE with an amount greater than zero")
 		}
 	}
 
@@ -201,18 +195,18 @@ func (r *CreateCommitmentRequest) validatePrices() error {
 	switch op.BillingModel {
 	case types.BILLING_MODEL_FLAT_FEE, types.BILLING_MODEL_PACKAGE:
 		if op.Amount == nil || op.Amount.IsNegative() {
-			return invalid("overage_price.amount must be zero or greater")
+			return ierr.Validation("overage_price.amount must be zero or greater")
 		}
 	case types.BILLING_MODEL_TIERED:
 		if op.TierMode == "" {
-			return invalid("overage_price.tier_mode is required for TIERED")
+			return ierr.Validation("overage_price.tier_mode is required for TIERED")
 		}
 
 		if err := op.TierMode.Validate(); err != nil {
 			return err
 		}
 	default:
-		return invalid("overage_price.billing_model must be FLAT_FEE, TIERED or PACKAGE")
+		return ierr.Validation("overage_price.billing_model must be FLAT_FEE, TIERED or PACKAGE")
 	}
 
 	return nil
@@ -270,7 +264,7 @@ func (r *TerminateCommitmentRequest) Validate() error {
 	}
 
 	if r.CancellationFee != nil && !r.CancellationFee.IsPositive() {
-		return invalid("cancellation_fee must be greater than zero")
+		return ierr.Validation("cancellation_fee must be greater than zero")
 	}
 
 	return nil

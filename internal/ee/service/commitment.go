@@ -332,7 +332,7 @@ func (s *commitmentService) Update(
 	}
 
 	if (req.Name != nil && *req.Name == "") || (req.InvoiceLabel != nil && *req.InvoiceLabel == "") {
-		return nil, invalid("name and invoice_label must be 1-255 characters")
+		return nil, ierr.Validation("name and invoice_label must be 1-255 characters")
 	}
 
 	var updated *commitment.Commitment
@@ -523,7 +523,7 @@ func (s *commitmentService) terminate(
 	}
 
 	if !effectiveAt.Before(c.EndDate) {
-		return nil, nil, invalidf("effective_at must be before the commitment end %s", c.EndDate.Format(time.RFC3339))
+		return nil, nil, ierr.Validationf("effective_at must be before the commitment end %s", c.EndDate.Format(time.RFC3339))
 	}
 
 	var invoiceID *string
@@ -554,7 +554,7 @@ func (s *commitmentService) billCancellationFee(
 	fee decimal.Decimal,
 ) (*string, error) {
 	if !c.Binding {
-		return nil, invalid("cancellation_fee requires a binding commitment")
+		return nil, ierr.Validation("cancellation_fee requires a binding commitment")
 	}
 
 	amount := types.RoundToCurrencyPrecision(fee, c.Currency)
@@ -569,7 +569,7 @@ func (s *commitmentService) billCancellationFee(
 
 	// The fee invoice is dated at effective_at; a closed billing period must not gain charges.
 	if effectiveAt.Before(sub.CurrentPeriodStart) {
-		return nil, invalidf(
+		return nil, ierr.Validationf(
 			"effective_at with a cancellation_fee cannot precede the current billing period start %s",
 			sub.CurrentPeriodStart.Format(time.RFC3339),
 		)
@@ -727,11 +727,16 @@ func (s *commitmentService) checkPriceAttach(
 	if meterID, err := s.entitledMeter(ctx, sub, []string{p.MeterID}); err != nil {
 		return "", err
 	} else if meterID != "" {
-		return inScope[0].ID, invalidf("price %s is on meter %s, which has an active entitlement; it cannot join a commitment's scope", p.ID, meterID)
+		return inScope[0].ID, ierr.Validationf("price %s is on meter %s, which has an active entitlement; it cannot join a commitment's scope", p.ID, meterID)
 	}
 
 	if !billsEverySubscriptionPeriod(sub, p.BillingPeriod, p.BillingPeriodCount) {
-		return inScope[0].ID, errScopeCadence(p.ID)
+		return inScope[0].ID, ierr.NewErrorf(
+			"commitments require scope prices billed every subscription period; price %s bills on another cadence",
+			p.ID,
+		).
+			WithHint("commitments require scope prices billed every subscription period").
+			Mark(ierr.ErrValidation)
 	}
 
 	cc, err := s.loadCommitmentContext(ctx, sub.ID)
@@ -803,7 +808,7 @@ func (s *commitmentService) checkAttachAgainst(
 	}
 
 	if (c.Type == types.COMMITMENT_TYPE_QUANTITY || c.OveragePriceID != nil) && p.MeterID != lines[0].MeterID {
-		return invalidf("commitment %s covers a single meter; price %s is on a different meter", c.ID, p.ID)
+		return ierr.Validationf("commitment %s covers a single meter; price %s is on a different meter", c.ID, p.ID)
 	}
 
 	if c.Measurement != types.CommitmentMeasurementWindow {
@@ -817,7 +822,7 @@ func (s *commitmentService) checkAttachAgainst(
 
 	want := price.ResolveBucketSize(cc.Prices[lines[0].PriceID], cc.Meters[lines[0].MeterID])
 	if got := price.ResolveBucketSize(p, m); got != want {
-		return invalidf(
+		return ierr.Validationf(
 			"commitment %s measures by window with bucket size %q; price %s has bucket size %q",
 			c.ID,
 			want,
@@ -839,7 +844,7 @@ func (s *commitmentService) checkAttachPairs(ctx context.Context, inScope []*com
 			}
 
 			if a.Priority == b.Priority {
-				return a.ID, invalidf(
+				return a.ID, ierr.Validationf(
 					"commitments %s and %s overlap on the new price with the same priority %d",
 					a.ID,
 					b.ID,
@@ -848,7 +853,7 @@ func (s *commitmentService) checkAttachPairs(ctx context.Context, inScope []*com
 			}
 
 			if a.Type != b.Type || a.Measurement != b.Measurement {
-				return a.ID, invalidf(
+				return a.ID, ierr.Validationf(
 					"commitments %s and %s overlap on the new price but differ in type or measurement",
 					a.ID,
 					b.ID,
@@ -861,7 +866,7 @@ func (s *commitmentService) checkAttachPairs(ctx context.Context, inScope []*com
 			}
 
 			if !same {
-				return a.ID, invalidf(
+				return a.ID, ierr.Validationf(
 					"commitments %s and %s overlap on the new price but have different overage prices; only equal flat overage amounts combine on the same usage",
 					a.ID,
 					b.ID,

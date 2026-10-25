@@ -234,3 +234,22 @@ func TestCommitmentPeriods_BucketStraddlingAPeriodBoundaryCountsOnce(t *testing.
 	require.Equal(t, int64(4), periods[1].ActiveBuckets) // Mondays 2, 9, 16, 23 Feb; 26 Jan already counted in January
 	require.True(t, commitmentValue(periods).Equal(decimal.NewFromInt(8)))
 }
+
+func TestCommitmentPeriods_CountsPartialEdgeBuckets(t *testing.T) {
+	// A term starting mid-minute skips the straddling bucket; one ending mid-minute keeps its last.
+	jan := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	c := &commitment.Commitment{
+		Type:        types.COMMITMENT_TYPE_QUANTITY,
+		Value:       decimal.NewFromInt(1),
+		Measurement: types.CommitmentMeasurementWindow,
+		Timezone:    "UTC",
+		StartDate:   jan.Add(10*time.Hour + 30*time.Second),
+		EndDate:     jan.Add(12*time.Hour + 10*time.Second),
+	}
+
+	periods, err := commitmentPeriods(c, monthlySub(jan), decimal.NewFromInt(1), types.WindowSizeMinute)
+	require.NoError(t, err)
+	require.Len(t, periods, 1)
+	// 10:01 through 12:00 inclusive: the 10:00 bucket starts before the term, 12:00 starts before its end.
+	require.Equal(t, int64(120), periods[0].ActiveBuckets)
+}
