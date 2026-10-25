@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
@@ -408,6 +410,61 @@ func (s *CommitmentServiceSuite) TestUpdate_OnlyLabelsAndMetadata() {
 
 	_, err = s.svc.Update(s.GetContext(), created.ID, dto.UpdateCommitmentRequest{Name: lo.ToPtr("")})
 	s.True(ierr.IsValidation(err), "got %v", err)
+}
+
+func (s *CommitmentServiceSuite) TestWrites_PublishCommitmentWebhooks() {
+	publisher := s.GetWebhookPublisher().(*testutil.InMemoryWebhookPublisher)
+	publisher.Reset()
+
+	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	req.IdempotencyKey = lo.ToPtr("cmt-webhooks")
+	created, err := s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+	_, err = s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+
+	_, err = s.svc.Update(s.GetContext(), created.ID, dto.UpdateCommitmentRequest{InvoiceLabel: lo.ToPtr("Renamed")})
+	s.Require().NoError(err)
+
+	late := created.EndDate.AddDate(0, 1, 0)
+	_, err = s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{EffectiveAt: &late})
+	s.Require().Error(err)
+
+	at := created.StartDate.AddDate(0, 4, 0)
+	_, err = s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{EffectiveAt: &at})
+	s.Require().NoError(err)
+
+	events := publisher.Events()
+	s.Require().Len(events, 3)
+	for i, want := range []types.WebhookEventName{
+		types.WebhookEventCommitmentCreated,
+		types.WebhookEventCommitmentUpdated,
+		types.WebhookEventCommitmentTerminated,
+	} {
+		s.Equal(want, events[i].EventName)
+		s.Equal(types.SystemEntityTypeCommitment, events[i].EntityType)
+		s.Equal(created.ID, events[i].EntityID)
+
+		var payload webhookDto.InternalCommitmentEvent
+		s.Require().NoError(json.Unmarshal(events[i].Payload, &payload))
+		s.Equal(created.ID, payload.CommitmentID)
+		s.Equal(s.fx.sub.ID, payload.SubscriptionID)
+		s.Equal(types.GetTenantID(s.GetContext()), payload.TenantID)
+	}
+}
+
+func (s *CommitmentServiceSuite) TestTerminateForSubscription_PublishesTerminated() {
+	created, err := s.svc.Create(s.GetContext(), validReq(s.fx.sub.ID, s.fx.priceAPI.ID))
+	s.Require().NoError(err)
+
+	publisher := s.GetWebhookPublisher().(*testutil.InMemoryWebhookPublisher)
+	publisher.Reset()
+	s.Require().NoError(s.svc.TerminateForSubscription(s.GetContext(), s.fx.sub.ID, created.StartDate.AddDate(0, 2, 0)))
+
+	events := publisher.Events()
+	s.Require().Len(events, 1)
+	s.Equal(types.WebhookEventCommitmentTerminated, events[0].EventName)
+	s.Equal(created.ID, events[0].EntityID)
 }
 
 func (s *CommitmentServiceSuite) TestTerminate_SetsStatusAndTerminatedAt() {
@@ -1018,6 +1075,7 @@ func (s *CommitmentServiceSuite) TestUpdate_ReadsUnderCommitmentLockInTx() {
 		MeterRepo:                stores.MeterRepo,
 		GroupRepo:                stores.GroupRepo,
 		SettingsRepo:             stores.SettingsRepo,
+		WebhookPublisher:         s.GetWebhookPublisher(),
 	}
 
 	_, err = NewCommitmentService(params).Update(

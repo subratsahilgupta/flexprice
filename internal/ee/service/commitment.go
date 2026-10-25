@@ -13,6 +13,7 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
+	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
@@ -171,6 +172,7 @@ func (s *commitmentService) create(
 		"commitment_id", out.ID,
 		"subscription_id", out.SubscriptionID,
 	)
+	s.publishSystemEvent(ctx, types.WebhookEventCommitmentCreated, out)
 	return s.response(ctx, out, cc)
 }
 
@@ -381,6 +383,7 @@ func (s *commitmentService) Update(
 		return nil, err
 	}
 
+	s.publishSystemEvent(ctx, types.WebhookEventCommitmentUpdated, updated)
 	return s.response(ctx, updated, nil)
 }
 
@@ -418,6 +421,7 @@ func (s *commitmentService) Terminate(
 		"effective_at", effectiveAt,
 		"termination_invoice_id", lo.FromPtr(invoiceID),
 	)
+	s.publishSystemEvent(ctx, types.WebhookEventCommitmentTerminated, out)
 
 	resp, err := s.response(ctx, out, nil)
 	if err != nil {
@@ -483,10 +487,12 @@ func (s *commitmentService) TerminateForSubscription(
 				continue
 			}
 
-			if _, _, err := s.terminate(txCtx, c.ID, effectiveAt, nil); err != nil {
+			out, _, err := s.terminate(txCtx, c.ID, effectiveAt, nil)
+			if err != nil {
 				return err
 			}
 
+			s.publishSystemEvent(txCtx, types.WebhookEventCommitmentTerminated, out)
 			s.Logger.Info(ctx, "commitment.terminated",
 				logger.Op("commitment.terminated"),
 				"commitment_id", c.ID,
@@ -497,6 +503,40 @@ func (s *commitmentService) TerminateForSubscription(
 
 		return nil
 	})
+}
+
+// publishSystemEvent sends a commitment webhook once the surrounding transaction commits, so the payload builder
+// can read the commitment and a rollback sends nothing. A failure is logged and never fails the write.
+func (s *commitmentService) publishSystemEvent(ctx context.Context, eventName types.WebhookEventName, c *commitment.Commitment) {
+	event, err := types.NewWebhookEvent(eventName).
+		WithIdentityFromContext(ctx).
+		WithEntity(types.SystemEntityTypeCommitment, c.ID).
+		WithPayload(webhookDto.InternalCommitmentEvent{
+			CommitmentID:   c.ID,
+			SubscriptionID: c.SubscriptionID,
+			TenantID:       types.GetTenantID(ctx),
+		}).
+		Build()
+	if err != nil {
+		s.Logger.Error(ctx, "failed to build commitment webhook", "error", err, "commitment_id", c.ID)
+		return
+	}
+
+	// The publisher records the event in Postgres, which must not run on the finished transaction.
+	publishCtx := types.WithoutDBTransaction(ctx)
+	publish := func() {
+		if err := s.WebhookPublisher.PublishWebhook(publishCtx, event); err != nil {
+			s.Logger.Error(publishCtx, "failed to publish commitment webhook",
+				"error", err,
+				"event_name", eventName,
+				"commitment_id", c.ID,
+			)
+		}
+	}
+
+	if !types.RegisterPostCommit(ctx, publish) {
+		publish()
+	}
 }
 
 // lockCommitment serialises writes to one commitment and must run inside a transaction.
