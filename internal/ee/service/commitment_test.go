@@ -887,6 +887,7 @@ func (s *CommitmentServiceSuite) fullParams() ServiceParams {
 		SettingsRepo:                 st.SettingsRepo,
 		AddonPriceSyncRepo:           st.AddonPriceSyncRepo,
 		CommitmentRepo:               st.CommitmentRepo,
+		CheckoutSessionRepo:          st.CheckoutSessionRepo,
 		TaxAssociationRepo:           st.TaxAssociationRepo,
 		TaxRateRepo:                  st.TaxRateRepo,
 		TaxAppliedRepo:               st.TaxAppliedRepo,

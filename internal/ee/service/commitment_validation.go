@@ -666,8 +666,8 @@ func createSyncLineItem(
 }
 
 // checkLineItemCommitmentDetach rejects ending a usage line item at endDate when an active binding commitment
-// scopes it and no other line item stays in its scope, which would silently stop billing its minimum.
-// Call it after any replacement line exists, so a successor keeps the scope non-empty.
+// scopes it and the other lines in its scope do not cover the rest of its term without a gap, which would
+// silently stop billing its minimum. Call it inside the write's transaction, after any replacement line exists.
 func checkLineItemCommitmentDetach(
 	ctx context.Context,
 	params ServiceParams,
@@ -683,6 +683,13 @@ func checkLineItemCommitmentDetach(
 	enabled, err := svc.IsEnabled(ctx)
 	if err != nil || !enabled {
 		return err
+	}
+
+	// Serialise with other scope changes, so two removals cannot each see the other's line as cover.
+	if err := params.DB.LockWithWait(ctx, postgres.LockRequest{Key: "commitments:" + sub.ID}); err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to lock subscription commitments").
+			Mark(ierr.ErrInternal)
 	}
 
 	f := commitment.NewNoLimitFilter()
@@ -706,22 +713,19 @@ func checkLineItemCommitmentDetach(
 	}
 
 	for _, c := range active {
+		end := c.EffectiveEnd()
 		from := maxTime(endDate, c.StartDate)
-		if !c.Binding || !from.Before(c.EndDate) || !commitmentCoversLine(c, li, p) {
+		if !c.Binding || !from.Before(end) || !li.StartDate.Before(end) || !commitmentCoversLine(c, li, p) {
 			continue
 		}
 
-		if !li.StartDate.Before(c.EndDate) {
-			continue
-		}
-
-		remaining := lo.Filter(
-			scopeLinesInPeriod(c.ScopeEntityType, c.ScopeEntityID, cc, from, c.EndDate),
-			func(other *subscription.SubscriptionLineItem, _ int) bool { return other.ID != li.ID },
-		)
-		if len(remaining) == 0 {
+		remaining := lo.Filter(cc.Items, func(other *subscription.SubscriptionLineItem, _ int) bool {
+			op := cc.Prices[other.PriceID]
+			return other.ID != li.ID && other.PriceType == types.PRICE_TYPE_USAGE && op != nil && commitmentCoversLine(c, other, op)
+		})
+		if !coversContinuously(remaining, from, end) {
 			return ierr.Validationf(
-				"line item %s is the last line in scope of binding commitment %s; terminate the commitment first",
+				"line item %s is the last line in scope of binding commitment %s for part of its term; terminate the commitment first",
 				li.ID,
 				c.ID,
 			)
@@ -729,4 +733,29 @@ func checkLineItemCommitmentDetach(
 	}
 
 	return nil
+}
+
+// coversContinuously reports whether the lines together run through all of [from, to) without a gap.
+func coversContinuously(lines []*subscription.SubscriptionLineItem, from, to time.Time) bool {
+	sorted := append([]*subscription.SubscriptionLineItem(nil), lines...)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].StartDate.Before(sorted[j].StartDate) })
+
+	covered := from
+	for _, li := range sorted {
+		if !covered.Before(to) {
+			return true
+		}
+
+		if li.StartDate.After(covered) {
+			return false
+		}
+
+		if li.EndDate.IsZero() {
+			return true
+		}
+
+		covered = maxTime(covered, li.EndDate)
+	}
+
+	return !covered.Before(to)
 }
