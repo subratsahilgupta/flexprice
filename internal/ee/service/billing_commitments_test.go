@@ -667,7 +667,7 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodStartsMidPeriod(
 	s.True(total.Equal(dec("37")), "total %s", total)
 }
 
-// One pool spans every stretch a commitment is in force, so usage before a later commitment starts draws it down.
+// One pool spans every span a commitment is in force, so usage before a later commitment starts draws it down.
 func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodPoolsAcrossTheSplit() {
 	ctx := s.GetContext()
 	s.setupTestData()
@@ -920,7 +920,7 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodPricesEachBucket
 }
 
 // In a billing-period stack mixing bucketed and unbucketed lines, the unbucketed line's usage sits at the start of its
-// stretch, so it draws the shared pool before the buckets that follow it.
+// span, so it draws the shared pool before the buckets that follow it.
 func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodMixedLinesShareOnePool() {
 	ctx := s.GetContext()
 	s.setupTestData()
@@ -1150,7 +1150,7 @@ func TestSpreadCost_ConservesTotalProportionally(t *testing.T) {
 			want:    decs("0.3333333333333333", "0.3333333333333334", "0.3333333333333333", "0"),
 		},
 		{
-			name:    "a volume-priced period cost below its stretches' stand-alone prices splits by quantity",
+			name:    "a volume-priced period cost below its spans' stand-alone prices splits by quantity",
 			weights: decs("20", "10"),
 			total:   dec("30"),
 			want:    decs("20", "10"),
@@ -1185,8 +1185,8 @@ func TestSpreadCost_ConservesTotalProportionally(t *testing.T) {
 	}
 }
 
-// A volume price charges each stretch more on its own than the period as a whole; stretches still sum to the period cost.
-func (s *BillingServiceSuite) TestCommitmentLoader_AmountStretchesSpreadThePeriodCost() {
+// A volume price charges each span more on its own than the period as a whole; spans still sum to the period cost.
+func (s *BillingServiceSuite) TestCommitmentLoader_AmountSpansSpreadThePeriodCost() {
 	ctx := s.GetContext()
 	s.setupTestData()
 	s.enableCommitmentsV2()
@@ -1211,7 +1211,7 @@ func (s *BillingServiceSuite) TestCommitmentLoader_AmountStretchesSpreadThePerio
 	s.Require().NoError(err)
 	usage := stacks[0].Lines[0].Usage
 	s.Require().Len(usage, 2)
-	s.True(usage[0].Equal(dec("20")) && usage[1].Equal(dec("10")), "stretches %v", usage)
+	s.True(usage[0].Equal(dec("20")) && usage[1].Equal(dec("10")), "spans %v", usage)
 
 	lines, total, err := l.InvoiceLines(ctx)
 	s.Require().NoError(err)

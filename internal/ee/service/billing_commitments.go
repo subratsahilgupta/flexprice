@@ -20,25 +20,25 @@ import (
 // commitmentLoader turns the commitments overlapping one invoice calculation and the subscription's usage into
 // allocated commitment stacks. It is empty when commitments are off or nothing overlaps the period.
 type commitmentLoader struct {
-	billing     *billingService
-	sub         *subscription.Subscription
-	periodStart time.Time
-	periodEnd   time.Time
-	asOf        time.Time
-	charges     map[string][]*dto.SubscriptionUsageByMetersResponse
-	meters      map[string]*meter.Meter
-	source      types.UsageSource
-	context     *commitmentContext
-	priceSvc    PriceService
-	commitments []*stackedCommitment // in D5 order
-	scopes      map[string]*loadedScope
-	handled     map[string]bool
-	extIDs      []string
+	billing           *billingService
+	sub               *subscription.Subscription
+	periodStart       time.Time
+	periodEnd         time.Time
+	asOf              time.Time
+	charges           map[string][]*dto.SubscriptionUsageByMetersResponse
+	meters            map[string]*meter.Meter
+	source            types.UsageSource
+	subContext        *commitmentContext
+	priceSvc          PriceService
+	commitments       []*stackedCommitment    // in D5 order
+	scopeByCommitment map[string]*loadedScope // keyed by commitment ID
+	ownedLineIDs      map[string]bool         // line items the commitments price; normal pricing skips them
+	cachedExternalIDs []string
 }
 
 // loadedScope is what the loader resolves for a commitment beyond its stacked form.
 type loadedScope struct {
-	items        []*subscription.SubscriptionLineItem // in fill order, limited to this call's line items
+	lineItems    []*subscription.SubscriptionLineItem // in fill order, limited to this call's line items
 	bucket       types.WindowSize
 	overagePrice *price.Price
 	amountOf     func(capacity decimal.Decimal) decimal.Decimal
@@ -61,16 +61,16 @@ func (s *billingService) newCommitmentLoader(
 	source types.UsageSource,
 ) (*commitmentLoader, error) {
 	l := &commitmentLoader{
-		billing:     s,
-		sub:         sub,
-		periodStart: periodStart,
-		periodEnd:   periodEnd,
-		asOf:        asOf,
-		charges:     charges,
-		meters:      meters,
-		source:      source,
-		scopes:      map[string]*loadedScope{},
-		handled:     map[string]bool{},
+		billing:           s,
+		sub:               sub,
+		periodStart:       periodStart,
+		periodEnd:         periodEnd,
+		asOf:              asOf,
+		charges:           charges,
+		meters:            meters,
+		source:            source,
+		scopeByCommitment: map[string]*loadedScope{},
+		ownedLineIDs:      map[string]bool{},
 	}
 
 	svc := &commitmentService{ServiceParams: s.ServiceParams}
@@ -92,13 +92,13 @@ func (s *billingService) newCommitmentLoader(
 		return l, nil
 	}
 
-	l.context, err = svc.loadCommitmentContext(ctx, sub.ID)
+	l.subContext, err = svc.loadCommitmentContext(ctx, sub.ID)
 	if err != nil {
 		return nil, err
 	}
 
 	l.priceSvc = NewPriceService(s.ServiceParams)
-	callItems := lo.SliceToMap(sub.LineItems, func(li *subscription.SubscriptionLineItem) (string, *subscription.SubscriptionLineItem) {
+	callLineItemByID := lo.SliceToMap(sub.LineItems, func(li *subscription.SubscriptionLineItem) (string, *subscription.SubscriptionLineItem) {
 		return li.ID, li
 	})
 
@@ -109,18 +109,18 @@ func (s *billingService) newCommitmentLoader(
 		}
 
 		// The call must carry one of the commitment's lines; other cadence groups and filtered items leave it alone.
-		inScope := scopeLinesInPeriod(
+		scopeLineItems := scopeLinesInPeriod(
 			c.ScopeEntityType,
 			c.ScopeEntityID,
-			l.context,
+			l.subContext,
 			maxTime(periodStart, c.StartDate),
 			minTime(periodEnd, effectiveEnd),
 		)
-		items := lo.FilterMap(inScope, func(li *subscription.SubscriptionLineItem, _ int) (*subscription.SubscriptionLineItem, bool) {
-			item, ok := callItems[li.ID]
+		callScopeLineItems := lo.FilterMap(scopeLineItems, func(li *subscription.SubscriptionLineItem, _ int) (*subscription.SubscriptionLineItem, bool) {
+			item, ok := callLineItemByID[li.ID]
 			return item, ok
 		})
-		if len(items) == 0 {
+		if len(callScopeLineItems) == 0 {
 			continue
 		}
 
@@ -149,7 +149,7 @@ func (s *billingService) newCommitmentLoader(
 			overagePrice = p
 		}
 
-		bucket := bucketFor(c, l.context)
+		bucket := bucketFor(c, l.subContext)
 		if c.Measurement == types.CommitmentMeasurementWindow && bucket == "" {
 			return nil, ierr.NewErrorf("commitment %s measures by window but its scope has no bucketed price", c.ID).
 				WithHint("Window commitments need bucketed usage prices").
@@ -178,12 +178,12 @@ func (s *billingService) newCommitmentLoader(
 		}
 		clipped := clipCommitmentPeriod(c, period, periodStart, until, amountOf, bucket, sub.BillingAnchor)
 
-		for _, item := range items {
-			l.handled[item.ID] = true
+		for _, item := range callScopeLineItems {
+			l.ownedLineIDs[item.ID] = true
 		}
 
-		l.scopes[c.ID] = &loadedScope{
-			items:        items,
+		l.scopeByCommitment[c.ID] = &loadedScope{
+			lineItems:    callScopeLineItems,
 			bucket:       bucket,
 			overagePrice: overagePrice,
 			amountOf:     amountOf,
@@ -197,7 +197,7 @@ func (s *billingService) newCommitmentLoader(
 	// A line priced by two stacks would bill its usage twice, which terminated commitments of another type can cause.
 	claimedBy := map[string]*stackedCommitment{}
 	for _, sc := range l.commitments {
-		for _, item := range l.scopes[sc.C.ID].items {
+		for _, item := range l.scopeByCommitment[sc.C.ID].lineItems {
 			other, claimed := claimedBy[item.ID]
 			if !claimed {
 				claimedBy[item.ID] = sc
@@ -219,12 +219,12 @@ func (s *billingService) newCommitmentLoader(
 }
 
 func (l *commitmentLoader) stackKeyOf(sc *stackedCommitment) stackKey {
-	return stackKey{typ: sc.C.Type, measurement: sc.C.Measurement, bucket: l.scopes[sc.C.ID].bucket}
+	return stackKey{typ: sc.C.Type, measurement: sc.C.Measurement, bucket: l.scopeByCommitment[sc.C.ID].bucket}
 }
 
 // HandledLineIDs returns the line items commitments price; normal pricing skips them.
 func (l *commitmentLoader) HandledLineIDs() map[string]bool {
-	return l.handled
+	return l.ownedLineIDs
 }
 
 // Stacks builds one stack per type, measurement and bucket size from the loaded commitments and allocates each.
@@ -247,9 +247,9 @@ func (l *commitmentLoader) Stacks(ctx context.Context) ([]*commitmentStack, []*a
 		stack := &commitmentStack{Type: key.typ, Measurement: key.measurement, Commitments: groups[key]}
 		var err error
 		if key.measurement == types.CommitmentMeasurementWindow {
-			err = l.fillWindowStack(ctx, stack, key.bucket)
+			err = l.buildWindowStack(ctx, stack, key.bucket)
 		} else {
-			err = l.fillPeriodStack(ctx, stack)
+			err = l.buildPeriodStack(ctx, stack)
 		}
 
 		if err != nil {
@@ -368,16 +368,16 @@ func (s *billingService) commitmentUsageBreakdown(
 	return loader.UsageBreakdown(ctx)
 }
 
-// linkLines creates the stack's usage lines, links them to the commitments scoping them and returns each
-// line's meter, aligned with stack.Lines.
-func (l *commitmentLoader) linkLines(ctx context.Context, stack *commitmentStack) ([]*meter.Meter, error) {
-	byItem := map[string]*usageLine{}
-	overageFrom := map[string]*stackedCommitment{}
-	var meters []*meter.Meter
+// buildStackLines creates the stack's usage lines, links each to the commitments scoping it and returns the
+// lines' meters, aligned with stack.Lines.
+func (l *commitmentLoader) buildStackLines(ctx context.Context, stack *commitmentStack) ([]*meter.Meter, error) {
+	lineByItemID := map[string]*usageLine{}
+	overageSetBy := map[string]*stackedCommitment{}
+	var lineMeters []*meter.Meter
 	for _, sc := range stack.Commitments {
-		scope := l.scopes[sc.C.ID]
-		for _, item := range scope.items {
-			line, ok := byItem[item.ID]
+		scope := l.scopeByCommitment[sc.C.ID]
+		for _, item := range scope.lineItems {
+			line, ok := lineByItemID[item.ID]
 			if !ok {
 				p, m, err := l.lineDeps(ctx, item)
 				if err != nil {
@@ -385,20 +385,20 @@ func (l *commitmentLoader) linkLines(ctx context.Context, stack *commitmentStack
 				}
 
 				line = &usageLine{Item: item, Price: p}
-				byItem[item.ID] = line
+				lineByItemID[item.ID] = line
 				stack.Lines = append(stack.Lines, line)
-				meters = append(meters, m)
+				lineMeters = append(lineMeters, m)
 			}
 
 			// Commitments covering a line must agree on its overage price: none, or flat with equal amounts.
-			first, seen := overageFrom[item.ID]
-			if !seen {
-				overageFrom[item.ID] = sc
+			setter, isSet := overageSetBy[item.ID]
+			if !isSet {
+				overageSetBy[item.ID] = sc
 				line.OveragePrice = scope.overagePrice
-			} else if !sameOveragePrice(l.scopes[first.C.ID].overagePrice, scope.overagePrice) {
+			} else if !sameOveragePrice(l.scopeByCommitment[setter.C.ID].overagePrice, scope.overagePrice) {
 				return nil, ierr.NewErrorf(
 					"commitments %s and %s cover line item %s with different overage prices",
-					first.C.ID, sc.C.ID, item.ID,
+					setter.C.ID, sc.C.ID, item.ID,
 				).
 					WithHint("Overlapping commitments on one line must share an overage price").
 					Mark(ierr.ErrInvalidOperation)
@@ -408,25 +408,25 @@ func (l *commitmentLoader) linkLines(ctx context.Context, stack *commitmentStack
 		}
 	}
 
-	return meters, nil
+	return lineMeters, nil
 }
 
-// fillWindowStack gives the stack one window per bucket in the elapsed period, so empty buckets still count as
+// buildWindowStack gives the stack one window per bucket in the elapsed period, so empty buckets still count as
 // capacity, and one pool per bucket each commitment is active in.
-func (l *commitmentLoader) fillWindowStack(ctx context.Context, stack *commitmentStack, bucket types.WindowSize) error {
+func (l *commitmentLoader) buildWindowStack(ctx context.Context, stack *commitmentStack, bucket types.WindowSize) error {
 	stack.Windows = generateBucketStarts(l.periodStart.UTC(), minTime(l.periodEnd, l.asOf).UTC(), bucket, &l.sub.BillingAnchor)
-	meters, err := l.linkLines(ctx, stack)
+	lineMeters, err := l.buildStackLines(ctx, stack)
 	if err != nil {
 		return err
 	}
 
 	for i, line := range stack.Lines {
-		usage, err := l.bucketUsage(ctx, line, meters[i], bucket)
+		usage, err := l.bucketUsage(ctx, line, lineMeters[i], bucket)
 		if err != nil {
 			return err
 		}
 
-		l.fillBucketLine(ctx, stack, line, usage)
+		l.splitLineIntoBuckets(ctx, stack, line, usage)
 	}
 
 	// The floor counts the same buckets as the pools, over the whole window, so it never differs from the
@@ -443,7 +443,7 @@ func (l *commitmentLoader) fillWindowStack(ctx context.Context, stack *commitmen
 			sc.Pools = append(sc.Pools, capacityPool{Capacity: sc.C.Value})
 		}
 
-		scope := l.scopes[sc.C.ID]
+		scope := l.scopeByCommitment[sc.C.ID]
 		before := l.activeBuckets(sc.C, scope.periodStart, l.periodStart, bucket)
 		sc.Period.ActiveBuckets = l.activeBuckets(sc.C, l.periodStart, l.periodEnd, bucket)
 		sc.Period.Capacity = sc.C.Value.Mul(decimal.NewFromInt(sc.Period.ActiveBuckets))
@@ -470,10 +470,10 @@ func accrues(c *commitment.Commitment, t, from time.Time) bool {
 	return !t.Before(from) && c.IsActiveAt(t) && c.ActiveWindows.Contains(t, c.Location())
 }
 
-// fillBucketLine lays a bucketed line's usage out one bucket per window, each priced on its own as normal billing
+// splitLineIntoBuckets lays a bucketed line's usage out one bucket per window, each priced on its own as normal billing
 // prices it. A bucket joins the window containing its start, so an instant off the grid lands rather than vanishes;
 // one before the first window joins it.
-func (l *commitmentLoader) fillBucketLine(
+func (l *commitmentLoader) splitLineIntoBuckets(
 	ctx context.Context,
 	stack *commitmentStack,
 	line *usageLine,
@@ -506,46 +506,47 @@ func (l *commitmentLoader) fillBucketLine(
 	}
 }
 
-// fillPeriodStack gives the stack a window per stretch between commitment starts and ends, plus one per usage bucket of
-// its bucketed lines so each bucket prices alone; each commitment's single pool spans the windows it is in force.
-func (l *commitmentLoader) fillPeriodStack(ctx context.Context, stack *commitmentStack) error {
-	stretches := periodSplits(stack.Commitments, l.periodStart, l.periodEnd)
-	meters, err := l.linkLines(ctx, stack)
+// buildPeriodStack gives the stack a window per span between commitment starts and effective ends, plus one per usage
+// bucket of its bucketed lines; each commitment's single pool spans the windows it is in force. With no boundary
+// inside the invoice window and no bucketed line, that is one window and one pool per commitment.
+func (l *commitmentLoader) buildPeriodStack(ctx context.Context, stack *commitmentStack) error {
+	boundaryStarts := inForceBoundaries(stack.Commitments, l.periodStart, l.periodEnd)
+	lineMeters, err := l.buildStackLines(ctx, stack)
 	if err != nil {
 		return err
 	}
 
 	// Windows start at the usage buckets' own keys, not a generated grid, which may disagree with them (ClickHouse
-	// weeks start on Sunday); a bucket starting before the period joins the first window, as it joins the first stretch.
-	usage := make([]map[time.Time]decimal.Decimal, len(stack.Lines))
-	windows := append([]time.Time(nil), stretches...)
+	// weeks start on Sunday); a bucket starting before the period joins the first window, as it joins the first span.
+	bucketedUsage := make([]map[time.Time]decimal.Decimal, len(stack.Lines))
+	windowStarts := append([]time.Time(nil), boundaryStarts...)
 	for i, line := range stack.Lines {
-		m := meters[i]
+		m := lineMeters[i]
 		if !price.IsBucketedMax(line.Price, m) && !price.IsBucketedSum(line.Price, m) {
 			continue
 		}
 
-		if usage[i], err = l.bucketUsage(ctx, line, m, price.ResolveBucketSize(line.Price, m)); err != nil {
+		if bucketedUsage[i], err = l.bucketUsage(ctx, line, m, price.ResolveBucketSize(line.Price, m)); err != nil {
 			return err
 		}
 
-		for t := range usage[i] {
+		for t := range bucketedUsage[i] {
 			if t.After(l.periodStart) {
-				windows = append(windows, t)
+				windowStarts = append(windowStarts, t)
 			}
 		}
 	}
 
-	sort.Slice(windows, func(i, j int) bool { return windows[i].Before(windows[j]) })
-	stack.Windows = lo.UniqBy(windows, func(t time.Time) int64 { return t.UnixNano() })
+	sort.Slice(windowStarts, func(i, j int) bool { return windowStarts[i].Before(windowStarts[j]) })
+	stack.Windows = lo.UniqBy(windowStarts, func(t time.Time) int64 { return t.UnixNano() })
 
 	for i, line := range stack.Lines {
-		if usage[i] != nil {
-			l.fillBucketLine(ctx, stack, line, usage[i])
+		if bucketedUsage[i] != nil {
+			l.splitLineIntoBuckets(ctx, stack, line, bucketedUsage[i])
 			continue
 		}
 
-		if err := l.fillStretchLine(ctx, stack, line, meters[i], stretches); err != nil {
+		if err := l.splitLineAcrossBoundaries(ctx, stack, line, lineMeters[i], boundaryStarts); err != nil {
 			return err
 		}
 	}
@@ -564,83 +565,83 @@ func (l *commitmentLoader) fillPeriodStack(ctx context.Context, stack *commitmen
 	return nil
 }
 
-// fillStretchLine prices an unbucketed line's period quantity the way the normal path does and lays its usage out
-// per stretch, each at the window where the stretch starts.
-func (l *commitmentLoader) fillStretchLine(
+// splitLineAcrossBoundaries prices an unbucketed line's period quantity the way the normal path does and lays its
+// usage out per span, each at the window where the span starts.
+func (l *commitmentLoader) splitLineAcrossBoundaries(
 	ctx context.Context,
 	stack *commitmentStack,
 	line *usageLine,
 	m *meter.Meter,
-	stretches []time.Time,
+	boundaryStarts []time.Time,
 ) error {
 	for _, c := range l.activeCharges(line.Item) {
 		line.Quantity = line.Quantity.Add(c.QuantityDecimal())
 	}
 
 	line.Cost = types.RoundToCurrencyPrecision(l.priceSvc.CalculateCost(ctx, line.Price, line.Quantity), line.Price.Currency)
-	quantities := []decimal.Decimal{line.Quantity}
-	if len(stretches) > 1 {
+	spanQuantities := []decimal.Decimal{line.Quantity}
+	if len(boundaryStarts) > 1 {
 		var err error
-		if quantities, err = l.splitQuantities(ctx, line, m, stretches); err != nil {
+		if spanQuantities, err = l.quantitiesPerSpan(ctx, line, m, boundaryStarts); err != nil {
 			return err
 		}
 	}
 
-	values := quantities
+	spanValues := spanQuantities
 	if stack.Type == types.COMMITMENT_TYPE_AMOUNT {
-		// Pricing each stretch alone would walk tiers per stretch; spreading the period cost conserves it.
-		values = spreadCost(quantities, line.Cost)
+		// Pricing each span alone would walk tiers per span; spreading the period cost conserves it.
+		spanValues = spreadCost(spanQuantities, line.Cost)
 	}
 
 	line.Usage = make([]decimal.Decimal, len(stack.Windows))
-	for i, t := range stretches {
+	for i, t := range boundaryStarts {
 		at := sort.Search(len(stack.Windows), func(w int) bool { return !stack.Windows[w].Before(t) })
-		line.Usage[at] = values[i]
+		line.Usage[at] = spanValues[i]
 	}
 
 	return nil
 }
 
-// periodSplits returns the start of each stretch of [start, end) between the commitments' starts and ends.
+// inForceBoundaries returns the starts of the sub-ranges of [start, end) between commitment starts and effective ends.
 // Times in the same second as the period edges do not split it, since computed billing dates drop sub-second precision.
-func periodSplits(commitments []*stackedCommitment, start time.Time, end time.Time) []time.Time {
+func inForceBoundaries(commitments []*stackedCommitment, start time.Time, end time.Time) []time.Time {
 	from, to := start.Truncate(time.Second), end.Truncate(time.Second)
-	out := []time.Time{start}
+	boundaries := []time.Time{start}
 	for _, sc := range commitments {
 		for _, t := range []time.Time{sc.C.StartDate, sc.C.EffectiveEnd()} {
 			sec := t.Truncate(time.Second)
 			if sec.After(from) && sec.Before(to) {
-				out = append(out, t)
+				boundaries = append(boundaries, t)
 			}
 		}
 	}
 
-	sort.Slice(out, func(i, j int) bool { return out[i].Before(out[j]) })
-	return lo.UniqBy(out, func(t time.Time) int64 { return t.UnixNano() })
+	sort.Slice(boundaries, func(i, j int) bool { return boundaries[i].Before(boundaries[j]) })
+	return lo.UniqBy(boundaries, func(t time.Time) int64 { return t.UnixNano() })
 }
 
-// splitQuantities returns the line's usage in each stretch, one read per stretch but the last.
-// Stretches are capped in time order so they sum to the period quantity; the last takes the remainder.
-func (l *commitmentLoader) splitQuantities(
+// quantitiesPerSpan returns the line's usage in each span starting at boundaryStarts, one read per span but the last.
+// Spans are capped in time order so they sum to the period quantity; the last takes the remainder.
+func (l *commitmentLoader) quantitiesPerSpan(
 	ctx context.Context,
 	line *usageLine,
 	m *meter.Meter,
-	starts []time.Time,
+	boundaryStarts []time.Time,
 ) ([]decimal.Decimal, error) {
-	out := make([]decimal.Decimal, len(starts))
-	last := len(starts) - 1
+	out := make([]decimal.Decimal, len(boundaryStarts))
+	last := len(boundaryStarts) - 1
 	if !line.Quantity.IsPositive() {
 		out[last] = line.Quantity
 		return out, nil
 	}
 
 	for i := 0; i < last; i++ {
-		from, to := line.Item.GetPeriodStart(starts[i]), line.Item.GetPeriodEnd(starts[i+1])
+		from, to := line.Item.GetPeriodStart(boundaryStarts[i]), line.Item.GetPeriodEnd(boundaryStarts[i+1])
 		if !from.Before(to) {
 			continue
 		}
 
-		result, err := l.lineUsage(ctx, m, line, starts[i], starts[i+1])
+		result, err := l.lineUsage(ctx, m, line, boundaryStarts[i], boundaryStarts[i+1])
 		if err != nil {
 			return nil, err
 		}
@@ -712,7 +713,7 @@ func (l *commitmentLoader) lineDeps(ctx context.Context, item *subscription.Subs
 	}
 
 	if p == nil {
-		p = l.context.Prices[item.PriceID]
+		p = l.subContext.Prices[item.PriceID]
 	}
 
 	if p == nil {
@@ -724,7 +725,7 @@ func (l *commitmentLoader) lineDeps(ctx context.Context, item *subscription.Subs
 
 	m := l.meters[item.MeterID]
 	if m == nil {
-		m = l.context.Meters[item.MeterID]
+		m = l.subContext.Meters[item.MeterID]
 	}
 
 	if m == nil {
@@ -779,8 +780,8 @@ func (l *commitmentLoader) lineUsage(
 }
 
 func (l *commitmentLoader) externalIDs(ctx context.Context) ([]string, error) {
-	if l.extIDs != nil {
-		return l.extIDs, nil
+	if l.cachedExternalIDs != nil {
+		return l.cachedExternalIDs, nil
 	}
 
 	ids, err := NewSubscriptionService(l.billing.ServiceParams).ExternalCustomerIDsForSubscription(ctx, l.sub)
@@ -788,7 +789,7 @@ func (l *commitmentLoader) externalIDs(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 
-	l.extIDs = ids
+	l.cachedExternalIDs = ids
 	return ids, nil
 }
 
