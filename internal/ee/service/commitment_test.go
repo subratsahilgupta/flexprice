@@ -1337,6 +1337,42 @@ func (s *CommitmentServiceSuite) TestValidation_OverlapRejectsBucketSizeMismatch
 	s.requireValidation(err, first.ID, string(types.WindowSizeHour), string(types.WindowSizeMinute))
 }
 
+// groupedBucketedPrice stores a bucketed MAX price in grp_1 whose meter groups usage by region.
+func (s *CommitmentServiceSuite) groupedBucketedPrice() *price.Price {
+	ctx := s.GetContext()
+	m := *s.fx.meterAPI
+	m.ID, m.EventName, m.Aggregation.GroupBy = "meter_grouped", "grouped", "region"
+	s.Require().NoError(s.GetStores().MeterRepo.CreateMeter(ctx, &m))
+	p := *s.fx.priceAPI
+	p.ID, p.MeterID = "price_grouped", m.ID
+	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &p))
+	return &p
+}
+
+func (s *CommitmentServiceSuite) TestValidation_RejectsGroupedBucketedPriceInScope() {
+	ctx := s.GetContext()
+	p := s.groupedBucketedPrice()
+	line := *s.fx.lineAPI
+	line.ID, line.PriceID, line.MeterID = "subs_line_grouped", p.ID, p.MeterID
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &line))
+
+	_, err := s.svc.Create(ctx, validReq(s.fx.sub.ID, p.ID))
+	s.requireValidation(err, p.ID, "region", "grouped bucketed")
+}
+
+func (s *CommitmentServiceSuite) TestAttachPrice_RejectsGroupedBucketedPriceJoiningScope() {
+	ctx := s.GetContext()
+	req := validReq(s.fx.sub.ID, "")
+	req.Type, req.CommittedPrice, req.Value = types.COMMITMENT_TYPE_AMOUNT, nil, dec("100")
+	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeGroup, EntityID: s.fx.group.ID}
+	_, err := s.svc.Create(ctx, req)
+	s.Require().NoError(err)
+
+	p := s.groupedBucketedPrice()
+	_, err = NewSubscriptionService(s.fullParams()).AddSubscriptionLineItem(ctx, s.fx.sub.ID, dto.CreateSubscriptionLineItemRequest{PriceID: p.ID})
+	s.requireValidation(err, p.ID, "grouped bucketed")
+}
+
 func (s *CommitmentServiceSuite) TestValidation_OverlapChecksEveryLineOfTheOtherScope() {
 	ctx := s.GetContext()
 	feb := time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)

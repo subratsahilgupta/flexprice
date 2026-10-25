@@ -814,6 +814,15 @@ func (s *commitmentService) checkPriceAttach(
 			Mark(ierr.ErrValidation)
 	}
 
+	m, err := s.MeterRepo.GetMeter(ctx, p.MeterID)
+	if err != nil {
+		return "", err
+	}
+
+	if err := rejectGroupedBucketedPrice(p, m); err != nil {
+		return inScope[0].ID, err
+	}
+
 	cc, err := s.loadCommitmentContext(ctx, sub.ID)
 	if err != nil {
 		return "", err

@@ -251,6 +251,10 @@ func (s *commitmentService) validateAgainstSubscription(
 			return ierr.Validationf("price %s already has a legacy line-item commitment", li.PriceID)
 		}
 
+		if err := rejectGroupedBucketedPrice(cc.Prices[li.PriceID], cc.Meters[li.MeterID]); err != nil {
+			return err
+		}
+
 		if !billsEverySubscriptionPeriod(sub, li.BillingPeriod, li.BillingPeriodCount) {
 			return ierr.NewErrorf(
 				"commitments require scope prices billed every subscription period; price %s bills on another cadence",
@@ -262,6 +266,19 @@ func (s *commitmentService) validateAgainstSubscription(
 	}
 
 	return s.validateOverlaps(ctx, req, cc, termLines)
+}
+
+// rejectGroupedBucketedPrice rejects a bucketed MAX price grouped by a property: normal billing prices each group's
+// buckets separately, which commitment allocation cannot reproduce yet.
+func rejectGroupedBucketedPrice(p *price.Price, m *meter.Meter) error {
+	groupBy := price.BucketedGroupBy(p, m)
+	if groupBy == "" {
+		return nil
+	}
+
+	return ierr.NewErrorf("price %s is bucketed per %q group; commitments cannot cover grouped bucketed prices", p.ID, groupBy).
+		WithHint("Commitments cannot cover bucketed prices whose meter groups usage by a property").
+		Mark(ierr.ErrValidation)
 }
 
 // billsEverySubscriptionPeriod reports whether a price bills on the subscription's own cadence, so its invoice

@@ -873,6 +873,30 @@ func (s *BillingServiceSuite) TestCommitmentLoader_FailsClosedOnLineInTwoStacks(
 	}
 }
 
+func (s *BillingServiceSuite) TestCommitmentLoader_FailsClosedOnGroupedBucketedPrice() {
+	ctx := s.GetContext()
+	s.setupTestData()
+	s.enableCommitmentsV2()
+	grouped := &meter.Meter{
+		ID:          "meter_grouped_gpu",
+		Name:        "Grouped GPU",
+		EventName:   "grouped_gpu",
+		Aggregation: meter.Aggregation{Type: types.AggregationMax, Field: "gpus", BucketSize: types.WindowSizeHour, GroupBy: "region"},
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().MeterRepo.CreateMeter(ctx, grouped))
+	p := s.usagePriceFor("price_grouped_gpu", grouped, "1")
+	li := &subscription.SubscriptionLineItem{ID: "subs_line_grouped_gpu", PriceID: p.ID, MeterID: grouped.ID, DisplayName: "GPU"}
+	sub := s.fixedDateSub("sub_grouped", li)
+	s.storeCommitment(s.newTestCommitment("cmt_grouped", sub, types.COMMITMENT_TYPE_AMOUNT, "100", p.ID, sub.CurrentPeriodStart, sub.CurrentPeriodEnd))
+
+	usage := &dto.GetUsageBySubscriptionResponse{Currency: "usd", Charges: []*dto.SubscriptionUsageByMetersResponse{{SubscriptionLineItemID: li.ID, Price: p}}}
+	_, _, err := s.loaderFor(sub, usage, sub.CurrentPeriodStart, sub.CurrentPeriodEnd, false).InvoiceLines(ctx)
+	s.Require().Error(err)
+	s.True(ierr.IsInvalidOperation(err), "got %v", err)
+	s.Contains(err.Error(), li.ID)
+}
+
 func (s *BillingServiceSuite) TestCommitmentLoader_FailsClosedOnDifferentOverageRates() {
 	tests := []struct {
 		name    string

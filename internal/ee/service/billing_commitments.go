@@ -690,6 +690,13 @@ func (l *commitmentLoader) lineDeps(ctx context.Context, item *subscription.Subs
 			Mark(ierr.ErrNotFound)
 	}
 
+	// Allocation reads one value per bucket, so per-group bucket pricing would silently collapse.
+	if groupBy := price.BucketedGroupBy(p, m); groupBy != "" {
+		return nil, nil, ierr.NewErrorf("line item %s has a price bucketed per %q group, which commitments cannot cover", item.ID, groupBy).
+			WithHint("Commitments cannot cover bucketed prices whose meter groups usage by a property").
+			Mark(ierr.ErrInvalidOperation)
+	}
+
 	return p, m, nil
 }
 
