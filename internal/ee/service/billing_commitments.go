@@ -125,16 +125,18 @@ func (s *billingService) newCommitmentLoader(
 			continue
 		}
 
-		committedRate := decimal.NewFromInt(1)
+		amountOf := identityAmount
+		var committedPrice *price.Price
 		if c.Type != types.COMMITMENT_TYPE_AMOUNT {
-			committedRate = decimal.Zero
+			amountOf = func(decimal.Decimal) decimal.Decimal { return decimal.Zero }
 			if c.CommittedPriceID != nil {
 				p, err := s.PriceRepo.Get(ctx, *c.CommittedPriceID)
 				if err != nil {
 					return nil, err
 				}
 
-				committedRate = p.Amount
+				committedPrice = p
+				amountOf = (&commitmentService{ServiceParams: s.ServiceParams}).priceAmountFn(ctx, p)
 			}
 		}
 
@@ -155,7 +157,7 @@ func (s *billingService) newCommitmentLoader(
 				Mark(ierr.ErrInvalidOperation)
 		}
 
-		periods, err := commitmentPeriods(c, sub, committedRate, bucket)
+		periods, err := commitmentPeriods(c, sub, amountOf, bucket)
 		if err != nil {
 			return nil, err
 		}
@@ -169,7 +171,7 @@ func (s *billingService) newCommitmentLoader(
 
 		// A mid-period termination prorates this period; the invoice still covers the whole subscription period.
 		if c.TerminatedAt != nil {
-			period = clipCommitmentPeriod(c, period, *c.TerminatedAt, committedRate, bucket, sub.BillingAnchor)
+			period = clipCommitmentPeriod(c, period, *c.TerminatedAt, amountOf, bucket, sub.BillingAnchor)
 		}
 
 		for _, item := range items {
@@ -177,7 +179,7 @@ func (s *billingService) newCommitmentLoader(
 		}
 
 		l.scopes[c.ID] = &loadedScope{items: items, bucket: bucket, overagePrice: overagePrice}
-		l.commitments = append(l.commitments, &stackedCommitment{C: c, CommittedRate: committedRate, Period: period})
+		l.commitments = append(l.commitments, &stackedCommitment{C: c, CommittedPrice: committedPrice, Period: period})
 	}
 
 	sortCommitmentStack(l.commitments)
