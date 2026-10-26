@@ -197,6 +197,6 @@ Example: quota 100, stored usage 20, real usage 80, incoming quota 1000. The suc
 
 ### 7. Store parent and child checkpoints separately
 
-Parent/child customers are out of scope for NEVER SUM. A parent subscription's checkpoint is stored under the parent's customer ID but totals the parent and its inherited children as they were when it was saved. Parent-only reads skip the checkpoint and sum from the first event.
+Parent/child customers are out of scope for NEVER SUM. A checkpoint is keyed by one customer, but a parent subscription's total spans the parent and its current inherited children. Parent subscriptions therefore save no checkpoint and read none: every read sums the current members from their first event. That is correct but costs a full-history query per read.
 
-A child that leaves stays in later checkpoints, so the parent keeps paying for its usage. A child that joins never contributes usage from before the checkpoint. Save one checkpoint per customer and build family reads from the current members.
+Save one checkpoint per customer holding only its own usage, and build family reads from the current members' checkpoints. Members can then have checkpoints at different times, so the tail query needs a start time per customer.

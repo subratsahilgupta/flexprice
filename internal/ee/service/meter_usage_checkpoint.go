@@ -22,7 +22,7 @@ type CheckpointedUsageRequest struct {
 	MeterID             string
 	AggregationType     types.AggregationType
 	Until               time.Time
-	// IgnoreCheckpoints sums from the first event; set when the read's customer scope differs from the saved one.
+	// IgnoreCheckpoints sums from the first event instead of starting at a saved checkpoint.
 	IgnoreCheckpoints bool
 }
 
@@ -112,13 +112,19 @@ func keepsRunningAggregate(m *meter.Meter) bool {
 	return m != nil && m.Aggregation.Type == types.AggregationSum && m.ResetUsage == types.ResetUsageNever
 }
 
+// usesCheckpoints reports whether a subscription's running totals are checkpointed. A parent's
+// total spans its current children, so one row keyed by the parent cannot hold it.
+func usesCheckpoints(sub *subscription.Subscription) bool {
+	return sub != nil && sub.SubscriptionType != types.SubscriptionTypeParent
+}
+
 func (s *meterUsageService) SaveUsageCheckpointsForSubscription(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	until time.Time,
 	invoiceID *string,
 ) error {
-	if sub == nil || s.MeterRepo == nil {
+	if !usesCheckpoints(sub) || s.MeterRepo == nil {
 		return nil
 	}
 
