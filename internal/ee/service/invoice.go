@@ -41,6 +41,8 @@ type InvoiceService interface {
 	interfaces.InvoiceService
 
 	// Additional methods specific to this service
+	// CheckInvoicePayable returns an invalid-operation error when the customer cannot pay the invoice now.
+	CheckInvoicePayable(ctx context.Context, inv *dto.InvoiceResponse) error
 	CreateOneOffInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, error)
 	CreateEmptyDraftInvoice(ctx context.Context, req dto.CreateDraftInvoiceRequest) (*dto.InvoiceResponse, error)
 	CreateComputedDraftInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, bool, error)
@@ -81,6 +83,8 @@ type InvoiceService interface {
 	CalculatePriceBreakdown(ctx context.Context, inv *dto.InvoiceResponse) (map[string][]dto.SourceUsageItem, error)
 	CalculateUsageBreakdown(ctx context.Context, inv *dto.InvoiceResponse, groupBy []string, forceRealtimeRecalculation bool) (map[string][]dto.UsageBreakdownItem, error)
 	GetInvoiceWithBreakdown(ctx context.Context, req dto.GetInvoiceWithBreakdownRequest) (*dto.InvoiceResponse, error)
+	// WithHostedInvoiceURLs sets hosted_invoice_url on responses returned to tenants, customers and webhooks.
+	WithHostedInvoiceURLs(ctx context.Context, invoices ...*dto.InvoiceResponse) error
 	TriggerCommunication(ctx context.Context, id string) error
 	TriggerWebhook(ctx context.Context, invoiceID string, eventName types.WebhookEventName) error
 	HandleIncompleteSubscriptionPayment(ctx context.Context, invoice *invoice.Invoice) error
@@ -1511,6 +1515,9 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 		if err := s.InvoiceRepo.Update(txCtx, lockedInv); err != nil {
 			return err
 		}
+		if err := NewHostedInvoiceTokenService(s.ServiceParams).Issue(txCtx, lockedInv); err != nil {
+			return err
+		}
 
 		// Update the caller's reference so downstream code sees the finalized state
 		*inv = *lockedInv
@@ -1932,6 +1939,15 @@ func (s *invoiceService) SyncInvoiceToStripeIfEnabled(ctx context.Context, invoi
 		return err
 	}
 
+	// Stripe finalizes with auto-advance, so syncing a paid invoice would make Stripe collect it again.
+	if inv.PaymentStatus == types.PaymentStatusSucceeded ||
+		inv.PaymentStatus == types.PaymentStatusOverpaid {
+		s.Logger.Info(ctx, "invoice already paid, skipping Stripe sync",
+			"invoice_id", inv.ID,
+			"payment_status", inv.PaymentStatus)
+		return nil
+	}
+
 	// Keep Stripe sync working for both subscription and non-subscription invoices.
 	// For invoices without subscription context, default to send_invoice.
 	sub := &subscription.Subscription{
@@ -2017,6 +2033,15 @@ func (s *invoiceService) SyncInvoiceToStripeIfEnabled(ctx context.Context, invoi
 		"invoice_id", inv.ID,
 		"stripe_invoice_id", syncResponse.StripeInvoiceID,
 		"status", syncResponse.Status)
+
+	// Stripe now hosts the invoice, so the Flexprice link stops working.
+	if syncResponse.InvoiceURL != "" {
+		if err := NewHostedInvoiceTokenService(s.ServiceParams).Revoke(ctx, inv.ID); err != nil {
+			s.Logger.Error(ctx, "failed to revoke hosted invoice token after Stripe sync",
+				"error", err,
+				"invoice_id", inv.ID)
+		}
+	}
 
 	return nil
 }
@@ -4165,26 +4190,42 @@ func (s *invoiceService) reconcileLineItems(
 	// producing duplicate persisted lines. Key by (sub-line-item, window) to
 	// give each fanned-out line item its own reconcile identity.
 	type reconcileKey struct {
-		SubLineItemID string
-		PeriodStart   time.Time
-		PeriodEnd     time.Time
+		SubLineItemID  string
+		CommitmentID   string
+		CommitmentKind string
+		PeriodStart    time.Time
+		PeriodEnd      time.Time
 	}
-	keyOf := func(subLineItemID *string, periodStart, periodEnd *time.Time) (reconcileKey, bool) {
-		if subLineItemID == nil || periodStart == nil || periodEnd == nil {
+	// Commitment lines are keyed by commitment and line kind too: stacked commitments and on-demand
+	// share a subscription line item, and true-up or settlement lines have none.
+	keyOf := func(item *invoice.InvoiceLineItem) (reconcileKey, bool) {
+		if item.PeriodStart == nil || item.PeriodEnd == nil {
 			return reconcileKey{}, false
 		}
-		return reconcileKey{
-			SubLineItemID: *subLineItemID,
-			PeriodStart:   *periodStart,
-			PeriodEnd:     *periodEnd,
-		}, true
+
+		k := reconcileKey{
+			PeriodStart: *item.PeriodStart,
+			PeriodEnd:   *item.PeriodEnd,
+		}
+		if item.CommitmentID != nil {
+			k.CommitmentID = *item.CommitmentID
+			k.CommitmentKind = item.Metadata[types.MetadataKeyCommitmentLineKind]
+			k.SubLineItemID = lo.FromPtr(item.SubscriptionLineItemID)
+			return k, true
+		}
+
+		if item.SubscriptionLineItemID == nil {
+			return reconcileKey{}, false
+		}
+		k.SubLineItemID = *item.SubscriptionLineItemID
+		return k, true
 	}
 
 	// Items missing PeriodStart/PeriodEnd (legacy pre-migration or hand-crafted) are silently ignored here
 	// same contract as the pre-fan-out reconciler, which ignored items missing SubscriptionLineItemID. They stay in the DB untouched.
 	existingByKey := make(map[reconcileKey]*invoice.InvoiceLineItem, len(existing))
 	for _, item := range existing {
-		k, ok := keyOf(item.SubscriptionLineItemID, item.PeriodStart, item.PeriodEnd)
+		k, ok := keyOf(item)
 		if !ok {
 			continue
 		}
@@ -4196,11 +4237,7 @@ func (s *invoiceService) reconcileLineItems(
 
 	for _, req := range newLineItemReqs {
 		newItem := req.ToInvoiceLineItem(ctx, inv)
-		if lo.IsNil(newItem.SubscriptionLineItemID) {
-			toInsert = append(toInsert, newItem)
-			continue
-		}
-		k, ok := keyOf(newItem.SubscriptionLineItemID, newItem.PeriodStart, newItem.PeriodEnd)
+		k, ok := keyOf(newItem)
 		if !ok {
 			toInsert = append(toInsert, newItem)
 			continue
@@ -4227,7 +4264,7 @@ func (s *invoiceService) reconcileLineItems(
 	}
 
 	// Archive old items that no longer appear in the new calculation.
-	// An existing invoice line item whose (sub-line-item, start, end) is not re-emitted by the fresh calculation gets archived.
+	// An existing invoice line item whose key is not re-emitted by the fresh calculation gets archived.
 	var toArchiveIDs []string
 	for _, item := range existingByKey {
 		toArchiveIDs = append(toArchiveIDs, item.ID)
@@ -4895,6 +4932,11 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 		if err := s.InvoiceRepo.Update(txCtx, inv); err != nil {
 			return err
 		}
+		if req.DueDate != nil && inv.InvoiceStatus == types.InvoiceStatusFinalized {
+			if err := NewHostedInvoiceTokenService(s.ServiceParams).RecalculateExpiry(txCtx, inv); err != nil {
+				return err
+			}
+		}
 		updatedInv = inv
 		return nil
 	})
@@ -4904,6 +4946,21 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 
 	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdate, updatedInv.ID)
 	return dto.NewInvoiceResponse(updatedInv), nil
+}
+
+func (s *invoiceService) WithHostedInvoiceURLs(ctx context.Context, invoices ...*dto.InvoiceResponse) error {
+	if len(invoices) == 0 {
+		return nil
+	}
+	domainInvoices := lo.Map(invoices, func(r *dto.InvoiceResponse, _ int) *invoice.Invoice { return &r.Invoice })
+	urls, err := NewHostedInvoiceTokenService(s.ServiceParams).HostedInvoiceURLs(ctx, domainInvoices)
+	if err != nil {
+		return err
+	}
+	for _, r := range invoices {
+		r.WithHostedInvoiceURL(urls[r.ID])
+	}
+	return nil
 }
 
 func (s *invoiceService) TriggerCommunication(ctx context.Context, id string) error {
@@ -5931,4 +5988,80 @@ func mergeJSONArrayMetadata(existing string, newEntriesJSON string) (string, err
 		return "", ierr.WithError(err).WithHint("Failed to marshal merged discount metadata").Mark(ierr.ErrValidation)
 	}
 	return string(merged), nil
+}
+
+func (s *invoiceService) CheckInvoicePayable(ctx context.Context, inv *dto.InvoiceResponse) error {
+	if err := validateInvoiceIsPayable(inv); err != nil {
+		return err
+	}
+	return s.shouldAllowToPayInvoice(ctx, inv)
+}
+
+func validateInvoiceIsPayable(inv *dto.InvoiceResponse) error {
+	if inv.InvoiceStatus == types.InvoiceStatusDraft {
+		return ierr.NewError("invoice is not finalized").
+			WithHint("This invoice cannot be paid yet").
+			Mark(ierr.ErrInvalidOperation)
+	}
+	if inv.InvoiceStatus == types.InvoiceStatusVoided {
+		return ierr.NewError("invoice is voided").
+			WithHint("This invoice cannot be paid").
+			Mark(ierr.ErrInvalidOperation)
+	}
+
+	switch inv.PaymentStatus {
+	case types.PaymentStatusPending, types.PaymentStatusFailed:
+	default:
+		return ierr.NewError("invoice is not awaiting payment").
+			WithHintf("This invoice is %s", inv.PaymentStatus).
+			WithReportableDetails(map[string]any{"payment_status": inv.PaymentStatus}).
+			Mark(ierr.ErrInvalidOperation)
+	}
+
+	if inv.AmountRemaining.LessThanOrEqual(decimal.Zero) {
+		return ierr.NewError("invoice has nothing left to pay").
+			WithHint("This invoice is already settled").
+			Mark(ierr.ErrInvalidOperation)
+	}
+
+	return nil
+}
+
+// shouldAllowToPayInvoice blocks only the case that actually breaks: an
+// invoice whose payment is supposed to activate a subscription still sitting
+// unactivated. The link path settles the invoice but skips
+// HandleIncompleteSubscriptionPayment, so the money would be taken and the
+// subscription left behind.
+//
+// Deliberately narrow. An already-active subscription makes that hook a no-op
+// (activateIncompleteSubscription returns early unless the status is incomplete),
+// so those invoices stay payable, as do renewals and one-off invoices.
+//
+// TODO: delete once ReconcileInvoicePayment delegates to ReconcilePaymentStatus.
+func (s *invoiceService) shouldAllowToPayInvoice(ctx context.Context, inv *dto.InvoiceResponse) error {
+	reason := types.InvoiceBillingReason(inv.BillingReason)
+	if inv.SubscriptionID == nil || !reason.IsFirstSubscriptionOpenInvoiceReason() {
+		return nil
+	}
+
+	sub, err := s.SubRepo.Get(ctx, lo.FromPtr(inv.SubscriptionID))
+	if err != nil {
+		return err
+	}
+
+	activationPending := sub.SubscriptionStatus == types.SubscriptionStatusIncomplete
+	if reason == types.InvoiceBillingReasonSubscriptionTrialEnd {
+		activationPending = sub.SubscriptionStatus != types.SubscriptionStatusActive
+	}
+	if !activationPending {
+		return nil
+	}
+
+	return ierr.NewError("this invoice cannot be paid from the portal yet").
+		WithHint("Contact support to activate this subscription").
+		WithReportableDetails(map[string]any{
+			"subscription_id":     lo.FromPtr(inv.SubscriptionID),
+			"subscription_status": sub.SubscriptionStatus,
+		}).
+		Mark(ierr.ErrInvalidOperation)
 }

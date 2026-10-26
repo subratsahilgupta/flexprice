@@ -175,13 +175,20 @@ clickhouse:
 
 reports:
   # Empty database or username disables reports.
+  address: ""
   # Login must allow setting changes.
   database: ""
+  # Empty falls back to database.
+  usage_database: ""
+  # Read usage from the events clickhouse, not reports.
+  usage_on_events_clickhouse: false
   username: ""
   password: ""
-  max_execution_seconds: 30
+  max_execution_seconds: 10
   max_result_rows: 10000
   max_rows_to_read: 0
+  # Server query cache; 0 disables.
+  query_cache_ttl_seconds: 1800
 
 postgres:
   host: 127.0.0.1 # For local mode
@@ -663,6 +670,10 @@ onboarding_events:
 
 # Checkout base URL for the checkout page
 checkout:
+  base_url: ""
+
+# Hosted invoice page base; links are this value, a slash and the token. Empty returns no Flexprice link.
+hosted_invoice:
   base_url: ""
 
 onboarding:

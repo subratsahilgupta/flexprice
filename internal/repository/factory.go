@@ -13,6 +13,7 @@ import (
 	domainAnalytics "github.com/flexprice/flexprice/internal/domain/analytics"
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	"github.com/flexprice/flexprice/internal/domain/checkout"
+	"github.com/flexprice/flexprice/internal/domain/commitment"
 	"github.com/flexprice/flexprice/internal/domain/connection"
 	"github.com/flexprice/flexprice/internal/domain/costsheet"
 	"github.com/flexprice/flexprice/internal/domain/coupon"
@@ -30,6 +31,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	fxrate "github.com/flexprice/flexprice/internal/domain/fxrate"
 	"github.com/flexprice/flexprice/internal/domain/group"
+	"github.com/flexprice/flexprice/internal/domain/hostedinvoicetoken"
 	"github.com/flexprice/flexprice/internal/domain/incomingwebhookevent"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
@@ -174,6 +176,10 @@ func NewEntitlementRepository(p RepositoryParams) entitlement.Repository {
 	return entRepo.NewEntitlementRepository(p.EntClient, p.Logger, p.InMemoryCache, p.RedisCache)
 }
 
+func NewCommitmentRepository(p RepositoryParams) commitment.Repository {
+	return entRepo.NewCommitmentRepository(p.EntClient, p.Logger)
+}
+
 func NewEntitlementGrantRepository(p RepositoryParams) entitlementgrant.Repository {
 	return entRepo.NewEntitlementGrantRepository(p.EntClient, p.Logger)
 }
@@ -250,6 +256,10 @@ func NewFXRateRepository(p RepositoryParams) fxrate.Repository {
 	return entRepo.NewFXRateRepository(p.EntClient, p.Logger)
 }
 
+func NewHostedInvoiceTokenRepository(p RepositoryParams) hostedinvoicetoken.Repository {
+	return entRepo.NewHostedInvoiceTokenRepository(p.EntClient, p.Logger)
+}
+
 func NewTaxAssociationRepository(p RepositoryParams) taxassociation.Repository {
 	return entRepo.NewTaxAssociationRepository(p.EntClient, p.Logger, p.RedisCache)
 }
@@ -322,8 +332,8 @@ func NewAnalyticsViewRepository(p RepositoryParams) domainAnalytics.Repository {
 	return entRepo.NewAnalyticsViewRepository(p.EntClient, p.Logger)
 }
 
-func NewReportsRepository(cfg *config.Configuration, log *logger.Logger) (domainAnalytics.ReportsRepository, error) {
-	return clickhouseRepo.NewReportsRepository(cfg, log)
+func NewReportsRepository(cfg *config.Configuration, log *logger.Logger, rc cache.RedisCache) (domainAnalytics.ReportsRepository, error) {
+	return clickhouseRepo.NewReportsRepository(cfg, log, rc)
 }
 
 func NewRevenueFactRepository(p RepositoryParams) revenuefact.Repository {

@@ -3,6 +3,8 @@ package telemetry
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -19,25 +21,39 @@ import (
 const maxInflightEvents = 50
 
 type Reporter struct {
-	cfg        *config.Configuration
-	log        *logger.Logger
-	http       *http.Client
-	instanceID string
-	cloud      atomic.Value // string
-	inflight   chan struct{}
+	cfg          *config.Configuration
+	log          *logger.Logger
+	http         *http.Client
+	instanceID   string
+	deploymentID string
+	cloud        atomic.Value // string
+	inflight     chan struct{}
 }
 
 func NewReporter(cfg *config.Configuration, log *logger.Logger) *Reporter {
 	hostname, _ := os.Hostname()
 	r := &Reporter{
-		cfg:        cfg,
-		log:        log,
-		http:       &http.Client{Timeout: 5 * time.Second},
-		instanceID: hostname,
-		inflight:   make(chan struct{}, maxInflightEvents),
+		cfg:          cfg,
+		log:          log,
+		http:         &http.Client{Timeout: 5 * time.Second},
+		instanceID:   hostname,
+		deploymentID: deploymentFingerprint(cfg),
+		inflight:     make(chan struct{}, maxInflightEvents),
 	}
 	r.cloud.Store("unknown")
 	return r
+}
+
+// deploymentFingerprint groups pods of one install under a stable ID shared
+// by every replica, without a DB round-trip: every pod of one install
+// already shares the same Postgres host in config.
+func deploymentFingerprint(cfg *config.Configuration) string {
+	host := cfg.Postgres.Host
+	if host == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(host))
+	return hex.EncodeToString(sum[:])[:16]
 }
 
 func RegisterHooks(lc fx.Lifecycle, r *Reporter) {
@@ -87,8 +103,10 @@ func (r *Reporter) reportInstallInit(ctx context.Context) {
 }
 
 // ReportEvent fires a lightweight ping for a real system event consumed off
-// the webhook topic. Dispatches off the caller's goroutine so a stalled
-// collector never delays webhook delivery; capped by inflight so a
+// the webhook topic. event.Payload is redacted (see redact.go) before it's
+// sent, since webhook payloads can carry customer PII and financial data
+// depending on event type. Dispatches off the caller's goroutine so a
+// stalled collector never delays webhook delivery; capped by inflight so a
 // persistent stall can't pile up unbounded goroutines. Best-effort: a
 // dropped or failed send is fine, this is telemetry, not delivery.
 func (r *Reporter) ReportEvent(ctx context.Context, event *types.WebhookEvent) {
@@ -96,13 +114,10 @@ func (r *Reporter) ReportEvent(ctx context.Context, event *types.WebhookEvent) {
 		return
 	}
 
-	p := SystemEventPayload{
-		InstanceID:    r.instanceID,
-		TenantID:      types.GetTenantID(ctx),
-		EnvironmentID: types.GetEnvironmentID(ctx),
-		EventName:     string(event.EventName),
-		EventPayload:  json.RawMessage(event.Payload),
-	}
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+	eventName := string(event.EventName)
+	rawPayload := append(json.RawMessage(nil), event.Payload...)
 
 	select {
 	case r.inflight <- struct{}{}:
@@ -112,6 +127,12 @@ func (r *Reporter) ReportEvent(ctx context.Context, event *types.WebhookEvent) {
 	}
 	go func() {
 		defer func() { <-r.inflight }()
+		p := newSystemEventPayload(r, &systemEventInput{
+			TenantID:      tenantID,
+			EnvironmentID: environmentID,
+			EventName:     eventName,
+			Payload:       redactEventPayload(rawPayload),
+		})
 		sendCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		r.send(sendCtx, EventSystemEvent, p)

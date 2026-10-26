@@ -53,6 +53,7 @@ type Handlers struct {
 	Tax                      *v1.TaxHandler
 	FXRate                   *v1.FXRateHandler
 	Coupon                   *v1.CouponHandler
+	Commitment               *v1.CommitmentHandler
 	Webhook                  *v1.WebhookHandler
 	Addon                    *v1.AddonHandler
 	Integration              *v1.IntegrationHandler
@@ -79,6 +80,7 @@ type Handlers struct {
 	AIPricing      *v1.AIPricingHandler
 	CustomerPortal *v1.CustomerPortalHandler
 	SelfBilling    *v1.SelfBillingHandler
+	HostedInvoice  *v1.HostedInvoiceHandler
 }
 
 func NewRouter(
@@ -92,6 +94,7 @@ func NewRouter(
 	webhookRequestRepo domainIncomingWebhookEvent.Repository,
 	environmentRepo domainEnvironment.Repository,
 	userRepo domainUser.Repository,
+	hostedInvoiceService service.HostedInvoiceService,
 ) *gin.Engine {
 	// gin.SetMode(gin.ReleaseMode)
 
@@ -236,6 +239,8 @@ func NewRouter(
 			meterUsage.POST("/query", handlers.MeterUsage.QueryUsage)
 			meterUsage.POST("/analytics", handlers.MeterUsage.GetAnalytics)
 			meterUsage.POST("/detailed-analytics", handlers.MeterUsage.GetDetailedAnalytics)
+			meterUsage.POST("/properties", handlers.MeterUsage.GetPropertyKeys)
+			meterUsage.POST("/properties/values", handlers.MeterUsage.GetPropertyValues)
 		}
 
 		// Analytics query + view endpoints
@@ -244,6 +249,10 @@ func NewRouter(
 			analytics.POST("/query", read(types.EntityAnalytics, types.ActionRead), handlers.Analytics.Query)
 			analytics.POST("/revenue", read(types.EntityAnalytics, types.ActionRead), handlers.Analytics.GetRevenueAnalytics)
 			analytics.POST("/views", write(types.EntityAnalytics, types.ActionWrite), handlers.Analytics.CreateView)
+			analytics.GET("/views", read(types.EntityAnalytics, types.ActionRead), handlers.Analytics.ListViews)
+			analytics.GET("/views/:id", read(types.EntityAnalytics, types.ActionRead), handlers.Analytics.GetView)
+			analytics.PUT("/views/:id", write(types.EntityAnalytics, types.ActionWrite), handlers.Analytics.UpdateView)
+			analytics.DELETE("/views/:id", write(types.EntityAnalytics, types.ActionWrite), handlers.Analytics.DeleteView)
 			analytics.POST("/views/:id/query", read(types.EntityAnalytics, types.ActionRead), handlers.Analytics.QueryView)
 			analytics.GET("/reports", read(types.EntityAnalytics, types.ActionRead), handlers.Analytics.ListReports)
 			analytics.POST("/reports/:key/query", read(types.EntityAnalytics, types.ActionRead), handlers.Analytics.RunReport)
@@ -659,6 +668,16 @@ func NewRouter(
 			// }
 		}
 
+		commitments := v1Private.Group("/commitments")
+		{
+			commitments.POST("", write(types.EntityCommitment, types.ActionWrite), handlers.Commitment.CreateCommitment)
+			commitments.POST("/preview", read(types.EntityCommitment, types.ActionRead), handlers.Commitment.PreviewCommitment)
+			commitments.POST("/search", read(types.EntityCommitment, types.ActionRead), handlers.Commitment.QueryCommitments)
+			commitments.GET("/:id", read(types.EntityCommitment, types.ActionRead), handlers.Commitment.GetCommitment)
+			commitments.PUT("/:id", write(types.EntityCommitment, types.ActionWrite), handlers.Commitment.UpdateCommitment)
+			commitments.POST("/:id/terminate", write(types.EntityCommitment, types.ActionWrite), handlers.Commitment.TerminateCommitment)
+		}
+
 		// Coupon routes
 		coupon := v1Private.Group("/coupons")
 		{
@@ -721,6 +740,15 @@ func NewRouter(
 		}
 	}
 
+	// Hosted invoice page: the token is the only credential, and the middleware scopes every request to its invoice.
+	hostedInvoiceAPI := router.Group("/public/v1")
+	hostedInvoiceAPI.Use(middleware.ErrorHandler(), middleware.HostedInvoiceTokenMiddleware(hostedInvoiceService))
+	{
+		hostedInvoiceAPI.GET("/invoices", handlers.HostedInvoice.GetInvoice)
+		hostedInvoiceAPI.GET("/invoices/pdf", handlers.HostedInvoice.GetInvoicePDF)
+		hostedInvoiceAPI.POST("/invoices/pay", handlers.HostedInvoice.PayInvoice)
+	}
+
 	// Customer Dashboard - Customer-facing APIs (requires dashboard token)
 	customerPortalAPI := router.Group("/v1/customer/portal")
 	customerPortalAPI.Use(middleware.SessionTokenAuthMiddleware(cfg, logger))
@@ -775,6 +803,8 @@ func NewRouter(
 
 		// Analytics
 		customerPortalAPI.POST("/analytics/revenue", handlers.CustomerPortal.GetAnalytics)
+		customerPortalAPI.POST("/analytics/properties", handlers.CustomerPortal.GetPropertyKeys)
+		customerPortalAPI.POST("/analytics/properties/values", handlers.CustomerPortal.GetPropertyValues)
 
 		// Cost Analytics
 		customerPortalAPI.POST("/analytics/cost", handlers.CustomerPortal.GetCostAnalytics)
