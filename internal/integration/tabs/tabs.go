@@ -77,9 +77,6 @@ func (s *InvoiceService) SyncInvoiceToTabs(ctx context.Context, req TabsInvoiceS
 	if err != nil {
 		return nil, err
 	}
-	if !inv.SyncsToVendors() {
-		return &TabsInvoiceSyncResponse{}, nil
-	}
 
 	existingMapping, alreadySynced, err := s.getExistingInvoiceMapping(ctx, req.InvoiceID)
 	if err != nil {

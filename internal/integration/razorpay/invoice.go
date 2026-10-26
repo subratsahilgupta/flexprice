@@ -96,9 +96,6 @@ func (s *InvoiceSyncService) SyncInvoice(
 	inv *invoice.Invoice,
 	customerService interfaces.CustomerService,
 ) (*SyncInvoiceResult, error) {
-	if !inv.SyncsToVendors() {
-		return &SyncInvoiceResult{}, nil
-	}
 	charged, err := s.tryAutoCharge(ctx, inv)
 	if err != nil {
 		return nil, err
@@ -446,9 +443,6 @@ func (s *InvoiceSyncService) SyncInvoiceToRazorpay(
 		return nil, ierr.WithError(err).
 			WithHint("Failed to get FlexPrice invoice").
 			Mark(ierr.ErrDatabase)
-	}
-	if !flexInvoice.SyncsToVendors() {
-		return &RazorpayInvoiceSyncResponse{}, nil
 	}
 
 	// Step 3: Check if invoice is already synced to avoid duplicates
