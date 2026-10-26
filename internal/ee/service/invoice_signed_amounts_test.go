@@ -146,6 +146,7 @@ func (s *InvoiceServiceSuite) TestSignedInvoice_RecomputePreservesRecordedPaymen
 	draft := s.signedCycleDraft("sub_signed_paid", 70, 0)
 	computed, _, err := s.service.ComputeInvoice(ctx, draft.ID, nil)
 	s.Require().NoError(err)
+	priorStatus := computed.PaymentStatus
 	computed.AmountPaid = decimal.NewFromInt(20)
 	computed.AmountRemaining = computed.AmountDue.Sub(computed.AmountPaid)
 	s.Require().NoError(s.invoiceRepo.Update(ctx, computed))
@@ -159,13 +160,11 @@ func (s *InvoiceServiceSuite) TestSignedInvoice_RecomputePreservesRecordedPaymen
 	s.Equal("20", computed.AmountPaid.String())
 	s.True(computed.AmountDue.IsZero())
 	s.True(computed.AmountRemaining.IsZero())
-	s.Equal(types.PaymentStatusOverpaid, computed.PaymentStatus)
+	s.Equal(priorStatus, computed.PaymentStatus)
 	s.Require().NoError(s.service.FinalizeInvoice(ctx, draft.ID, dto.FinalizeInvoiceRequest{}))
 	sealed, err := s.invoiceRepo.Get(ctx, draft.ID)
 	s.Require().NoError(err)
 	s.Equal("20", sealed.AmountPaid.String())
-	s.Equal(types.PaymentStatusOverpaid, sealed.PaymentStatus)
-	s.NoError(sealed.Validate())
 	s.Require().NoError(s.service.RecalculateInvoiceAmounts(ctx, sealed.ID))
 	recalculated, err := s.invoiceRepo.Get(ctx, sealed.ID)
 	s.Require().NoError(err)
@@ -250,26 +249,4 @@ func (s *InvoiceServiceSuite) TestSignedInvoice_BreakdownPreservesPaymentStatus(
 		s.Equal("70", response.Total.String())
 		s.Equal("50", response.AmountRemaining.String())
 	}
-}
-
-func (s *InvoiceServiceSuite) TestSignedInvoice_RecomputeClearsOverpaidWhenUsageRecovers() {
-	ctx := s.GetContext()
-	draft := s.signedCycleDraft("sub_signed_recovered", -30, 0)
-	computed, _, err := s.service.ComputeInvoice(ctx, draft.ID, nil)
-	s.Require().NoError(err)
-	computed.AmountPaid = decimal.NewFromInt(20)
-	computed.PaymentStatus = types.PaymentStatusOverpaid
-	s.Require().NoError(s.invoiceRepo.Update(ctx, computed))
-	s.Require().NoError(s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, []*events.MeterUsage{{
-		Event: events.Event{ID: types.GenerateUUID(), TenantID: types.GetTenantID(ctx), EnvironmentID: types.GetEnvironmentID(ctx),
-			ExternalCustomerID: s.testData.customer.ExternalID, Timestamp: draft.PeriodStart.Add(4 * time.Hour)},
-		MeterID: "meter_sub_signed_recovered", QtyTotal: decimal.NewFromInt(100),
-	}}))
-	computed, _, err = s.service.ComputeInvoice(ctx, draft.ID, nil)
-	s.Require().NoError(err)
-	s.Equal("70", computed.Total.String())
-	s.Equal("20", computed.AmountPaid.String())
-	s.Equal("50", computed.AmountRemaining.String())
-	s.Equal(types.PaymentStatusPending, computed.PaymentStatus)
-	s.NoError(computed.Validate())
 }

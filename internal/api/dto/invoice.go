@@ -617,7 +617,7 @@ func (r *CreateInvoiceRequest) Validate() error {
 		// Round both values to currency precision before comparing to avoid floating-point accumulation errors
 		roundedTotal := types.RoundToCurrencyPrecision(totalAmount, r.Currency)
 		roundedAmountDue := types.RoundToCurrencyPrecision(r.AmountDue, r.Currency)
-		if !roundedTotal.Equal(roundedAmountDue) && !decimal.Max(roundedTotal, decimal.Zero).Equal(roundedAmountDue) {
+		if !decimal.Max(roundedTotal, decimal.Zero).Equal(roundedAmountDue) {
 			return ierr.NewError("sum of line item amounts must equal invoice amount_due").WithHintf("sum of line item amounts %s must equal invoice amount_due %s", roundedTotal.String(), roundedAmountDue.String()).Mark(ierr.ErrValidation)
 		}
 	}

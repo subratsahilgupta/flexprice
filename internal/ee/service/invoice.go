@@ -857,15 +857,6 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 		}
 
 		inv.AmountRemaining = decimal.Max(inv.AmountDue.Sub(inv.AmountPaid), decimal.Zero)
-		if inv.AmountPaid.GreaterThan(inv.AmountDue) {
-			inv.PaymentStatus = types.PaymentStatusOverpaid
-		} else if inv.PaymentStatus == types.PaymentStatusOverpaid {
-			if inv.AmountRemaining.IsZero() {
-				inv.PaymentStatus = types.PaymentStatusSucceeded
-			} else {
-				inv.PaymentStatus = types.PaymentStatusPending
-			}
-		}
 		for _, item := range inv.LineItems {
 			if err := s.InvoiceLineItemRepo.Update(txCtx, item); err != nil {
 				return err
@@ -1512,7 +1503,7 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 		// attemptPaymentForSubscriptionInvoice will set the correct status based on
 		// collection method: SUCCEEDED for charge_automatically, PENDING for send_invoice.
 		isTrialStart := types.InvoiceBillingReason(lockedInv.BillingReason) == types.InvoiceBillingReasonSubscriptionTrialStart
-		if lockedInv.Total.IsZero() && !isTrialStart && !lockedInv.AmountPaid.IsPositive() {
+		if lockedInv.Total.IsZero() && !isTrialStart {
 			lockedInv.PaymentStatus = types.PaymentStatusSucceeded
 		}
 
