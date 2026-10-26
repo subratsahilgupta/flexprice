@@ -155,7 +155,7 @@ Usage reads, grant state, preview and invoice calculations must agree for the sa
 
 ## 9. Technical debt
 
-Five agreed follow-ups remain open.
+Seven agreed follow-ups remain open.
 
 ### 1. Reconcile expired credits after negative usage
 
@@ -188,3 +188,15 @@ Future negative-invoice support needs explicit rules for signed totals, discount
 A checkpoint fixes the running total at the period end. An event dated before it but ingested after it (pipeline lag past the 1-hour compute delay) falls outside every later read and is never counted.
 
 Rebuild the affected checkpoint when an older event lands, or hold the checkpoint until ingestion has caught up.
+
+### 6. Carry forward allowance from current usage, not stored usage
+
+When an add-on, an override edit or a plan change closes a billing-period grant, the successor adds the closed grant's remaining allowance, computed from its stored usage. Stored usage can lag real usage.
+
+Example: quota 100, stored usage 20, real usage 80, incoming quota 1000. The successor opens at 1080 instead of 1020, and the extra 60 units go unbilled. Refresh the closing grant's usage up to the change boundary before computing what carries forward.
+
+### 7. Store parent and child checkpoints separately
+
+Parent/child customers are out of scope for NEVER SUM. A parent subscription's checkpoint is stored under the parent's customer ID but totals the parent and its inherited children as they were when it was saved. Parent-only reads skip the checkpoint and sum from the first event.
+
+A child that leaves stays in later checkpoints, so the parent keeps paying for its usage. A child that joins never contributes usage from before the checkpoint. Save one checkpoint per customer and build family reads from the current members.
