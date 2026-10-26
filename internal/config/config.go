@@ -620,6 +620,9 @@ type ReportsConfig struct {
 	Address              string `mapstructure:"address"`
 	Database             string `mapstructure:"database"`
 	UsageDatabase        string `mapstructure:"usage_database"`
+	UsageAddress         string `mapstructure:"usage_address"`
+	UsageUsername        string `mapstructure:"usage_username"`
+	UsagePassword        string `mapstructure:"usage_password"`
 	Username             string `mapstructure:"username"`
 	Password             string `mapstructure:"password"`
 	MaxExecutionSeconds  int    `mapstructure:"max_execution_seconds"`

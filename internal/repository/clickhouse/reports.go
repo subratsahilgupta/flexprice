@@ -1,6 +1,7 @@
 package clickhouse
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -21,6 +22,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/analytics"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 const (
@@ -37,6 +39,9 @@ type ReportsRepository struct {
 	logger *logger.Logger
 	cache  cache.RedisCache
 	source string
+
+	usageConn   driver.Conn
+	usageSource string
 }
 
 func NewReportsRepository(cfg *config.Configuration, log *logger.Logger, rc cache.RedisCache) (*ReportsRepository, error) {
@@ -65,6 +70,22 @@ func NewReportsRepository(cfg *config.Configuration, log *logger.Logger, rc cach
 		return nil, ierr.WithError(err).WithHint("open reports clickhouse connection").Mark(ierr.ErrSystem)
 	}
 	r.conn = conn
+	if r.cfg.UsageAddress == "" {
+		return r, nil
+	}
+	usageOpts := cfg.ClickHouse.GetClientOptions()
+	usageOpts.Addr = []string{r.cfg.UsageAddress}
+	usageOpts.Auth = clickhouse_go.Auth{
+		Database: r.cfg.UsageDatabase,
+		Username: cmp.Or(r.cfg.UsageUsername, r.cfg.Username),
+		Password: r.cfg.UsagePassword,
+	}
+	usageConn, err := clickhouse_go.Open(usageOpts)
+	if err != nil {
+		return nil, ierr.WithError(err).WithHint("open usage clickhouse connection").Mark(ierr.ErrSystem)
+	}
+	r.usageConn = usageConn
+	r.usageSource = r.cfg.UsageAddress
 	return r, nil
 }
 
@@ -96,11 +117,22 @@ func (r *ReportsRepository) RunReport(ctx context.Context, rv *analytics.Resolve
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.run(ctx, q)
+	rows, err := r.forReport(rv).run(ctx, q)
 	if err != nil {
 		return nil, err
 	}
 	return reportResult(q, rows, r.cfg.MaxResultRows)
+}
+
+// forReport targets the usage server for usage-backed metrics.
+func (r *ReportsRepository) forReport(rv *analytics.ResolvedView) *ReportsRepository {
+	if r.usageConn == nil || rv == nil || !slices.Contains(rv.Metrics, types.MetricEventsVolume) {
+		return r
+	}
+	u := *r
+	u.conn = r.usageConn
+	u.source = r.usageSource
+	return &u
 }
 
 func (r *ReportsRepository) buildReport(rv *analytics.ResolvedView, tenantID, environmentID string) (*reportQuery, error) {

@@ -180,6 +180,10 @@ reports:
   database: ""
   # Empty falls back to database.
   usage_database: ""
+  # Empty reads usage from the reports server.
+  usage_address: ""
+  usage_username: ""
+  usage_password: ""
   username: ""
   password: ""
   max_execution_seconds: 10
