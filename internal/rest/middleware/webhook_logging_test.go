@@ -136,6 +136,17 @@ func TestWebhookLoggingMiddleware_Redaction(t *testing.T) {
 			wantRaw: `{"card":{"expMonth":"[redacted]"},"cardCvc":"[redacted]","cardNumber":"[redacted]","card[number]":"[redacted]","source[exp_year]":"[redacted]"}`,
 		},
 		{
+			name:    "uppercase card keys json",
+			body:    `{"CVC":"123","CARD_NUMBER":"4111","CardNumber":"4111","card[NUMBER]":"4111"}`,
+			wantRaw: `{"CARD_NUMBER":"[redacted]","CVC":"[redacted]","CardNumber":"[redacted]","card[NUMBER]":"[redacted]"}`,
+		},
+		{
+			name:    "uppercase card keys form",
+			headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+			body:    "CVC=123&CARD_NUMBER=4111&CardNumber=4111&card[NUMBER]=4111",
+			wantRaw: "CARD_NUMBER=%5Bredacted%5D&CVC=%5Bredacted%5D&CardNumber=%5Bredacted%5D&card%5BNUMBER%5D=%5Bredacted%5D",
+		},
+		{
 			name:    "bracketed card keys form",
 			headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
 			body:    "card[number]=4111&card[exp_month]=12&cardNumber=4111&order[number]=INV-1",
