@@ -84,6 +84,8 @@ func (s *MeterUsageServiceSuite) SetupTest() {
 		WalletRepo:               s.GetStores().WalletRepo,
 		UserRepo:                 s.GetStores().UserRepo,
 		AuthRepo:                 s.GetStores().AuthRepo,
+		SettingsRepo:             s.GetStores().SettingsRepo,
+		CommitmentRepo:           s.GetStores().CommitmentRepo,
 		CouponAssociationRepo:    s.GetStores().CouponAssociationRepo,
 	})
 }
@@ -996,6 +998,85 @@ func (s *MeterUsageServiceSuite) TestSumMeter_AnalyticsWithGroupBy() {
 		"SUM us-east unchanged: expected 100, got %s", byRegion["us-east"])
 	s.True(byRegion["us-west"].Equal(decimal.NewFromInt(200)),
 		"SUM us-west unchanged: expected 200, got %s", byRegion["us-west"])
+}
+
+// TestGroupBySource_WalksTheTiersOverTheWholeLine pins that group_by splits the line's whole-usage tier total by each
+// source's usage share instead of walking the tiers per source. MAX does not add across sources, so its line is read.
+func (s *MeterUsageServiceSuite) TestGroupBySource_WalksTheTiersOverTheWholeLine() {
+	tests := []struct {
+		name        string
+		aggregation types.AggregationType
+		lineCost    string
+		want        map[string]string
+	}{
+		{
+			name:        "sum",
+			aggregation: types.AggregationSum,
+			lineCost:    "100", // 300 units: 100 at $0.50, 200 at $0.25
+			want:        map[string]string{"api": "20", "batch": "30", "console": "50"},
+		},
+		{
+			name:        "max",
+			aggregation: types.AggregationMax,
+			lineCost:    "62.5", // peak of 150: 100 at $0.50, 50 at $0.25
+			want:        map[string]string{"api": "12.5", "batch": "18.75", "console": "31.25"},
+		},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			ctx := s.GetContext()
+			m := s.createMeterWithAggregation(ctx, "meter_whole_line_"+tc.name, "api_call", tc.aggregation)
+			p := &price.Price{
+				ID:             "price_whole_line_" + tc.name,
+				Currency:       "usd",
+				EntityType:     types.PRICE_ENTITY_TYPE_PLAN,
+				EntityID:       "plan_1",
+				BillingModel:   types.BILLING_MODEL_TIERED,
+				TierMode:       types.BILLING_TIER_SLAB,
+				Type:           types.PRICE_TYPE_USAGE,
+				MeterID:        m.ID,
+				BillingPeriod:  types.BILLING_PERIOD_MONTHLY,
+				InvoiceCadence: types.InvoiceCadenceArrear,
+				Tiers: []price.PriceTier{
+					{UpTo: lo.ToPtr(uint64(100)), UnitAmount: decimal.NewFromFloat(0.5)},
+					{UnitAmount: decimal.NewFromFloat(0.25)},
+				},
+				BaseModel: types.GetDefaultBaseModel(ctx),
+			}
+			s.NoError(s.GetStores().PriceRepo.Create(ctx, p))
+			s.createLineItemForMeter(ctx, "li_whole_line_"+tc.name, m.ID, p.ID)
+
+			for source, qty := range map[string]float64{"api": 60, "batch": 90, "console": 150} {
+				s.insertMeterUsageWithProps(ctx, m.ID, s.customer.ExternalID, source,
+					time.Date(2026, 1, 5, 10, 0, 0, 0, time.UTC), qty, nil)
+			}
+
+			resp, err := s.svc.GetDetailedAnalytics(ctx, &events.MeterUsageDetailedAnalyticsParams{
+				TenantID:           types.GetTenantID(ctx),
+				EnvironmentID:      types.GetEnvironmentID(ctx),
+				ExternalCustomerID: s.customer.ExternalID,
+				MeterIDs:           []string{m.ID},
+				StartTime:          s.periodStart,
+				EndTime:            s.periodEnd,
+				GroupBy:            []string{"source"},
+			})
+			s.Require().NoError(err)
+			s.Require().Len(resp.Items, len(tc.want))
+
+			priceService := NewPriceService(ServiceParams{Logger: s.GetLogger()})
+			sum, perSourceWalk := decimal.Zero, decimal.Zero
+			for _, item := range resp.Items {
+				s.True(decimal.RequireFromString(tc.want[item.Source]).Equal(item.TotalCost),
+					"%s: want %s, got %s", item.Source, tc.want[item.Source], item.TotalCost)
+				sum = sum.Add(item.TotalCost)
+				perSourceWalk = perSourceWalk.Add(priceService.CalculateCost(ctx, p, item.TotalUsage))
+			}
+
+			s.True(sum.Equal(decimal.RequireFromString(tc.lineCost)), "sources sum to %s, line costs %s", sum, tc.lineCost)
+			s.False(sum.Equal(perSourceWalk), "per-source tier walk would bill %s", perSourceWalk)
+		})
+	}
 }
 
 // TestGroupByPropertyField_CountMeter reproduces the production bug where
