@@ -861,6 +861,10 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 		}
 
 		inv.AmountRemaining = decimal.Max(inv.AmountDue.Sub(inv.AmountPaid), decimal.Zero)
+		// Negative usage can lower a paid draft below what was already collected.
+		if inv.AmountPaid.GreaterThan(inv.AmountDue) {
+			inv.PaymentStatus = types.PaymentStatusOverpaid
+		}
 		for _, item := range inv.LineItems {
 			if err := s.InvoiceLineItemRepo.Update(txCtx, item); err != nil {
 				return err
@@ -1507,7 +1511,7 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 		// attemptPaymentForSubscriptionInvoice will set the correct status based on
 		// collection method: SUCCEEDED for charge_automatically, PENDING for send_invoice.
 		isTrialStart := types.InvoiceBillingReason(lockedInv.BillingReason) == types.InvoiceBillingReasonSubscriptionTrialStart
-		if lockedInv.Total.IsZero() && !isTrialStart {
+		if lockedInv.Total.IsZero() && !isTrialStart && !lockedInv.AmountPaid.GreaterThan(lockedInv.AmountDue) {
 			lockedInv.PaymentStatus = types.PaymentStatusSucceeded
 		}
 
@@ -3133,11 +3137,11 @@ func (s *invoiceService) GetUnpaidInvoicesToBePaid(ctx context.Context, req dto.
 		unpaidAmount = unpaidAmount.Add(remaining)
 		totalInvoiceAmountPaid = totalInvoiceAmountPaid.Add(paid)
 
-		creditsOnLines := decimal.Zero
+		invUsageCharges, creditsOnLines := decimal.Zero, decimal.Zero
 		for _, item := range inv.LineItems {
 			denomination := item.Denomination()
 			if lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_USAGE) {
-				unpaidUsageCharges = unpaidUsageCharges.Add(denomination.Amount).Sub(denomination.PrepaidCreditsApplied).Sub(denomination.LineItemDiscount)
+				invUsageCharges = invUsageCharges.Add(denomination.Amount).Sub(denomination.PrepaidCreditsApplied).Sub(denomination.LineItemDiscount)
 				creditsOnLines = creditsOnLines.Add(denomination.PrepaidCreditsApplied)
 			} else {
 				unpaidFixedCharges = unpaidFixedCharges.Add(denomination.Amount)
@@ -3150,8 +3154,10 @@ func (s *invoiceService) GetUnpaidInvoicesToBePaid(ctx context.Context, req dto.
 			appliedCredits = inv.CustomCurrency.TotalPrepaidCreditsApplied
 		}
 		if notOnLines := appliedCredits.Sub(creditsOnLines); notOnLines.IsPositive() {
-			unpaidUsageCharges = unpaidUsageCharges.Sub(notOnLines)
+			invUsageCharges = invUsageCharges.Sub(notOnLines)
 		}
+		// Net-negative usage on one invoice is not wallet credit.
+		unpaidUsageCharges = unpaidUsageCharges.Add(decimal.Max(invUsageCharges, decimal.Zero))
 	}
 
 	return &dto.GetUnpaidInvoicesToBePaidResponse{
@@ -5454,7 +5460,7 @@ func (s *invoiceService) recalculateInvoiceTotals(inv *dto.InvoiceResponse) {
 	inv.Subtotal = decimal.Max(newSubtotal, decimal.Zero)
 
 	// Preserve prepaid credits when rebuilding totals for the usage breakdown.
-	newTotal := inv.Subtotal.Sub(inv.TotalDiscount).Sub(inv.TotalPrepaidCreditsApplied).Add(inv.TotalTax)
+	newTotal := newSubtotal.Sub(inv.TotalDiscount).Sub(inv.TotalPrepaidCreditsApplied).Add(inv.TotalTax)
 	inv.Total = decimal.Max(newTotal, decimal.Zero)
 	inv.AmountDue = inv.Total
 	inv.CaptureCustomCurrencyDenomination()
