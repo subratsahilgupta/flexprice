@@ -69,27 +69,27 @@ The customer-facing response must distinguish raw usage from grant consumption/a
 
 ## 5. Invoices and settlement
 
-Without a grant, negative evaluated usage can create negative charges. Negative lines remain on the invoice and contribute to its signed total. A $20 charge and a -$30 usage charge produce a -$10 total before other adjustments.
+Without a grant, negative evaluated usage can create negative charges. Negative lines remain on the invoice, but subtotal and total are each floored at zero. A $20 charge and a -$30 usage charge remain visible as two lines; the invoice subtotal and total are $0. Raw meter usage and checkpoint balances remain signed.
 
 For an invoice with no prior payment:
 
-| Signed invoice total | Collectible due / remaining | Amount paid |
+| Net charges before clamping | Invoice total / due / remaining | Amount paid |
 |---:|---:|---:|
 | $70 | $70 | $0 |
 | $0 | $0 | $0 |
 | -$30 | $0 | $0 |
 
-Finalize invoices with nothing collectible without requesting payment. Never create negative payments, automatic wallet credits, refunds or future-invoice offsets from a negative total. Preserve the signed total through recalculation, tax application and currency conversion. Existing payments must not be erased by recomputation.
+Finalize invoices with nothing collectible without requesting payment. Never create negative payments, automatic wallet credits, refunds or future-invoice offsets from a negative total. Keep subtotal and total nonnegative through recalculation, tax application and currency conversion; negative invoice totals are deferred. Existing payments must not be erased by recomputation.
 
-**Decided credit policy:** keep negative line items on the invoice, where they reduce the signed total. Apply prepaid credits independently to each positive usage line after discounts, limited by available credits. Fixed and negative lines receive no prepaid credits. Negative lines do not offset another line’s credit eligibility; there is no cap based on net usage across the invoice. This policy applies at both finalization and expiring-credit settlement.
+**Decided credit policy:** keep negative line items on the invoice, where they reduce charges before the invoice totals are floored. Apply prepaid credits independently to each positive usage line after discounts, limited by available credits. Fixed and negative lines receive no prepaid credits. Negative lines do not offset another line’s credit eligibility; there is no cap based on net usage across the invoice. This policy applies at both finalization and expiring-credit settlement.
 
-For example, separate +$50 and -$45 usage lines with sufficient credits consume $50 credits against the positive line. The invoice total becomes -$45, the amount due is zero, and no wallet refund or credit is created. Per-line allocation is the chosen behavior, not a temporary limitation pending cross-line netting.
+For example, separate +$50 and -$45 usage lines with sufficient credits consume $50 credits against the positive line. The subtotal is $5; after $50 of prepaid credits, the total is floored to $0. No wallet refund or credit is created. Per-line allocation is the chosen behavior, not a temporary limitation pending cross-line netting.
 
-Expiring credits can already settle against draft invoices. Reconciliation if usage later decreases is deferred; the initial compatibility boundary for that combination must be explicit. External billing/accounting routes need verification before claiming negative-invoice support.
+Expiring credits can already settle against draft invoices. Reconciliation if usage later decreases is deferred; the initial compatibility boundary for that combination must be explicit. Remove the new negative-total/negative-line vendor-sync restriction and retain the existing skipped-invoice checks. This does not guarantee every provider accepts negative lines; provider compatibility remains to be verified.
 
 ## 6. Initial scope and Phase 2
 
-**Agreed initial scope:** signed SUM; checkpoint-backed NEVER; existing period-window pricing; one unchanged billing-period quantity grant; grant recovery and capped availability; signed invoices with nonnegative collection; existing prepaid allocation.
+**Agreed initial scope:** signed SUM; checkpoint-backed NEVER; existing period-window pricing; one unchanged billing-period quantity grant; grant recovery and capped availability; signed invoice lines with nonnegative subtotal, total and collection; existing prepaid allocation.
 
 Restrictions apply to newly enabled combinations and must be enforced without unnecessarily changing other customers’ existing configurations.
 
@@ -147,7 +147,7 @@ These decisions complete rollout planning; they do not reopen the agreed behavio
 | Grant usage 120 → 80 → 120 | Exhausted → active → exhausted, with correct alert transitions |
 | Negative usage with quota 100 | Available never exceeds 100; billable overage is zero |
 | Expired grant, later decrease | Old allowance does not become usable |
-| No grant, -30 units at $1 | Signed total -$30; due/remaining/paid zero; no collection or automatic credit |
+| No grant, -30 units at $1 | Retain the -$30 line; subtotal/total/due/remaining/paid zero; no collection or automatic credit |
 | $0 usage price or skipped payment | Usage, allowance and checkpoints remain correct |
 | Event at checkpoint cutoff | Counted exactly once |
 | Duplicate event or processing retry | No duplicate usage, debits or alerts |
@@ -157,7 +157,7 @@ Usage reads, grant state, preview and invoice calculations must agree for the sa
 
 ## 9. Technical debt
 
-Three agreed follow-ups remain open.
+Four agreed follow-ups remain open.
 
 ### 1. Reconcile expired credits after negative usage
 
@@ -178,3 +178,9 @@ Current billing can charge the running balance separately at multiple price-line
 For the same subscription and meter, evaluate the closing balance once and use the price effective immediately before the billing-period end. Earlier price lines remain historical records and do not produce separate usage charges under this rule. No duration proration or time weighting is included.
 
 Before implementation, define the behavior when a price ends without a replacement and when the subscription terminates mid-period, including the effective closing boundary.
+
+### 4. Support negative invoice totals and verify vendor compatibility
+
+For now, retain negative line items but clamp invoice subtotal and total to zero, preserving the existing invoice calculation flow. Credits continue to apply per positive usage line at finalization and expiry settlement. Consequently, applied credits can exceed the net subtotal; the resulting negative total is clamped, not refunded or carried forward.
+
+Future negative-invoice support needs explicit rules for signed totals, discounts and taxes, amount due/remaining, existing payments, and accounting exports. Negative lines may already reach vendors under the current sync flow; verify provider behavior separately rather than assuming all vendors support them. No blanket negative-line sync restriction is part of this version.
