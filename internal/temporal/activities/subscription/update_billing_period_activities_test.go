@@ -588,6 +588,55 @@ func (s *BillingActivitiesSuite) TestUpdateCurrentPeriodActivity_QuietNeverCycle
 	}
 }
 
+// A grouped child on the parent's customer still opens its NEVER allowance when the parent has none.
+func (s *BillingActivitiesSuite) TestUpdateCurrentPeriodActivity_RefreshesSameCustomerGroupedChild() {
+	s.WithEnvironment("env_rollover_grouped")
+	ctx := s.GetContext()
+	envID := types.GetEnvironmentID(ctx)
+	currentStart := time.Now().UTC().Add(-time.Minute)
+	cust := &customer.Customer{ID: "customer-grouped", ExternalID: "external-grouped", EnvironmentID: envID, BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.Require().NoError(s.GetStores().CustomerRepo.Create(ctx, cust))
+	plainPlan := &plan.Plan{ID: "plan-grouped-parent", Name: "Base", EnvironmentID: envID, BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.Require().NoError(s.GetStores().PlanRepo.Create(ctx, plainPlan))
+	neverPlan := &plan.Plan{ID: "plan-grouped-child", Name: "Storage", EnvironmentID: envID, BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.Require().NoError(s.GetStores().PlanRepo.Create(ctx, neverPlan))
+	m := &meter.Meter{ID: "meter-grouped", EventName: "storage", ResetUsage: types.ResetUsageNever,
+		Aggregation: meter.Aggregation{Type: types.AggregationSum}, EnvironmentID: envID, BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.Require().NoError(s.GetStores().MeterRepo.CreateMeter(ctx, m))
+	f := &feature.Feature{ID: "feature-grouped", Type: types.FeatureTypeMetered, MeterID: m.ID, EnvironmentID: envID, BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.Require().NoError(s.GetStores().FeatureRepo.Create(ctx, f))
+	_, err := s.GetStores().EntitlementRepo.Create(ctx, &entitlement.Entitlement{ID: "ec-grouped", EntityType: types.ENTITLEMENT_ENTITY_TYPE_PLAN,
+		EntityID: neverPlan.ID, FeatureID: f.ID, FeatureType: types.FeatureTypeMetered, IsEnabled: true,
+		GrantMeasure: types.EntitlementGrantMeasureQuantity, GrantDurationUnit: types.EntitlementGrantDurationUnitSubscriptionPeriod,
+		GrantQuota: lo.ToPtr(decimal.NewFromInt(100)), EnvironmentID: envID, BaseModel: types.GetDefaultBaseModel(ctx)})
+	s.Require().NoError(err)
+	newSub := func(id, planID string, subType types.SubscriptionType, parentID *string) *subscription.Subscription {
+		sub := &subscription.Subscription{ID: id, CustomerID: cust.ID, PlanID: planID, ParentSubscriptionID: parentID,
+			SubscriptionStatus: types.SubscriptionStatusActive, SubscriptionType: subType,
+			Currency: "usd", BillingPeriod: types.BILLING_PERIOD_MONTHLY, BillingPeriodCount: 1,
+			StartDate: currentStart.AddDate(0, -1, 0), CurrentPeriodStart: currentStart.AddDate(0, -1, 0), CurrentPeriodEnd: currentStart,
+			EnvironmentID: envID, BaseModel: types.GetDefaultBaseModel(ctx)}
+		s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, sub))
+		return sub
+	}
+	parent := newSub("sub-grouped-parent", plainPlan.ID, types.SubscriptionTypeParent, nil)
+	child := newSub("sub-grouped-child", neverPlan.ID, types.SubscriptionTypeGroupedInvoicing, lo.ToPtr(parent.ID))
+
+	params := s.newServiceParams()
+	activities := NewBillingActivities(service.NewSubscriptionService(params), params, s.GetLogger())
+	periodEnd := currentStart.AddDate(0, 1, 0)
+	_, err = activities.UpdateCurrentPeriodActivity(context.Background(), subscriptionModels.UpdateSubscriptionPeriodActivityInput{
+		SubscriptionID: parent.ID, PeriodStart: currentStart, PeriodEnd: periodEnd,
+		TenantID: types.GetTenantID(ctx), EnvironmentID: envID, UserID: types.GetUserID(ctx)})
+	s.Require().NoError(err)
+	rows, err := s.GetStores().EntitlementGrantRepo.List(ctx, types.NewNoLimitEntitlementGrantFilter().
+		WithSubscriptionIDs(child.ID).WithCycleOverlap(currentStart, periodEnd))
+	s.Require().NoError(err)
+	s.Require().Len(rows, 1)
+	s.Equal("100", rows[0].Quota.String())
+	s.NotNil(rows[0].LastComputedAt)
+}
+
 func (s *BillingActivitiesSuite) TestRolloverSkipsSubscriptionsWithoutNeverMeterGrants() {
 	ctx := s.GetContext()
 	f := &feature.Feature{ID: "feature-normal-rollover", Type: types.FeatureTypeMetered,

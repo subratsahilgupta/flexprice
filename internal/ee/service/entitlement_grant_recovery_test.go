@@ -290,6 +290,30 @@ func (s *EntitlementGrantSuite) TestReissue_NeverCycleGrantUsesFullQuotaAndRecov
 	s.Equal("120", closed.Usage.String(), "later corrections don't rewrite a finalized predecessor")
 }
 
+// Every additive contributor funds the reissued NEVER pool, not only the first one.
+func (s *EntitlementGrantSuite) TestReissue_NeverPoolsEveryContributor() {
+	ctx := s.GetContext()
+	cust, sub, _ := s.recoveryFixture(types.ResetUsageNever)
+	extra := s.newTimeBoxedEC("ec-recovery-sub", "feature-recovery", 0, types.EntitlementGrantDurationUnitSubscriptionPeriod, decimal.NewFromInt(70))
+	extra.EntityType = types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION
+	extra.EntityID = sub.ID
+	_, err := s.GetStores().EntitlementRepo.Create(ctx, extra)
+	s.Require().NoError(err)
+
+	start := sub.CurrentPeriodStart.Add(time.Minute)
+	grants, _, err := s.grantService.EnsureGrantsForSubscriptions(ctx, cust, []*subscription.Subscription{sub}, start)
+	s.Require().NoError(err)
+	s.Require().Len(grants, 1)
+	s.Equal("170", grants[0].Quota.String())
+
+	opened, err := s.grantService.ReissueEntitlementGrants(ctx, &dto.ReissueEntitlementGrantsRequest{
+		SubscriptionID: sub.ID, FeatureID: "feature-recovery", At: sub.CurrentPeriodStart.Add(time.Hour),
+	})
+	s.Require().NoError(err)
+	s.Require().Len(opened, 1)
+	s.Equal("170", opened[0].Quota.String())
+}
+
 func (s *EntitlementGrantSuite) TestReissue_NeverUnevaluatedGrantKeepsChangeBoundary() {
 	ctx := s.GetContext()
 	cust, sub, _ := s.recoveryFixture(types.ResetUsageNever)

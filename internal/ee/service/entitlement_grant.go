@@ -196,6 +196,8 @@ func (s *entitlementGrantService) ReissueEntitlementGrants(
 			return err
 		}
 
+		// NEVER grants are additive only, so the single candidate pools every contributor's quota.
+		pool := grantCandidatesForFeature(featureECs)[0]
 		reqs := make([]OpenFeatureBasedEntitlementGrantsRequest, 0, len(live)+1)
 		if len(live) == 0 && req.At.Before(sub.CurrentPeriodEnd) {
 			reqs = append(reqs, OpenFeatureBasedEntitlementGrantsRequest{
@@ -205,8 +207,8 @@ func (s *entitlementGrantService) ReissueEntitlementGrants(
 					WithSubscriptionID(sub.ID).
 					WithScope(types.EntitlementGrantScopeFeature, req.FeatureID).
 					WithMeasure(featureECs[0].GrantMeasure).
-					WithQuota(lo.FromPtr(featureECs[0].GrantQuota)).
-					WithUnlimited(featureECs[0].IsUnlimitedGrant()).
+					WithQuota(pool.quota).
+					WithUnlimited(pool.unlimited).
 					WithWindow(types.LatestOf(req.At, sub.CurrentPeriodStart), sub.CurrentPeriodEnd).
 					Build(),
 				IncomingECs: featureECs,
@@ -220,7 +222,7 @@ func (s *entitlementGrantService) ReissueEntitlementGrants(
 			quota, _ := closed.Remaining()
 			quota = quota.Add(req.Delta)
 			if isNeverMeter {
-				quota = lo.FromPtr(featureECs[0].GrantQuota)
+				quota = pool.quota
 			}
 			reqs = append(reqs, OpenFeatureBasedEntitlementGrantsRequest{
 				FeatureID: req.FeatureID,
@@ -1001,29 +1003,37 @@ func (s *entitlementService) validateEntitlementGrantShape(
 		return err
 	}
 
-	switch m.ResetUsage {
-	case types.ResetUsageNever:
-		if m.Aggregation.Type != types.AggregationSum {
-			return ierr.NewError("NEVER meter grants require SUM aggregation").Mark(ierr.ErrValidation)
-		}
-		if e.GrantMeasure != types.EntitlementGrantMeasureQuantity {
-			return ierr.NewError("NEVER meter grants require quantity measure").Mark(ierr.ErrValidation)
-		}
-		if e.GrantDurationUnit != types.EntitlementGrantDurationUnitSubscriptionPeriod {
-			return ierr.NewError("NEVER meter grants require subscription_period duration").Mark(ierr.ErrValidation)
-		}
-		if defaultedMode(e.AggregationMode) != types.EntitlementAggregationModeAdditive {
-			return ierr.NewError("parallel grants are not supported for NEVER meters").Mark(ierr.ErrValidation)
-		}
-		if e.EntityType == types.ENTITLEMENT_ENTITY_TYPE_ADDON {
-			return ierr.NewError("addon grants are not supported for NEVER meters").Mark(ierr.ErrValidation)
-		}
+	if err := neverGrantShapeError(e, m); err != nil {
+		return err
 	}
 
 	if err := s.validateGrantSiblingCoherence(ctx, e); err != nil {
 		return err
 	}
 
+	return nil
+}
+
+// neverGrantShapeError reports why a grant cannot run on a meter that never resets; nil otherwise.
+func neverGrantShapeError(e *entitlement.Entitlement, m *meter.Meter) error {
+	if m.ResetUsage != types.ResetUsageNever {
+		return nil
+	}
+	if m.Aggregation.Type != types.AggregationSum {
+		return ierr.NewError("NEVER meter grants require SUM aggregation").Mark(ierr.ErrValidation)
+	}
+	if e.GrantMeasure != types.EntitlementGrantMeasureQuantity {
+		return ierr.NewError("NEVER meter grants require quantity measure").Mark(ierr.ErrValidation)
+	}
+	if e.GrantDurationUnit != types.EntitlementGrantDurationUnitSubscriptionPeriod {
+		return ierr.NewError("NEVER meter grants require subscription_period duration").Mark(ierr.ErrValidation)
+	}
+	if defaultedMode(e.AggregationMode) != types.EntitlementAggregationModeAdditive {
+		return ierr.NewError("parallel grants are not supported for NEVER meters").Mark(ierr.ErrValidation)
+	}
+	if e.EntityType == types.ENTITLEMENT_ENTITY_TYPE_ADDON {
+		return ierr.NewError("addon grants are not supported for NEVER meters").Mark(ierr.ErrValidation)
+	}
 	return nil
 }
 

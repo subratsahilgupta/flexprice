@@ -989,8 +989,17 @@ func (s *entitlementService) deriveGrantConfig(
 		return nil
 	}
 
-	measure := types.EntitlementGrantMeasureQuantity
-	if err := s.grantMeterEligibility(ctx, m, measure); err != nil {
+	derived := *e
+	derived.GrantMeasure = types.EntitlementGrantMeasureQuantity
+	derived.GrantDurationUnit = types.EntitlementGrantDurationUnitSubscriptionPeriod
+	if derived.AggregationMode == "" {
+		derived.AggregationMode = types.EntitlementAggregationModeAdditive
+	}
+	err := s.grantMeterEligibility(ctx, m, derived.GrantMeasure)
+	if err == nil {
+		err = neverGrantShapeError(&derived, m)
+	}
+	if err != nil {
 		s.Logger.Info(ctx, "feature cannot carry an allowance; entitlement stays on the legacy model",
 			"feature_id", e.FeatureID,
 			"meter_id", lo.FromPtr(m).ID,
@@ -998,11 +1007,9 @@ func (s *entitlementService) deriveGrantConfig(
 		return nil
 	}
 
-	e.GrantMeasure = measure
-	e.GrantDurationUnit = types.EntitlementGrantDurationUnitSubscriptionPeriod
-	if e.AggregationMode == "" {
-		e.AggregationMode = types.EntitlementAggregationModeAdditive
-	}
+	e.GrantMeasure = derived.GrantMeasure
+	e.GrantDurationUnit = derived.GrantDurationUnit
+	e.AggregationMode = derived.AggregationMode
 	if e.UsageLimit != nil {
 		e.GrantQuota = lo.ToPtr(decimal.NewFromInt(*e.UsageLimit))
 	}

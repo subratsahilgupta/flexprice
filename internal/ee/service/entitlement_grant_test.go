@@ -2700,6 +2700,42 @@ func (s *EntitlementGrantSuite) TestCreateEntitlement_NeverMeterValidation() {
 	}
 }
 
+// A legacy usage_limit that a NEVER grant cannot carry stays legacy instead of failing creation.
+func (s *EntitlementGrantSuite) TestCreateEntitlement_LegacyLimitOnUnsupportedNeverMeterStaysLegacy() {
+	for _, tc := range []struct {
+		name        string
+		aggregation types.AggregationType
+		entity      types.EntitlementEntityType
+		wantGrant   bool
+	}{
+		{"count_plan", types.AggregationCount, types.ENTITLEMENT_ENTITY_TYPE_PLAN, false},
+		{"sum_addon", types.AggregationSum, types.ENTITLEMENT_ENTITY_TYPE_ADDON, false},
+		{"sum_plan", types.AggregationSum, types.ENTITLEMENT_ENTITY_TYPE_PLAN, true},
+	} {
+		s.Run(tc.name, func() {
+			ctx := s.GetContext()
+			m := &meter.Meter{ID: "meter-never-legacy-" + tc.name, EventName: "usage", ResetUsage: types.ResetUsageNever,
+				Aggregation: meter.Aggregation{Type: tc.aggregation}, BaseModel: types.GetDefaultBaseModel(ctx)}
+			s.Require().NoError(s.meterStore.CreateMeter(ctx, m))
+			f := s.simpleFeature("feature-never-legacy-"+tc.name, m.ID)
+			p := s.simplePlan("plan-never-legacy-" + tc.name)
+			if tc.entity == types.ENTITLEMENT_ENTITY_TYPE_ADDON {
+				s.Require().NoError(s.GetStores().AddonRepo.Create(ctx, &addon.Addon{ID: p.ID, Name: p.ID,
+					EnvironmentID: types.GetEnvironmentID(ctx), BaseModel: types.GetDefaultBaseModel(ctx)}))
+			}
+			created, err := s.entService.CreateEntitlement(ctx, dto.CreateEntitlementRequest{EntityType: tc.entity, EntityID: p.ID,
+				FeatureID: f.ID, FeatureType: types.FeatureTypeMetered, IsEnabled: true, UsageLimit: lo.ToPtr(int64(100))})
+			s.Require().NoError(err)
+			stored, err := s.GetStores().EntitlementRepo.Get(ctx, created.ID)
+			s.Require().NoError(err)
+			s.Equal(tc.wantGrant, stored.HasGrantConfig())
+			if !tc.wantGrant {
+				s.Equal(int64(100), lo.FromPtr(stored.UsageLimit))
+			}
+		})
+	}
+}
+
 func (s *EntitlementGrantSuite) TestUpdateEntitlement_RejectsUnsupportedNeverGrantShape() {
 	ctx := s.GetContext()
 	m := s.simpleMeter("meter-never-update")
