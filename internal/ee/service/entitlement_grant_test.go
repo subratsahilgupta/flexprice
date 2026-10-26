@@ -2700,17 +2700,17 @@ func (s *EntitlementGrantSuite) TestCreateEntitlement_NeverMeterValidation() {
 	}
 }
 
-// A legacy usage_limit that a NEVER grant cannot carry stays legacy instead of failing creation.
-func (s *EntitlementGrantSuite) TestCreateEntitlement_LegacyLimitOnUnsupportedNeverMeterStaysLegacy() {
+// A usage_limit that a NEVER grant cannot carry is rejected rather than kept as a legacy limit.
+func (s *EntitlementGrantSuite) TestCreateEntitlement_LegacyLimitOnUnsupportedNeverMeterIsRejected() {
 	for _, tc := range []struct {
 		name        string
 		aggregation types.AggregationType
 		entity      types.EntitlementEntityType
-		wantGrant   bool
+		wantError   string
 	}{
-		{"count_plan", types.AggregationCount, types.ENTITLEMENT_ENTITY_TYPE_PLAN, false},
-		{"sum_addon", types.AggregationSum, types.ENTITLEMENT_ENTITY_TYPE_ADDON, false},
-		{"sum_plan", types.AggregationSum, types.ENTITLEMENT_ENTITY_TYPE_PLAN, true},
+		{"count_plan", types.AggregationCount, types.ENTITLEMENT_ENTITY_TYPE_PLAN, "require SUM aggregation"},
+		{"sum_addon", types.AggregationSum, types.ENTITLEMENT_ENTITY_TYPE_ADDON, "addon grants are not supported"},
+		{"sum_plan", types.AggregationSum, types.ENTITLEMENT_ENTITY_TYPE_PLAN, ""},
 	} {
 		s.Run(tc.name, func() {
 			ctx := s.GetContext()
@@ -2725,13 +2725,15 @@ func (s *EntitlementGrantSuite) TestCreateEntitlement_LegacyLimitOnUnsupportedNe
 			}
 			created, err := s.entService.CreateEntitlement(ctx, dto.CreateEntitlementRequest{EntityType: tc.entity, EntityID: p.ID,
 				FeatureID: f.ID, FeatureType: types.FeatureTypeMetered, IsEnabled: true, UsageLimit: lo.ToPtr(int64(100))})
+			if tc.wantError != "" {
+				s.Require().Error(err)
+				s.Contains(err.Error(), tc.wantError)
+				return
+			}
 			s.Require().NoError(err)
 			stored, err := s.GetStores().EntitlementRepo.Get(ctx, created.ID)
 			s.Require().NoError(err)
-			s.Equal(tc.wantGrant, stored.HasGrantConfig())
-			if !tc.wantGrant {
-				s.Equal(int64(100), lo.FromPtr(stored.UsageLimit))
-			}
+			s.True(stored.HasGrantConfig())
 		})
 	}
 }
