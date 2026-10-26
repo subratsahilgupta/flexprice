@@ -266,12 +266,14 @@ func (s *BillingServiceSuite) apiFixture(id string) (*subscription.Subscription,
 	return sub, p
 }
 
-// meterUsage returns the meter_usage-backed usage of the whole period.
+// meterUsage returns the meter_usage-backed usage of the whole period, as an internal (billing) caller: it
+// feeds charges into loader tests, so it must not itself run the commitment breakdown.
 func (s *BillingServiceSuite) meterUsage(sub *subscription.Subscription) *dto.GetUsageBySubscriptionResponse {
 	usage, err := s.subscriptionSvc().GetMeterUsageBySubscription(s.GetContext(), &dto.GetUsageBySubscriptionRequest{
 		SubscriptionID: sub.ID,
 		StartTime:      sub.CurrentPeriodStart,
 		EndTime:        sub.CurrentPeriodEnd,
+		Source:         string(types.UsageSourceInvoiceCreation),
 	})
 	s.Require().NoError(err)
 	return usage
@@ -1843,6 +1845,38 @@ func (s *BillingServiceSuite) TestCommitmentUsageBreakdown_AmountCommitment() {
 	s.True(partial.Commitments[0].ValueWithin.Equal(within[0].Amount))
 	s.True(partial.Commitments[0].ValueUnused.Equal(trueUp[0].Amount))
 	s.True(partial.Commitments[0].BilledAmount.Equal(preview.TotalAmount))
+}
+
+// The public usage API reads meter_usage; its response carries the breakdown, while internal callers
+// (req.Source set) and lifetime windows skip it.
+func (s *BillingServiceSuite) TestCommitmentUsageBreakdown_MeterUsagePath() {
+	s.setupTestData()
+	s.enableCommitmentsV2()
+	sub := s.testData.subscription
+	periodStart := sub.CurrentPeriodStart
+	c := s.createCommitment(
+		types.COMMITMENT_TYPE_AMOUNT, "100", s.testData.prices.apiCalls.ID, periodStart, periodStart.AddDate(1, 0, 0),
+	)
+
+	usage, err := s.subscriptionSvc().GetMeterUsageBySubscription(s.GetContext(), &dto.GetUsageBySubscriptionRequest{
+		SubscriptionID: sub.ID,
+		StartTime:      sub.CurrentPeriodStart,
+		EndTime:        sub.CurrentPeriodEnd,
+	})
+	s.Require().NoError(err)
+	s.Require().Len(usage.Commitments, 1)
+	s.Equal(c.ID, usage.Commitments[0].CommitmentID)
+	s.True(usage.Commitments[0].PeriodAmount.Equal(dec("100")), "period amount %s", usage.Commitments[0].PeriodAmount)
+	s.True(usage.Commitments[0].BilledAmount.Equal(dec("100")), "billed %s", usage.Commitments[0].BilledAmount)
+
+	internal, err := s.subscriptionSvc().GetMeterUsageBySubscription(s.GetContext(), &dto.GetUsageBySubscriptionRequest{
+		SubscriptionID: sub.ID,
+		StartTime:      sub.CurrentPeriodStart,
+		EndTime:        sub.CurrentPeriodEnd,
+		Source:         string(types.UsageSourceInvoiceCreation),
+	})
+	s.Require().NoError(err)
+	s.Nil(internal.Commitments)
 }
 
 // Usage over capacity fills the commitment: ValueWithin reaches PeriodAmount and nothing is unused.

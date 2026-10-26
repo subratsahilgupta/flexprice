@@ -3239,12 +3239,8 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 	response.Currency = subscription.Currency
 	response.DisplayAmount = price.GetDisplayAmountWithPrecision(totalCost, subscription.Currency)
 
-	if !req.LifetimeUsage {
-		billingSvc := &billingService{ServiceParams: s.ServiceParams}
-		response.Commitments, err = billingSvc.commitmentUsageBreakdown(ctx, subscription, response, usageStartTime, usageEndTime)
-		if err != nil {
-			return nil, err
-		}
+	if err := s.attachCommitmentBreakdown(ctx, subscription, response, req, usageStartTime, usageEndTime); err != nil {
+		return nil, err
 	}
 	return response, nil
 }
@@ -6479,6 +6475,9 @@ func (s *subscriptionService) buildMeterUsageResponse(ctx context.Context, subMe
 		response.Currency = sub.Currency
 		response.StartTime = usageStartTime
 		response.EndTime = usageEndTime
+		if err := s.attachCommitmentBreakdown(ctx, sub, response, req, usageStartTime, usageEndTime); err != nil {
+			return nil, err
+		}
 		return response, nil
 	}
 
@@ -6601,6 +6600,10 @@ func (s *subscriptionService) buildMeterUsageResponse(ctx context.Context, subMe
 	response.EndTime = usageEndTime
 	response.Charges = finalCharges
 
+	if err := s.attachCommitmentBreakdown(ctx, sub, response, req, usageStartTime, usageEndTime); err != nil {
+		return nil, err
+	}
+
 	s.Logger.Debug(ctx, "meter usage by subscription calculation completed",
 		"subscription_id", req.SubscriptionID,
 		"total_cost", totalCost.InexactFloat64(),
@@ -6608,6 +6611,29 @@ func (s *subscriptionService) buildMeterUsageResponse(ctx context.Context, subMe
 		"currency", response.Currency)
 
 	return response, nil
+}
+
+// attachCommitmentBreakdown adds the per-commitment usage breakdown for API callers. Internal callers set
+// req.Source and run the commitment engine themselves; a lifetime window has no single billing period to break down.
+func (s *subscriptionService) attachCommitmentBreakdown(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	response *dto.GetUsageBySubscriptionResponse,
+	req *dto.GetUsageBySubscriptionRequest,
+	start, end time.Time,
+) error {
+	if req.Source != "" || req.LifetimeUsage {
+		return nil
+	}
+
+	billingSvc := &billingService{ServiceParams: s.ServiceParams}
+	breakdown, err := billingSvc.commitmentUsageBreakdown(ctx, sub, response, start, end)
+	if err != nil {
+		return err
+	}
+
+	response.Commitments = breakdown
+	return nil
 }
 
 // GetSubscriptionEntitlements retrieves all entitlements associated with a subscription
