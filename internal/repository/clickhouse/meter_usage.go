@@ -1243,14 +1243,16 @@ func (r *MeterUsageRepository) GetUsageActivitySince(ctx context.Context, params
 	return activity, nil
 }
 
-// GetEventsByEventIDAndExternalCustomerID returns the customer's meter_usage rows for a single event,
-// one per meter it matched, or none if not yet processed.
-func (r *MeterUsageRepository) GetEventsByEventIDAndExternalCustomerID(ctx context.Context, tenantID, environmentID, externalCustomerID, eventID string) ([]*events.MeterUsage, error) {
+// GetEventsByEventIDAndExternalCustomerID returns the customer's meter_usage rows for a single event
+// within window, one per meter it matched, or none if not yet processed.
+func (r *MeterUsageRepository) GetEventsByEventIDAndExternalCustomerID(ctx context.Context, tenantID, environmentID, externalCustomerID, eventID string, window events.TimeRange) ([]*events.MeterUsage, error) {
 	span := StartRepositorySpan(ctx, "meter_usage", "get_events_by_event_id_and_external_customer_id", map[string]interface{}{
 		"tenant_id":            tenantID,
 		"environment_id":       environmentID,
 		"external_customer_id": externalCustomerID,
 		"event_id":             eventID,
+		"start_time":           window.Start,
+		"end_time":             window.End,
 	})
 	defer FinishSpan(span)
 
@@ -1274,12 +1276,14 @@ func (r *MeterUsageRepository) GetEventsByEventIDAndExternalCustomerID(ctx conte
 		  AND environment_id = ?
 		  AND external_customer_id = ?
 		  AND id = ?
+		  AND timestamp >= ?
+		  AND timestamp < ?
 		ORDER BY meter_id, ingested_at DESC
 		LIMIT 1 BY meter_id
 		SETTINGS max_memory_usage = 96636764160
 	`
 
-	rows, err := r.store.GetConn().Query(ctx, query, tenantID, environmentID, externalCustomerID, eventID)
+	rows, err := r.store.GetConn().Query(ctx, query, tenantID, environmentID, externalCustomerID, eventID, window.Start, window.End)
 	if err != nil {
 		SetSpanError(span, err)
 		return nil, ierr.WithError(err).

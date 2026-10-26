@@ -44,7 +44,7 @@ func (s *meterUsageService) DebugEvent(ctx context.Context, externalCustomerID, 
 		Event: eventToDTO(event),
 	}
 
-	meterUsages, err := s.MeterUsageRepo.GetEventsByEventIDAndExternalCustomerID(ctx, tenantID, envID, externalCustomerID, eventID)
+	meterUsages, err := s.MeterUsageRepo.GetEventsByEventIDAndExternalCustomerID(ctx, tenantID, envID, externalCustomerID, eventID, window)
 	if err != nil {
 		return nil, ierr.WithError(err).
 			WithHint("Failed to get event from meter_usage table").
@@ -65,7 +65,7 @@ func (s *meterUsageService) DebugEvent(ctx context.Context, externalCustomerID, 
 	}
 
 	response.Status = types.EventProcessingStatusTypeProcessing
-	tracker := s.runDebugTracker(ctx, event, meterUsages)
+	tracker := s.runDebugTracker(ctx, event, meterUsages, window)
 	response.DebugTracker = tracker
 	if tracker.FailurePoint != nil {
 		response.Status = types.EventProcessingStatusTypeFailed
@@ -172,7 +172,7 @@ func (s *meterUsageService) fanOutMeterUsageToLineItems(ctx context.Context, row
 // runDebugTracker walks customer → meter → price → line-item → meter_usage
 // attribution and stops at the first failure. Non-empty meterUsages are reused
 // for Step 5 to save an extra ClickHouse round-trip.
-func (s *meterUsageService) runDebugTracker(ctx context.Context, event *events.Event, meterUsages []*events.MeterUsage) *dto.DebugTracker {
+func (s *meterUsageService) runDebugTracker(ctx context.Context, event *events.Event, meterUsages []*events.MeterUsage, window events.TimeRange) *dto.DebugTracker {
 	tenantID := types.GetTenantID(ctx)
 	envID := types.GetEnvironmentID(ctx)
 	tracker := &dto.DebugTracker{
@@ -348,7 +348,7 @@ func (s *meterUsageService) runDebugTracker(ctx context.Context, event *events.E
 	// Step 5: meter_usage attribution — always run under the meter-usage pipeline.
 	tracker.AttributedToCustomer = &dto.AttributedToCustomerResult{Status: types.DebugTrackerStatusUnprocessed}
 	if len(meterUsages) == 0 {
-		meterUsages, err = s.MeterUsageRepo.GetEventsByEventIDAndExternalCustomerID(ctx, tenantID, envID, event.ExternalCustomerID, event.ID)
+		meterUsages, err = s.MeterUsageRepo.GetEventsByEventIDAndExternalCustomerID(ctx, tenantID, envID, event.ExternalCustomerID, event.ID, window)
 		if err != nil {
 			status, code := ierr.ResolveError(err)
 			errResp := &ierr.ErrorResponse{Code: code, Message: err.Error(), HTTPStatusCode: status}
