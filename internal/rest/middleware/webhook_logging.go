@@ -141,6 +141,34 @@ func normalizeKey(key string) string {
 	return strings.Trim(b.String(), "_")
 }
 
+// jsonShaped reports whether b opens like a JSON object or array.
+func jsonShaped(b []byte) bool {
+	if b[0] == '{' {
+		return true
+	}
+	if b[0] != '[' {
+		return false
+	}
+	rest := bytes.TrimLeft(b[1:], " \t\n\r")
+	if len(rest) == 0 {
+		return false
+	}
+	switch c := rest[0]; {
+	case c == '{' || c == '[' || c == '"' || c == '-' || (c >= '0' && c <= '9'):
+		return true
+	}
+	for _, lit := range []string{"true", "false", "null"} {
+		if !bytes.HasPrefix(rest, []byte(lit)) {
+			continue
+		}
+		if len(rest) == len(lit) {
+			return true
+		}
+		return strings.IndexByte(" \t\n\r,]", rest[len(lit)]) >= 0
+	}
+	return false
+}
+
 // redactWebhookBody returns a copy safe to store; other bodies pass through.
 func redactWebhookBody(body []byte, contentType, contentEncoding string) string {
 	if enc := strings.TrimSpace(contentEncoding); enc != "" && !strings.EqualFold(enc, "identity") {
@@ -158,10 +186,8 @@ func redactWebhookBody(body []byte, contentType, contentEncoding string) string 
 		if !isForm {
 			return string(body)
 		}
-		for _, prefix := range []string{"{", "[{", "[[", `["`} {
-			if bytes.HasPrefix(trimmed, []byte(prefix)) {
-				return unparseableBody
-			}
+		if jsonShaped(trimmed) {
+			return unparseableBody
 		}
 		form, err := url.ParseQuery(string(body))
 		if err != nil {

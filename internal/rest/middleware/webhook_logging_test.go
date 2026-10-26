@@ -106,6 +106,42 @@ func TestWebhookLoggingMiddleware_Redaction(t *testing.T) {
 			wantRaw: "[redacted: unparseable body]",
 		},
 		{
+			name:    "malformed array space before object",
+			headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+			body:    `[ {"token":"leak",,`,
+			wantRaw: "[redacted: unparseable body]",
+		},
+		{
+			name:    "malformed array newline before object",
+			headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+			body:    "[\n{\"token\":\"leak\"",
+			wantRaw: "[redacted: unparseable body]",
+		},
+		{
+			name:    "malformed array scalar number start",
+			headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+			body:    `[1,"leak"`,
+			wantRaw: "[redacted: unparseable body]",
+		},
+		{
+			name:    "malformed array spaced string start",
+			headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+			body:    `[ "leak"`,
+			wantRaw: "[redacted: unparseable body]",
+		},
+		{
+			name:    "malformed array literal start",
+			headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+			body:    `[true,"leak"`,
+			wantRaw: "[redacted: unparseable body]",
+		},
+		{
+			name:    "bracket form key stays form",
+			headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+			body:    "[name]=x",
+			wantRaw: "%5Bname%5D=x",
+		},
+		{
 			name:    "json body under form content type",
 			headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
 			body:    `{"secret_token":"leak"}`,
