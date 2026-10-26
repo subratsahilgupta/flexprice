@@ -360,3 +360,24 @@ func TestBuildBillingQuery_ARPUBilled(t *testing.T) {
 	assert.NotContains(t, q.SQL, "paid_at")
 	assert.NotContains(t, q.SQL, "amount_paid")
 }
+
+func TestBuildBillingQuery_TopNOffset(t *testing.T) {
+	rv := billingRV(types.ShapeBreakdown, "customer_id")
+	rv.Limit = 10
+	rv.Offset = 20
+	q, err := buildBillingQuery(rv, "reports_db", "t", "e", 1000)
+	require.NoError(t, err)
+	assert.Contains(t, q.SQL, "ORDER BY sum(total) DESC LIMIT 10 OFFSET 20")
+
+	rv.Offset = 0
+	q, err = buildBillingQuery(rv, "reports_db", "t", "e", 1000)
+	require.NoError(t, err)
+	assert.NotContains(t, q.SQL, "OFFSET")
+
+	rv = customRV(types.MetricCreditConsumption, types.ShapeBreakdown)
+	rv.Dimensions = []string{"customer_id"}
+	rv.Limit = 10
+	rv.Offset = 5
+	_, err = buildBillingQuery(rv, "reports_db", "t", "e", 1000)
+	require.Error(t, err)
+}
