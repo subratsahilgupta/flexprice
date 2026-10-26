@@ -239,7 +239,7 @@ func FromEnt(e *ent.Invoice) *Invoice {
 // Default helper methods
 
 func (i *Invoice) GetRemainingAmount() decimal.Decimal {
-	return decimal.Max(i.AmountDue.Sub(i.AmountPaid), decimal.Zero)
+	return i.AmountDue.Sub(i.AmountPaid)
 }
 
 // ResolveServicePeriod returns the coverage envelope of this invoice's selected line items.
@@ -403,7 +403,7 @@ func (i *Invoice) MirrorTaxIntoDenomination() {
 	cc := i.CustomCurrency
 	cc.TotalTax = cc.FromFiat(i.TotalTax)
 	cc.Total = cc.FromFiat(i.Total)
-	cc.AmountDue = decimal.Max(cc.Total.Sub(cc.FromFiat(i.AdjustmentAmount)), decimal.Zero)
+	cc.AmountDue = cc.Total
 }
 
 // ProjectCustomCurrency recomputes the fiat amount columns from the denomination. Runs at

@@ -54,7 +54,8 @@ func (s *InvoiceServiceSuite) checkSignedCycle(usage, positiveUsage, credits, wa
 		computed, skipped, err := s.service.ComputeInvoice(ctx, draft.ID, nil)
 		s.Require().NoError(err)
 		s.False(skipped, "offsetting or negative charges must not be skipped")
-		s.True(computed.Total.Equal(decimal.NewFromInt(usage + positiveUsage)))
+		s.True(computed.Total.Equal(decimal.Max(decimal.NewFromInt(usage+positiveUsage), decimal.Zero)))
+		s.True(computed.Subtotal.Equal(decimal.Max(decimal.NewFromInt(usage+positiveUsage), decimal.Zero)))
 		s.NoError(computed.Validate())
 	}
 	if credits > 0 {
@@ -102,7 +103,7 @@ func (s *InvoiceServiceSuite) checkSignedCycle(usage, positiveUsage, credits, wa
 	snapshot.LineItems = items
 	breakdown := dto.NewInvoiceResponse(&snapshot)
 	s.service.(*invoiceService).recalculateInvoiceTotals(breakdown)
-	s.True(breakdown.Total.Equal(finalized.Total), "usage-breakdown reads must preserve signed credit-adjusted totals")
+	s.True(breakdown.Total.Equal(finalized.Total), "usage-breakdown reads must preserve clamped credit-adjusted totals")
 	s.True(breakdown.AmountDue.Equal(finalized.AmountDue))
 	payments, err := s.GetStores().PaymentRepo.List(ctx, types.NewNoLimitPaymentFilter())
 	s.Require().NoError(err)
@@ -110,7 +111,7 @@ func (s *InvoiceServiceSuite) checkSignedCycle(usage, positiveUsage, credits, wa
 }
 
 func (s *InvoiceServiceSuite) TestSignedInvoice_NegativeOnlyNoWalletCredit() {
-	s.checkSignedCycle(-30, 0, 100, -30)
+	s.checkSignedCycle(-30, 0, 100, 0)
 }
 func (s *InvoiceServiceSuite) TestSignedInvoice_MixedPositiveTotal() {
 	s.checkSignedCycle(-30, 100, 0, 70)
@@ -119,7 +120,7 @@ func (s *InvoiceServiceSuite) TestSignedInvoice_ZeroNetFinalizes() {
 	s.checkSignedCycle(-100, 100, 0, 0)
 }
 func (s *InvoiceServiceSuite) TestSignedInvoice_PrepaidAppliesOnlyToPositiveLines() {
-	s.checkSignedCycle(-30, 100, 100, -30)
+	s.checkSignedCycle(-30, 100, 100, 0)
 }
 func (s *InvoiceServiceSuite) TestSignedInvoice_PrepaidLimitedByWalletBalance() {
 	s.checkSignedCycle(-30, 100, 50, 20)
@@ -129,10 +130,12 @@ func TestSignedInvoiceTaxAndFX(t *testing.T) {
 	inv := &invoice.Invoice{Currency: "usd", Subtotal: decimal.NewFromInt(-30), Total: decimal.NewFromInt(-30), AmountPaid: decimal.Zero,
 		LineItems: []*invoice.InvoiceLineItem{{Amount: decimal.NewFromInt(-30), Quantity: decimal.NewFromInt(-30), PriceType: lo.ToPtr(string(types.PRICE_TYPE_USAGE)), Currency: "usd"}}}
 	applyTaxResultToInvoice(inv, &dto.TaxCalculationResult{})
-	require.Equal(t, "-30", inv.Total.String())
+	require.Equal(t, "0", inv.Total.String())
 	require.True(t, inv.AmountDue.IsZero())
 	require.NoError(t, convertInvoiceAmounts(inv, &FXRateResolution{From: "usd", To: "inr", Rate: decimal.NewFromInt(80)}, time.Now().UTC()))
-	require.Equal(t, "-2400", inv.Total.String())
+	require.Equal(t, "0", inv.Total.String())
+	require.True(t, inv.Subtotal.IsZero())
+	require.Equal(t, "-2400", inv.LineItems[0].Amount.String())
 	require.True(t, inv.AmountDue.IsZero())
 	require.True(t, inv.AmountRemaining.IsZero())
 	require.NoError(t, inv.Validate())
@@ -152,7 +155,7 @@ func (s *InvoiceServiceSuite) TestSignedInvoice_RecomputePreservesRecordedPaymen
 	}}))
 	computed, _, err = s.service.ComputeInvoice(ctx, draft.ID, nil)
 	s.Require().NoError(err)
-	s.Equal("-30", computed.Total.String())
+	s.Equal("0", computed.Total.String())
 	s.Equal("20", computed.AmountPaid.String())
 	s.True(computed.AmountDue.IsZero())
 	s.True(computed.AmountRemaining.IsZero())
@@ -171,12 +174,12 @@ func (s *InvoiceServiceSuite) TestSignedInvoice_RecomputePreservesRecordedPaymen
 	s.NoError(recalculated.Validate())
 }
 
-func (s *InvoiceServiceSuite) TestSignedInvoice_PreviewPreservesNegativeTotal() {
+func (s *InvoiceServiceSuite) TestSignedInvoice_PreviewClampsTotal() {
 	ctx := s.GetContext()
 	draft := s.signedCycleDraft("sub_signed_preview", -30, 0)
 	preview, err := s.service.GetPreviewInvoice(ctx, dto.GetPreviewInvoiceRequest{SubscriptionID: "sub_signed_preview", PeriodStart: draft.PeriodStart, PeriodEnd: draft.PeriodEnd})
 	s.Require().NoError(err)
-	s.Equal("-30", preview.Total.String())
+	s.Equal("0", preview.Total.String())
 	s.True(preview.AmountDue.IsZero())
 	s.True(preview.AmountRemaining.IsZero())
 	s.NoError(preview.Invoice.Validate())
@@ -194,7 +197,7 @@ func (s *InvoiceServiceSuite) TestSignedInvoice_CustomCurrencyPreviewAndFinalize
 	preview, err := s.service.CreatePreviewInvoice(ctx, req)
 	s.Require().NoError(err)
 	s.Equal("usd", preview.Currency)
-	s.Equal("-3", preview.Total.String())
+	s.Equal("0", preview.Total.String())
 	s.True(preview.AmountDue.IsZero())
 	sealed, err := s.service.CreateInvoice(ctx, req)
 	s.Require().NoError(err)
@@ -205,7 +208,7 @@ func (s *InvoiceServiceSuite) TestSignedInvoice_CustomCurrencyPreviewAndFinalize
 	s.True(sealed.AmountDue.IsZero())
 	s.True(sealed.AmountRemaining.IsZero())
 	s.Require().NotNil(sealed.CustomCurrency)
-	s.Equal("-30", sealed.CustomCurrency.Total.String())
+	s.Equal("0", sealed.CustomCurrency.Total.String())
 	s.True(sealed.CustomCurrency.AmountDue.IsZero())
 	s.NoError(sealed.Invoice.Validate())
 }
@@ -221,14 +224,12 @@ func TestSignedInvoiceCollectionAmounts(t *testing.T) {
 		{"positive unpaid", 70, 0, 0, 70, 70, types.PaymentStatusPending},
 		{"partial payment", 70, 20, 0, 70, 50, types.PaymentStatusPending},
 		{"negative with previous payment", -30, 20, 0, 0, 0, types.PaymentStatusOverpaid},
-		{"adjustment below total", 70, 20, 10, 60, 40, types.PaymentStatusPending},
-		{"adjustment beyond total", 10, 0, 20, 0, 0, types.PaymentStatusPending},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inv := &invoice.Invoice{Subtotal: decimal.NewFromInt(tc.total), AmountPaid: decimal.NewFromInt(tc.paid),
 				AdjustmentAmount: decimal.NewFromInt(tc.adjustment), PaymentStatus: tc.status}
 			applyTaxResultToInvoice(inv, &dto.TaxCalculationResult{})
-			require.Equal(t, decimal.NewFromInt(tc.total).String(), inv.Total.String())
+			require.Equal(t, decimal.Max(decimal.NewFromInt(tc.total), decimal.Zero).String(), inv.Total.String())
 			require.Equal(t, decimal.NewFromInt(tc.paid).String(), inv.AmountPaid.String())
 			require.Equal(t, decimal.NewFromInt(tc.due).String(), inv.AmountDue.String())
 			require.Equal(t, decimal.NewFromInt(tc.remaining).String(), inv.AmountRemaining.String())

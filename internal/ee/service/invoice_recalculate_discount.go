@@ -79,8 +79,9 @@ func (s *invoiceService) recomputeDraftAmounts(ctx context.Context, sourceInvoic
 		}
 	}
 
-	destinationInvoice.Total = destinationInvoice.Subtotal.Sub(destinationInvoice.TotalPrepaidCreditsApplied).Sub(destinationInvoice.TotalDiscount).Add(destinationInvoice.TotalTax)
-	destinationInvoice.AmountDue = decimal.Max(destinationInvoice.Total.Sub(destinationInvoice.AdjustmentAmount), decimal.Zero)
+	destinationInvoice.Subtotal = decimal.Max(destinationInvoice.Subtotal, decimal.Zero)
+	destinationInvoice.Total = decimal.Max(destinationInvoice.Subtotal.Sub(destinationInvoice.TotalPrepaidCreditsApplied).Sub(destinationInvoice.TotalDiscount).Add(destinationInvoice.TotalTax), decimal.Zero)
+	destinationInvoice.AmountDue = destinationInvoice.Total
 	destinationInvoice.AmountRemaining = decimal.Max(destinationInvoice.AmountDue.Sub(destinationInvoice.AmountPaid), decimal.Zero)
 
 	s.Logger.Info(ctx, "recalculated discount on invoice",

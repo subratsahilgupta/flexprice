@@ -1188,6 +1188,6 @@ func (s *CreditExpiryInvoiceRaceSuite) TestExpirySettlement_PaysPositiveLinesBef
 	s.Require().NoError(err)
 	s.True(decimal.NewFromInt(50).Equal(final.TotalPrepaidCreditsApplied))
 	s.True(decimal.NewFromInt(50).Equal(lineCredits(settled)))
-	s.True(decimal.NewFromInt(-45).Equal(settled.Total))
+	s.True(settled.Total.IsZero())
 	s.Len(s.walletTransactions(types.TransactionReasonCreditAdjustment), 1, "finalization must not debit again")
 }
