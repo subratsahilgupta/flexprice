@@ -6914,6 +6914,7 @@ definitions:
       limit:
         type: integer
       offset:
+        minimum: 0
         type: integer
       range:
         example: 2026-09-01..2026-10-01

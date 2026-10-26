@@ -155,7 +155,7 @@ type ReportQueryRequest struct {
 	Filters    []ReportFilter `json:"filters,omitempty"`
 	Compare    string         `json:"compare,omitempty" enums:"previous_period,previous_year"`
 	Limit      int            `json:"limit,omitempty"`
-	Offset     int            `json:"offset,omitempty"`
+	Offset     int            `json:"offset,omitempty" minimum:"0"`
 	Sort       []ReportSort   `json:"sort,omitempty"`
 }
 

@@ -25028,6 +25028,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "offset": {
+                    "minimum": 0,
                     "type": "integer"
                 },
                 "range": {
