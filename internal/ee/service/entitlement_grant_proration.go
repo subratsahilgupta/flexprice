@@ -159,6 +159,19 @@ func (s *subscriptionGrantService) resolveGrantProration(
 	return grants, nil
 }
 
+// survivingParallelSlots is the set of surviving parallel config IDs the incoming configs do
+// not share; a re-attached addon reuses its config ID, and so its slot, and must still close.
+func survivingParallelSlots(surviving, incoming []*entitlement.Entitlement) map[string]bool {
+	incomingIDs := lo.SliceToMap(incoming, func(ec *entitlement.Entitlement) (string, bool) { return ec.ID, true })
+	keep := make(map[string]bool, len(surviving))
+	for _, ec := range surviving {
+		if ec != nil && !incomingIDs[ec.ID] && defaultedMode(ec.AggregationMode) == types.EntitlementAggregationModeParallel {
+			keep[ec.ID] = true
+		}
+	}
+	return keep
+}
+
 func shouldOpenGrantManually(featureECs []*entitlement.Entitlement) bool {
 	if len(featureECs) == 0 {
 		return false
@@ -201,10 +214,13 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 	toClose, carryForward := s.removalClosures(ctx, cfg, liveByFeature)
 
 	// Close every live window of every feature an addition touches, not only the ones this
-	// path reopens. A window this path does not own — a day cadence, or a parallel slot —
-	// would otherwise hold its slot until it expires and hide the incoming quota until then.
-	for featureID := range incomingByFeature {
-		toClose = append(toClose, liveByFeature[featureID]...)
+	// path reopens: a day-cadence window would otherwise hide the incoming quota until it
+	// expires. A surviving parallel config owns its slot, so its window stays open with its balance.
+	for featureID, incoming := range incomingByFeature {
+		keep := survivingParallelSlots(cfg.survivingECsByFeature[featureID], incoming)
+		toClose = append(toClose, lo.Reject(liveByFeature[featureID], func(g *entitlementgrant.EntitlementGrant, _ int) bool {
+			return keep[g.EntitlementConfigID]
+		})...)
 	}
 
 	grantSvc := &entitlementGrantService{ServiceParams: s.ServiceParams}
@@ -295,6 +311,8 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 				}).
 				Build(),
 			ExistingECs: cfg.survivingECsByFeature[featureID],
+			// An unlimited incoming config has no prorated segment, so it joins here to set the slot.
+			IncomingECs: incomingByFeature[featureID],
 		})
 	}
 	if len(reqs) == 0 {

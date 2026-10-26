@@ -300,6 +300,9 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 		validFrom := req.New.ValidFrom
 		quota := req.New.Quota
 		unlimited := candidate.unlimited
+		if unlimited {
+			quota = decimal.Zero
+		}
 
 		if req.Closed != nil {
 			if !validFrom.IsZero() && !validFrom.Equal(req.Closed.ValidTo) {
