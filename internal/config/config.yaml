@@ -180,10 +180,8 @@ reports:
   database: ""
   # Empty falls back to database.
   usage_database: ""
-  # Empty reads usage from the reports server.
-  usage_address: ""
-  usage_username: ""
-  usage_password: ""
+  # Read usage from the main clickhouse server, not the reports server.
+  usage_on_main_clickhouse: false
   username: ""
   password: ""
   max_execution_seconds: 10

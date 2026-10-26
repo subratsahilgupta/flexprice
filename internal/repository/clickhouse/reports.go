@@ -70,22 +70,19 @@ func NewReportsRepository(cfg *config.Configuration, log *logger.Logger, rc cach
 		return nil, ierr.WithError(err).WithHint("open reports clickhouse connection").Mark(ierr.ErrSystem)
 	}
 	r.conn = conn
-	if r.cfg.UsageAddress == "" {
+	if !r.cfg.UsageOnMainClickHouse {
 		return r, nil
 	}
+	r.cfg.UsageDatabase = cmp.Or(r.cfg.UsageDatabase, cfg.ClickHouse.Database)
 	usageOpts := cfg.ClickHouse.GetClientOptions()
-	usageOpts.Addr = []string{r.cfg.UsageAddress}
-	usageOpts.Auth = clickhouse_go.Auth{
-		Database: r.cfg.UsageDatabase,
-		Username: cmp.Or(r.cfg.UsageUsername, r.cfg.Username),
-		Password: r.cfg.UsagePassword,
-	}
+	usageOpts.Auth.Database = r.cfg.UsageDatabase
 	usageConn, err := clickhouse_go.Open(usageOpts)
 	if err != nil {
+		_ = conn.Close()
 		return nil, ierr.WithError(err).WithHint("open usage clickhouse connection").Mark(ierr.ErrSystem)
 	}
 	r.usageConn = usageConn
-	r.usageSource = r.cfg.UsageAddress
+	r.usageSource = strings.Join(usageOpts.Addr, ",")
 	return r, nil
 }
 
