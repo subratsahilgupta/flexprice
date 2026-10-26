@@ -825,6 +825,7 @@ func (s *entitlementGrantService) initializeRunningGrantUsage(ctx context.Contex
 	usage, err := NewMeterUsageService(s.ServiceParams).GetCheckpointedUsage(ctx, CheckpointedUsageRequest{
 		CustomerID: sub.CustomerID, ExternalCustomerIDs: extIDs,
 		MeterID: m.ID, AggregationType: m.Aggregation.Type, Until: types.EarliestOf(at, g.ValidTo),
+		IgnoreCheckpoints: !usesCheckpoints(sub),
 	})
 	if err != nil {
 		return nil, err
