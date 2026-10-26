@@ -1111,3 +1111,60 @@ func (s *EventDeletionServiceSuite) TestDelete_AsksForEverySubscriptionStatus() 
 			"every subscription read must opt out of the active-only default")
 	}
 }
+
+// Naming a feature deletes that meter's events and nothing else, even when the
+// other meter belongs to the same customer and the same period.
+func (s *EventDeletionServiceSuite) TestDelete_FeatureNarrowsToTheNamedMeter() {
+	s.seedCustomer("cust_1", "ext_1")
+	s.seedMeteredFeature("feat_a", "meter_a", "event_a")
+	s.seedMeteredFeature("feat_b", "meter_b", "event_b")
+	s.seedSubscription("subs_a", "cust_1", "meter_a", "meter_b")
+
+	s.logRepo.SeedUsage(
+		testutil.SeededUsage{EventID: "evt_a", MeterID: "meter_a", ExternalCustomerID: "ext_1",
+			Timestamp: s.insidePeriod, QtyTotal: decimal.NewFromInt(5)},
+		testutil.SeededUsage{EventID: "evt_b", MeterID: "meter_b", ExternalCustomerID: "ext_1",
+			Timestamp: s.insidePeriod, QtyTotal: decimal.NewFromInt(9)},
+	)
+
+	req := s.request()
+	req.FeatureIDs = []string{"feat_a"}
+
+	resp, err := s.svc.Delete(s.GetContext(), req)
+	s.NoError(err)
+
+	s.Equal(1, resp.DeletedEvents)
+	remaining := lo.Map(s.logRepo.RemainingUsage(), func(u testutil.SeededUsage, _ int) string { return u.EventID })
+	s.Equal([]string{"evt_b"}, remaining, "the unnamed feature's usage must survive")
+}
+
+// Customer and feature narrow together: only the row matching both is removed.
+func (s *EventDeletionServiceSuite) TestDelete_FeatureAndCustomerNarrowTogether() {
+	s.seedCustomer("cust_1", "ext_1")
+	s.seedCustomer("cust_2", "ext_2")
+	s.seedMeteredFeature("feat_a", "meter_a", "event_a")
+	s.seedMeteredFeature("feat_b", "meter_b", "event_b")
+	s.seedSubscription("subs_1", "cust_1", "meter_a", "meter_b")
+	s.seedSubscription("subs_2", "cust_2", "meter_a", "meter_b")
+
+	s.logRepo.SeedUsage(
+		testutil.SeededUsage{EventID: "evt_1a", MeterID: "meter_a", ExternalCustomerID: "ext_1",
+			Timestamp: s.insidePeriod, QtyTotal: decimal.NewFromInt(1)},
+		testutil.SeededUsage{EventID: "evt_1b", MeterID: "meter_b", ExternalCustomerID: "ext_1",
+			Timestamp: s.insidePeriod, QtyTotal: decimal.NewFromInt(2)},
+		testutil.SeededUsage{EventID: "evt_2a", MeterID: "meter_a", ExternalCustomerID: "ext_2",
+			Timestamp: s.insidePeriod, QtyTotal: decimal.NewFromInt(3)},
+		testutil.SeededUsage{EventID: "evt_2b", MeterID: "meter_b", ExternalCustomerID: "ext_2",
+			Timestamp: s.insidePeriod, QtyTotal: decimal.NewFromInt(4)},
+	)
+
+	req := s.request() // external_customer_ids = ["ext_1"]
+	req.FeatureIDs = []string{"feat_a"}
+
+	resp, err := s.svc.Delete(s.GetContext(), req)
+	s.NoError(err)
+
+	s.Equal(1, resp.DeletedEvents)
+	remaining := lo.Map(s.logRepo.RemainingUsage(), func(u testutil.SeededUsage, _ int) string { return u.EventID })
+	s.ElementsMatch([]string{"evt_1b", "evt_2a", "evt_2b"}, remaining)
+}
