@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -146,7 +147,6 @@ func (s *InvoiceServiceSuite) TestSignedInvoice_RecomputePreservesRecordedPaymen
 	draft := s.signedCycleDraft("sub_signed_paid", 70, 0)
 	computed, _, err := s.service.ComputeInvoice(ctx, draft.ID, nil)
 	s.Require().NoError(err)
-	priorStatus := computed.PaymentStatus
 	computed.AmountPaid = decimal.NewFromInt(20)
 	computed.AmountRemaining = computed.AmountDue.Sub(computed.AmountPaid)
 	s.Require().NoError(s.invoiceRepo.Update(ctx, computed))
@@ -160,11 +160,14 @@ func (s *InvoiceServiceSuite) TestSignedInvoice_RecomputePreservesRecordedPaymen
 	s.Equal("20", computed.AmountPaid.String())
 	s.True(computed.AmountDue.IsZero())
 	s.True(computed.AmountRemaining.IsZero())
-	s.Equal(priorStatus, computed.PaymentStatus)
+	s.Equal(types.PaymentStatusOverpaid, computed.PaymentStatus)
+	s.NoError(computed.Validate())
 	s.Require().NoError(s.service.FinalizeInvoice(ctx, draft.ID, dto.FinalizeInvoiceRequest{}))
 	sealed, err := s.invoiceRepo.Get(ctx, draft.ID)
 	s.Require().NoError(err)
 	s.Equal("20", sealed.AmountPaid.String())
+	s.Equal(types.PaymentStatusOverpaid, sealed.PaymentStatus)
+	s.NoError(sealed.Validate())
 	s.Require().NoError(s.service.RecalculateInvoiceAmounts(ctx, sealed.ID))
 	recalculated, err := s.invoiceRepo.Get(ctx, sealed.ID)
 	s.Require().NoError(err)
@@ -210,6 +213,44 @@ func (s *InvoiceServiceSuite) TestSignedInvoice_CustomCurrencyPreviewAndFinalize
 	s.Equal("0", sealed.CustomCurrency.Total.String())
 	s.True(sealed.CustomCurrency.AmountDue.IsZero())
 	s.NoError(sealed.Invoice.Validate())
+}
+
+// Negative lines offset tax already on the invoice before the total is floored.
+func TestSignedInvoice_RetainedTaxDoesNotBillNegativeLines(t *testing.T) {
+	inv := &invoice.Invoice{Currency: "usd", TotalTax: decimal.NewFromInt(10)}
+	lines := []*invoice.InvoiceLineItem{{Amount: decimal.NewFromInt(-30)}}
+	(&invoiceService{}).recalculateTotalsFromLineItems(inv, lines)
+	require.True(t, inv.Subtotal.IsZero())
+	require.True(t, inv.Total.IsZero(), "total %s", inv.Total)
+	require.True(t, inv.AmountDue.IsZero())
+	require.True(t, inv.AmountRemaining.IsZero())
+
+	resp := dto.NewInvoiceResponse(&invoice.Invoice{Currency: "usd", TotalTax: decimal.NewFromInt(10), LineItems: lines})
+	(&invoiceService{ServiceParams: ServiceParams{Logger: logger.NewNoopLogger()}}).recalculateInvoiceTotals(resp)
+	require.True(t, resp.Total.IsZero(), "breakdown total %s", resp.Total)
+}
+
+// A net-negative unpaid invoice adds nothing to pending usage, so it cannot raise a wallet's balance.
+func (s *InvoiceServiceSuite) TestSignedInvoice_UnpaidNegativeUsageIsNotWalletCredit() {
+	ctx := s.GetContext()
+	usage := lo.ToPtr(string(types.PRICE_TYPE_USAGE))
+	fixed := lo.ToPtr(string(types.PRICE_TYPE_FIXED))
+	inv := &invoice.Invoice{
+		ID: "inv_signed_unpaid", CustomerID: s.testData.customer.ID, InvoiceType: types.InvoiceTypeOneOff,
+		InvoiceStatus: types.InvoiceStatusFinalized, PaymentStatus: types.PaymentStatusPending, Currency: "usd",
+		Subtotal: decimal.NewFromInt(60), Total: decimal.NewFromInt(60), AmountDue: decimal.NewFromInt(60), AmountRemaining: decimal.NewFromInt(60),
+		LineItems: []*invoice.InvoiceLineItem{
+			{ID: "li_signed_fixed", PriceType: fixed, Amount: decimal.NewFromInt(100), Quantity: decimal.NewFromInt(1), Currency: "usd", BaseModel: types.GetDefaultBaseModel(ctx)},
+			{ID: "li_signed_usage", PriceType: usage, Amount: decimal.NewFromInt(-40), Quantity: decimal.NewFromInt(-40), Currency: "usd", BaseModel: types.GetDefaultBaseModel(ctx)},
+		},
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.invoiceRepo.CreateWithLineItems(ctx, inv))
+
+	resp, err := s.service.GetUnpaidInvoicesToBePaid(ctx, dto.GetUnpaidInvoicesToBePaidRequest{CustomerID: s.testData.customer.ID, Currency: "usd"})
+	s.Require().NoError(err)
+	s.True(resp.TotalUnpaidUsageCharges.IsZero(), "usage %s", resp.TotalUnpaidUsageCharges)
+	s.True(resp.TotalUnpaidFixedCharges.Equal(decimal.NewFromInt(100)), "fixed %s", resp.TotalUnpaidFixedCharges)
 }
 
 func TestSignedInvoiceCollectionAmounts(t *testing.T) {

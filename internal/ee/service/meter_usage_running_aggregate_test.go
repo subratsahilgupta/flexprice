@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/meterusagecheckpoint"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
@@ -77,11 +78,7 @@ func (s *MeterUsageServiceSuite) TestRunningSum_LineItemsReadTheirOwnWindow() {
 				EndTime:        s.periodEnd,
 			})
 			s.Require().NoError(err)
-			if tt.reset == types.ResetUsageNever {
-				s.NotContains(recorded.meterIDs, m.ID, "checkpointed meters must not also query window usage")
-			} else {
-				s.Contains(recorded.meterIDs, m.ID)
-			}
+			s.Contains(recorded.meterIDs, m.ID, "the window query supplies event counts for running meters too")
 
 			usageByItem := map[string]decimal.Decimal{}
 			for _, lu := range result.LineItemUsages {
@@ -164,4 +161,69 @@ func (s *MeterUsageServiceSuite) TestRunningSumQuietPeriodWithZeroPrice() {
 		}
 	}
 	s.True(found, "zero-priced running meter must be returned without current-period events")
+}
+
+// Checkpoints are saved with inherited children, so a parent-only read must not reuse them.
+func (s *MeterUsageServiceSuite) TestRunningSum_ParentOnlyReadIgnoresFamilyCheckpoint() {
+	ctx := s.GetContext()
+	fx := s.newParentChildScopeFixture("running")
+	m := s.runningSumMeter(ctx, "meter_family", types.ResetUsageNever)
+	p := s.createPriceForMeter(ctx, "price_family", m.ID, decimal.NewFromInt(1))
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &subscription.SubscriptionLineItem{
+		ID: "li_family", SubscriptionID: fx.parentSub.ID, CustomerID: fx.parentCust.ID,
+		PriceID: p.ID, PriceType: types.PRICE_TYPE_USAGE, MeterID: m.ID, Currency: "usd",
+		BillingPeriod: types.BILLING_PERIOD_MONTHLY, InvoiceCadence: types.InvoiceCadenceArrear,
+		StartDate: s.periodStart, EndDate: s.periodEnd, Quantity: decimal.NewFromInt(1),
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}))
+	before := s.periodStart.Add(-24 * time.Hour)
+	s.insertMeterUsage(ctx, m.ID, fx.parentCust.ExternalID, before, 100)
+	s.insertMeterUsage(ctx, m.ID, fx.childCust.ExternalID, before, 200)
+
+	sub, _, err := s.GetStores().SubscriptionRepo.GetWithLineItems(ctx, fx.parentSub.ID)
+	s.Require().NoError(err)
+	s.Require().NoError(s.svc.SaveUsageCheckpointsForSubscription(ctx, sub, s.periodStart, nil))
+
+	for _, tt := range []struct {
+		includeChildren bool
+		want            int64
+	}{{false, 100}, {true, 300}} {
+		result, err := s.svc.GetSubscriptionMeterUsage(ctx, &GetSubscriptionMeterUsageRequest{
+			SubscriptionID: fx.parentSub.ID, StartTime: s.periodStart, EndTime: s.periodEnd,
+			IncludeChildren: tt.includeChildren,
+		})
+		s.Require().NoError(err)
+		got := decimal.Zero
+		for _, lu := range result.LineItemUsages {
+			if lu.MeterID == m.ID {
+				got = lu.Usage
+			}
+		}
+		s.True(decimal.NewFromInt(tt.want).Equal(got), "include_children=%v: want %d, got %s", tt.includeChildren, tt.want, got)
+	}
+}
+
+// A running total still reports how many events landed in the window.
+func (s *MeterUsageServiceSuite) TestRunningSum_KeepsWindowEventCount() {
+	ctx := s.GetContext()
+	m := s.runningSumMeter(ctx, "meter_counted", types.ResetUsageNever)
+	p := s.createPriceForMeter(ctx, "price_counted", m.ID, decimal.NewFromInt(1))
+	s.runningSumLineItem(ctx, "li_counted", m.ID, p.ID, s.periodStart, s.periodEnd)
+	s.insertMeterUsage(ctx, m.ID, s.customer.ExternalID, s.periodStart.Add(-time.Hour), 500)
+	s.insertMeterUsage(ctx, m.ID, s.customer.ExternalID, time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC), 100)
+	s.insertMeterUsage(ctx, m.ID, s.customer.ExternalID, time.Date(2026, 1, 20, 0, 0, 0, 0, time.UTC), -30)
+
+	result, err := s.svc.GetSubscriptionMeterUsage(ctx, &GetSubscriptionMeterUsageRequest{
+		SubscriptionID: s.sub.ID, StartTime: s.periodStart, EndTime: s.periodEnd,
+	})
+	s.Require().NoError(err)
+	var found bool
+	for _, lu := range result.LineItemUsages {
+		if lu.MeterID == m.ID {
+			found = true
+			s.True(decimal.NewFromInt(570).Equal(lu.Usage), "usage: got %s", lu.Usage)
+			s.EqualValues(2, lu.EventCount)
+		}
+	}
+	s.True(found)
 }

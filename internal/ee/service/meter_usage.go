@@ -629,46 +629,47 @@ func (s *meterUsageService) GetSubscriptionMeterUsageWithSub(
 				return nil, err
 			}
 		} else {
-			var windowMeterIDs, runningMeterIDs []string
-			for _, meterID := range meterIDs {
-				if keepsRunningAggregate(result.MeterMap[meterID]) {
-					runningMeterIDs = append(runningMeterIDs, meterID)
-				} else {
-					windowMeterIDs = append(windowMeterIDs, meterID)
-				}
-			}
 			queryParams := &events.MeterUsageQueryParams{
 				TenantID:            types.GetTenantID(ctx),
 				EnvironmentID:       types.GetEnvironmentID(ctx),
 				ExternalCustomerIDs: externalCustomerIDs,
-				MeterIDs:            windowMeterIDs,
+				MeterIDs:            meterIDs,
 				StartTime:           group.Start,
 				EndTime:             group.End,
 				AggregationType:     group.AggType,
 				UseFinal:            req.UseFinal,
 			}
 
-			var results []*events.MeterUsageAggregationResult
-			if len(windowMeterIDs) > 0 {
-				results, err = s.repo.GetUsageMultiMeter(ctx, queryParams)
-				if err != nil {
-					return nil, fmt.Errorf("failed to query meter_usage for agg type %s: %w", group.AggType, err)
-				}
+			results, err := s.repo.GetUsageMultiMeter(ctx, queryParams)
+			if err != nil {
+				return nil, fmt.Errorf("failed to query meter_usage for agg type %s: %w", group.AggType, err)
 			}
-			for _, meterID := range runningMeterIDs {
+			resultByMeter := make(map[string]*events.MeterUsageAggregationResult, len(results))
+			for _, r := range results {
+				resultByMeter[r.MeterID] = r
+			}
+
+			// Running meters report the total since the first event; the window query keeps their event count.
+			// Checkpoints are saved with inherited children, so a parent-only read sums from the start instead.
+			parentOnly := sub.SubscriptionType == types.SubscriptionTypeParent && !req.IncludeChildren
+			for _, meterID := range meterIDs {
+				if !keepsRunningAggregate(result.MeterMap[meterID]) {
+					continue
+				}
 				total, err := s.GetCheckpointedUsage(ctx, CheckpointedUsageRequest{
 					CustomerID: sub.CustomerID, ExternalCustomerIDs: externalCustomerIDs,
 					MeterID: meterID, AggregationType: types.AggregationSum, Until: group.End,
+					IgnoreCheckpoints: parentOnly,
 				})
 				if err != nil {
 					return nil, err
 				}
-				results = append(results, &events.MeterUsageAggregationResult{MeterID: meterID, TotalValue: total})
-			}
-
-			resultByMeter := make(map[string]*events.MeterUsageAggregationResult, len(results))
-			for _, r := range results {
-				resultByMeter[r.MeterID] = r
+				r, ok := resultByMeter[meterID]
+				if !ok {
+					r = &events.MeterUsageAggregationResult{MeterID: meterID}
+					resultByMeter[meterID] = r
+				}
+				r.TotalValue = total
 			}
 
 			for _, liw := range lineItemsInGroup {
