@@ -155,7 +155,7 @@ Usage reads, grant state, preview and invoice calculations must agree for the sa
 
 ## 9. Technical debt
 
-Four agreed follow-ups remain open.
+Five agreed follow-ups remain open.
 
 ### 1. Reconcile expired credits after negative usage
 
@@ -182,3 +182,9 @@ Before implementation, define the behavior when a price ends without a replaceme
 For now, retain negative line items but clamp invoice subtotal and total to zero, preserving the existing invoice calculation flow. Credits continue to apply per positive usage line at finalization and expiry settlement. Consequently, applied credits can exceed the net subtotal; the resulting negative total is clamped, not refunded or carried forward.
 
 Future negative-invoice support needs explicit rules for signed totals, discounts and taxes, amount due/remaining, existing payments, and accounting exports. Negative lines may already reach vendors under the current sync flow; verify provider behavior separately rather than assuming all vendors support them. No blanket negative-line sync restriction is part of this version.
+
+### 5. Count events that arrive after a checkpoint
+
+A checkpoint fixes the running total at the period end. An event dated before it but ingested after it (pipeline lag past the 1-hour compute delay) falls outside every later read and is never counted.
+
+Rebuild the affected checkpoint when an older event lands, or hold the checkpoint until ingestion has caught up.
