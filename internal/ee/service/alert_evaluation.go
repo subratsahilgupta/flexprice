@@ -389,6 +389,7 @@ func (s *alertService) refreshEntitlementGrantUsage(
 			return meterUsageSvc.GetCheckpointedUsage(ctx, CheckpointedUsageRequest{
 				CustomerID: sub.CustomerID, ExternalCustomerIDs: extCustomerIDs,
 				MeterID: m.ID, AggregationType: m.Aggregation.Type, Until: end,
+				IgnoreCheckpoints: !usesCheckpoints(sub),
 			})
 		}
 		usage, err := meterUsageSvc.GetUsageTotal(ctx, &dto.UsageTotalRequest{
