@@ -17856,31 +17856,58 @@
         "CommitmentUsageBreakdown": {
             "type": "object",
             "properties": {
+                "applies_from": {
+                    "description": "AppliesFrom/To is the stretch of the queried window the commitment covers; usage outside it\nbills on demand and is not counted here.",
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "applies_to": {
+                    "type": "string",
+                    "format": "date-time"
+                },
                 "billed_amount": {
+                    "description": "BilledAmount is what the stretch bills for this commitment: used plus, when binding, the true-up.",
                     "type": "string"
                 },
-                "capacity": {
-                    "type": "string"
+                "binding": {
+                    "type": "boolean"
                 },
                 "commitment_id": {
+                    "type": "string"
+                },
+                "committed": {
+                    "description": "Committed is the full capacity for the stretch; its amount is the floor a binding commitment owes.",
+                    "$ref": "#/definitions/CommitmentUsageValue"
+                },
+                "currency": {
                     "type": "string"
                 },
                 "invoice_label": {
                     "type": "string"
                 },
-                "period_amount": {
-                    "type": "string"
+                "measurement": {
+                    "$ref": "#/definitions/types.CommitmentMeasurement"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.CommitmentType"
                 },
                 "unused": {
-                    "type": "string"
+                    "description": "Unused is the remaining capacity; for a binding commitment its amount is the true-up still owed.",
+                    "$ref": "#/definitions/CommitmentUsageValue"
                 },
                 "used": {
+                    "description": "Used is the capacity consumed so far and the value those units bill within the commitment.",
+                    "$ref": "#/definitions/CommitmentUsageValue"
+                }
+            }
+        },
+        "CommitmentUsageValue": {
+            "type": "object",
+            "properties": {
+                "amount": {
                     "type": "string"
                 },
-                "value_unused": {
-                    "type": "string"
-                },
-                "value_within": {
+                "quantity": {
                     "type": "string"
                 }
             }
@@ -24552,8 +24579,8 @@
                     "type": "integer"
                 },
                 "offset": {
-                    "minimum": 0,
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0
                 },
                 "range": {
                     "type": "string",

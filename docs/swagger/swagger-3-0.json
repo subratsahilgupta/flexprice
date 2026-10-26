@@ -20588,31 +20588,55 @@
       "CommitmentUsageBreakdown": {
         "type": "object",
         "properties": {
-          "billed_amount": {
-            "type": "string"
+          "applies_from": {
+            "type": "string",
+            "description": "AppliesFrom/To is the stretch of the queried window the commitment covers; usage outside it\nbills on demand and is not counted here.",
+            "format": "date-time"
           },
-          "capacity": {
-            "type": "string"
+          "applies_to": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "billed_amount": {
+            "type": "string",
+            "description": "BilledAmount is what the stretch bills for this commitment: used plus, when binding, the true-up."
+          },
+          "binding": {
+            "type": "boolean"
           },
           "commitment_id": {
+            "type": "string"
+          },
+          "committed": {
+            "$ref": "#/components/schemas/CommitmentUsageValue"
+          },
+          "currency": {
             "type": "string"
           },
           "invoice_label": {
             "type": "string"
           },
-          "period_amount": {
-            "type": "string"
+          "measurement": {
+            "$ref": "#/components/schemas/types.CommitmentMeasurement"
+          },
+          "type": {
+            "$ref": "#/components/schemas/types.CommitmentType"
           },
           "unused": {
-            "type": "string"
+            "$ref": "#/components/schemas/CommitmentUsageValue"
           },
           "used": {
+            "$ref": "#/components/schemas/CommitmentUsageValue"
+          }
+        }
+      },
+      "CommitmentUsageValue": {
+        "type": "object",
+        "properties": {
+          "amount": {
             "type": "string"
           },
-          "value_unused": {
-            "type": "string"
-          },
-          "value_within": {
+          "quantity": {
             "type": "string"
           }
         }
