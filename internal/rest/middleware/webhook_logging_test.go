@@ -94,6 +94,18 @@ func TestWebhookLoggingMiddleware_Redaction(t *testing.T) {
 			wantRaw: "a=1&client-secret=%5Bredacted%5D&token=%5Bredacted%5D",
 		},
 		{
+			name:    "malformed json object under form content type",
+			headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+			body:    `{"token":"leak",,`,
+			wantRaw: "[redacted: unparseable body]",
+		},
+		{
+			name:    "malformed json array under form content type",
+			headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+			body:    `[{"token":"leak"`,
+			wantRaw: "[redacted: unparseable body]",
+		},
+		{
 			name:    "json body under form content type",
 			headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
 			body:    `{"secret_token":"leak"}`,

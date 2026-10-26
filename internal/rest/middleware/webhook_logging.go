@@ -158,6 +158,11 @@ func redactWebhookBody(body []byte, contentType, contentEncoding string) string 
 		if !isForm {
 			return string(body)
 		}
+		for _, prefix := range []string{"{", "[{", "[[", `["`} {
+			if bytes.HasPrefix(trimmed, []byte(prefix)) {
+				return unparseableBody
+			}
+		}
 		form, err := url.ParseQuery(string(body))
 		if err != nil {
 			return unparseableBody
