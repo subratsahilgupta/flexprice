@@ -121,3 +121,46 @@ func (s *MeterUsageServiceSuite) TestDebugEvent_OutsideWindowIsNotFound() {
 func windowAround(ts time.Time) events.TimeRange {
 	return events.TimeRange{Start: ts.Add(-time.Hour), End: ts.Add(time.Hour)}
 }
+
+// An event matching two meters has a meter_usage row per meter. After a meter swap only the new
+// meter's line item is active, so the debugger must report that row, not the ended meter's.
+func (s *MeterUsageServiceSuite) TestDebugEvent_ReportsActiveMeterAfterMeterSwap() {
+	ctx := s.GetContext()
+	eventID := "evt_meter_swap"
+	swapAt := s.periodStart.Add(10 * 24 * time.Hour)
+	ts := swapAt.Add(6 * time.Hour)
+
+	oldMeter := s.createMeterWithAggregation(ctx, "meter_stt_old", "stt", types.AggregationSum)
+	newMeter := s.createMeterWithAggregation(ctx, "meter_stt_new", "stt", types.AggregationSum)
+	oldLI := s.createLineItemForMeter(ctx, "li_stt_old", oldMeter.ID, s.createPriceForMeter(ctx, "pr_stt_old", oldMeter.ID, decimal.NewFromInt(1)).ID)
+	oldLI.EndDate = swapAt
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, oldLI))
+	newLI := s.createLineItemForMeter(ctx, "li_stt_new", newMeter.ID, s.createPriceForMeter(ctx, "pr_stt_new", newMeter.ID, decimal.NewFromInt(1)).ID)
+	newLI.StartDate = swapAt
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, newLI))
+
+	event := events.Event{
+		ID:                 eventID,
+		TenantID:           types.GetTenantID(ctx),
+		EnvironmentID:      types.GetEnvironmentID(ctx),
+		ExternalCustomerID: s.customer.ExternalID,
+		EventName:          "stt",
+		Timestamp:          ts,
+		IngestedAt:         ts,
+		Properties:         map[string]interface{}{"quantity": 1.1},
+		Source:             "public-api",
+	}
+	s.NoError(s.GetStores().EventRepo.InsertEvent(ctx, &event))
+	s.NoError(s.meterUsageRepo.BulkInsertMeterUsage(ctx, []*events.MeterUsage{
+		{Event: event, MeterID: oldMeter.ID, QtyTotal: decimal.RequireFromString("1.1")},
+		{Event: event, MeterID: newMeter.ID, QtyTotal: decimal.NewFromInt(2)},
+	}))
+
+	resp, err := s.svc.DebugEvent(ctx, s.customer.ExternalID, eventID, windowAround(ts))
+	s.Require().NoError(err)
+	s.Equal(types.EventProcessingStatusTypeProcessed, resp.Status)
+	s.Require().Len(resp.ProcessedEvents, 1)
+	s.Equal(newMeter.ID, resp.ProcessedEvents[0].MeterID)
+	s.Equal(newLI.ID, resp.ProcessedEvents[0].SubLineItemID)
+	s.Equal("2", resp.ProcessedEvents[0].QtyTotal)
+}
