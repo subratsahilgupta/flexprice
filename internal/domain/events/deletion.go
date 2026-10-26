@@ -138,12 +138,14 @@ type DeletionRequestRepository interface {
 	MarkTerminal(ctx context.Context, ids []string, status types.EventDeletionStatus, reason types.EventDeletionFailureReason) error
 }
 
+// MaxEventsPerRequest caps the id set one deletion request may resolve. The
+// repository reads one row more than this, so the service reaches the refusal
+// without materialising an unbounded result.
+const MaxEventsPerRequest = 1_000_000
+
 // DeletedEventsLogRepository is the ClickHouse side of a deletion: what is in
-// scope, recording it, then deleting it.
-//
-// scope is a *MeterUsageQueryParams on every method: it already carries every
-// dimension a deletion narrows on, and it builds the WHERE clause for both
-// tables. A scope with MeterIDs set is the feature-narrowed case (case 2).
+// scope, recording it, then deleting it. scope carries every dimension a deletion
+// narrows on and builds the WHERE clause for both tables.
 type DeletedEventsLogRepository interface {
 	// ResolveEventIDs returns the ids in scope and the meter_usage rows behind them.
 	ResolveEventIDs(ctx context.Context, scope *MeterUsageQueryParams) (*DeletionTargets, error)

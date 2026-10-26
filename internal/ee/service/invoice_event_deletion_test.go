@@ -4,9 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -17,6 +19,7 @@ import (
 type InvoiceEventDeletionGateSuite struct {
 	testutil.BaseServiceTestSuite
 	svc         *invoiceService
+	paymentSvc  *paymentService
 	requestRepo *testutil.InMemoryEventDeletionRequestStore
 	periodStart time.Time
 	periodEnd   time.Time
@@ -53,6 +56,7 @@ func (s *InvoiceEventDeletionGateSuite) SetupTest() {
 		TenantRepo:               s.GetStores().TenantRepo,
 		EventDeletionRequestRepo: s.requestRepo,
 	}).(*invoiceService)
+	s.paymentSvc = NewPaymentService(s.svc.ServiceParams).(*paymentService)
 }
 
 func (s *InvoiceEventDeletionGateSuite) TearDownTest() {
@@ -77,7 +81,7 @@ func (s *InvoiceEventDeletionGateSuite) seedDeleting(externalCustomerID string, 
 		PeriodStart:        start,
 		PeriodEnd:          end,
 		DeletionStatus:     types.EventDeletionStatusDeleting,
-		StartedAt:          start,
+		StartedAt:          time.Now().UTC(),
 	}}))
 }
 
@@ -283,4 +287,60 @@ func (s *InvoiceEventDeletionGateSuite) TestLockInvoiceCustomersForEventDeletion
 	externalIDs, err := s.svc.invoiceExternalCustomerIDs(s.GetContext(), inv)
 	s.NoError(err)
 	s.ElementsMatch([]string{"ext_payer", "ext_usage"}, externalIDs)
+}
+
+// Paying a draft in full finalizes it outside FinalizeInvoice, the one path that
+// takes the deletion gate. Refused up front so the invoice cannot seal usage the
+// running deletion is about to remove.
+func (s *InvoiceEventDeletionGateSuite) TestPayment_RefusedWhileADeletionCoversTheInvoicePeriod() {
+	s.seedCustomer("cust_1", "ext_1")
+	s.seedDeleting("ext_1", s.periodStart, s.periodEnd)
+	inv := s.draftInvoice("inv_1", "cust_1", nil, s.periodStart, s.periodEnd)
+
+	err := s.paymentSvc.validateInvoicePaymentEligibility(s.GetContext(), inv, &dto.CreatePaymentRequest{
+		DestinationType: types.PaymentDestinationTypeInvoice,
+		DestinationID:   inv.ID,
+		Amount:          inv.AmountDue,
+		Currency:        inv.Currency,
+	})
+
+	s.Error(err)
+	s.True(ierr.IsAlreadyExists(err))
+}
+
+// The gate is per period. An invoice outside the deleted period is payable.
+func (s *InvoiceEventDeletionGateSuite) TestPayment_AllowedForAnInvoiceOutsideTheDeletedPeriod() {
+	s.seedCustomer("cust_1", "ext_1")
+	s.seedDeleting("ext_1", s.periodStart, s.periodEnd)
+	inv := s.draftInvoice("inv_later", "cust_1", nil, s.periodEnd, s.periodEnd.AddDate(0, 0, 20))
+
+	err := s.paymentSvc.validateInvoicePaymentEligibility(s.GetContext(), inv, &dto.CreatePaymentRequest{
+		DestinationType: types.PaymentDestinationTypeInvoice,
+		DestinationID:   inv.ID,
+		Amount:          inv.AmountDue,
+		Currency:        inv.Currency,
+	})
+
+	s.NoError(err)
+}
+
+// A row abandoned by a dead process must release the invoicing hold too, not just
+// ingestion, or the two fences disagree about the same row.
+func (s *InvoiceEventDeletionGateSuite) TestGate_ReleasesOnceTheDeletionIsAbandoned() {
+	s.seedCustomer("cust_1", "ext_1")
+	s.NoError(s.requestRepo.CreateBulk(s.GetContext(), []*events.DeletionRequest{{
+		ID:                 "evtdel_abandoned",
+		RequestID:          "req_abandoned",
+		ExternalCustomerID: "ext_1",
+		PeriodStart:        s.periodStart,
+		PeriodEnd:          s.periodEnd,
+		DeletionStatus:     types.EventDeletionStatusDeleting,
+		StartedAt:          time.Now().UTC().Add(-2 * staleDeletionAge),
+	}}))
+	inv := s.draftInvoice("inv_1", "cust_1", nil, s.periodStart, s.periodEnd)
+
+	gated, err := s.svc.isInvoiceGatedOnEventDeletion(s.GetContext(), inv)
+
+	s.NoError(err)
+	s.Nil(gated)
 }

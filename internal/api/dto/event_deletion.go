@@ -20,9 +20,10 @@ type DeleteEventsRequest struct {
 	EventIDs    []string  `json:"event_ids,omitempty" validate:"omitempty,max=1000"`
 	PeriodStart time.Time `json:"period_start" validate:"required" example:"2026-03-01T00:00:00Z"`
 	PeriodEnd   time.Time `json:"period_end" validate:"required" example:"2026-03-28T00:00:00Z"`
-	// SkipPayload stores the audit row's properties as '' so a compliance-driven
-	// deletion leaves no payload copy.
-	SkipPayload bool `json:"skip_payload,omitempty"`
+	// SkipPayload stores the audit row's properties as '' so the deletion leaves
+	// no payload copy. Defaults to true: a deletion is usually an erasure, and
+	// keeping the payload would defeat it. Send false to retain it.
+	SkipPayload *bool `json:"skip_payload,omitempty"`
 }
 
 // Validate applies the request-shape rules. Resolution of the ids and the cap on
@@ -45,6 +46,17 @@ func (r *DeleteEventsRequest) Validate() error {
 	if !r.PeriodStart.Before(r.PeriodEnd) {
 		return ierr.NewError("period_start must be before period_end").
 			WithHint("period_start must be before period_end").
+			Mark(ierr.ErrValidation)
+	}
+
+	// A future period would fence the customer's live traffic for as long as the
+	// deletion runs, and anything already in Kafka would block its partition.
+	if r.PeriodEnd.After(time.Now().UTC()) {
+		return ierr.NewError("period_end is in the future").
+			WithHint("Delete a period that has already closed").
+			WithReportableDetails(map[string]interface{}{
+				"period_end": r.PeriodEnd,
+			}).
 			Mark(ierr.ErrValidation)
 	}
 

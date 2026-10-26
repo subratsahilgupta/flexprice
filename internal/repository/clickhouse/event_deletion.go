@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -27,6 +28,10 @@ const (
 
 	// recordBatchSize is how many ids one audit INSERT ... SELECT carries.
 	recordBatchSize = 1000
+
+	// mutationKillTimeout bounds the KILL issued for a mutation we stopped waiting
+	// for. Detached from the caller, which has usually gone by then.
+	mutationKillTimeout = 30 * time.Second
 )
 
 // EventDeletionLogRepository hard-deletes events and their meter usage, recording
@@ -64,7 +69,7 @@ func baseParams(scope *events.MeterUsageQueryParams, ids []string) *events.Meter
 	return params
 }
 
-// isMeterNarrowed reports whether the request named features (case 2).
+// isMeterNarrowed reports whether the request named features.
 func isMeterNarrowed(scope *events.MeterUsageQueryParams) bool {
 	return len(scope.MeterIDs) > 0 || scope.MeterID != ""
 }
@@ -87,8 +92,9 @@ func (r *EventDeletionLogRepository) ResolveEventIDs(
 		FROM meter_usage FINAL
 		WHERE %s
 		GROUP BY id
+		LIMIT %d
 		SETTINGS do_not_merge_across_partitions_select_final = 1, %s
-	`, where, maxMemoryUsageSetting), args...)
+	`, where, events.MaxEventsPerRequest+1, maxMemoryUsageSetting), args...)
 	if err != nil {
 		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
@@ -129,8 +135,9 @@ func (r *EventDeletionLogRepository) ResolveEventIDs(
 		SELECT DISTINCT id
 		FROM events
 		WHERE %s
+		LIMIT %d
 		SETTINGS %s
-	`, baseWhere, maxMemoryUsageSetting), baseArgs)
+	`, baseWhere, events.MaxEventsPerRequest+1, maxMemoryUsageSetting), baseArgs)
 	if err != nil {
 		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
@@ -345,11 +352,9 @@ func (r *EventDeletionLogRepository) DeleteEvents(ctx context.Context, scope *ev
 	return r.mutate(ctx, "events", where, args)
 }
 
-// mutate submits one heavyweight delete and waits for it.
-//
-// ALTER TABLE ... DELETE, not DELETE FROM: a lightweight delete fails on a table
-// carrying a projection, and production events carries one. The predicate is
-// literal because ClickHouse refuses a subquery in a mutation predicate.
+// mutate submits one heavyweight delete and waits for it. ALTER TABLE ... DELETE,
+// not DELETE FROM: a lightweight delete fails on a table carrying a projection,
+// and production events carries one.
 func (r *EventDeletionLogRepository) mutate(ctx context.Context, table, where string, args []interface{}) error {
 	span := StartRepositorySpan(ctx, "event_deletion", "mutate", map[string]interface{}{"table": table})
 	defer FinishSpan(span)
@@ -373,8 +378,8 @@ func (r *EventDeletionLogRepository) mutate(ctx context.Context, table, where st
 		return ierr.WithError(err).
 			WithHint("Failed to submit the delete mutation").
 			WithReportableDetails(map[string]interface{}{
-				"reason": types.EventDeletionReasonMutationFailed,
-				"table":  table,
+				"reason":     types.EventDeletionReasonMutationFailed,
+				"request_id": types.GetRequestID(ctx),
 			}).
 			Mark(ierr.ErrDatabase)
 	}
@@ -383,6 +388,11 @@ func (r *EventDeletionLogRepository) mutate(ctx context.Context, table, where st
 
 	if err := r.waitForMutation(ctx, table, marker); err != nil {
 		SetSpanError(span, err)
+		// A mutation that failed server side has already stopped. One we gave up
+		// waiting for has not, and would keep rewriting parts unattended.
+		if errors.Is(err, types.ErrMutationTimeout) || ctx.Err() != nil {
+			r.kill(ctx, table, marker)
+		}
 		return err
 	}
 
@@ -412,12 +422,17 @@ func (r *EventDeletionLogRepository) waitForMutation(ctx context.Context, table,
 		}
 
 		if failReason != "" {
+			// The engine's own message stays server side: it names internal tables
+			// and part paths the caller can neither read nor act on.
+			r.logger.Error(ctx, "delete mutation failed",
+				"error", failReason,
+				"table", table,
+			)
 			return ierr.NewError("delete mutation failed").
-				WithHint("ClickHouse reported an error while deleting; read deleted_events_logs by request_id for what was recorded").
+				WithHint("The delete did not complete. Everything recorded for this request_id is still present").
 				WithReportableDetails(map[string]interface{}{
-					"reason":            types.EventDeletionReasonMutationFailed,
-					"table":             table,
-					"clickhouse_reason": failReason,
+					"reason":     types.EventDeletionReasonMutationFailed,
+					"request_id": types.GetRequestID(ctx),
 				}).
 				Mark(ierr.ErrDatabase)
 		}
@@ -428,10 +443,10 @@ func (r *EventDeletionLogRepository) waitForMutation(ctx context.Context, table,
 
 		if time.Now().After(deadline) {
 			return ierr.WithError(types.ErrMutationTimeout).
-				WithHint("The delete is still running on the server; read deleted_events_logs by request_id for what was recorded").
+				WithHint("The delete took too long and was cancelled. Retry it for the same period").
 				WithReportableDetails(map[string]interface{}{
-					"reason": types.EventDeletionReasonMutationTimeout,
-					"table":  table,
+					"reason":     types.EventDeletionReasonMutationTimeout,
+					"request_id": types.GetRequestID(ctx),
 				}).
 				Mark(ierr.ErrDatabase)
 		}
@@ -461,4 +476,23 @@ func (r *EventDeletionLogRepository) selectIDs(ctx context.Context, query string
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// kill cancels a mutation this request submitted but stopped waiting for. Without
+// it an abandoned delete keeps rewriting parts with nothing watching, and a
+// second attempt piles another rewrite on top of the first.
+func (r *EventDeletionLogRepository) kill(ctx context.Context, table, marker string) {
+	killCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), mutationKillTimeout)
+	defer cancel()
+
+	query := "KILL MUTATION WHERE database = currentDatabase() AND table = ? AND position(command, ?) > 0"
+	if err := r.store.GetConn().Exec(killCtx, query, table, marker); err != nil {
+		r.logger.Error(killCtx, "failed to cancel the abandoned delete mutation, it is still running",
+			"error", err,
+			"table", table,
+		)
+		return
+	}
+
+	r.logger.Info(killCtx, "cancelled the abandoned delete mutation", "table", table)
 }

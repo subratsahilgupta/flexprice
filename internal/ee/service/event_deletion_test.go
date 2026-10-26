@@ -343,9 +343,23 @@ func (s *EventDeletionServiceSuite) TestDelete_FinalizedInvoiceOverlapShapes() {
 			blocks:      true,
 		},
 		{
+			// Periods are half-open, so an invoice ending where the request begins
+			// shares no instant with it. January must not block a February delete.
 			name:        "invoice ends exactly at period_start",
 			periodStart: s.periodStart.AddDate(0, 0, -10),
 			periodEnd:   s.periodStart,
+			blocks:      false,
+		},
+		{
+			name:        "invoice starts exactly at period_end",
+			periodStart: s.periodEnd,
+			periodEnd:   s.periodEnd.AddDate(0, 0, 10),
+			blocks:      false,
+		},
+		{
+			name:        "invoice ends one instant after period_start",
+			periodStart: s.periodStart.AddDate(0, 0, -10),
+			periodEnd:   s.periodStart.Add(time.Nanosecond),
 			blocks:      true,
 		},
 		{
@@ -501,7 +515,7 @@ func (s *EventDeletionServiceSuite) TestDelete_RefusesWhenAnotherDeletionIsInPro
 		PeriodStart:        s.periodStart,
 		PeriodEnd:          s.periodEnd,
 		DeletionStatus:     types.EventDeletionStatusDeleting,
-		StartedAt:          s.periodStart,
+		StartedAt:          time.Now().UTC(),
 	}}))
 
 	_, err := s.svc.Delete(s.GetContext(), s.request())
@@ -510,6 +524,56 @@ func (s *EventDeletionServiceSuite) TestDelete_RefusesWhenAnotherDeletionIsInPro
 	s.True(ierr.IsAlreadyExists(err))
 	s.assertNothingDeleted()
 	s.Len(s.stateRows(), 1, "the loser must not add a row")
+}
+
+// A process killed mid-deletion leaves a row nothing will ever close. The unique
+// index would refuse every retry, so the retry closes it and proceeds.
+func (s *EventDeletionServiceSuite) TestDelete_ClosesAnAbandonedRowAndProceeds() {
+	s.seedCustomer("cust_1", "ext_1")
+	s.logRepo.SeedUsage(testutil.SeededUsage{EventID: "evt_1", MeterID: "meter_a",
+		ExternalCustomerID: "ext_1", Timestamp: s.insidePeriod, QtyTotal: decimal.NewFromInt(5)})
+	s.NoError(s.requestRepo.CreateBulk(s.GetContext(), []*events.DeletionRequest{{
+		ID:                 "evtdel_abandoned",
+		RequestID:          "req_abandoned",
+		ExternalCustomerID: "ext_1",
+		PeriodStart:        s.periodStart,
+		PeriodEnd:          s.periodEnd,
+		DeletionStatus:     types.EventDeletionStatusDeleting,
+		StartedAt:          time.Now().UTC().Add(-2 * staleDeletionAge),
+	}}))
+
+	_, err := s.svc.Delete(s.GetContext(), s.request())
+	s.NoError(err)
+
+	rows := s.stateRows()
+	s.Len(rows, 2, "the abandoned row is closed, the retry adds its own")
+
+	byID := lo.SliceToMap(rows, func(r *events.DeletionRequest) (string, *events.DeletionRequest) { return r.ID, r })
+	abandoned := byID["evtdel_abandoned"]
+	s.Equal(types.EventDeletionStatusFailed, abandoned.DeletionStatus)
+	s.Require().NotNil(abandoned.FailureReason)
+	s.Equal(types.EventDeletionReasonAbandoned.String(), *abandoned.FailureReason)
+}
+
+// A deletion still inside its own deadline is slow, not abandoned, and must
+// still refuse a second one.
+func (s *EventDeletionServiceSuite) TestDelete_RefusesWhileAnotherIsStillWithinItsDeadline() {
+	s.seedCustomer("cust_1", "ext_1")
+	s.NoError(s.requestRepo.CreateBulk(s.GetContext(), []*events.DeletionRequest{{
+		ID:                 "evtdel_slow",
+		RequestID:          "req_slow",
+		ExternalCustomerID: "ext_1",
+		PeriodStart:        s.periodStart,
+		PeriodEnd:          s.periodEnd,
+		DeletionStatus:     types.EventDeletionStatusDeleting,
+		StartedAt:          time.Now().UTC().Add(-deletionRunDeadline),
+	}}))
+
+	_, err := s.svc.Delete(s.GetContext(), s.request())
+
+	s.Error(err)
+	s.True(ierr.IsAlreadyExists(err))
+	s.assertNothingDeleted()
 }
 
 func (s *EventDeletionServiceSuite) TestDelete_AllowsAfterAPreviousDeletionCompleted() {
@@ -521,7 +585,7 @@ func (s *EventDeletionServiceSuite) TestDelete_AllowsAfterAPreviousDeletionCompl
 		PeriodStart:        s.periodStart,
 		PeriodEnd:          s.periodEnd,
 		DeletionStatus:     types.EventDeletionStatusDeleting,
-		StartedAt:          s.periodStart,
+		StartedAt:          time.Now().UTC(),
 	}}))
 	s.NoError(s.requestRepo.MarkTerminal(s.GetContext(), []string{"evtdel_done"}, types.EventDeletionStatusCompleted, ""))
 
@@ -580,7 +644,10 @@ func (s *EventDeletionServiceSuite) TestDelete_RecordsOneRowPerEventAndMeter() {
 		EventID: "evt_2", ExternalCustomerID: "ext_1", Timestamp: s.insidePeriod, Properties: `{"b":2}`,
 	})
 
-	_, err := s.svc.Delete(s.GetContext(), s.request())
+	req := s.request()
+	req.SkipPayload = lo.ToPtr(false)
+
+	_, err := s.svc.Delete(s.GetContext(), req)
 	s.NoError(err)
 
 	logs := s.logRepo.Logs()
@@ -617,7 +684,7 @@ func (s *EventDeletionServiceSuite) TestDelete_SkipPayloadStoresNoProperties() {
 	})
 
 	req := s.request()
-	req.SkipPayload = true
+	req.SkipPayload = lo.ToPtr(true)
 
 	_, err := s.svc.Delete(s.GetContext(), req)
 	s.NoError(err)
@@ -630,6 +697,45 @@ func (s *EventDeletionServiceSuite) TestDelete_SkipPayloadStoresNoProperties() {
 	rows := s.stateRows()
 	s.Len(rows, 1)
 	s.True(rows[0].SkipPayload, "the flag is recorded on the request, not on every audit row")
+}
+
+// A deletion is usually an erasure, so an unset flag must not leave a payload copy.
+func (s *EventDeletionServiceSuite) TestDelete_SkipsThePayloadByDefault() {
+	s.seedCustomer("cust_1", "ext_1")
+	s.logRepo.SeedUsage(testutil.SeededUsage{
+		EventID: "evt_1", MeterID: "meter_a", ExternalCustomerID: "ext_1",
+		Timestamp: s.insidePeriod, QtyTotal: decimal.NewFromInt(5), Properties: `{"secret":"x"}`,
+	})
+
+	req := s.request()
+	s.Nil(req.SkipPayload, "the request leaves it unset")
+
+	_, err := s.svc.Delete(s.GetContext(), req)
+	s.NoError(err)
+
+	logs := s.logRepo.Logs()
+	s.Len(logs, 1)
+	s.Empty(logs[0].Properties)
+	s.True(s.stateRows()[0].SkipPayload)
+}
+
+// Retaining the payload stays possible, it just has to be asked for.
+func (s *EventDeletionServiceSuite) TestDelete_RetainsThePayloadWhenAsked() {
+	s.seedCustomer("cust_1", "ext_1")
+	s.logRepo.SeedUsage(testutil.SeededUsage{
+		EventID: "evt_1", MeterID: "meter_a", ExternalCustomerID: "ext_1",
+		Timestamp: s.insidePeriod, QtyTotal: decimal.NewFromInt(5), Properties: `{"secret":"x"}`,
+	})
+
+	req := s.request()
+	req.SkipPayload = lo.ToPtr(false)
+
+	_, err := s.svc.Delete(s.GetContext(), req)
+	s.NoError(err)
+
+	logs := s.logRepo.Logs()
+	s.Len(logs, 1)
+	s.Equal(`{"secret":"x"}`, logs[0].Properties)
 }
 
 func (s *EventDeletionServiceSuite) TestDelete_EventIDsNarrowsToThoseIDs() {
@@ -781,25 +887,49 @@ func (s *EventDeletionServiceSuite) TestDelete_MarksFailedWhenTheResolveFails() 
 	s.assertNothingDeleted()
 }
 
-// A dropped client connection must never leave invoicing blocked.
-func (s *EventDeletionServiceSuite) TestDelete_MarksConnectionLostOnCancelledContext() {
+// A dropped client connection must leave neither the invoicing blocked nor the
+// deletion half done, with meter_usage gone and the events still there.
+func (s *EventDeletionServiceSuite) TestDelete_RunsToTheEndOnACancelledRequest() {
 	s.seedCustomer("cust_1", "ext_1")
 	s.logRepo.SeedUsage(testutil.SeededUsage{EventID: "evt_1", MeterID: "meter_a",
 		ExternalCustomerID: "ext_1", Timestamp: s.insidePeriod, QtyTotal: decimal.NewFromInt(5)})
 
-	// A non-zero wait, so cancelling the request lands inside it.
-	s.svc.suppressionWait = time.Minute
+	// A non-zero wait, so cancelling the request lands inside the run.
+	s.svc.suppressionWait = 50 * time.Millisecond
 
 	ctx, cancel := context.WithCancel(s.GetContext())
 	go func() {
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 		cancel()
 	}()
 
 	_, err := s.svc.Delete(ctx, s.request())
 
+	s.NoError(err, "the run is detached once the state row is committed")
+	s.assertStateRow(types.EventDeletionStatusCompleted, "")
+	s.Equal(1, s.logRepo.MeterUsageMutations)
+	s.Equal(1, s.logRepo.EventMutations, "both mutations ran, so nothing is left half deleted")
+}
+
+// The finalization gate keys on both customer columns, so the guard must too. A
+// delegated-invoicing invoice is billed to one customer and carries another's usage.
+func (s *EventDeletionServiceSuite) TestDelete_BlockedByAFinalizedDelegatedInvoice() {
+	s.seedCustomer("cust_1", "ext_1")
+	s.seedCustomer("cust_payer", "ext_payer")
+
+	inv := s.seedInvoice("inv_1", "cust_payer", nil, types.InvoiceStatusFinalized, s.periodStart, s.periodEnd)
+	inv.SubscriptionCustomerID = lo.ToPtr("cust_1")
+	s.NoError(s.GetStores().InvoiceRepo.Update(s.GetContext(), inv))
+
+	s.logRepo.SeedUsage(testutil.SeededUsage{EventID: "evt_1", MeterID: "meter_a",
+		ExternalCustomerID: "ext_1", Timestamp: s.insidePeriod, QtyTotal: decimal.NewFromInt(5)})
+
+	_, err := s.svc.Delete(s.GetContext(), s.request())
+
 	s.Error(err)
-	s.assertStateRow(types.EventDeletionStatusFailed, types.EventDeletionReasonConnectionLost)
+	s.True(ierr.IsInvalidOperation(err))
+	s.assertNoStateRow()
+	s.assertNothingDeleted()
 }
 
 // ---------- dedup locks ----------
@@ -868,7 +998,7 @@ func (s *EventDeletionServiceSuite) TestDelete_RefusesWholeRequestWhenOneCustome
 		PeriodStart:        s.periodStart,
 		PeriodEnd:          s.periodEnd,
 		DeletionStatus:     types.EventDeletionStatusDeleting,
-		StartedAt:          s.periodStart,
+		StartedAt:          time.Now().UTC(),
 	}}))
 
 	req := s.request()
@@ -936,7 +1066,7 @@ func (s *EventDeletionServiceSuite) TestMarkTerminal_ClosesOnlyTheGivenRows() {
 			PeriodStart:        s.periodStart,
 			PeriodEnd:          s.periodEnd,
 			DeletionStatus:     types.EventDeletionStatusDeleting,
-			StartedAt:          s.periodStart,
+			StartedAt:          time.Now().UTC(),
 		}}))
 	}
 	open("evtdel_a", "ext_a")

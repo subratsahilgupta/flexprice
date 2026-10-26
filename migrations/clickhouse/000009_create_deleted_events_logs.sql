@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS flexprice.deleted_events_logs
     qty_total            Decimal(25, 15),
     unique_hash          String DEFAULT '',
 
-    -- payload, stored by default; '' when the request set skip_payload
+    -- payload, '' unless the request asked to retain it
     properties           String DEFAULT '' CODEC(ZSTD(3)),
 
     -- stamped by the INSERT ... SELECT

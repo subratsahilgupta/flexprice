@@ -664,6 +664,7 @@ func (h *EventsHandler) ReprocessUnprocessedRawEvents(c *gin.Context) {
 // @x-scope "delete"
 // @Param request body dto.DeleteEventsRequest true "Deletion scope"
 // @Success 200 {object} dto.DeleteEventsResponse
+// @Header 200 {string} X-Request-ID "Identifies this deletion in deleted_events_logs"
 // @Failure 400 {object} ierr.ErrorResponse "Invalid request, or a guard refused the deletion"
 // @Failure 403 {object} ierr.ErrorResponse "Caller lacks the capability, or is a service account"
 // @Failure 409 {object} ierr.ErrorResponse "A deletion is already in progress for a customer in this request"

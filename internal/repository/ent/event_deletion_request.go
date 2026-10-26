@@ -64,7 +64,7 @@ func (r *eventDeletionRequestRepository) CreateBulk(ctx context.Context, request
 	if _, err := client.EventDeletionRequest.CreateBulk(builders...).Save(ctx); err != nil {
 		SetSpanError(span, err)
 		// The table carries one unique index, the partial one on DELETING, so any
-		// constraint violation here is BR8: a deletion is already in flight.
+		// constraint violation here means a deletion is already in flight.
 		if ent.IsConstraintError(err) {
 			return ierr.WithError(err).
 				WithHint("A deletion is already in progress for one of the customers in this request").
@@ -119,7 +119,7 @@ func (r *eventDeletionRequestRepository) ListAll(
 	return domainEvents.DeletionRequestListFromEnt(rows), nil
 }
 
-// applyFilters narrows the query. PeriodStartLTE with PeriodEndGTE is BR1's
+// applyFilters narrows the query. PeriodStartLT with PeriodEndGT is the period
 // overlap test, shared by the deletion guard and the finalization gate.
 func (r *eventDeletionRequestRepository) applyFilters(
 	query *ent.EventDeletionRequestQuery,
@@ -131,11 +131,17 @@ func (r *eventDeletionRequestRepository) applyFilters(
 	if filter.DeletionStatus != "" {
 		query = query.Where(entDeletion.DeletionStatus(filter.DeletionStatus))
 	}
-	if filter.PeriodStartLTE != nil {
-		query = query.Where(entDeletion.PeriodStartLTE(*filter.PeriodStartLTE))
+	if filter.PeriodStartLT != nil {
+		query = query.Where(entDeletion.PeriodStartLT(*filter.PeriodStartLT))
 	}
-	if filter.PeriodEndGTE != nil {
-		query = query.Where(entDeletion.PeriodEndGTE(*filter.PeriodEndGTE))
+	if filter.PeriodEndGT != nil {
+		query = query.Where(entDeletion.PeriodEndGT(*filter.PeriodEndGT))
+	}
+	if filter.StartedAtGT != nil {
+		query = query.Where(entDeletion.StartedAtGT(*filter.StartedAtGT))
+	}
+	if filter.StartedAtLT != nil {
+		query = query.Where(entDeletion.StartedAtLT(*filter.StartedAtLT))
 	}
 	return query
 }

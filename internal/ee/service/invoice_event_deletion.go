@@ -33,10 +33,9 @@ func (s *invoiceService) invoiceExternalCustomerIDs(ctx context.Context, inv *in
 	}))), nil
 }
 
-// isInvoiceGatedOnEventDeletion reports the deletion holding this invoice, or
-// nil when none is. Called after the invoice row lock and after
-// lockInvoiceCustomersForEventDeletion: the deletion side takes only the advisory
-// lock and never row-locks invoices, so the reverse order here would deadlock.
+// isInvoiceGatedOnEventDeletion reports the deletion holding this invoice, or nil
+// when none is. Call it after the invoice row lock and after
+// lockInvoiceCustomersForEventDeletion, or it deadlocks against the deletion.
 func (s *invoiceService) isInvoiceGatedOnEventDeletion(ctx context.Context, inv *invoice.Invoice) (*events.DeletionRequest, error) {
 	if s.EventDeletionRequestRepo == nil || inv == nil || inv.PeriodStart == nil || inv.PeriodEnd == nil {
 		return nil, nil
@@ -50,10 +49,10 @@ func (s *invoiceService) isInvoiceGatedOnEventDeletion(ctx context.Context, inv 
 		return nil, nil
 	}
 
-	// Same operators as BR1, so the gate can never be narrower than the guard.
+	// Same operators as the deletion guard, so the gate can never be narrower.
 	filter := inProgressDeletionFilter(externalIDs)
-	filter.PeriodStartLTE = inv.PeriodEnd
-	filter.PeriodEndGTE = inv.PeriodStart
+	filter.PeriodStartLT = inv.PeriodEnd
+	filter.PeriodEndGT = inv.PeriodStart
 
 	requests, err := s.EventDeletionRequestRepo.ListAll(ctx, filter)
 	if err != nil {

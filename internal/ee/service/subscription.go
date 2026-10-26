@@ -2824,7 +2824,7 @@ func (s *subscriptionService) hydrateLineItemMeters(ctx context.Context, subscri
 func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *dto.GetUsageBySubscriptionRequest) (*dto.GetUsageBySubscriptionResponse, error) {
 	response := &dto.GetUsageBySubscriptionResponse{}
 
-	eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config, s.TracingSvc)
+	eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config, s.TracingSvc, nil)
 	priceService := NewPriceService(s.ServiceParams)
 
 	// Get subscription with line items

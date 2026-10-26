@@ -29,6 +29,23 @@ func TestDeleteEventsRequest_Validate(t *testing.T) {
 			},
 		},
 		{
+			name: "period_end in the future is refused",
+			req: DeleteEventsRequest{
+				ExternalCustomerIDs: []string{"ext_1"},
+				PeriodStart:         time.Now().UTC().Add(-time.Hour),
+				PeriodEnd:           time.Now().UTC().Add(time.Hour),
+			},
+			wantErr: true,
+		},
+		{
+			name: "a period that has just closed is allowed",
+			req: DeleteEventsRequest{
+				ExternalCustomerIDs: []string{"ext_1"},
+				PeriodStart:         time.Now().UTC().Add(-time.Hour),
+				PeriodEnd:           time.Now().UTC().Add(-time.Second),
+			},
+		},
+		{
 			name: "exactly one month is allowed",
 			req: DeleteEventsRequest{
 				ExternalCustomerIDs: []string{"ext_1"},

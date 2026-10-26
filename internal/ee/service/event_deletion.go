@@ -19,14 +19,15 @@ import (
 )
 
 const (
-	// maxEventsPerRequest is V6's cap on the resolved id set, checked before
-	// anything is written so failing it leaves nothing behind.
-	maxEventsPerRequest = 1_000_000
-	// suppressionCacheTTL is how long a consumer caches the deletions in progress,
-	// and so how long this path waits after committing the state row before
-	// resolving: a consumer with a stale cache could otherwise write an in-period
-	// event that the resolve then misses.
+	// How long a consumer caches the deletions in progress, and so how long the run
+	// waits after committing the state row before it resolves ids.
 	suppressionCacheTTL = 30 * time.Second
+	// Outer bound on the detached run. Past it the mutations are left to the server
+	// and the state row is closed as failed.
+	deletionRunDeadline = 45 * time.Minute
+	// When a row still DELETING is treated as abandoned. The margin over the run
+	// deadline covers clock skew and the terminal status commit.
+	staleDeletionAge = deletionRunDeadline + 15*time.Minute
 )
 
 // marketplaceProviderTypes have already reported and billed the usage outside
@@ -84,14 +85,19 @@ func (s *eventDeletionService) Delete(ctx context.Context, req *dto.DeleteEvents
 		"period_end", p.scope.EndTime,
 	)
 
-	response, reason, err := s.run(ctx, p)
+	// Detached from the caller: a connection dropped between the two mutations would
+	// leave meter_usage deleted and events intact.
+	runCtx, cancelRun := context.WithTimeout(context.WithoutCancel(ctx), deletionRunDeadline)
+	defer cancelRun()
 
-	// R4: terminal status on every exit path. On an uncancelled context, so a
-	// dropped connection never leaves a customer's invoicing blocked.
+	response, reason, err := s.run(runCtx, p)
+
+	// Terminal status on every exit path, on an uncancelled context, so a dropped
+	// connection never leaves a customer's invoicing blocked.
 	closeCtx := context.WithoutCancel(ctx)
 	if err != nil {
-		if ctx.Err() != nil {
-			reason = types.EventDeletionReasonConnectionLost
+		if runCtx.Err() != nil {
+			reason = types.EventDeletionReasonDeadlineExceeded
 		}
 		s.Logger.Error(closeCtx, "event deletion failed",
 			"error", err,
@@ -166,6 +172,7 @@ func (s *eventDeletionService) openRequest(ctx context.Context, req *dto.DeleteE
 	requestID := types.GetRequestID(ctx)
 	if requestID == "" {
 		requestID = types.GenerateUUID()
+		ctx = types.WithRequestID(ctx, requestID)
 	}
 	startedAt := time.Now().UTC()
 	var rowIDs []string
@@ -189,6 +196,26 @@ func (s *eventDeletionService) openRequest(ctx context.Context, req *dto.DeleteE
 		if listErr != nil {
 			return listErr
 		}
+		// The fence ignores an abandoned row, but the unique partial index does not,
+		// so it would refuse the insert below. Closed here rather than by a sweeper:
+		// a tenant retrying the deletion is exactly when the stale row is in the way.
+		abandoned, listErr := s.EventDeletionRequestRepo.ListAll(txCtx,
+			abandonedDeletionFilter(fencedExternalIDs))
+		if listErr != nil {
+			return listErr
+		}
+		if len(abandoned) > 0 {
+			abandonedIDs := lo.Map(abandoned, func(row *events.DeletionRequest, _ int) string { return row.ID })
+			s.Logger.Error(txCtx, "closing event deletion requests abandoned by a dead process",
+				"error", "event deletion request still DELETING past staleDeletionAge",
+				"request_count", len(abandonedIDs),
+			)
+			if markErr := s.EventDeletionRequestRepo.MarkTerminal(txCtx, abandonedIDs,
+				types.EventDeletionStatusFailed, types.EventDeletionReasonAbandoned); markErr != nil {
+				return markErr
+			}
+		}
+
 		if len(inProgress) > 0 {
 			return ierr.NewError("a deletion is already in progress for this customer").
 				WithHint("Wait for the running deletion to finish before starting another one").
@@ -218,7 +245,7 @@ func (s *eventDeletionService) openRequest(ctx context.Context, req *dto.DeleteE
 				PeriodEnd:          req.PeriodEnd.UTC(),
 				DeletionStatus:     types.EventDeletionStatusDeleting,
 				StartedAt:          startedAt,
-				SkipPayload:        req.SkipPayload,
+				SkipPayload:        lo.FromPtrOr(req.SkipPayload, true),
 			})
 		}
 		if createErr := s.EventDeletionRequestRepo.CreateBulk(txCtx, rows); createErr != nil {
@@ -247,7 +274,7 @@ func (s *eventDeletionService) openRequest(ctx context.Context, req *dto.DeleteE
 			RequestID:   requestID,
 			DeletedBy:   types.GetUserID(ctx),
 			DeletedAt:   startedAt,
-			SkipPayload: req.SkipPayload,
+			SkipPayload: lo.FromPtrOr(req.SkipPayload, true),
 		},
 	}, nil
 }
@@ -259,7 +286,7 @@ func (s *eventDeletionService) run(ctx context.Context, p *deletionPlan) (*dto.D
 	// event that no later step removes. Waiting the interval out closes that.
 	select {
 	case <-ctx.Done():
-		return nil, types.EventDeletionReasonConnectionLost, ctx.Err()
+		return nil, types.EventDeletionReasonDeadlineExceeded, ctx.Err()
 	case <-time.After(s.suppressionWait):
 	}
 
@@ -275,14 +302,14 @@ func (s *eventDeletionService) run(ctx context.Context, p *deletionPlan) (*dto.D
 		return &dto.DeleteEventsResponse{}, "", nil
 	}
 
-	if len(eventIDs) > maxEventsPerRequest {
+	if len(eventIDs) > events.MaxEventsPerRequest {
 		return nil, types.EventDeletionReasonTooManyEvents,
 			ierr.NewError("too many events in scope").
 				WithHint("Narrow the period and retry").
 				WithReportableDetails(map[string]interface{}{
 					"reason":      types.EventDeletionReasonTooManyEvents,
 					"event_count": len(eventIDs),
-					"limit":       maxEventsPerRequest,
+					"limit":       events.MaxEventsPerRequest,
 				}).
 				Mark(ierr.ErrInvalidOperation)
 	}
@@ -309,7 +336,7 @@ func (s *eventDeletionService) run(ctx context.Context, p *deletionPlan) (*dto.D
 		return nil, types.EventDeletionReasonMutationFailed, err
 	}
 
-	// BR7: meter_usage first. A surviving events row has no reader; a surviving
+	// meter_usage first. A surviving events row has no reader, a surviving
 	// meter_usage row keeps billing.
 	if err := s.EventDeletionLogRepo.DeleteMeterUsage(ctx, p.scope, eventIDs); err != nil {
 		return nil, mutationReason(err), err
@@ -321,7 +348,7 @@ func (s *eventDeletionService) run(ctx context.Context, p *deletionPlan) (*dto.D
 	// After the mutations: until then a redelivery of a deleted id must stay
 	// dedup-skipped.
 	s.releaseDedupLocks(ctx, eventIDs)
-	s.recomputeDrafts(ctx, p.affectedSubscriptionIDs)
+	s.recomputeDrafts(ctx, p)
 
 	return &dto.DeleteEventsResponse{
 		DeletedEvents:         len(eventIDs),
@@ -363,21 +390,47 @@ func (s *eventDeletionService) releaseDedupLocks(ctx context.Context, eventIDs [
 	s.Logger.Info(ctx, "released the deduplication locks for the deleted events", "event_count", len(eventIDs))
 }
 
-// recomputeDrafts triggers draft-and-compute per affected subscription, so
-// a stale draft is not left showing a number the tenant can see. Best effort: the
-// daily cron recomputes it otherwise.
-func (s *eventDeletionService) recomputeDrafts(ctx context.Context, subscriptionIDs []string) {
-	if len(subscriptionIDs) == 0 {
+// recomputeDrafts recomputes the drafts the deletion made stale. The workflow
+// covers only the current period, so older overlapping drafts are computed
+// directly. Best effort: the daily cron picks up whatever is missed.
+func (s *eventDeletionService) recomputeDrafts(ctx context.Context, p *deletionPlan) {
+	if len(p.affectedSubscriptionIDs) == 0 {
 		return
 	}
 
 	subscriptionService := NewSubscriptionService(s.ServiceParams)
-	for _, subscriptionID := range subscriptionIDs {
+	invoiceService := NewInvoiceService(s.ServiceParams)
+	for _, subscriptionID := range p.affectedSubscriptionIDs {
 		if _, err := subscriptionService.TriggerSubscriptionDraftAndComputeWorkflow(ctx, subscriptionID); err != nil {
 			s.Logger.Error(ctx, "failed to trigger the draft recompute after deletion",
 				"error", err,
 				"subscription_id", subscriptionID,
 			)
+		}
+
+		filter := types.NewNoLimitInvoiceFilter()
+		filter.InvoiceStatus = []types.InvoiceStatus{types.InvoiceStatusDraft}
+		filter.SubscriptionID = subscriptionID
+		filter.PeriodStartLT = lo.ToPtr(p.scope.EndTime)
+		filter.PeriodEndGT = lo.ToPtr(p.scope.StartTime)
+		filter.SkipLineItems = true
+		drafts, err := s.InvoiceRepo.List(ctx, filter)
+		if err != nil {
+			s.Logger.Error(ctx, "failed to list the drafts to recompute after deletion",
+				"error", err,
+				"subscription_id", subscriptionID,
+			)
+			continue
+		}
+
+		for _, draft := range drafts {
+			if _, _, err := invoiceService.ComputeInvoice(ctx, draft.ID, nil); err != nil {
+				s.Logger.Error(ctx, "failed to recompute a draft after deletion",
+					"error", err,
+					"subscription_id", subscriptionID,
+					"invoice_id", draft.ID,
+				)
+			}
 		}
 	}
 }
@@ -455,9 +508,8 @@ func (s *eventDeletionService) resolveCustomersByID(ctx context.Context, custome
 	return s.CustomerRepo.ListAll(ctx, filter)
 }
 
-// resolveSubscriptions reads the customers' subscriptions with their line items,
-// then pulls the parents in. The parent hop runs before any meter match: an
-// inherited child owns no line items, so the meter lives on the parent. No status
+// resolveSubscriptions reads the customers' subscriptions with line items, then
+// pulls in the parents, because an inherited child owns no line items. No status
 // filter: a cancelled subscription still holds finalized invoices.
 func (s *eventDeletionService) resolveSubscriptions(ctx context.Context, customerIDs []string) ([]*subscription.Subscription, error) {
 	filter := types.NewSubscriptionFilter()
@@ -541,10 +593,8 @@ func (s *eventDeletionService) guardMarketplace(ctx context.Context, customerIDs
 		Mark(ierr.ErrInvalidOperation)
 }
 
-// guardFinalizedInvoices refuses the request when the period touches a FINALIZED
-// invoice. With a meter set it is subscription-level, because an invoice on
-// a subscription the deletion cannot touch is no reason to refuse; without one
-// there is nothing to narrow with, so it runs at customer level.
+// guardFinalizedInvoices refuses the request when the period touches a finalized
+// invoice. Subscription-level when features were named, customer-level otherwise.
 func (s *eventDeletionService) guardFinalizedInvoices(
 	ctx context.Context,
 	req *dto.DeleteEventsRequest,
@@ -589,16 +639,35 @@ func (s *eventDeletionService) guardFinalizedInvoices(
 			})
 		}
 	}
+
+	// The finalization gate keys on both customer columns, so a delegated-invoicing
+	// invoice billed to another customer must block here too. Without this the
+	// guard is narrower than the gate and such an invoice would not stop the delete.
+	subscriptionCustomerFilter := s.finalizedInvoiceFilter(req)
+	subscriptionCustomerFilter.SubscriptionCustomerIDs = customerIDs
+	invoices, err := s.InvoiceRepo.List(ctx, subscriptionCustomerFilter)
+	if err != nil {
+		return err
+	}
+	if len(invoices) > 0 {
+		return errFinalizedInvoiceBlocksDeletion(map[string]interface{}{
+			"customer_id":  lo.FromPtr(invoices[0].SubscriptionCustomerID),
+			"invoice_id":   invoices[0].ID,
+			"period_start": invoices[0].PeriodStart,
+			"period_end":   invoices[0].PeriodEnd,
+		})
+	}
 	return nil
 }
 
-// finalizedInvoiceFilter is BR1's overlap test: every finalized invoice whose
-// period touches the requested one, in either direction.
+// finalizedInvoiceFilter matches every finalized invoice whose period overlaps the
+// requested one. Strict on both sides, because periods are half-open: [Jan, Feb)
+// does not overlap a [Feb, Mar) deletion.
 func (s *eventDeletionService) finalizedInvoiceFilter(req *dto.DeleteEventsRequest) *types.InvoiceFilter {
 	filter := types.NewNoLimitInvoiceFilter()
 	filter.InvoiceStatus = []types.InvoiceStatus{types.InvoiceStatusFinalized}
-	filter.PeriodStartLTE = lo.ToPtr(req.PeriodEnd.UTC())
-	filter.PeriodEndGTE = lo.ToPtr(req.PeriodStart.UTC())
+	filter.PeriodStartLT = lo.ToPtr(req.PeriodEnd.UTC())
+	filter.PeriodEndGT = lo.ToPtr(req.PeriodStart.UTC())
 	filter.SkipLineItems = true
 	return filter
 }
@@ -618,10 +687,22 @@ func deletionLockKey(ctx context.Context, externalCustomerID string) string {
 }
 
 // inProgressDeletionFilter is the fence read: rows still DELETING, optionally
-// narrowed to some customers. The invoice gate adds the period bounds on top.
+// narrowed to some customers. Rows past staleDeletionAge are left out, so
+// ingestion and invoicing stop honouring an abandoned one at the same moment.
 func inProgressDeletionFilter(externalCustomerIDs []string) *types.EventDeletionRequestFilter {
 	filter := types.NewNoLimitEventDeletionRequestFilter()
 	filter.DeletionStatus = types.EventDeletionStatusDeleting
 	filter.ExternalCustomerIDs = externalCustomerIDs
+	filter.StartedAtGT = lo.ToPtr(time.Now().UTC().Add(-staleDeletionAge))
+	return filter
+}
+
+// abandonedDeletionFilter is the complement: rows the fence has stopped honouring
+// and which nothing will ever close.
+func abandonedDeletionFilter(externalCustomerIDs []string) *types.EventDeletionRequestFilter {
+	filter := types.NewNoLimitEventDeletionRequestFilter()
+	filter.DeletionStatus = types.EventDeletionStatusDeleting
+	filter.ExternalCustomerIDs = externalCustomerIDs
+	filter.StartedAtLT = lo.ToPtr(time.Now().UTC().Add(-staleDeletionAge))
 	return filter
 }

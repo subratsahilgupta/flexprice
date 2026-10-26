@@ -46,11 +46,18 @@ func eventDeletionRequestFilterFn(ctx context.Context, r *events.DeletionRequest
 	if f.DeletionStatus != "" && r.DeletionStatus != f.DeletionStatus {
 		return false
 	}
-	// The overlap test: period_start <= bound AND period_end >= bound.
-	if f.PeriodStartLTE != nil && r.PeriodStart.After(*f.PeriodStartLTE) {
+	// The overlap test: period_start < bound AND period_end > bound. Strict, so
+	// two periods that merely touch are not treated as overlapping.
+	if f.PeriodStartLT != nil && !r.PeriodStart.Before(*f.PeriodStartLT) {
 		return false
 	}
-	if f.PeriodEndGTE != nil && r.PeriodEnd.Before(*f.PeriodEndGTE) {
+	if f.PeriodEndGT != nil && !r.PeriodEnd.After(*f.PeriodEndGT) {
+		return false
+	}
+	if f.StartedAtGT != nil && !r.StartedAt.After(*f.StartedAtGT) {
+		return false
+	}
+	if f.StartedAtLT != nil && !r.StartedAt.Before(*f.StartedAtLT) {
 		return false
 	}
 

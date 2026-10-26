@@ -9,13 +9,9 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-// EventDeletionWindowService answers whether an arriving event belongs to a
-// deletion in progress, so the consumer drops it instead of writing a row the
-// deletion's mutation can no longer reach.
-//
-// Shared by every consumer that writes events or meter_usage. The DELETING rows
-// are cached per tenant and environment for suppressionCacheTTL, because a
-// per-event Postgres read would be the ingestion bottleneck.
+// EventDeletionWindowService answers whether an arriving event falls inside a
+// deletion in progress. The DELETING rows are cached per tenant and environment,
+// because a per-event Postgres read would bottleneck ingestion.
 type EventDeletionWindowService interface {
 	// IsSuppressed must be consulted before anything else the consumer does for
 	// the event: a dropped event fires no webhook, publishes nothing, runs no
@@ -71,7 +67,10 @@ func (s *eventDeletionWindowService) currentWindow(ctx context.Context) *deletio
 
 // loadWindow reads the deletions in progress and caches them.
 func (s *eventDeletionWindowService) loadWindow(ctx context.Context, key string) *deletionWindow {
-	requests, err := s.EventDeletionRequestRepo.ListAll(ctx, inProgressDeletionFilter(nil))
+	// Through the writer: the run waits exactly one TTL before resolving, so a
+	// window loaded from a lagging replica could miss the row and let in-period
+	// events through for another interval.
+	requests, err := s.EventDeletionRequestRepo.ListAll(types.WithForceWriter(ctx), inProgressDeletionFilter(nil))
 	if err != nil {
 		s.Logger.Error(ctx, "failed to reload the event deletion suppression window, serving the last known one",
 			"error", err,
@@ -79,10 +78,9 @@ func (s *eventDeletionWindowService) loadWindow(ctx context.Context, key string)
 			"environment_id", types.GetEnvironmentID(ctx),
 		)
 
-		// Keep what the last good read found. A deletion running an interval ago is
-		// almost certainly still running, and discarding it would let its usage back
-		// in while the deletion still reports success. loadedAt still advances, so a
-		// down database retries on the next interval rather than once per event.
+		// Keep what the last good read found: a deletion running an interval ago is
+		// almost certainly still running. loadedAt still advances, so a down database
+		// is retried once per interval rather than once per event.
 		s.mu.Lock()
 		window := &deletionWindow{loadedAt: time.Now()}
 		if previous, ok := s.windows[key]; ok {

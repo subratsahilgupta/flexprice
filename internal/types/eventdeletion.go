@@ -49,7 +49,13 @@ const (
 	EventDeletionReasonMutationFailed         EventDeletionFailureReason = "MUTATION_FAILED"
 	EventDeletionReasonMutationTimeout        EventDeletionFailureReason = "MUTATION_TIMEOUT"
 	EventDeletionReasonDeletionInProgress     EventDeletionFailureReason = "DELETION_IN_PROGRESS"
-	EventDeletionReasonConnectionLost         EventDeletionFailureReason = "CONNECTION_LOST"
+	// EventDeletionReasonDeadlineExceeded closes a run that outlived its own
+	// deadline. The caller dropping the connection does not cause it: the run is
+	// detached from the request and finishes whether or not anyone is listening.
+	EventDeletionReasonDeadlineExceeded EventDeletionFailureReason = "DEADLINE_EXCEEDED"
+	// EventDeletionReasonAbandoned closes a row left DELETING by a process that
+	// died before it could write a terminal status.
+	EventDeletionReasonAbandoned EventDeletionFailureReason = "ABANDONED"
 )
 
 func (r EventDeletionFailureReason) String() string { return string(r) }
@@ -58,10 +64,8 @@ func (r EventDeletionFailureReason) String() string { return string(r) }
 // running when the wait gives up, so what was deleted is unknown.
 var ErrMutationTimeout = errors.New("delete mutation did not finish in time")
 
-// ErrEventDeletionInProgress fails an event that belongs to a deletion still
-// running. The consumer must neither write it nor acknowledge it, so the router
-// keeps it out of the dead letter queue and lets Kafka redeliver it until the
-// deletion finishes.
+// ErrEventDeletionInProgress fails an event that belongs to a running deletion.
+// The router keeps it out of the dead letter queue so Kafka redelivers it.
 var ErrEventDeletionInProgress = errors.New("event belongs to an event deletion in progress")
 
 // EventDeletionRequestFilter filters event_deletion_requests. Every read of that
@@ -72,9 +76,15 @@ type EventDeletionRequestFilter struct {
 	ExternalCustomerIDs []string            `json:"external_customer_ids,omitempty" form:"external_customer_ids" validate:"omitempty"`
 	DeletionStatus      EventDeletionStatus `json:"deletion_status,omitempty" form:"deletion_status" validate:"omitempty"`
 
-	// PeriodStartLTE with PeriodEndGTE is the period overlap test.
-	PeriodStartLTE *time.Time `json:"period_start_lte,omitempty" form:"period_start_lte" validate:"omitempty"`
-	PeriodEndGTE   *time.Time `json:"period_end_gte,omitempty" form:"period_end_gte" validate:"omitempty"`
+	// PeriodStartLT with PeriodEndGT is the period overlap test. Strict, because
+	// periods are half-open: [Jan, Feb) and [Feb, Mar) touch but do not overlap.
+	PeriodStartLT *time.Time `json:"period_start_lt,omitempty" form:"period_start_lt" validate:"omitempty"`
+	PeriodEndGT   *time.Time `json:"period_end_gt,omitempty" form:"period_end_gt" validate:"omitempty"`
+
+	// StartedAtGT keeps a row that has outlived any honest run out of the fence.
+	// StartedAtLT is its complement, used to find those rows and close them.
+	StartedAtGT *time.Time `json:"started_at_gt,omitempty" form:"started_at_gt" validate:"omitempty"`
+	StartedAtLT *time.Time `json:"started_at_lt,omitempty" form:"started_at_lt" validate:"omitempty"`
 }
 
 // NewDefaultEventDeletionRequestFilter creates a filter with default pagination.
