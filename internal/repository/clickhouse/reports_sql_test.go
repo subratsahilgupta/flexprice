@@ -98,7 +98,7 @@ func TestBuildBillingQuery_TopNPushesLimit(t *testing.T) {
 	q, err := buildBillingQuery(rv, "reports_db", "t", "e", 1000)
 	require.NoError(t, err)
 	assert.True(t, q.TopN)
-	assert.Contains(t, q.SQL, "ORDER BY sum(total) DESC LIMIT 10")
+	assert.Contains(t, q.SQL, "ORDER BY sum(total) DESC, d_customer_id, d_currency LIMIT 10")
 	assert.NotContains(t, q.SQL, "LIMIT 1001")
 
 	rv.Sort = []*analytics.SortSpec{{Field: "invoice_total", Dir: types.SortDirectionDesc}}
@@ -264,7 +264,7 @@ func TestBuildBillingQuery_CompareTopNOrdersByCurrent(t *testing.T) {
 	q, err := buildBillingQuery(rv, "reports_db", "t", "e", 1000)
 	require.NoError(t, err)
 	assert.Contains(t, q.SQL, "ORDER BY sumIf(total, ")
-	assert.Contains(t, q.SQL, " DESC LIMIT 5")
+	assert.Contains(t, q.SQL, " DESC, d_customer_id, d_currency LIMIT 5")
 	assert.True(t, q.TopN)
 }
 
@@ -367,7 +367,7 @@ func TestBuildBillingQuery_TopNOffset(t *testing.T) {
 	rv.Offset = 20
 	q, err := buildBillingQuery(rv, "reports_db", "t", "e", 1000)
 	require.NoError(t, err)
-	assert.Contains(t, q.SQL, "ORDER BY sum(total) DESC LIMIT 10 OFFSET 20")
+	assert.Contains(t, q.SQL, "ORDER BY sum(total) DESC, d_customer_id, d_currency LIMIT 10 OFFSET 20")
 
 	rv.Offset = 0
 	q, err = buildBillingQuery(rv, "reports_db", "t", "e", 1000)

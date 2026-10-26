@@ -192,6 +192,9 @@ func buildBillingQueryWithUsage(rv *analytics.ResolvedView, db, usageDB, tenantI
 	}
 	if rv.Shape == types.ShapeBreakdown {
 		b.WriteString(" ORDER BY " + measure + " DESC")
+		if len(groups) > 0 {
+			b.WriteString(", " + strings.Join(groups, ", "))
+		}
 	} else if len(groups) > 0 {
 		b.WriteString(" ORDER BY " + strings.Join(groups, ", "))
 	}

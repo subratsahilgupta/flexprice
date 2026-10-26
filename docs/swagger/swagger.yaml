@@ -6913,6 +6913,8 @@ definitions:
         type: string
       limit:
         type: integer
+      offset:
+        type: integer
       range:
         example: 2026-09-01..2026-10-01
         type: string
