@@ -17858,10 +17858,12 @@
             "properties": {
                 "applies_from": {
                     "description": "AppliesFrom/To is the stretch of the queried window the commitment covers; usage outside it\nbills on demand and is not counted here.",
-                    "type": "string"
+                    "type": "string",
+                    "format": "date-time"
                 },
                 "applies_to": {
-                    "type": "string"
+                    "type": "string",
+                    "format": "date-time"
                 },
                 "billed_amount": {
                     "description": "BilledAmount is what the stretch bills for this commitment: used plus, when binding, the true-up.",

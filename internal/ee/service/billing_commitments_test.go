@@ -2065,6 +2065,16 @@ func (s *BillingServiceSuite) TestCommitmentUsageBreakdown_MidPeriodWindow() {
 	trueUp := s.loaderLine(lines, types.CommitmentLineTrueUp, c.ID)
 	s.True(within.Amount.Add(trueUp.Amount).Equal(dec("155")), "within %s + true-up %s", within.Amount, trueUp.Amount)
 	s.True(within.Amount.Equal(full.Used.Amount), "invoice within %s vs breakdown %s", within.Amount, full.Used.Amount)
+
+	// The API path projects to the window's end on its own: a mid-period query reports full-window
+	// capacity and the matching floor, not capacity elapsed so far.
+	api, err := s.service.(*billingService).commitmentUsageBreakdown(ctx, sub, usage, periodStart, periodEnd)
+	s.Require().NoError(err)
+	s.Require().Len(api, 1)
+	s.True(api[0].Committed.Quantity.Equal(dec("310")), "api capacity %s", api[0].Committed.Quantity)
+	s.True(api[0].Committed.Amount.Equal(dec("155")), "api floor %s", api[0].Committed.Amount)
+	s.True(api[0].Used.Quantity.Equal(dec("14")), "api used %s", api[0].Used.Quantity)
+	s.True(api[0].BilledAmount.Equal(dec("155")), "api billed %s", api[0].BilledAmount)
 }
 
 func TestRawChargesByLine_SplitsChargesAcrossLinesSharingAPrice(t *testing.T) {

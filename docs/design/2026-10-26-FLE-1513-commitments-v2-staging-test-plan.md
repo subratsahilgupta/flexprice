@@ -15,7 +15,7 @@ Line kinds on invoices: **within** (usage covered by the commitment), **true-up*
 1. Staging environment on the release build, Temporal worker and consumer running.
 2. A test tenant + environment; enable the `commitments_v2` setting there. Keep a second environment **without** the setting for the gate tests.
 3. Meters: one SUM meter (tokens), one MAX-with-daily-bucket meter (gpus), one COUNT meter attached to a **feature/entitlement** (for the rejection test).
-4. Plans: monthly / weekly / quarterly / annual, each with a usage price on the tokens meter (one flat, one SLAB-tiered, one PACKAGE); one plan with two usage prices (tokens + gpus); one plan with an entitlement on the COUNT meter.
+4. Plans: monthly / weekly / quarterly / annual, each with a usage price on the tokens meter (one flat, one SLAB-tiered, one PACKAGE); one plan with two usage prices (tokens + gpus); one plan with two usage prices on the tokens meter (for the §3.4 meter-scope pooling scenario); one plan with an entitlement on the COUNT meter.
 5. Customers in a non-UTC timezone (Asia/Kolkata) and one in UTC.
 6. Usage: ingest through the events API and wait for meter_usage to materialise (billing reads meter_usage only). Keep per-scenario event names/customers isolated so numbers are hand-checkable.
 

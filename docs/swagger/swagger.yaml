@@ -1778,8 +1778,10 @@ definitions:
         description: |-
           AppliesFrom/To is the stretch of the queried window the commitment covers; usage outside it
           bills on demand and is not counted here.
+        format: date-time
         type: string
       applies_to:
+        format: date-time
         type: string
       billed_amount:
         description: 'BilledAmount is what the stretch bills for this commitment:

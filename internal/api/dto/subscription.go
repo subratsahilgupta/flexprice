@@ -2113,9 +2113,8 @@ type GetUsageBySubscriptionResponse struct {
 	Commitments []*CommitmentUsageBreakdown `json:"commitments,omitempty"`
 }
 
-// CommitmentUsageValue pairs a capacity quantity with its money value, so used/committed renders a
-// utilization ratio for every commitment type. For amount commitments the capacity is itself money
-// and quantity equals amount; for quantity commitments the quantity is units of the scope's meter.
+// CommitmentUsageValue pairs a capacity quantity with its money value: meter units for quantity
+// commitments, equal to the amount for amount commitments, so used/committed is always a utilization ratio.
 type CommitmentUsageValue struct {
 	Quantity decimal.Decimal `json:"quantity" swaggertype:"string"`
 	Amount   decimal.Decimal `json:"amount" swaggertype:"string"`
@@ -2132,8 +2131,8 @@ type CommitmentUsageBreakdown struct {
 	Currency     string                      `json:"currency"`
 	// AppliesFrom/To is the stretch of the queried window the commitment covers; usage outside it
 	// bills on demand and is not counted here.
-	AppliesFrom time.Time `json:"applies_from"`
-	AppliesTo   time.Time `json:"applies_to"`
+	AppliesFrom time.Time `json:"applies_from" format:"date-time"`
+	AppliesTo   time.Time `json:"applies_to" format:"date-time"`
 	// Committed is the full capacity for the stretch; its amount is the floor a binding commitment owes.
 	Committed CommitmentUsageValue `json:"committed"`
 	// Used is the capacity consumed so far and the value those units bill within the commitment.

@@ -108,9 +108,10 @@ commitments return them as null/absent.
 | GET | `/v1/commitments/{id}/instalments` | read | the instalment list above, ordered by `bill_on` then id |
 
 Instalment statuses: `scheduled` → `invoiced` (locked, carries `invoice_id` /
-`invoice_line_item_id`) or `canceled`. `kind`: `instalment` or `settlement` (termination). The
-invariant clients may rely on: non-canceled instalments of an active commitment always sum to
-`total_amount` (D19).
+`invoice_line_item_id`) or `canceled`; voiding an invoice returns its instalments to `scheduled`
+and clears their invoice references, so "invoiced" means invoiced on a live invoice. `kind`:
+`instalment` or `settlement` (termination). The invariant clients may rely on: non-canceled
+instalments of an active commitment always sum to `total_amount` (D19).
 
 ## 4. Instalment mutations (ERD §7.8)
 

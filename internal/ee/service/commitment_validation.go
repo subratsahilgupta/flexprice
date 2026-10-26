@@ -764,7 +764,7 @@ func checkLineItemCommitmentDetach(
 		})
 		if gap, uncovered := coverageGap(remaining, from, end); uncovered {
 			return ierr.Validationf(
-				"ending line item %s leaves binding commitment %s without a covered line from %s to its term end %s; keep a covering line through that stretch or terminate the commitment first",
+				"ending line item %s breaks binding commitment %s's scope coverage at %s, inside its term ending %s; keep a covering line through the term or terminate the commitment first",
 				li.ID,
 				c.ID,
 				gap.Format(time.RFC3339),
