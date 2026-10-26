@@ -70,7 +70,7 @@ func NewReportsRepository(cfg *config.Configuration, log *logger.Logger, rc cach
 		return nil, ierr.WithError(err).WithHint("open reports clickhouse connection").Mark(ierr.ErrSystem)
 	}
 	r.conn = conn
-	if !r.cfg.UsageOnMainClickHouse {
+	if !r.cfg.UsageOnEventsClickHouse {
 		return r, nil
 	}
 	r.cfg.UsageDatabase = cmp.Or(r.cfg.UsageDatabase, cfg.ClickHouse.Database)

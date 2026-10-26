@@ -180,8 +180,8 @@ reports:
   database: ""
   # Empty falls back to database.
   usage_database: ""
-  # Read usage from the main clickhouse server, not the reports server.
-  usage_on_main_clickhouse: false
+  # Read usage from the events clickhouse, not reports.
+  usage_on_events_clickhouse: false
   username: ""
   password: ""
   max_execution_seconds: 10
