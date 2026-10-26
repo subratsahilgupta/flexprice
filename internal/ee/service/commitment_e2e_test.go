@@ -13,6 +13,7 @@ import (
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -23,6 +24,7 @@ type CommitmentE2ESuite struct {
 	subscriptions SubscriptionService
 	commitments   CommitmentService
 	billing       BillingService
+	analytics     MeterUsageService
 	customer      *customer.Customer
 	tokens        *meter.Meter
 	gpus          *meter.Meter
@@ -38,6 +40,7 @@ func (s *CommitmentE2ESuite) SetupTest() {
 	s.subscriptions = NewSubscriptionService(params)
 	s.commitments = NewCommitmentService(params)
 	s.billing = NewBillingService(params)
+	s.analytics = NewMeterUsageService(params)
 	s.jan = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	s.customer = &customer.Customer{
@@ -151,6 +154,11 @@ func (s *CommitmentE2ESuite) commit(subscriptionID string, req dto.CreateCommitm
 
 // record stores one meter_usage row of qty for the customer at `at`.
 func (s *CommitmentE2ESuite) record(m *meter.Meter, at time.Time, qty string) {
+	s.recordFrom(m, "", at, qty)
+}
+
+// recordFrom stores one meter_usage row of qty for the customer at `at`, sent from source.
+func (s *CommitmentE2ESuite) recordFrom(m *meter.Meter, source string, at time.Time, qty string) {
 	ctx := s.GetContext()
 	id := types.GenerateUUIDWithPrefix("mu")
 	s.Require().NoError(s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, []*events.MeterUsage{{
@@ -163,6 +171,7 @@ func (s *CommitmentE2ESuite) record(m *meter.Meter, at time.Time, qty string) {
 			ExternalCustomerID: s.customer.ExternalID,
 			Timestamp:          at,
 			IngestedAt:         at,
+			Source:             source,
 		},
 		MeterID:    m.ID,
 		QtyTotal:   dec(qty),
@@ -373,4 +382,249 @@ func (s *CommitmentE2ESuite) TestTerminateMidPeriod_ClipsTheFloorAndBillsTheFee(
 		wantLine{types.CommitmentLineTrueUp, "Platform floor (unused)", "1", "60"},
 		wantLine{types.CommitmentLineOnDemand, "Tokens", "300", "30"},
 	)
+}
+
+// tokenSlabs bills the first 100 tokens at $0.50 and the rest at $0.25.
+var tokenSlabs = []price.PriceTier{
+	{UpTo: lo.ToPtr(uint64(100)), UnitAmount: dec("0.5")},
+	{UnitAmount: dec("0.25")},
+}
+
+// recordSourcedTokens records January's 300 tokens from three sources: api 60, batch 90 and console 150. Walked on
+// the slabs as one line they cost $100; walked per source they would cost $137.50.
+func (s *CommitmentE2ESuite) recordSourcedTokens() {
+	s.recordFrom(s.tokens, "api", time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC), "20")
+	s.recordFrom(s.tokens, "api", time.Date(2026, 1, 6, 12, 0, 0, 0, time.UTC), "40")
+	s.recordFrom(s.tokens, "batch", time.Date(2026, 1, 7, 12, 0, 0, 0, time.UTC), "90")
+	s.recordFrom(s.tokens, "console", time.Date(2026, 1, 8, 12, 0, 0, 0, time.UTC), "50")
+	s.recordFrom(s.tokens, "console", time.Date(2026, 1, 9, 12, 0, 0, 0, time.UTC), "100")
+}
+
+// usageAnalytics returns the customer's January usage analytics.
+func (s *CommitmentE2ESuite) usageAnalytics(
+	groupBy []string,
+	sources []string,
+	window types.WindowSize,
+) *dto.GetUsageAnalyticsResponse {
+	resp, err := s.analytics.GetDetailedAnalytics(s.GetContext(), &events.MeterUsageDetailedAnalyticsParams{
+		TenantID:           types.GetTenantID(s.GetContext()),
+		EnvironmentID:      types.GetEnvironmentID(s.GetContext()),
+		ExternalCustomerID: s.customer.ExternalID,
+		StartTime:          s.jan,
+		EndTime:            s.jan.AddDate(0, 1, 0),
+		GroupBy:            groupBy,
+		Sources:            sources,
+		WindowSize:         window,
+	})
+	s.Require().NoError(err)
+	return resp
+}
+
+// requireSourceCosts checks the analytics has one item per source, at the given cost each, summing to invoiced.
+func (s *CommitmentE2ESuite) requireSourceCosts(
+	resp *dto.GetUsageAnalyticsResponse,
+	invoice *dto.CreateInvoiceRequest,
+	want map[string]string,
+) map[string]dto.UsageAnalyticItem {
+	got := lo.KeyBy(resp.Items, func(item dto.UsageAnalyticItem) string { return item.Source })
+	s.Require().Len(got, len(want))
+	sum := decimal.Zero
+	for source, cost := range want {
+		s.True(dec(cost).Equal(got[source].TotalCost), "%s: want %s, got %s", source, cost, got[source].TotalCost)
+		sum = sum.Add(got[source].TotalCost)
+	}
+
+	invoiced := decimal.Zero
+	for _, line := range invoice.LineItems {
+		invoiced = invoiced.Add(line.Amount)
+	}
+	s.True(sum.Equal(invoiced), "sources sum to %s, invoice lines to %s", sum, invoiced)
+	s.True(resp.TotalCost.Equal(invoiced), "analytics total %s, invoice lines %s", resp.TotalCost, invoiced)
+	return got
+}
+
+// The tiers walk the line's whole 300 tokens and the $150 floor's true-up joins them; each source takes its usage
+// share of the $150 the invoice bills.
+func (s *CommitmentE2ESuite) TestAnalytics_GroupedAmountFloorSplitsTheInvoice() {
+	tokens := s.planWith("analytics_floor", types.BILLING_PERIOD_MONTHLY, s.tokens, "0", tokenSlabs...)
+	sub := s.subscribe(tokens, s.jan)
+	s.commit(sub.ID, floorRequest("Platform floor", tokens.ID, "150", s.jan, s.jan.AddDate(0, 6, 0)))
+	s.recordSourcedTokens()
+
+	invoice := s.invoiceFor(sub.ID, s.jan, s.jan.AddDate(0, 1, 0))
+	s.requireInvoice(invoice, "150",
+		wantLine{types.CommitmentLineWithin, "Platform floor", "300", "100"},
+		wantLine{types.CommitmentLineTrueUp, "Platform floor (unused)", "1", "50"},
+	)
+
+	got := s.requireSourceCosts(s.usageAnalytics([]string{"source"}, nil, ""), invoice,
+		map[string]string{"api": "30", "batch": "45", "console": "75"})
+	console := got["console"].CommitmentInfo
+	s.Require().NotNil(console)
+	s.Equal(types.COMMITMENT_TYPE_AMOUNT, console.Type)
+	s.True(console.TrueUpEnabled)
+	s.True(console.ComputedCommitmentUtilizedAmount.Equal(dec("50")), "within %s", console.ComputedCommitmentUtilizedAmount)
+	s.True(console.ComputedTrueUpAmount.Equal(dec("25")), "true-up %s", console.ComputedTrueUpAmount)
+	s.True(console.ComputedOverageAmount.IsZero(), "on-demand %s", console.ComputedOverageAmount)
+	s.True(console.Amount.Equal(dec("75")), "committed share %s", console.Amount)
+}
+
+// 200 reserved tokens at $0.20 and 100 on demand at the $0.40 overage price bill $80; every source pays the same
+// blended rate on its tokens.
+func (s *CommitmentE2ESuite) TestAnalytics_GroupedQuantityOverUseBlendsOneRate() {
+	tokens := s.planWith("analytics_quantity", types.BILLING_PERIOD_MONTHLY, s.tokens, "0", tokenSlabs...)
+	sub := s.subscribe(tokens, s.jan)
+	req := floorRequest("Reserved tokens", tokens.ID, "200", s.jan, s.jan.AddDate(0, 6, 0))
+	req.Type = types.COMMITMENT_TYPE_QUANTITY
+	req.CommittedPrice = &dto.CommitmentPriceInput{Amount: lo.ToPtr(dec("0.2"))}
+	req.OveragePrice = &dto.CommitmentPriceInput{Amount: lo.ToPtr(dec("0.4"))}
+	s.commit(sub.ID, req)
+	s.recordSourcedTokens()
+
+	invoice := s.invoiceFor(sub.ID, s.jan, s.jan.AddDate(0, 1, 0))
+	s.requireInvoice(invoice, "80",
+		wantLine{types.CommitmentLineWithin, "Reserved tokens", "200", "40"},
+		wantLine{types.CommitmentLineOnDemand, "Tokens", "100", "40"},
+	)
+
+	got := s.requireSourceCosts(s.usageAnalytics([]string{"source"}, nil, ""), invoice,
+		map[string]string{"api": "16", "batch": "24", "console": "40"})
+	for source, item := range got {
+		rate := item.TotalCost.Div(item.TotalUsage)
+		s.True(rate.Equal(dec("80").Div(dec("300"))), "%s pays %s a token", source, rate)
+		s.True(item.CommitmentInfo.ComputedOverageAmount.Equal(item.TotalCost.Div(dec("2"))), "%s on-demand share", source)
+	}
+}
+
+// Without group_by the line's one item carries the whole within and true-up.
+func (s *CommitmentE2ESuite) TestAnalytics_UngroupedLineCarriesTheCommitment() {
+	tokens := s.planWith("analytics_ungrouped", types.BILLING_PERIOD_MONTHLY, s.tokens, "0", tokenSlabs...)
+	sub := s.subscribe(tokens, s.jan)
+	s.commit(sub.ID, floorRequest("Platform floor", tokens.ID, "150", s.jan, s.jan.AddDate(0, 6, 0)))
+	s.recordSourcedTokens()
+
+	resp := s.usageAnalytics(nil, nil, "")
+	s.Require().Len(resp.Items, 1)
+	item := resp.Items[0]
+	s.True(item.TotalCost.Equal(dec("150")), "total %s", item.TotalCost)
+	s.Require().NotNil(item.CommitmentInfo)
+	s.True(item.CommitmentInfo.ComputedCommitmentUtilizedAmount.Equal(dec("100")))
+	s.True(item.CommitmentInfo.ComputedTrueUpAmount.Equal(dec("50")))
+}
+
+// A month with no usage still shows the line, carrying the floor the invoice bills as true-up.
+func (s *CommitmentE2ESuite) TestAnalytics_UnusedFloorStillShows() {
+	tokens := s.planWith("analytics_unused", types.BILLING_PERIOD_MONTHLY, s.tokens, "0", tokenSlabs...)
+	sub := s.subscribe(tokens, s.jan)
+	s.commit(sub.ID, floorRequest("Platform floor", tokens.ID, "150", s.jan, s.jan.AddDate(0, 6, 0)))
+
+	for _, groupBy := range [][]string{nil, {"source"}} {
+		resp := s.usageAnalytics(groupBy, nil, "")
+		s.Require().Len(resp.Items, 1, "group_by %v", groupBy)
+		s.True(resp.Items[0].TotalCost.Equal(dec("150")), "group_by %v: total %s", groupBy, resp.Items[0].TotalCost)
+		s.True(resp.Items[0].CommitmentInfo.ComputedTrueUpAmount.Equal(dec("150")))
+	}
+}
+
+// A meter-scoped floor over a line versioned on 16 Jan shares its true-up between the two versions by what each
+// used within it, so the versions sum to the invoice.
+func (s *CommitmentE2ESuite) TestAnalytics_TrueUpSharedByWithinAcrossScopedLines() {
+	slab := s.planWith("analytics_versioned", types.BILLING_PERIOD_MONTHLY, s.tokens, "0", tokenSlabs...)
+	sub := s.subscribe(slab, s.jan)
+	req := floorRequest("Platform floor", s.tokens.ID, "200", s.jan, s.jan.AddDate(0, 6, 0))
+	req.Scope.EntityType = types.CommitmentScopeMeter
+	s.commit(sub.ID, req)
+
+	original := sub.LineItems[0]
+	successor, err := s.subscriptions.UpdateSubscriptionLineItem(s.GetContext(), original.ID, dto.UpdateSubscriptionLineItemRequest{
+		EffectiveFrom: lo.ToPtr(time.Date(2026, 1, 16, 0, 0, 0, 0, time.UTC)),
+		BillingModel:  types.BILLING_MODEL_FLAT_FEE,
+		Amount:        lo.ToPtr(dec("1")),
+	})
+	s.Require().NoError(err)
+
+	// The slab version's 150 tokens cost $62.50 and the flat version's 60 cost $60: $77.50 short of the floor.
+	s.record(s.tokens, time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC), "150")
+	s.record(s.tokens, time.Date(2026, 1, 20, 12, 0, 0, 0, time.UTC), "60")
+	invoice := s.invoiceFor(sub.ID, s.jan, s.jan.AddDate(0, 1, 0))
+	s.True(invoice.AmountDue.Equal(dec("200")), "amount due %s", invoice.AmountDue)
+
+	resp := s.usageAnalytics(nil, nil, "")
+	byLine := lo.KeyBy(resp.Items, func(item dto.UsageAnalyticItem) string { return item.SubLineItemID })
+	s.Require().Len(byLine, 2)
+	s.True(resp.TotalCost.Equal(dec("200")), "analytics total %s", resp.TotalCost)
+	for lineID, within := range map[string]string{original.ID: "62.5", successor.ID: "60"} {
+		info := byLine[lineID].CommitmentInfo
+		s.Require().NotNil(info, lineID)
+		s.True(info.ComputedCommitmentUtilizedAmount.Equal(dec(within)), "%s within %s", lineID, info.ComputedCommitmentUtilizedAmount)
+		share := dec("77.5").Mul(dec(within)).Div(dec("122.5"))
+		s.True(info.ComputedTrueUpAmount.Sub(share).Abs().LessThan(dec("0.000001")), "%s true-up %s, want %s", lineID, info.ComputedTrueUpAmount, share)
+	}
+}
+
+// Eight reserved GPUs a day on a daily MAX meter fed by two sources: each source takes its share of the window
+// stack's within, true-up and on-demand by the GPU-days it reported.
+func (s *CommitmentE2ESuite) TestAnalytics_GroupedDailyWindowSplitsTheInvoice() {
+	gpus := s.planWith("analytics_gpus", types.BILLING_PERIOD_MONTHLY, s.gpus, "2")
+	sub := s.subscribe(gpus, s.jan)
+	req := floorRequest("Reserved GPUs", gpus.ID, "8", s.jan, s.jan.AddDate(0, 3, 0))
+	req.Type, req.Measurement = types.COMMITMENT_TYPE_QUANTITY, types.CommitmentMeasurementWindow
+	req.CommittedPrice = &dto.CommitmentPriceInput{Amount: lo.ToPtr(dec("1.5"))}
+	s.commit(sub.ID, req)
+
+	// 1-10 Jan the trainer runs 8 GPUs; 11-20 Jan are idle; 21-31 Jan it runs 6 while inference peaks at 10.
+	for day := 1; day <= 31; day++ {
+		at := time.Date(2026, 1, day, 12, 0, 0, 0, time.UTC)
+		switch {
+		case day <= 10:
+			s.recordFrom(s.gpus, "trainer", at, "8")
+		case day >= 21:
+			s.recordFrom(s.gpus, "trainer", at, "6")
+			s.recordFrom(s.gpus, "inference", at.Add(time.Hour), "10")
+		}
+	}
+
+	// The line peaks at 8 GPUs for 10 days and 10 for 11: 168 GPU-days used, 80 unused, 22 on demand.
+	invoice := s.invoiceFor(sub.ID, s.jan, s.jan.AddDate(0, 1, 0))
+	s.requireInvoice(invoice, "416",
+		wantLine{types.CommitmentLineWithin, "Reserved GPUs", "168", "252"},
+		wantLine{types.CommitmentLineTrueUp, "Reserved GPUs (unused)", "80", "120"},
+		wantLine{types.CommitmentLineOnDemand, "GPUs", "22", "44"},
+	)
+
+	// The trainer reported 146 GPU-days and inference 110, so they split $416 as 146:110.
+	s.requireSourceCosts(s.usageAnalytics([]string{"source"}, nil, ""), invoice,
+		map[string]string{"trainer": "237.25", "inference": "178.75"})
+}
+
+// A sources filter sees part of the line, so the commitment is not applied and the source bills its own tier walk.
+func (s *CommitmentE2ESuite) TestAnalytics_SourcesFilterSkipsCommitments() {
+	tokens := s.planWith("analytics_filtered", types.BILLING_PERIOD_MONTHLY, s.tokens, "0", tokenSlabs...)
+	sub := s.subscribe(tokens, s.jan)
+	s.commit(sub.ID, floorRequest("Platform floor", tokens.ID, "150", s.jan, s.jan.AddDate(0, 6, 0)))
+	s.recordSourcedTokens()
+
+	resp := s.usageAnalytics([]string{"source"}, []string{"console"}, "")
+	s.Require().Len(resp.Items, 1)
+	s.True(resp.Items[0].TotalCost.Equal(dec("62.5")), "console alone walks the slabs to %s", resp.Items[0].TotalCost)
+	s.Nil(resp.Items[0].CommitmentInfo)
+}
+
+// Each source's daily points share its amortized cost by usage, so they sum to it.
+func (s *CommitmentE2ESuite) TestAnalytics_PointsSumToTheirSourceCost() {
+	tokens := s.planWith("analytics_points", types.BILLING_PERIOD_MONTHLY, s.tokens, "0", tokenSlabs...)
+	sub := s.subscribe(tokens, s.jan)
+	s.commit(sub.ID, floorRequest("Platform floor", tokens.ID, "150", s.jan, s.jan.AddDate(0, 6, 0)))
+	s.recordSourcedTokens()
+
+	resp := s.usageAnalytics([]string{"source"}, nil, types.WindowSizeDay)
+	s.Require().Len(resp.Items, 3)
+	for _, item := range resp.Items {
+		s.Require().NotEmpty(item.Points, item.Source)
+		pointsCost := decimal.Zero
+		for _, p := range item.Points {
+			pointsCost = pointsCost.Add(p.Cost)
+		}
+		s.True(pointsCost.Equal(item.TotalCost), "%s points sum to %s, item costs %s", item.Source, pointsCost, item.TotalCost)
+	}
 }
