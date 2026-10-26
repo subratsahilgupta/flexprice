@@ -211,6 +211,10 @@ func (r *entitlementGrantRepository) UpdateSnapshot(ctx context.Context, g *doma
 	if g.QuotaCrossedAt == nil {
 		q.ClearQuotaCrossedAt()
 	}
+	// Subscription grants keep their per-line usage in metadata.
+	if g.IsSubscriptionScoped() && g.Metadata != nil {
+		q = q.SetMetadata(g.Metadata)
+	}
 
 	if err := q.Exec(ctx); err != nil {
 		SetSpanError(span, err)
