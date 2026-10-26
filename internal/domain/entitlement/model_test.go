@@ -315,22 +315,4 @@ func TestEntitlement_LiveWindow(t *testing.T) {
 		})
 	}
 
-	during := []struct {
-		name       string
-		start, end *time.Time
-		want       bool
-	}{
-		{"ends inside period", nil, day(8), true},
-		{"starts inside period", day(15), nil, true},
-		{"ends at period start", nil, day(1), false},
-		{"starts at period end", day(31), nil, false},
-	}
-	for _, tt := range during {
-		t.Run("during/"+tt.name, func(t *testing.T) {
-			e := &Entitlement{StartDate: tt.start, EndDate: tt.end}
-			if got := e.IsLiveDuring(*day(1), *day(31)); got != tt.want {
-				t.Errorf("IsLiveDuring() = %v, want %v", got, tt.want)
-			}
-		})
-	}
 }

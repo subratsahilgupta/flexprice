@@ -407,7 +407,7 @@ func (s *entitlementGrantService) EnsureGrantsForSubscriptions(
 	subscriptionSvc := NewSubscriptionService(s.ServiceParams)
 	ecsBySub := make(map[string][]*entitlement.Entitlement, len(subs))
 	for _, sub := range subs {
-		ents, err := subscriptionSvc.GetSubscriptionEntitlements(ctx, sub.ID)
+		ents, err := subscriptionSvc.GetActiveSubscriptionEntitlementsForSubscription(ctx, sub, at)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -603,9 +603,6 @@ func (s *entitlementGrantService) eligibleGrantConfigsByFeature(
 	byFeature := make(map[string][]*entitlement.Entitlement)
 	for _, ec := range ecs {
 		if !ec.HasGrantConfig() {
-			continue
-		}
-		if !ec.IsLiveDuring(sub.CurrentPeriodStart, sub.CurrentPeriodEnd) {
 			continue
 		}
 		dur, err := ec.GrantDuration()

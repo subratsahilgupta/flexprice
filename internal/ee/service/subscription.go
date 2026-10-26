@@ -6689,7 +6689,7 @@ func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx con
 			WithHint("A subscription must be provided to resolve entitlements").
 			Mark(ierr.ErrValidation)
 	}
-	return s.resolveSubscriptionEntitlements(ctx, sub, time.Now().UTC(), func(*entitlement.Entitlement) bool { return true })
+	return s.resolveSubscriptionEntitlements(ctx, sub, time.Now().UTC(), false)
 }
 
 func (s *subscriptionService) GetActiveSubscriptionEntitlementsForSubscription(ctx context.Context, sub *subscription.Subscription, at time.Time) ([]*dto.EntitlementResponse, error) {
@@ -6698,12 +6698,13 @@ func (s *subscriptionService) GetActiveSubscriptionEntitlementsForSubscription(c
 			WithHint("A subscription must be provided to resolve entitlements").
 			Mark(ierr.ErrValidation)
 	}
-	return s.resolveSubscriptionEntitlements(ctx, sub, at, func(e *entitlement.Entitlement) bool { return e.IsLiveAt(at) })
+	return s.resolveSubscriptionEntitlements(ctx, sub, at, true)
 }
 
-// resolveSubscriptionEntitlements combines plan, addon and override entitlements as of at. keep
-// runs before overrides apply, so an override it drops no longer hides its parent.
-func (s *subscriptionService) resolveSubscriptionEntitlements(ctx context.Context, sub *subscription.Subscription, at time.Time, keep func(*entitlement.Entitlement) bool) ([]*dto.EntitlementResponse, error) {
+// resolveSubscriptionEntitlements combines plan, addon and override entitlements as of at.
+// activeOnly drops entitlements outside their dates before overrides apply, so a dropped
+// override no longer hides its parent.
+func (s *subscriptionService) resolveSubscriptionEntitlements(ctx context.Context, sub *subscription.Subscription, at time.Time, activeOnly bool) ([]*dto.EntitlementResponse, error) {
 	// Initialize entitlement service
 	entitlementService := NewEntitlementService(s.ServiceParams)
 
@@ -6796,14 +6797,15 @@ func (s *subscriptionService) resolveSubscriptionEntitlements(ctx context.Contex
 	if err != nil {
 		return nil, err
 	}
-	live := func(ents []*dto.EntitlementResponse) []*dto.EntitlementResponse {
+	filter := func(ents []*dto.EntitlementResponse) []*dto.EntitlementResponse {
 		return lo.Filter(ents, func(ent *dto.EntitlementResponse, _ int) bool {
-			return ent != nil && ent.Entitlement != nil && keep(ent.Entitlement)
+			// Billing keeps every entitlement; customer-facing reads keep only active ones.
+			return ent != nil && ent.Entitlement != nil && (!activeOnly || isEntitlementActive(ent.Entitlement, sub, at))
 		})
 	}
-	planItems := live(planEntitlements.Items)
-	addonEntitlements = live(addonEntitlements)
-	subscriptionEntitlements := live(subscriptionEntResp.Items)
+	planItems := filter(planEntitlements.Items)
+	addonEntitlements = filter(addonEntitlements)
+	subscriptionEntitlements := filter(subscriptionEntResp.Items)
 
 	carryParentSourceToOverrides(planItems, addonEntitlements, subscriptionEntitlements)
 
@@ -6817,6 +6819,17 @@ func (s *subscriptionService) resolveSubscriptionEntitlements(ctx context.Contex
 	)
 
 	return finalEntitlements, nil
+}
+
+// isEntitlementActive reports whether customer-facing reads show e at at. A grant-backed
+// entitlement stays until the cycle it ended in is over, so its grant state still shows.
+func isEntitlementActive(e *entitlement.Entitlement, sub *subscription.Subscription, at time.Time) bool {
+	if !e.HasGrantConfig() {
+		return e.IsLiveAt(at)
+	}
+	hasStarted := e.StartDate == nil || !e.StartDate.After(at)
+	endedBeforeThisCycle := e.EndDate != nil && !e.EndDate.After(sub.CurrentPeriodStart)
+	return hasStarted && !endedBeforeThisCycle
 }
 
 // filterOverriddenEntitlements removes plan/addon entitlements that have been overridden

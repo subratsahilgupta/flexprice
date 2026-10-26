@@ -69,21 +69,10 @@ func (e *Entitlement) IsUnlimitedGrant() bool {
 	return e != nil && e.HasGrantConfig() && e.GrantQuota == nil
 }
 
-// IsLiveAt reports whether at falls in [start_date, end_date); a missing date is unbounded.
+// IsLiveAt reports whether start_date <= at < end_date; a missing date is unbounded.
 func (e *Entitlement) IsLiveAt(at time.Time) bool {
-	return e.overlaps(at, at.Add(time.Nanosecond))
-}
-
-// IsLiveDuring reports whether [start_date, end_date) overlaps [from, to).
-func (e *Entitlement) IsLiveDuring(from, to time.Time) bool {
-	return e.overlaps(from, to)
-}
-
-func (e *Entitlement) overlaps(from, to time.Time) bool {
-	if e.StartDate != nil && !e.StartDate.Before(to) {
-		return false
-	}
-	return e.EndDate == nil || e.EndDate.After(from)
+	return (e.StartDate == nil || !e.StartDate.After(at)) &&
+		(e.EndDate == nil || e.EndDate.After(at))
 }
 
 func (e *Entitlement) IsSubscriptionOverride() bool {
