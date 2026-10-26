@@ -1,8 +1,7 @@
 # PRD: SUM with negative events
 
 **Customer:** Optimality · **Ticket:** FLE-1510 · **Updated:** 2026-10-19
-**Status:** Phase 1 in progress: PRs 1–2 are drafts; PR 3 grant recovery is implemented locally and awaits review. PR 4 starts only after approval of PR 3.
-[Implementation plan](2026-10-18-FLE-1510-sum-negative-events-implementation-plan.md)
+**Status:** Phase 1 in review as a stack: #3124 (usage, checkpoints, grant recovery), #3144 (signed invoice lines), #3145 (rollover reissue).
 
 ## 1. Customer need
 
@@ -134,8 +133,7 @@ These decisions complete rollout planning; they do not reopen the agreed behavio
 1. **Supported configuration:** confirm initial price/payment routes, mid-period price-change restrictions, coupons/taxes and expiry-settlement compatibility. Recommended starting point: one unchanged unbucketed per-unit price and one applicable subscription per customer-meter.
 2. **Customer cutover:** verify Optimality’s opening data, storage units/precision and usage-read freshness expectations. Define identity changes and cancellation/re-subscription handling so commercial changes cannot silently reset physical usage.
 3. **Coordinated release:** release signed SUM ingestion, usage, grants and invoices together; no signed-SUM feature flag or opt-in is required. Verify any existing SIGNED_SUM migration, SUM/NEVER billing changes and previously clamped history before cutover.
-4. **Technical contracts:** finalize the queue/checkpoint closure protocol, zero-payable payment-status mapping and any necessary public response changes. These tasks and their code locations are in the implementation plan.
-
+4. **Technical contracts:** finalize the queue/checkpoint closure protocol, zero-payable payment-status mapping and any necessary public response changes.
 ## 8. Acceptance criteria
 
 | Scenario | Required result |

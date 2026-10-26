@@ -22,6 +22,8 @@ type CheckpointedUsageRequest struct {
 	MeterID             string
 	AggregationType     types.AggregationType
 	Until               time.Time
+	// IgnoreCheckpoints sums from the first event; set when the read's customer scope differs from the saved one.
+	IgnoreCheckpoints bool
 }
 
 func (s *meterUsageService) GetCheckpointedUsage(ctx context.Context, req CheckpointedUsageRequest) (decimal.Decimal, error) {
@@ -74,19 +76,20 @@ func (s *meterUsageService) checkpointedUsage(ctx context.Context, req Checkpoin
 		return decimal.Zero, ierr.NewError("meter usage checkpoint repository is not configured").Mark(ierr.ErrSystem)
 	}
 
-	checkpoint, err := s.MeterUsageCheckpointRepo.GetLatestBefore(ctx, meterusagecheckpoint.GetLatestBeforeParams{
-		CustomerID:      req.CustomerID,
-		MeterID:         req.MeterID,
-		AggregationType: req.AggregationType,
-		Before:          req.Until,
-	})
-	if err != nil {
-		return decimal.Zero, err
-	}
-
 	total, from := decimal.Zero, time.Time{}
-	if checkpoint != nil {
-		total, from = checkpoint.Total, checkpoint.AggregatedUntil
+	if !req.IgnoreCheckpoints {
+		checkpoint, err := s.MeterUsageCheckpointRepo.GetLatestBefore(ctx, meterusagecheckpoint.GetLatestBeforeParams{
+			CustomerID:      req.CustomerID,
+			MeterID:         req.MeterID,
+			AggregationType: req.AggregationType,
+			Before:          req.Until,
+		})
+		if err != nil {
+			return decimal.Zero, err
+		}
+		if checkpoint != nil {
+			total, from = checkpoint.Total, checkpoint.AggregatedUntil
+		}
 	}
 
 	changes, err := s.GetUsageTotal(ctx, &dto.UsageTotalRequest{
