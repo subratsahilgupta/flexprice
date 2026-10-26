@@ -35,6 +35,12 @@ func convertInvoiceAmounts(inv *invoice.Invoice, resolution *FXRateResolution, c
 	rate := resolution.Rate
 
 	srcSubtotal := inv.Subtotal
+	if len(inv.LineItems) > 0 {
+		srcSubtotal = decimal.Zero
+		for _, item := range inv.LineItems {
+			srcSubtotal = srcSubtotal.Add(item.Amount)
+		}
+	}
 	srcDiscount := inv.TotalDiscount
 	srcPrepaid := inv.TotalPrepaidCreditsApplied
 	netCharge := srcSubtotal.Sub(srcDiscount).Sub(srcPrepaid)
@@ -93,10 +99,12 @@ func convertInvoiceAmounts(inv *invoice.Invoice, resolution *FXRateResolution, c
 		inv.TotalPrepaidCreditsApplied = convert(srcPrepaid)
 	}
 
+	inv.Subtotal = decimal.Max(inv.Subtotal, decimal.Zero)
+
 	// Pre-tax total; tax is added on the converted amounts in the finalize step that follows.
-	inv.Total = inv.Subtotal.Sub(inv.TotalDiscount).Sub(inv.TotalPrepaidCreditsApplied)
-	inv.AmountDue = decimal.Max(inv.Total.Sub(inv.AdjustmentAmount), decimal.Zero)
-	inv.AmountRemaining = decimal.Max(inv.AmountDue.Sub(inv.AmountPaid), decimal.Zero)
+	inv.Total = decimal.Max(inv.Subtotal.Sub(inv.TotalDiscount).Sub(inv.TotalPrepaidCreditsApplied), decimal.Zero)
+	inv.AmountDue = inv.Total
+	inv.AmountRemaining = inv.Total // nothing is paid before conversion
 	inv.Currency = billingCurrency
 
 	inv.FxConversion = &types.FxConversion{

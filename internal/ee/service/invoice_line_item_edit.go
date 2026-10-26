@@ -18,11 +18,11 @@ func (s *invoiceService) recalculateTotalsFromLineItems(inv *invoice.Invoice, li
 	for _, li := range lineItems {
 		subtotal = subtotal.Add(li.Amount)
 	}
-	inv.Subtotal = subtotal
+	inv.Subtotal = decimal.Max(subtotal, decimal.Zero)
 
 	// Discount-first-then-tax: total = subtotal - prepaid credits - discount + tax
-	inv.Total = inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount).Add(inv.TotalTax)
-	inv.AmountDue = decimal.Max(inv.Total.Sub(inv.AdjustmentAmount), decimal.Zero)
+	inv.Total = decimal.Max(inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount).Add(inv.TotalTax), decimal.Zero)
+	inv.AmountDue = inv.Total
 	inv.AmountRemaining = decimal.Max(inv.AmountDue.Sub(inv.AmountPaid), decimal.Zero)
 }
 
@@ -388,8 +388,8 @@ func (s *invoiceService) voidAndRecreateDraftForEdit(ctx context.Context, inv *i
 	} else {
 		// No line items to recompute from (e.g. amount-only one-off) — keep the copied subtotal.
 		draft.Total = draft.Subtotal
-		draft.AmountDue = decimal.Max(draft.Total.Sub(draft.AdjustmentAmount), decimal.Zero)
-		draft.AmountRemaining = decimal.Max(draft.AmountDue.Sub(draft.AmountPaid), decimal.Zero)
+		draft.AmountDue = draft.Total
+		draft.AmountRemaining = draft.Total
 	}
 
 	if err := s.InvoiceRepo.CreateWithLineItems(ctx, draft); err != nil {

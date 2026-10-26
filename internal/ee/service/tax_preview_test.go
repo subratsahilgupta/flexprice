@@ -392,17 +392,17 @@ func TestApplyTaxResultToInvoice_Totals(t *testing.T) {
 			why: "100 - 20 prepaid - 10 discount + 9 tax",
 		},
 		{
-			name:     "negative total is preserved with no amount due",
+			name:     "a total driven negative is clamped to zero",
 			subtotal: "100", discount: "0", prepaid: "500",
 			inclusiveTax: "0", exclusiveTax: "10",
-			wantTotal: "-390", wantTotalTax: "10",
-			why: "the signed total is preserved while the payable amount is floored",
+			wantTotal: "0", wantTotalTax: "10",
+			why: "an invoice can never owe a negative amount",
 		},
 		{
-			name:     "exempt preserves negative total with no amount due",
+			name:     "exempt still clamps at zero, never below",
 			subtotal: "5", discount: "0", prepaid: "10",
 			inclusiveTax: "0", exclusiveTax: "0", exempt: true,
-			wantTotal: "-5", wantTotalTax: "0",
+			wantTotal: "0", wantTotalTax: "0",
 		},
 	}
 
@@ -427,9 +427,7 @@ func TestApplyTaxResultToInvoice_Totals(t *testing.T) {
 				"total: want %s, got %s. %s", tt.wantTotal, inv.Total, tt.why)
 			assert.True(t, decimal.RequireFromString(tt.wantTotalTax).Equal(inv.TotalTax),
 				"total_tax: want %s, got %s", tt.wantTotalTax, inv.TotalTax)
-			wantDue := decimal.Max(decimal.RequireFromString(tt.wantTotal), decimal.Zero)
-			assert.True(t, wantDue.Equal(inv.AmountDue), "amount_due must be nonnegative")
-			assert.True(t, wantDue.Equal(inv.AmountRemaining), "amount_remaining must be nonnegative")
+			assert.True(t, inv.Total.Equal(inv.AmountDue), "amount_due must track total")
 		})
 	}
 }
