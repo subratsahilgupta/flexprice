@@ -96,7 +96,7 @@ const encodedBody = "[redacted: encoded body]"
 
 // isCardKey matches card fields; number/exp need a card parent.
 func isCardKey(key, parent string) bool {
-	key = strings.ToLower(key)
+	key = normalizeKey(key)
 	for _, part := range []string{"cvc", "cvv", "card_number"} {
 		if strings.Contains(key, part) {
 			return true
@@ -105,11 +105,40 @@ func isCardKey(key, parent string) bool {
 	if key == "pan" {
 		return true
 	}
-	parent = strings.ToLower(parent)
+	parent = normalizeKey(parent)
 	if parent != "source" && parent != "card" {
+		for _, prefix := range []string{"source_", "card_"} {
+			if rest, ok := strings.CutPrefix(key, prefix); ok {
+				return isCardField(rest)
+			}
+		}
 		return false
 	}
+	return isCardField(key)
+}
+
+func isCardField(key string) bool {
 	return key == "number" || strings.HasPrefix(key, "exp")
+}
+
+// normalizeKey lowercases and maps camelCase and brackets to snake_case.
+func normalizeKey(key string) string {
+	var b strings.Builder
+	for i, r := range key {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			if i > 0 && key[i-1] >= 'a' && key[i-1] <= 'z' {
+				b.WriteByte('_')
+			}
+			b.WriteRune(r + 'a' - 'A')
+		case r == '-' || r == '[' || r == '.':
+			b.WriteByte('_')
+		case r == ']':
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return strings.Trim(b.String(), "_")
 }
 
 // redactWebhookBody returns a copy safe to store; other bodies pass through.
@@ -133,9 +162,13 @@ func redactWebhookBody(body []byte, contentType, contentEncoding string) string 
 		if err != nil {
 			return unparseableBody
 		}
-		for k := range form {
+		for k, values := range form {
 			if isSensitiveKey(k) || isCardKey(k, "") {
 				form[k] = []string{redactedValue}
+				continue
+			}
+			for i, v := range values {
+				values[i] = redactEmbedded(v, k)
 			}
 		}
 		return form.Encode()
@@ -173,19 +206,29 @@ func redactJSON(v any, parentKey string) any {
 			t[i] = redactJSON(child, parentKey)
 		}
 	case string:
-		trimmed := strings.TrimSpace(t)
-		if trimmed == "" || (trimmed[0] != '{' && trimmed[0] != '[') {
-			return t
-		}
-		var inner any
-		if err := json.Unmarshal([]byte(trimmed), &inner); err != nil {
-			return t
-		}
-		out, err := json.Marshal(redactJSON(inner, parentKey))
-		if err != nil {
-			return redactedValue
-		}
-		return string(out)
+		return redactEmbedded(t, parentKey)
 	}
 	return v
+}
+
+// redactEmbedded redacts JSON-looking strings; unparseable ones fail closed.
+func redactEmbedded(s, parentKey string) string {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" || (trimmed[0] != '{' && trimmed[0] != '[') {
+		return s
+	}
+	dec := json.NewDecoder(strings.NewReader(trimmed))
+	dec.UseNumber()
+	var inner any
+	if err := dec.Decode(&inner); err != nil {
+		return redactedValue
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return redactedValue
+	}
+	out, err := json.Marshal(redactJSON(inner, parentKey))
+	if err != nil {
+		return redactedValue
+	}
+	return string(out)
 }

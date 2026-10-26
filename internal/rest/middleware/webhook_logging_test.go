@@ -118,7 +118,34 @@ func TestWebhookLoggingMiddleware_Redaction(t *testing.T) {
 		{
 			name:    "embedded json string",
 			body:    `{"payload":"{\"password\":\"x\",\"ok\":1}","list":"[{\"token\":\"t\"}]","note":"{not json"}`,
-			wantRaw: `{"list":"[{\"token\":\"[redacted]\"}]","note":"{not json","payload":"{\"ok\":1,\"password\":\"[redacted]\"}"}`,
+			wantRaw: `{"list":"[{\"token\":\"[redacted]\"}]","note":"[redacted]","payload":"{\"ok\":1,\"password\":\"[redacted]\"}"}`,
+		},
+		{
+			name:    "embedded json keeps big numbers",
+			body:    `{"p":"{\"id\":9007199254740993,\"n\":1e400,\"token\":\"t\"}"}`,
+			wantRaw: `{"p":"{\"id\":9007199254740993,\"n\":1e400,\"token\":\"[redacted]\"}"}`,
+		},
+		{
+			name:    "truncated embedded json fails closed",
+			body:    `{"p":"{\"access_token\":\"secret\""}`,
+			wantRaw: `{"p":"[redacted]"}`,
+		},
+		{
+			name:    "camelCase and bracketed card keys json",
+			body:    `{"cardNumber":"4111","card":{"expMonth":"12"},"card[number]":"4111","source[exp_year]":"30","cardCvc":"1"}`,
+			wantRaw: `{"card":{"expMonth":"[redacted]"},"cardCvc":"[redacted]","cardNumber":"[redacted]","card[number]":"[redacted]","source[exp_year]":"[redacted]"}`,
+		},
+		{
+			name:    "bracketed card keys form",
+			headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+			body:    "card[number]=4111&card[exp_month]=12&cardNumber=4111&order[number]=INV-1",
+			wantRaw: "cardNumber=%5Bredacted%5D&card%5Bexp_month%5D=%5Bredacted%5D&card%5Bnumber%5D=%5Bredacted%5D&order%5Bnumber%5D=INV-1",
+		},
+		{
+			name:    "json inside form value",
+			headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+			body:    `payload=%7B%22access_token%22%3A%22x%22%2C%22id%22%3A9007199254740993%7D&bad=%7B%22access_token%22%3A%22x%22`,
+			wantRaw: `bad=%5Bredacted%5D&payload=%7B%22access_token%22%3A%22%5Bredacted%5D%22%2C%22id%22%3A9007199254740993%7D`,
 		},
 		{
 			name:    "encoded body placeholder",
