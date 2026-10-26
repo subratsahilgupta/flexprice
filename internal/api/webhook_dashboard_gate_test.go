@@ -47,10 +47,11 @@ func TestWebhookDashboardGate(t *testing.T) {
 				c.Request = c.Request.WithContext(ctx)
 				c.Next()
 			})
-			r.GET("/webhooks/dashboard", webhookDashboardGate(pm), func(c *gin.Context) {
+			handler := func(c *gin.Context) {
 				called = true
 				c.Status(http.StatusOK)
-			})
+			}
+			registerWebhookRoutes(r.Group(""), pm, handler, handler)
 
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/webhooks/dashboard", nil))

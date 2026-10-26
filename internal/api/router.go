@@ -716,11 +716,7 @@ func NewRouter(
 		}
 
 		// Webhook routes
-		webhookGroup := v1Private.Group("/webhooks")
-		{
-			webhookGroup.GET("/dashboard", webhookDashboardGate(permissionMW), handlers.Webhook.GetDashboardURL)
-			webhookGroup.POST("/retry", write(types.EntityWebhook, types.ActionWrite), handlers.Webhook.RetryOutboundWebhook)
-		}
+		registerWebhookRoutes(v1Private, permissionMW, handlers.Webhook.GetDashboardURL, handlers.Webhook.RetryOutboundWebhook)
 	}
 
 	// Hosted invoice page: the token is the only credential, and the middleware scopes every request to its invoice.
@@ -891,6 +887,8 @@ func NewRouter(
 	return router
 }
 
-func webhookDashboardGate(pm *middleware.PermissionMiddleware) gin.HandlerFunc {
-	return pm.RequirePermission(types.EntityWebhook, types.ActionWrite)
+func registerWebhookRoutes(rg *gin.RouterGroup, pm *middleware.PermissionMiddleware, dashboard, retry gin.HandlerFunc) {
+	group := rg.Group("/webhooks")
+	group.GET("/dashboard", pm.RequirePermission(types.EntityWebhook, types.ActionWrite), dashboard)
+	group.POST("/retry", pm.RequirePermission(types.EntityWebhook, types.ActionWrite), retry)
 }
