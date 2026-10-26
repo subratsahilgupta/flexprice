@@ -27,9 +27,23 @@ type EventDeletionServiceSuite struct {
 	svc          *eventDeletionService
 	requestRepo  *testutil.InMemoryEventDeletionRequestStore
 	logRepo      *testutil.InMemoryDeletedEventsLogStore
+	subRepo      *recordingSubRepo
 	periodStart  time.Time
 	periodEnd    time.Time
 	insidePeriod time.Time
+}
+
+// recordingSubRepo keeps the filters the service asked with. The in-memory store
+// returns every status regardless, so only the filter itself shows whether the
+// service opted out of the Postgres default of active subscriptions only.
+type recordingSubRepo struct {
+	subscription.Repository
+	filters []*types.SubscriptionFilter
+}
+
+func (r *recordingSubRepo) ListAll(ctx context.Context, filter *types.SubscriptionFilter) ([]*subscription.Subscription, error) {
+	r.filters = append(r.filters, filter)
+	return r.Repository.ListAll(ctx, filter)
 }
 
 func TestEventDeletionService(t *testing.T) {
@@ -45,6 +59,7 @@ func (s *EventDeletionServiceSuite) SetupTest() {
 
 	s.requestRepo = testutil.NewInMemoryEventDeletionRequestStore()
 	s.logRepo = testutil.NewInMemoryDeletedEventsLogStore()
+	s.subRepo = &recordingSubRepo{Repository: s.GetStores().SubscriptionRepo}
 	s.svc = s.newService()
 }
 
@@ -63,7 +78,7 @@ func (s *EventDeletionServiceSuite) params() ServiceParams {
 		CustomerRepo:                 s.GetStores().CustomerRepo,
 		FeatureRepo:                  s.GetStores().FeatureRepo,
 		MeterRepo:                    s.GetStores().MeterRepo,
-		SubRepo:                      s.GetStores().SubscriptionRepo,
+		SubRepo:                      s.subRepo,
 		SubscriptionLineItemRepo:     s.GetStores().SubscriptionLineItemRepo,
 		InvoiceRepo:                  s.GetStores().InvoiceRepo,
 		InvoiceLineItemRepo:          s.GetStores().InvoiceLineItemRepo,
@@ -1080,4 +1095,19 @@ func (s *EventDeletionServiceSuite) TestMarkTerminal_ClosesOnlyTheGivenRows() {
 	s.Equal(types.EventDeletionStatusCompleted, byID["evtdel_a"].DeletionStatus)
 	s.Equal(types.EventDeletionStatusDeleting, byID["evtdel_b"].DeletionStatus,
 		"a shared request id must not let one deletion close another's row")
+}
+
+// The Postgres repository narrows to active subscriptions when a filter names no
+// status, which would hide a cancelled subscription's finalized invoices from the
+// guard. Asserted on the filter, because the in-memory store applies no such default.
+func (s *EventDeletionServiceSuite) TestDelete_AsksForEverySubscriptionStatus() {
+	s.seedCustomer("cust_1", "ext_1")
+	_, err := s.svc.Delete(s.GetContext(), s.request())
+	s.NoError(err)
+
+	s.NotEmpty(s.subRepo.filters, "the deletion must read subscriptions")
+	for _, filter := range s.subRepo.filters {
+		s.ElementsMatch(types.AllSubscriptionStatuses(), filter.SubscriptionStatus,
+			"every subscription read must opt out of the active-only default")
+	}
 }

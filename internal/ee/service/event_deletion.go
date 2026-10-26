@@ -509,11 +509,14 @@ func (s *eventDeletionService) resolveCustomersByID(ctx context.Context, custome
 }
 
 // resolveSubscriptions reads the customers' subscriptions with line items, then
-// pulls in the parents, because an inherited child owns no line items. No status
-// filter: a cancelled subscription still holds finalized invoices.
+// pulls in the parents, because an inherited child owns no line items. Every status,
+// because the repository reads active only otherwise and a cancelled or paused
+// subscription still holds the finalized invoices the guard has to see. Narrowing
+// happens on the invoice, not here.
 func (s *eventDeletionService) resolveSubscriptions(ctx context.Context, customerIDs []string) ([]*subscription.Subscription, error) {
 	filter := types.NewSubscriptionFilter()
 	filter.CustomerIDs = customerIDs
+	filter.SubscriptionStatus = types.AllSubscriptionStatuses()
 	filter.WithLineItems = true
 	subs, err := s.SubRepo.ListAll(ctx, filter)
 	if err != nil {
@@ -541,6 +544,7 @@ func (s *eventDeletionService) resolveSubscriptions(ctx context.Context, custome
 
 	parentFilter := types.NewSubscriptionFilter()
 	parentFilter.SubscriptionIDs = parentIDs
+	parentFilter.SubscriptionStatus = types.AllSubscriptionStatuses()
 	parentFilter.WithLineItems = true
 	parents, err := s.SubRepo.ListAll(ctx, parentFilter)
 	if err != nil {
