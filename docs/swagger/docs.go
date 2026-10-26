@@ -25027,6 +25027,10 @@ const docTemplate = `{
                 "limit": {
                     "type": "integer"
                 },
+                "offset": {
+                    "minimum": 0,
+                    "type": "integer"
+                },
                 "range": {
                     "type": "string",
                     "example": "2026-09-01..2026-10-01"
