@@ -6702,8 +6702,7 @@ func (s *subscriptionService) GetActiveSubscriptionEntitlementsForSubscription(c
 }
 
 // resolveSubscriptionEntitlements combines plan, addon and override entitlements as of at.
-// activeOnly drops entitlements outside their dates before overrides apply, so a dropped
-// override no longer hides its parent.
+// activeOnly drops inactive entitlements before overrides apply, so a dropped override no longer hides its parent.
 func (s *subscriptionService) resolveSubscriptionEntitlements(ctx context.Context, sub *subscription.Subscription, at time.Time, activeOnly bool) ([]*dto.EntitlementResponse, error) {
 	// Initialize entitlement service
 	entitlementService := NewEntitlementService(s.ServiceParams)
