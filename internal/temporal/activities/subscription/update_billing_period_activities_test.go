@@ -138,6 +138,7 @@ func (s *BillingActivitiesSuite) newServiceParams() service.ServiceParams {
 		IntegrationFactory:         s.GetIntegrationFactory(),
 		PlanPriceSyncRepo:          s.GetStores().PlanPriceSyncRepo,
 		AddonPriceSyncRepo:         s.GetStores().AddonPriceSyncRepo,
+		CommitmentRepo:             s.GetStores().CommitmentRepo,
 	}
 }
 
