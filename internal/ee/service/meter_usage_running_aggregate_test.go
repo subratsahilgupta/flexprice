@@ -163,8 +163,8 @@ func (s *MeterUsageServiceSuite) TestRunningSumQuietPeriodWithZeroPrice() {
 	s.True(found, "zero-priced running meter must be returned without current-period events")
 }
 
-// Checkpoints are saved with inherited children, so a parent-only read must not reuse them.
-func (s *MeterUsageServiceSuite) TestRunningSum_ParentOnlyReadIgnoresFamilyCheckpoint() {
+// Parent subscriptions save no checkpoint and read none, so both scopes sum their current members.
+func (s *MeterUsageServiceSuite) TestRunningSum_ParentSubscriptionSkipsCheckpoints() {
 	ctx := s.GetContext()
 	fx := s.newParentChildScopeFixture("running")
 	m := s.runningSumMeter(ctx, "meter_family", types.ResetUsageNever)
@@ -183,6 +183,18 @@ func (s *MeterUsageServiceSuite) TestRunningSum_ParentOnlyReadIgnoresFamilyCheck
 	sub, _, err := s.GetStores().SubscriptionRepo.GetWithLineItems(ctx, fx.parentSub.ID)
 	s.Require().NoError(err)
 	s.Require().NoError(s.svc.SaveUsageCheckpointsForSubscription(ctx, sub, s.periodStart, nil))
+	saved, err := s.GetStores().MeterUsageCheckpointRepo.GetLatestBefore(ctx, meterusagecheckpoint.GetLatestBeforeParams{
+		CustomerID: fx.parentCust.ID, MeterID: m.ID, AggregationType: types.AggregationSum, Before: s.periodEnd,
+	})
+	s.Require().NoError(err)
+	s.Nil(saved, "a parent subscription must not save a checkpoint")
+
+	// A checkpoint of the parent's own usage, e.g. from an earlier standalone subscription, must not be read either.
+	_, err = s.svc.SaveUsageCheckpoint(ctx, CheckpointedUsageRequest{
+		CustomerID: fx.parentCust.ID, ExternalCustomerIDs: []string{fx.parentCust.ExternalID}, MeterID: m.ID,
+		AggregationType: types.AggregationSum, Until: s.periodStart,
+	}, nil)
+	s.Require().NoError(err)
 
 	for _, tt := range []struct {
 		includeChildren bool

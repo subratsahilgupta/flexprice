@@ -650,8 +650,6 @@ func (s *meterUsageService) GetSubscriptionMeterUsageWithSub(
 			}
 
 			// Running meters report the total since the first event; the window query keeps their event count.
-			// Checkpoints are saved with inherited children, so a parent-only read sums from the start instead.
-			parentOnly := sub.SubscriptionType == types.SubscriptionTypeParent && !req.IncludeChildren
 			for _, meterID := range meterIDs {
 				if !keepsRunningAggregate(result.MeterMap[meterID]) {
 					continue
@@ -659,7 +657,7 @@ func (s *meterUsageService) GetSubscriptionMeterUsageWithSub(
 				total, err := s.GetCheckpointedUsage(ctx, CheckpointedUsageRequest{
 					CustomerID: sub.CustomerID, ExternalCustomerIDs: externalCustomerIDs,
 					MeterID: meterID, AggregationType: types.AggregationSum, Until: group.End,
-					IgnoreCheckpoints: parentOnly,
+					IgnoreCheckpoints: !usesCheckpoints(sub),
 				})
 				if err != nil {
 					return nil, err
