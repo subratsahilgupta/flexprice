@@ -728,7 +728,9 @@ func (h *WebhookHandler) HandleQuickBooksWebhook(c *gin.Context) {
 
 	signature := c.GetHeader("intuit-signature")
 	if signature == "" {
-		h.logger.Info(c.Request.Context(), "missing intuit-signature header, rejecting webhook",
+		h.logger.Error(c.Request.Context(), "quickbooks webhook rejected",
+			"error", "missing intuit-signature header",
+			"operation", "quickbooks_webhook_verify",
 			"tenant_id", tenantID,
 			"environment_id", environmentID)
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Missing intuit-signature header"})
