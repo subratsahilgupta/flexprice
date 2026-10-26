@@ -84,6 +84,7 @@ func TestValidateEncryptionKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("FLEXPRICE_ALLOW_INSECURE_DEFAULTS", "")
 			c := Configuration{}
 			c.Deployment.Mode = types.ModeAPI
 			c.Secrets.EncryptionKey = tt.key
@@ -123,6 +124,7 @@ func TestNewValidatedConfigEncryptionKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("FLEXPRICE_ALLOW_INSECURE_DEFAULTS", "")
 			t.Setenv("FLEXPRICE_DEPLOYMENT_MODE", tt.mode)
 			t.Setenv("FLEXPRICE_SECRETS_ENCRYPTION_KEY", tt.key)
 			_, err := NewValidatedConfig()
