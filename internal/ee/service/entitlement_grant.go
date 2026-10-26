@@ -605,6 +605,9 @@ func (s *entitlementGrantService) eligibleGrantConfigsByFeature(
 		if !ec.HasGrantConfig() {
 			continue
 		}
+		if !ec.IsLiveDuring(sub.CurrentPeriodStart, sub.CurrentPeriodEnd) {
+			continue
+		}
 		dur, err := ec.GrantDuration()
 		if err != nil {
 			s.Logger.Error(ctx, "invalid grant duration on entitlement, skipping",

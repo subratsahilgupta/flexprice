@@ -290,29 +290,46 @@ func TestGrantConfigEquals(t *testing.T) {
 	}
 }
 
-func TestEntitlement_IsLiveBetween(t *testing.T) {
+func TestEntitlement_LiveWindow(t *testing.T) {
 	day := func(n int) *time.Time { d := time.Date(2026, 7, n, 0, 0, 0, 0, time.UTC); return &d }
 
-	tests := []struct {
+	at := []struct {
 		name       string
 		start, end *time.Time
-		from, to   time.Time
+		at         time.Time
 		want       bool
 	}{
-		{"no dates", nil, nil, *day(5), *day(5), true},
-		{"inside", day(1), day(10), *day(5), *day(5), true},
-		{"starts at instant", day(5), nil, *day(5), *day(5), true},
-		{"not started", day(6), nil, *day(5), *day(5), false},
-		{"ends at instant", nil, day(5), *day(5), *day(5), false},
-		{"ended", nil, day(4), *day(5), *day(5), false},
-		{"ends inside range", nil, day(8), *day(5), *day(20), true},
-		{"starts inside range", day(15), nil, *day(5), *day(20), true},
+		{"no dates", nil, nil, *day(5), true},
+		{"inside", day(1), day(10), *day(5), true},
+		{"starts at instant", day(5), nil, *day(5), true},
+		{"not started", day(6), nil, *day(5), false},
+		{"ends at instant", nil, day(5), *day(5), false},
+		{"ended", nil, day(4), *day(5), false},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, tt := range at {
+		t.Run("at/"+tt.name, func(t *testing.T) {
 			e := &Entitlement{StartDate: tt.start, EndDate: tt.end}
-			if got := e.IsLiveBetween(tt.from, tt.to); got != tt.want {
-				t.Errorf("IsLiveBetween() = %v, want %v", got, tt.want)
+			if got := e.IsLiveAt(tt.at); got != tt.want {
+				t.Errorf("IsLiveAt() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+	during := []struct {
+		name       string
+		start, end *time.Time
+		want       bool
+	}{
+		{"ends inside period", nil, day(8), true},
+		{"starts inside period", day(15), nil, true},
+		{"ends at period start", nil, day(1), false},
+		{"starts at period end", day(31), nil, false},
+	}
+	for _, tt := range during {
+		t.Run("during/"+tt.name, func(t *testing.T) {
+			e := &Entitlement{StartDate: tt.start, EndDate: tt.end}
+			if got := e.IsLiveDuring(*day(1), *day(31)); got != tt.want {
+				t.Errorf("IsLiveDuring() = %v, want %v", got, tt.want)
 			}
 		})
 	}

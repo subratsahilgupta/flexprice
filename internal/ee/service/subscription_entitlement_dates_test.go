@@ -74,3 +74,46 @@ func (s *SubscriptionServiceSuite) TestActiveEntitlements_HonourOverrideDates() 
 		})
 	}
 }
+
+// Customer-facing reads drop an expired plan entitlement; billing still sees it, so an invoice
+// run after end_date keeps the allowance that covered the billed period.
+func (s *SubscriptionServiceSuite) TestExpiredPlanEntitlement_StaysInBillingView() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	sub := s.testData.subscription
+
+	featureID := "feat_dated_plan"
+	s.NoError(s.GetStores().FeatureRepo.Create(ctx, &feature.Feature{
+		ID:        featureID,
+		Name:      "Expired allowance",
+		Type:      types.FeatureTypeStatic,
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}))
+	ended := time.Now().UTC().Add(-time.Hour)
+	_, err := s.GetStores().EntitlementRepo.Create(ctx, &entitlement.Entitlement{
+		ID:          "ent_dated_plan_expired",
+		EntityType:  types.ENTITLEMENT_ENTITY_TYPE_PLAN,
+		EntityID:    sub.PlanID,
+		FeatureID:   featureID,
+		FeatureType: types.FeatureTypeStatic,
+		IsEnabled:   true,
+		StaticValue: "on",
+		EndDate:     &ended,
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	})
+	s.Require().NoError(err)
+
+	hasFeature := func(resp *dto.SubscriptionEntitlementsResponse) bool {
+		return lo.ContainsBy(resp.Features, func(f *dto.AggregatedFeature) bool {
+			return f.Feature != nil && f.Feature.ID == featureID
+		})
+	}
+
+	active, err := subService.GetActiveAggregatedSubscriptionEntitlements(ctx, sub.ID, nil)
+	s.Require().NoError(err)
+	s.False(hasFeature(active), "an expired entitlement must not reach customer-facing reads")
+
+	billing, err := subService.GetAggregatedSubscriptionEntitlementsForSubscription(ctx, sub, nil)
+	s.Require().NoError(err)
+	s.True(hasFeature(billing), "billing must keep the entitlement that covered the period")
+}

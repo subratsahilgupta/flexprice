@@ -650,6 +650,25 @@ func (s *EntitlementGrantSuite) TestComputeGrantWindow_SubscriptionPeriod_EndsAt
 	s.True(to.Equal(endDate), "got %s want %s", to, endDate)
 }
 
+// Only configs live during the current period open grants; one starting at cycle end waits for
+// the next cycle instead of opening an empty window.
+func (s *EntitlementGrantSuite) TestEligibleGrantConfigs_SkipsConfigsOutsidePeriod() {
+	svc := s.grantService.(*entitlementGrantService)
+	fx := s.newWindowFixture("period-filter", 5)
+	ended := fx.cycleStart
+	nextCycle := fx.cycleEnd
+
+	live := s.newTimeBoxedEC("ec-live", fx.ec.FeatureID, 5, types.EntitlementGrantDurationUnitHour, decimal.NewFromInt(10))
+	gone := s.newTimeBoxedEC("ec-ended", fx.ec.FeatureID, 5, types.EntitlementGrantDurationUnitHour, decimal.NewFromInt(10))
+	gone.EndDate = &ended
+	future := s.newTimeBoxedEC("ec-next", fx.ec.FeatureID, 5, types.EntitlementGrantDurationUnitHour, decimal.NewFromInt(10))
+	future.StartDate = &nextCycle
+
+	got := svc.eligibleGrantConfigsByFeature(s.GetContext(), fx.sub, []*entitlement.Entitlement{live, gone, future})
+	ids := lo.Map(got[fx.ec.FeatureID], func(e *entitlement.Entitlement, _ int) string { return e.ID })
+	s.Equal([]string{live.ID}, ids)
+}
+
 // A pool ends at its earliest contributor's end_date; parallel ECs keep their own.
 func (s *EntitlementGrantSuite) TestGrantCandidatesForFeature_EndDate() {
 	cycleStart := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
