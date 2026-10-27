@@ -13,6 +13,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/events/transform"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/metrics"
 	"github.com/flexprice/flexprice/internal/pubsub"
 	"github.com/flexprice/flexprice/internal/pubsub/kafka"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
@@ -278,13 +279,21 @@ func (s *rawEventConsumptionService) processMessage(ctx context.Context, msg *me
 		)
 	}
 
-	s.Logger.Info(ctx, "completed raw event batch processing",
-		"batch_size", len(batch.Data),
-		"success_count", successCount,
-		"skip_count", skipCount,
-		"error_count", errorCount,
-		"message_uuid", msg.UUID,
-	)
+	for outcome, n := range map[string]int{"success": successCount, "skipped": skipCount, "error": errorCount} {
+		if n > 0 {
+			metrics.RecordCounter(ctx, metrics.RawEvents, int64(n), metrics.L(metrics.KeyOutcome, outcome))
+		}
+	}
+
+	if skipCount > 0 || errorCount > 0 {
+		s.Logger.Info(ctx, "completed raw event batch processing",
+			"batch_size", len(batch.Data),
+			"success_count", successCount,
+			"skip_count", skipCount,
+			"error_count", errorCount,
+			"message_uuid", msg.UUID,
+		)
+	}
 
 	// Return error if any events failed (causes batch retry)
 	// Skip count is acceptable (validation failures), but error count requires retry
