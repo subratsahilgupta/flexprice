@@ -815,9 +815,12 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RefreshesStaleUsage
 
 	items, err := s.GetStores().SubscriptionLineItemRepo.ListBySubscription(s.GetContext(), fx.sub)
 	s.Require().NoError(err)
-	fx.sub.LineItems = items
+	// The invoice's own line list must survive the refresh.
+	fx.sub.LineItems = items[:1]
 	at := start.Add(2 * time.Hour)
 	s.Require().NoError(refreshSubscriptionGrantUsage(s.GetContext(), s.buildServiceParams(), fx.sub, start, fx.sub.CurrentPeriodEnd, at))
+	s.Len(fx.sub.LineItems, 1, "refresh replaced the caller's line items")
+	fx.sub.LineItems = items
 
 	stored, err := s.GetStores().EntitlementGrantRepo.Get(s.GetContext(), g.ID)
 	s.Require().NoError(err)

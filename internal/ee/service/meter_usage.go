@@ -160,7 +160,9 @@ func (s *meterUsageService) windowCharges(ctx context.Context, sub *subscription
 	if !to.After(from) {
 		return nil, nil
 	}
-	subUsage, err := s.GetSubscriptionMeterUsageWithSub(ctx, sub, &GetSubscriptionMeterUsageRequest{
+	// The usage query replaces LineItems with the window's lines; a copy keeps the caller's.
+	window := *sub
+	subUsage, err := s.GetSubscriptionMeterUsageWithSub(ctx, &window, &GetSubscriptionMeterUsageRequest{
 		SubscriptionID:  sub.ID,
 		StartTime:       from,
 		EndTime:         to,
