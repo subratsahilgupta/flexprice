@@ -131,7 +131,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_NoUsage_NoWindow() {
 	s.Empty(grants)
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrant_EvaluateTotalsEveryLineAndKeepsBreakdown() {
+func (s *EntitlementGrantSuite) TestSubscriptionGrant_EvaluateTotalsEveryLine() {
 	fx := s.newSubGrantFixture("eval", dailySubscriptionGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage))
 	first := fx.sub.CurrentPeriodStart.Add(30 * time.Minute)
 	s.seedMeterUsage(fx.extID, fx.callsMeter, first, 100)                // $10
@@ -151,8 +151,6 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_EvaluateTotalsEveryLineAnd
 	s.True(stored.Usage.Equal(decimal.NewFromInt(15)), "usage = $10 calls + $5 storage, got %s", stored.Usage)
 	s.Equal(types.EntitlementGrantStatusExhausted, stored.GrantStatus)
 	s.Require().NotNil(stored.QuotaCrossedAt)
-	s.Equal("10", stored.Metadata[lineUsageKeyPrefix+fx.callsLine])
-	s.Equal("5", stored.Metadata[lineUsageKeyPrefix+fx.storeLine])
 }
 
 func (s *EntitlementGrantSuite) TestSubscriptionGrant_ParallelGrantsOpenOneWindowEach() {
@@ -213,4 +211,28 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_AdditiveGrantsPoolIntoOneW
 	s.Require().NoError(err)
 	s.Require().Len(grants, 1, "additive grants share one window")
 	s.True(grants[0].Quota.Equal(decimal.NewFromInt(15)), "pooled quota $10 + $5, got %s", grants[0].Quota)
+}
+
+// A grant past its end_date opens no new window, and the last one stops at the end_date.
+func (s *EntitlementGrantSuite) TestSubscriptionGrant_EndDateStopsNewWindows() {
+	ec := dailySubscriptionGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage)
+	fx := s.newSubGrantFixture("ended", ec)
+	end := fx.sub.CurrentPeriodStart.Add(2 * time.Hour)
+	ec.EndDate = &end
+	_, err := s.GetStores().EntitlementRepo.Update(s.GetContext(), ec)
+	s.Require().NoError(err)
+
+	s.seedMeterUsage(fx.extID, fx.callsMeter, fx.sub.CurrentPeriodStart.Add(time.Hour), 10)
+	s.seedMeterUsage(fx.extID, fx.callsMeter, fx.sub.CurrentPeriodStart.Add(30*time.Hour), 10)
+
+	for _, at := range []time.Time{fx.sub.CurrentPeriodStart.Add(90 * time.Minute), fx.sub.CurrentPeriodStart.Add(31 * time.Hour)} {
+		_, _, err := s.grantService.EnsureGrantsForSubscriptions(s.GetContext(), s.customerOf(fx.sub), []*subscription.Subscription{fx.sub}, at)
+		s.Require().NoError(err)
+	}
+
+	rows, err := s.GetStores().EntitlementGrantRepo.List(s.GetContext(), types.NewNoLimitEntitlementGrantFilter().
+		WithSubscriptionIDs(fx.sub.ID).WithScopeEntityType(types.EntitlementGrantScopeSubscription))
+	s.Require().NoError(err)
+	s.Require().Len(rows, 1, "usage after end_date opens nothing")
+	s.False(rows[0].ValidTo.After(end), "the window stops at end_date, got %s", rows[0].ValidTo)
 }

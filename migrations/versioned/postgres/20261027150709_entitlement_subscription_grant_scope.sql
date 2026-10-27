@@ -5,15 +5,10 @@
 SET lock_timeout = '3s';
 SET statement_timeout = '30s';
 
-DO $$
-BEGIN
-  IF to_regclass('public.entitlements') IS NOT NULL THEN
-    ALTER TABLE "entitlements"
-      ALTER COLUMN "feature_id" DROP NOT NULL,
-      ALTER COLUMN "feature_type" DROP NOT NULL,
-      ADD COLUMN IF NOT EXISTS "grant_scope" character varying(20) NOT NULL DEFAULT 'feature';
-  END IF;
-END $$;
+ALTER TABLE "entitlements"
+  ALTER COLUMN "feature_id" DROP NOT NULL,
+  ALTER COLUMN "feature_type" DROP NOT NULL,
+  ADD COLUMN IF NOT EXISTS "grant_scope" character varying(20) NOT NULL DEFAULT 'feature';
 
 -- migrate:down
 -- Restoring NOT NULL fails while subscription grants exist (feature_id is NULL on them);

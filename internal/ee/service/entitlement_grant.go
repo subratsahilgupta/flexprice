@@ -1049,7 +1049,16 @@ func (s *entitlementGrantService) earliestUncoveredUsage(
 // subscriptionUsageMeterIDs is the meters of the subscription's usage lines, the
 // usage a subscription grant covers.
 func (s *entitlementGrantService) subscriptionUsageMeterIDs(ctx context.Context, sub *subscription.Subscription) ([]string, error) {
-	items, err := s.SubscriptionLineItemRepo.ListBySubscription(ctx, sub)
+	// An inherited subscription bills on its parent's lines.
+	lineOwner := sub
+	if sub.SubscriptionType == types.SubscriptionTypeInherited && lo.FromPtr(sub.ParentSubscriptionID) != "" {
+		parent, err := s.SubRepo.Get(ctx, *sub.ParentSubscriptionID)
+		if err != nil {
+			return nil, err
+		}
+		lineOwner = parent
+	}
+	items, err := s.SubscriptionLineItemRepo.ListBySubscription(ctx, lineOwner)
 	if err != nil {
 		return nil, err
 	}
