@@ -423,12 +423,12 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 			return nil, err
 		}
 	}
-	grantSvc := &entitlementService{ServiceParams: s.ServiceParams}
+	grantSvc := NewEntitlementService(s.ServiceParams)
 	for _, grantReq := range req.SubscriptionGrants {
 		if grantReq.StartDate == nil {
 			grantReq.StartDate = lo.ToPtr(sub.StartDate)
 		}
-		if _, err = grantSvc.createSubscriptionGrant(ctx, grantReq.ToCreateEntitlementRequest(sub.ID), sub); err != nil {
+		if _, err = grantSvc.CreateSubscriptionGrant(ctx, grantReq.ToCreateEntitlementRequest(sub.ID), sub); err != nil {
 			return nil, err
 		}
 	}
@@ -7082,12 +7082,7 @@ func (s *subscriptionService) aggregateSubscriptionEntitlements(ctx context.Cont
 
 // subscriptionGrantsView returns the subscription's grants and their ledger, or nil when it has none.
 func (s *subscriptionService) subscriptionGrantsView(ctx context.Context, sub *subscription.Subscription) (*dto.SubscriptionGrantsResponse, error) {
-	filter := types.NewNoLimitEntitlementFilter().
-		WithEntityIDs([]string{sub.ID}).
-		WithEntityType(types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION).
-		WithStatus(types.StatusPublished)
-	filter.GrantScopes = []types.EntitlementGrantScopeEntityType{types.EntitlementGrantScopeSubscription}
-	ecs, err := s.EntitlementRepo.List(ctx, filter)
+	ecs, err := s.EntitlementRepo.List(ctx, subscriptionGrantConfigFilter(sub.ID))
 	if err != nil || len(ecs) == 0 {
 		return nil, err
 	}

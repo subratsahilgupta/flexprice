@@ -102,11 +102,7 @@ func (g *subscriptionGrantGuard) hasSubscriptionGrant(ctx context.Context, subID
 	if g.EntitlementRepo == nil {
 		return false, nil
 	}
-	filter := types.NewNoLimitEntitlementFilter().
-		WithEntityIDs([]string{subID}).
-		WithEntityType(types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION).
-		WithStatus(types.StatusPublished)
-	filter.GrantScopes = []types.EntitlementGrantScopeEntityType{types.EntitlementGrantScopeSubscription}
+	filter := subscriptionGrantConfigFilter(subID)
 	filter.Limit = lo.ToPtr(1)
 	ecs, err := g.EntitlementRepo.List(ctx, filter)
 	if err != nil {
@@ -229,9 +225,9 @@ func (g *subscriptionGrantGuard) hasActiveCommitment(ctx context.Context, sub *s
 	return len(active) > 0, err
 }
 
-// createSubscriptionGrant creates a dollar allowance shared by every usage line on one subscription. It
+// CreateSubscriptionGrant creates a dollar allowance shared by every usage line on one subscription. It
 // starts now unless the request dates it; inside a caller's transaction the webhook waits for its commit.
-func (s *entitlementService) createSubscriptionGrant(ctx context.Context, req dto.CreateEntitlementRequest, sub *subscription.Subscription) (*dto.EntitlementResponse, error) {
+func (s *entitlementService) CreateSubscriptionGrant(ctx context.Context, req dto.CreateEntitlementRequest, sub *subscription.Subscription) (*dto.EntitlementResponse, error) {
 	e := req.ToEntitlement(ctx)
 	e.EntityType = types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION
 	e.EntityID = sub.ID
@@ -317,12 +313,7 @@ func sameGrantWindow(a, b *entitlement.Entitlement) bool {
 
 // subscriptionGrantConfigs returns the published subscription grants on one subscription.
 func (s *entitlementService) subscriptionGrantConfigs(ctx context.Context, subID string) ([]*entitlement.Entitlement, error) {
-	filter := types.NewNoLimitEntitlementFilter().
-		WithEntityIDs([]string{subID}).
-		WithEntityType(types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION).
-		WithStatus(types.StatusPublished)
-	filter.GrantScopes = []types.EntitlementGrantScopeEntityType{types.EntitlementGrantScopeSubscription}
-	return s.EntitlementRepo.List(ctx, filter)
+	return s.EntitlementRepo.List(ctx, subscriptionGrantConfigFilter(subID))
 }
 
 // checkCatalogChange refuses a plan or addon change that would break the subscription grant on any
@@ -350,11 +341,7 @@ func (g *subscriptionGrantGuard) grantedSubscriptions(ctx context.Context, entit
 	if g.EntitlementRepo == nil {
 		return nil, nil
 	}
-	filter := types.NewNoLimitEntitlementFilter().
-		WithEntityType(types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION).
-		WithStatus(types.StatusPublished)
-	filter.GrantScopes = []types.EntitlementGrantScopeEntityType{types.EntitlementGrantScopeSubscription}
-	ecs, err := g.EntitlementRepo.List(ctx, filter)
+	ecs, err := g.EntitlementRepo.List(ctx, subscriptionGrantConfigFilter())
 	if err != nil || len(ecs) == 0 {
 		return nil, err
 	}
@@ -422,10 +409,7 @@ func pendingLineFromPrice(sub *subscription.Subscription, p *priceDomain.Price) 
 // updateSubscriptionGrant changes a subscription grant's quota. The live window closes and a successor
 // carries what was left plus the change, so an edit never hands out a fresh allowance.
 func (s *entitlementService) updateSubscriptionGrant(ctx context.Context, existing *entitlement.Entitlement, req dto.UpdateEntitlementRequest) (*dto.EntitlementResponse, error) {
-	if req.IsEnabled != nil || req.UsageLimit != nil || req.UsageResetPeriod != "" || req.IsSoftLimit != nil ||
-		req.StaticValue != "" || req.ConfigValue != nil || req.ClearGrantConfig != nil || req.GrantMeasure != nil ||
-		req.GrantDurationValue != nil || req.GrantDurationUnit != nil || req.GrantAllocationBehavior != nil ||
-		req.AggregationMode != nil || req.GrantUnlimited != nil {
+	if !req.OnlySetsGrantQuota() {
 		return nil, ierr.NewError("only grant_quota can change on a subscription grant").
 			WithHint("Delete the subscription grant and create a new one to change anything else.").
 			WithReportableDetails(map[string]any{"entitlement_id": existing.ID}).
@@ -497,11 +481,7 @@ func (s *entitlementService) liveSubscriptionGrantWindows(ctx context.Context, e
 	if err != nil {
 		return nil, err
 	}
-	filter := types.NewNoLimitEntitlementGrantFilter().
-		WithCustomerIDs(sub.CustomerID).
-		WithSubscriptionIDs(sub.ID).
-		WithScopeEntityType(types.EntitlementGrantScopeSubscription).
-		WithLiveOnly(time.Now().UTC())
+	filter := subscriptionGrantWindowFilter(sub).WithLiveOnly(time.Now().UTC())
 	if defaultedMode(ec.AggregationMode) == types.EntitlementAggregationModeParallel {
 		filter = filter.WithEntitlementConfigIDs(ec.ID)
 	}
@@ -586,7 +566,7 @@ func (s *entitlementService) measureSubscriptionGrantWindows(ctx context.Context
 		if !end.After(g.ValidFrom) {
 			continue
 		}
-		usage, _, err := subscriptionLineSpend(ctx, s.ServiceParams, sub, g.ValidFrom, end)
+		usage, err := subscriptionGrantUsage(ctx, s.ServiceParams, sub, g, at)
 		if err != nil {
 			return err
 		}
@@ -602,17 +582,14 @@ func refreshSubscriptionGrantUsage(ctx context.Context, params ServiceParams, su
 	if params.EntitlementGrantRepo == nil || sub == nil {
 		return nil
 	}
-	filter := types.NewNoLimitEntitlementGrantFilter().
-		WithCustomerIDs(sub.CustomerID).
-		WithSubscriptionIDs(sub.ID).
-		WithScopeEntityType(types.EntitlementGrantScopeSubscription).
-		WithCycleOverlap(periodStart, periodEnd)
-	grants, err := params.EntitlementGrantRepo.List(ctx, filter)
+	grants, err := params.EntitlementGrantRepo.List(ctx, subscriptionGrantWindowFilter(sub).WithCycleOverlap(periodStart, periodEnd))
 	if err != nil {
 		return err
 	}
 	for _, g := range grants {
-		measuredTo := types.EarliestOf(at, g.ValidTo)
+		// Stamped just before valid_to, an ended window stays open to alert evaluation, which
+		// fires its exhaustion alert and finalizes it.
+		measuredTo := types.EarliestOf(at, g.ValidTo.Add(-time.Nanosecond))
 		if !measuredTo.After(g.ValidFrom) || (g.LastComputedAt != nil && !g.LastComputedAt.Before(measuredTo)) {
 			continue
 		}
@@ -620,7 +597,7 @@ func refreshSubscriptionGrantUsage(ctx context.Context, params ServiceParams, su
 		if err != nil {
 			return err
 		}
-		if err := params.EntitlementGrantRepo.UpdateSnapshot(ctx, grantUsageSnapshot(g, decimal.Max(usage, decimal.Zero), at)); err != nil {
+		if err := params.EntitlementGrantRepo.UpdateSnapshot(ctx, grantUsageSnapshot(g, decimal.Max(usage, decimal.Zero), measuredTo)); err != nil {
 			return err
 		}
 	}
@@ -629,27 +606,27 @@ func refreshSubscriptionGrantUsage(ctx context.Context, params ServiceParams, su
 
 // subscriptionGrantUsage prices every usage line on the subscription over [valid_from, min(at, valid_to)).
 func subscriptionGrantUsage(ctx context.Context, params ServiceParams, sub *subscription.Subscription, g *entitlementgrant.EntitlementGrant, at time.Time) (decimal.Decimal, error) {
-	total, _, err := subscriptionLineSpend(ctx, params, sub, g.ValidFrom, types.EarliestOf(at, g.ValidTo))
+	total, _, err := NewMeterUsageService(params).GetSubscriptionWindowSpend(ctx, sub, g.ValidFrom, types.EarliestOf(at, g.ValidTo))
 	return total, err
 }
 
-// grantUsageSnapshot is the grant with its usage evaluated at `at`. The crossing keeps its first
-// evaluation time while exhausted; last_computed_at >= valid_to marks a closed window as finalized.
-func grantUsageSnapshot(g *entitlementgrant.EntitlementGrant, usage decimal.Decimal, at time.Time) *entitlementgrant.EntitlementGrant {
-	cross := g.QuotaCrossedAt
-	status := types.EntitlementGrantStatusActive
-	if g.IsExhausted(usage) {
-		status = types.EntitlementGrantStatusExhausted
-		if cross == nil {
-			cross = &at
-		}
-	} else {
-		cross = nil
+// subscriptionGrantConfigFilter matches the published subscription grants on subIDs, or on every
+// subscription when none are given.
+func subscriptionGrantConfigFilter(subIDs ...string) *types.EntitlementFilter {
+	filter := types.NewNoLimitEntitlementFilter().
+		WithEntityType(types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION).
+		WithStatus(types.StatusPublished)
+	if len(subIDs) > 0 {
+		filter = filter.WithEntityIDs(subIDs)
 	}
-	return entitlementgrant.NewEntitlementGrantBuilder(g).
-		WithUsage(usage).
-		WithLastComputedAt(&at).
-		WithQuotaCrossedAt(cross).
-		WithGrantStatus(status).
-		Build()
+	filter.GrantScopes = []types.EntitlementGrantScopeEntityType{types.EntitlementGrantScopeSubscription}
+	return filter
+}
+
+// subscriptionGrantWindowFilter matches the subscription's grant windows.
+func subscriptionGrantWindowFilter(sub *subscription.Subscription) *types.EntitlementGrantFilter {
+	return types.NewNoLimitEntitlementGrantFilter().
+		WithCustomerIDs(sub.CustomerID).
+		WithSubscriptionIDs(sub.ID).
+		WithScopeEntityType(types.EntitlementGrantScopeSubscription)
 }

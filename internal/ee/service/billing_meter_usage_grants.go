@@ -381,12 +381,7 @@ func (s *billingService) loadSubscriptionGrants(
 	if s.EntitlementGrantRepo == nil || sub == nil {
 		return nil, nil
 	}
-	filter := types.NewNoLimitEntitlementGrantFilter().
-		WithCustomerIDs(sub.CustomerID).
-		WithSubscriptionIDs(sub.ID).
-		WithScopeEntityType(types.EntitlementGrantScopeSubscription).
-		WithCycleOverlap(periodStart, periodEnd)
-	grants, err := s.EntitlementGrantRepo.List(ctx, filter)
+	grants, err := s.EntitlementGrantRepo.List(ctx, subscriptionGrantWindowFilter(sub).WithCycleOverlap(periodStart, periodEnd))
 	if err != nil || len(grants) == 0 {
 		return nil, err
 	}
@@ -501,7 +496,7 @@ func (s *billingService) coveredWithin(
 
 	usageAtEnd := g.Usage
 	if g.ValidTo.After(periodEnd) {
-		total, _, err := subscriptionLineSpend(ctx, s.ServiceParams, sub, g.ValidFrom, periodEnd)
+		total, _, err := NewMeterUsageService(s.ServiceParams).GetSubscriptionWindowSpend(ctx, sub, g.ValidFrom, periodEnd)
 		if err != nil {
 			return decimal.Zero, err
 		}
@@ -509,7 +504,7 @@ func (s *billingService) coveredWithin(
 	}
 	usageAtStart := decimal.Zero
 	if g.ValidFrom.Before(periodStart) {
-		total, _, err := subscriptionLineSpend(ctx, s.ServiceParams, sub, g.ValidFrom, periodStart)
+		total, _, err := NewMeterUsageService(s.ServiceParams).GetSubscriptionWindowSpend(ctx, sub, g.ValidFrom, periodStart)
 		if err != nil {
 			return decimal.Zero, err
 		}
@@ -569,7 +564,7 @@ func (s *billingService) lineSpendCoveredByParallelGrants(
 	free := make(map[string]decimal.Decimal)
 	add := func(intervals []TimeInterval, sign decimal.Decimal) error {
 		for _, w := range MergeIntervals(intervals) {
-			_, perLine, err := subscriptionLineSpend(ctx, s.ServiceParams, sub, w.Start, w.End)
+			_, perLine, err := NewMeterUsageService(s.ServiceParams).GetSubscriptionWindowSpend(ctx, sub, w.Start, w.End)
 			if err != nil {
 				return err
 			}
@@ -586,47 +581,6 @@ func (s *billingService) lineSpendCoveredByParallelGrants(
 		return nil, err
 	}
 	return free, nil
-}
-
-// subscriptionLineSpend prices every usage line on the subscription over [start, end), returning
-// the total and the amount per subscription line item.
-func subscriptionLineSpend(
-	ctx context.Context,
-	params ServiceParams,
-	sub *subscription.Subscription,
-	start, end time.Time,
-) (decimal.Decimal, map[string]decimal.Decimal, error) {
-	perLine := make(map[string]decimal.Decimal)
-	if !end.After(start) {
-		return decimal.Zero, perLine, nil
-	}
-
-	meterUsageSvc := NewMeterUsageService(params)
-	subUsage, err := meterUsageSvc.GetSubscriptionMeterUsageWithSub(ctx, sub, &GetSubscriptionMeterUsageRequest{
-		SubscriptionID:  sub.ID,
-		StartTime:       start,
-		EndTime:         end,
-		UseFinal:        true,
-		IncludeChildren: true,
-	})
-	if err != nil {
-		return decimal.Zero, nil, err
-	}
-	charges, _, err := meterUsageSvc.ConvertToBillingCharges(ctx, subUsage)
-	if err != nil {
-		return decimal.Zero, nil, err
-	}
-
-	total := decimal.Zero
-	for _, c := range charges {
-		if c == nil {
-			continue
-		}
-		amount := c.AmountDecimal()
-		total = total.Add(amount)
-		perLine[c.SubscriptionLineItemID] = perLine[c.SubscriptionLineItemID].Add(amount)
-	}
-	return total, perLine, nil
 }
 
 // splitByShare spreads billable over the lines in proportion to their gross amounts, in whole currency

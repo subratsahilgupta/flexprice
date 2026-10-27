@@ -85,6 +85,35 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_RefusesPlanChangesThatBrea
 		priceChange(planPrice("price-api-plan-other", types.BILLING_MODEL_TIERED, other))))
 }
 
+// Bulk price create runs the same guard as a single create.
+func (s *EntitlementGrantSuite) TestSubscriptionGrantGuard_BulkPriceCreate() {
+	s.enableEntitlementAlerts()
+	fx := s.newSubGrantSubscription("api-bulk-price")
+	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 50, ""))
+	s.Require().NoError(err)
+
+	_, err = NewPriceService(s.buildServiceParams()).CreateBulkPrice(s.GetContext(), dto.CreateBulkPriceRequest{
+		Items: []dto.CreatePriceRequest{{
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           fx.sub.PlanID,
+			Type:               types.PRICE_TYPE_USAGE,
+			MeterID:            fx.callsMeter,
+			BillingPeriod:      fx.sub.BillingPeriod,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_TIERED,
+			TierMode:           types.BILLING_TIER_SLAB,
+			InvoiceCadence:     types.InvoiceCadenceArrear,
+			Tiers: []dto.CreatePriceTier{
+				{UpTo: lo.ToPtr(uint64(10)), UnitAmount: decimal.NewFromInt(2)},
+				{UnitAmount: decimal.NewFromInt(1)},
+			},
+		}},
+	})
+	s.Require().Error(err)
+	s.Contains(err.Error(), "tiered")
+}
+
 // The test DB has no real transactions, so this checks the refusal; Postgres rolls the subscription back.
 func (s *SubscriptionServiceSuite) TestCreateSubscription_RefusesIncompatibleSubscriptionGrant() {
 	ctx := s.GetContext()

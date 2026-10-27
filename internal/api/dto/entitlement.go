@@ -3,6 +3,7 @@ package dto
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -189,6 +190,12 @@ type UpdateEntitlementRequest struct {
 	GrantQuota              *decimal.Decimal                          `json:"grant_quota,omitempty" swaggertype:"string"`
 	AggregationMode         *types.EntitlementAggregationMode         `json:"aggregation_mode,omitempty"`
 	GrantUnlimited          *bool                                     `json:"grant_unlimited,omitempty"`
+}
+
+// OnlySetsGrantQuota reports whether grant_quota is the only field the request sets; a field added
+// later counts as set too.
+func (r *UpdateEntitlementRequest) OnlySetsGrantQuota() bool {
+	return reflect.DeepEqual(*r, UpdateEntitlementRequest{GrantQuota: r.GrantQuota})
 }
 
 // Validate validates the update entitlement request

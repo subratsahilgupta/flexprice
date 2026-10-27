@@ -1066,12 +1066,8 @@ func (s *entitlementGrantService) subscriptionGrantConfigs(
 	ctx context.Context,
 	subs []*subscription.Subscription,
 ) (map[string][]*entitlement.Entitlement, error) {
-	filter := types.NewNoLimitEntitlementFilter()
-	filter.EntityType = lo.ToPtr(types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION)
-	filter.EntityIDs = lo.Map(subs, func(sub *subscription.Subscription, _ int) string { return sub.ID })
-	filter.GrantScopes = []types.EntitlementGrantScopeEntityType{types.EntitlementGrantScopeSubscription}
-	filter.WithStatus(types.StatusPublished)
-	ecs, err := s.EntitlementRepo.List(ctx, filter)
+	subIDs := lo.Map(subs, func(sub *subscription.Subscription, _ int) string { return sub.ID })
+	ecs, err := s.EntitlementRepo.List(ctx, subscriptionGrantConfigFilter(subIDs...))
 	if err != nil {
 		return nil, err
 	}
@@ -1483,4 +1479,25 @@ func (s *entitlementService) settleGrantWindowsForDeletedEC(ctx context.Context,
 		entitlementChangeAt:     time.Now().UTC(),
 		entitlementChangeOrigin: grantProrationSourceEntitlementGone,
 	})
+}
+
+// grantUsageSnapshot is the grant with its usage evaluated at `at`. The crossing keeps its first
+// evaluation time while exhausted; last_computed_at >= valid_to marks a closed window as finalized.
+func grantUsageSnapshot(g *entitlementgrant.EntitlementGrant, usage decimal.Decimal, at time.Time) *entitlementgrant.EntitlementGrant {
+	cross := g.QuotaCrossedAt
+	status := types.EntitlementGrantStatusActive
+	if g.IsExhausted(usage) {
+		status = types.EntitlementGrantStatusExhausted
+		if cross == nil {
+			cross = &at
+		}
+	} else {
+		cross = nil
+	}
+	return entitlementgrant.NewEntitlementGrantBuilder(g).
+		WithUsage(usage).
+		WithLastComputedAt(&at).
+		WithQuotaCrossedAt(cross).
+		WithGrantStatus(status).
+		Build()
 }

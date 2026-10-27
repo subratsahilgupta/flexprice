@@ -24,6 +24,8 @@ import (
 // EntitlementService defines the interface for entitlement operations
 type EntitlementService interface {
 	CreateEntitlement(ctx context.Context, req dto.CreateEntitlementRequest) (*dto.EntitlementResponse, error)
+	// CreateSubscriptionGrant creates a subscription grant on sub, which the caller has already loaded.
+	CreateSubscriptionGrant(ctx context.Context, req dto.CreateEntitlementRequest, sub *subscription.Subscription) (*dto.EntitlementResponse, error)
 	CreateBulkEntitlement(ctx context.Context, req dto.CreateBulkEntitlementRequest) (*dto.CreateBulkEntitlementResponse, error)
 	GetEntitlement(ctx context.Context, id string) (*dto.EntitlementResponse, error)
 	ListEntitlements(ctx context.Context, filter *types.EntitlementFilter) (*dto.ListEntitlementsResponse, error)
@@ -123,7 +125,7 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 			return nil, ierr.NewError("a subscription grant needs entity_id set to the subscription").
 				Mark(ierr.ErrValidation)
 		}
-		return s.createSubscriptionGrant(ctx, req, sub)
+		return s.CreateSubscriptionGrant(ctx, req, sub)
 	}
 
 	// Validate feature exists

@@ -113,11 +113,8 @@ func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceReque
 		}
 	}
 
-	if p.Type == types.PRICE_TYPE_USAGE && (p.EntityType == types.PRICE_ENTITY_TYPE_PLAN || p.EntityType == types.PRICE_ENTITY_TYPE_ADDON) {
-		owner := lo.Ternary(p.EntityType == types.PRICE_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_ADDON)
-		if err := newSubscriptionGrantGuard(s.ServiceParams).checkCatalogChange(ctx, owner, p.EntityID, priceChange(p)); err != nil {
-			return nil, err
-		}
+	if err := s.checkSubscriptionGrants(ctx, p); err != nil {
+		return nil, err
 	}
 
 	if err := s.PriceRepo.Create(ctx, p); err != nil {
@@ -366,6 +363,16 @@ func (s *priceService) validateBulkPriceEntityLimits(ctx context.Context, items 
 	return nil
 }
 
+// checkSubscriptionGrants refuses a plan or addon usage price that would break a subscription grant
+// on a subscription using that plan or addon.
+func (s *priceService) checkSubscriptionGrants(ctx context.Context, p *price.Price) error {
+	if p.Type != types.PRICE_TYPE_USAGE || (p.EntityType != types.PRICE_ENTITY_TYPE_PLAN && p.EntityType != types.PRICE_ENTITY_TYPE_ADDON) {
+		return nil
+	}
+	owner := lo.Ternary(p.EntityType == types.PRICE_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_ADDON)
+	return newSubscriptionGrantGuard(s.ServiceParams).checkCatalogChange(ctx, owner, p.EntityID, priceChange(p))
+}
+
 func (s *priceService) CreateBulkPrice(ctx context.Context, req dto.CreateBulkPriceRequest) (*dto.CreateBulkPriceResponse, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
@@ -403,6 +410,12 @@ func (s *priceService) CreateBulkPrice(ctx context.Context, req dto.CreateBulkPr
 		// Validate groups if provided
 		if err := s.validateGroup(txCtx, prices); err != nil {
 			return err
+		}
+
+		for _, p := range prices {
+			if err := s.checkSubscriptionGrants(txCtx, p); err != nil {
+				return err
+			}
 		}
 
 		// Create prices in bulk
