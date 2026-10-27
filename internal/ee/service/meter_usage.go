@@ -82,6 +82,10 @@ type MeterUsageService interface {
 	// returning the total and the amount per subscription line item.
 	GetSubscriptionWindowSpend(ctx context.Context, sub *subscription.Subscription, from, to time.Time) (decimal.Decimal, map[string]decimal.Decimal, error)
 
+	// UsageLineItems returns the line items that price the subscription's usage from `from`; an
+	// inherited subscription uses its parent's.
+	UsageLineItems(ctx context.Context, sub *subscription.Subscription, from time.Time) ([]*subscription.SubscriptionLineItem, error)
+
 	// DebugEvent powers GET /events/:id — reports processing status and
 	// per-lookup diagnostics for a single event under the meter-usage pipeline.
 	DebugEvent(ctx context.Context, externalCustomerID, eventID string, window events.TimeRange) (*dto.GetEventByIDResponse, error)
@@ -148,6 +152,10 @@ func (s *meterUsageService) GetSubscriptionWindowSpend(ctx context.Context, sub 
 		perLine[c.SubscriptionLineItemID] = perLine[c.SubscriptionLineItemID].Add(amount)
 	}
 	return total, perLine, nil
+}
+
+func (s *meterUsageService) UsageLineItems(ctx context.Context, sub *subscription.Subscription, from time.Time) ([]*subscription.SubscriptionLineItem, error) {
+	return s.listLineItemsForUsageWindow(ctx, usageLineItemOwnerID(sub), from, false)
 }
 
 // windowCharges prices the subscription's usage over [from, to) at final consistency, limited to
@@ -457,7 +465,7 @@ func (s *meterUsageService) GetSubscriptionMeterUsageWithSub(
 	}
 
 	// 4. Get line items for this subscription
-	lineItems, err := listLineItemsForUsageWindow(ctx, s.SubscriptionLineItemRepo, usageLineItemOwnerID(sub), usageStartTime, req.LifetimeUsage)
+	lineItems, err := s.listLineItemsForUsageWindow(ctx, usageLineItemOwnerID(sub), usageStartTime, req.LifetimeUsage)
 	if err != nil {
 		return nil, err
 	}
@@ -2401,7 +2409,7 @@ func usageLineItemOwnerID(sub *subscription.Subscription) string {
 }
 
 // listLineItemsForUsageWindow retrieves line items active within the usage window.
-func listLineItemsForUsageWindow(ctx context.Context, repo subscription.LineItemRepository, subscriptionID string, usageStartTime time.Time, lifetime bool) ([]*subscription.SubscriptionLineItem, error) {
+func (s *meterUsageService) listLineItemsForUsageWindow(ctx context.Context, subscriptionID string, usageStartTime time.Time, lifetime bool) ([]*subscription.SubscriptionLineItem, error) {
 	filter := types.NewNoLimitSubscriptionLineItemFilter()
 	filter.SubscriptionIDs = []string{subscriptionID}
 	if lifetime {
@@ -2411,7 +2419,7 @@ func listLineItemsForUsageWindow(ctx context.Context, repo subscription.LineItem
 		filter.ActiveFilter = true
 		filter.CurrentPeriodStart = &usageStartTime
 	}
-	return repo.List(ctx, filter)
+	return s.SubscriptionLineItemRepo.List(ctx, filter)
 }
 
 // subscriptionStatusPriority returns a sort priority for subscription status.
