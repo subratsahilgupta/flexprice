@@ -34,6 +34,8 @@ func convertInvoiceAmounts(inv *invoice.Invoice, resolution *FXRateResolution, c
 
 	rate := resolution.Rate
 
+	// Use the signed line sum, not the stored subtotal (floored at 0): otherwise lines netting
+	// below zero leave a fake residual that allocateResidual adds to a charge line.
 	srcSubtotal := inv.Subtotal
 	if len(inv.LineItems) > 0 {
 		srcSubtotal = decimal.Zero

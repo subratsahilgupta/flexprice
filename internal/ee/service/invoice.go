@@ -798,10 +798,10 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 				return err
 			}
 
-			inv.Subtotal = decimal.Max(applyReq.Subtotal, decimal.Zero)
-			inv.Total = decimal.Max(applyReq.Total, decimal.Zero)
-			inv.AmountDue = inv.Total
-			inv.AmountRemaining = decimal.Max(inv.AmountDue.Sub(inv.AmountPaid), decimal.Zero)
+			inv.Subtotal = applyReq.Subtotal
+			inv.Total = applyReq.Total
+			inv.AmountDue = applyReq.AmountDue
+			inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
 			inv.Description = applyReq.Description
 			inv.DueDate = applyReq.DueDate
 			inv.LineItems = reconciledItems
