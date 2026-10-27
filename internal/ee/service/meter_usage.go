@@ -266,7 +266,7 @@ type AnalyticsData struct {
 
 	// LineTotals is each whole-priced line item's invoice-equivalent total, which its combos split by usage.
 	LineTotals map[string]decimal.Decimal
-	// LineCommitments is the within, on-demand and true-up split of the line totals v2 commitments priced.
+	// LineCommitments is the within, overage and true-up split of the line totals v2 commitments priced.
 	LineCommitments map[string]*types.CommitmentInfo
 }
 
@@ -2484,17 +2484,17 @@ func amortizeLineTotals(data *AnalyticsData) {
 		costs := amortize(total, usage)
 		if info := data.LineCommitments[lineID]; info != nil {
 			within := amortize(info.ComputedCommitmentUtilizedAmount, usage)
-			onDemand := amortize(info.ComputedOverageAmount, usage)
+			overage := amortize(info.ComputedOverageAmount, usage)
 			trueUp := amortize(info.ComputedTrueUpAmount, usage)
 			for i, combo := range combos {
-				costs[i] = within[i].Add(onDemand[i]).Add(trueUp[i])
+				costs[i] = within[i].Add(overage[i]).Add(trueUp[i])
 				combo.CommitmentInfo = &types.CommitmentInfo{
 					Type:                             info.Type,
 					Amount:                           within[i].Add(trueUp[i]),
 					TrueUpEnabled:                    info.TrueUpEnabled,
 					IsWindowed:                       info.IsWindowed,
 					ComputedCommitmentUtilizedAmount: within[i],
-					ComputedOverageAmount:            onDemand[i],
+					ComputedOverageAmount:            overage[i],
 					ComputedTrueUpAmount:             trueUp[i],
 				}
 			}
@@ -2662,7 +2662,7 @@ func (s *meterUsageService) wholeLineCharges(
 }
 
 // commitmentLineBreakdowns prices the v2 commitments covering the window as its invoice would and returns each covered
-// line's within, on-demand and true-up amounts. A true-up is shared across its commitment's lines by within value.
+// line's within, overage and true-up amounts. A true-up is shared across its commitment's lines by within value.
 func (s *meterUsageService) commitmentLineBreakdowns(
 	ctx context.Context,
 	usage *SubscriptionMeterUsage,
@@ -2708,7 +2708,7 @@ func (s *meterUsageService) commitmentLineBreakdowns(
 			continue
 		}
 
-		if kind == types.CommitmentLineOnDemand {
+		if kind == types.CommitmentLineOverage {
 			info.ComputedOverageAmount = info.ComputedOverageAmount.Add(line.Amount)
 			continue
 		}

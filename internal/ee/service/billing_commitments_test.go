@@ -523,10 +523,10 @@ func (s *BillingServiceSuite) TestCommitmentLoader_StackedWindowed_Simplismart()
 
 	s.True(s.loaderLine(lines, types.CommitmentLineWithin, c1.ID).Quantity.Equal(dec("24")))
 	s.True(s.loaderLine(lines, types.CommitmentLineWithin, c2.ID).Quantity.Equal(dec("44")))
-	onDemand := loaderLinesOfKind(lines, types.CommitmentLineOnDemand)
-	s.Require().Len(onDemand, 1)
-	s.True(onDemand[0].Quantity.Equal(dec("7")))
-	s.True(onDemand[0].Amount.Equal(dec("0.42")))
+	overage := loaderLinesOfKind(lines, types.CommitmentLineOverage)
+	s.Require().Len(overage, 1)
+	s.True(overage[0].Quantity.Equal(dec("7")))
+	s.True(overage[0].Amount.Equal(dec("0.42")))
 	// C1 runs all 44,640 August minutes; C2 runs 7 days x 720 minutes from 25 Aug IST.
 	c1TrueUp := s.loaderLine(lines, types.CommitmentLineTrueUp, c1.ID)
 	s.True(c1TrueUp.Quantity.Equal(dec("357096")), "c1 unused %s", c1TrueUp.Quantity)
@@ -573,11 +573,11 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodSplitAtReplaceme
 		s.Require().NoError(err)
 		s.True(s.loaderLine(lines, types.CommitmentLineWithin, "cmt_a").Amount.Equal(dec("7")))
 		s.True(s.loaderLine(lines, types.CommitmentLineWithin, "cmt_b").Amount.Equal(dec("8.5")))
-		// One on-demand line per usage line: 6 from A's half and 3 from B's, at the shared $2 overage.
-		onDemand := loaderLinesOfKind(lines, types.CommitmentLineOnDemand)
-		s.Require().Len(onDemand, 1)
-		s.True(onDemand[0].Quantity.Round(6).Equal(dec("9")), "on-demand %s", onDemand[0].Quantity)
-		s.True(onDemand[0].Amount.Equal(dec("18")), "on-demand %s", onDemand[0].Amount)
+		// One overage line per usage line: 6 from A's half and 3 from B's, at the shared $2 overage.
+		overage := loaderLinesOfKind(lines, types.CommitmentLineOverage)
+		s.Require().Len(overage, 1)
+		s.True(overage[0].Quantity.Round(6).Equal(dec("9")), "overage %s", overage[0].Quantity)
+		s.True(overage[0].Amount.Equal(dec("18")), "overage %s", overage[0].Amount)
 		s.True(total.Equal(dec("33.5")), "total %s", total)
 		return lines
 	}
@@ -658,14 +658,14 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodStartsMidPeriod(
 	s.Equal([]decimal.Decimal{dec("20"), dec("20")}, stacks[0].Lines[0].Usage)
 	s.True(allocs[0].Commitments[0].Used.Equal(dec("20")), "used %s", allocs[0].Commitments[0].Used)
 	s.True(allocs[0].Commitments[0].Capacity.Round(6).Equal(dec("34")), "capacity %s", allocs[0].Commitments[0].Capacity)
-	s.True(allocs[0].OnDemand[0][0].Equal(dec("20")), "pre-start usage stays on-demand")
-	s.True(allocs[0].OnDemand[0][1].IsZero())
+	s.True(allocs[0].Overage[0][0].Equal(dec("20")), "pre-start usage stays overage")
+	s.True(allocs[0].Overage[0][1].IsZero())
 
 	lines, total, err := l.InvoiceLines(ctx)
 	s.Require().NoError(err)
 	s.True(s.loaderLine(lines, types.CommitmentLineWithin, c.ID).Quantity.Equal(dec("20")))
-	s.True(loaderLinesOfKind(lines, types.CommitmentLineOnDemand)[0].Quantity.Equal(dec("20")))
-	// 20 within at $0.5, true-up of the $7 unused, and 20 on demand at the $1 price.
+	s.True(loaderLinesOfKind(lines, types.CommitmentLineOverage)[0].Quantity.Equal(dec("20")))
+	// 20 within at $0.5, true-up of the $7 unused, and 20 overage at the $1 price.
 	s.True(total.Equal(dec("37")), "total %s", total)
 }
 
@@ -703,7 +703,7 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodPoolsAcrossTheSp
 
 	lines, total, err := l.InvoiceLines(ctx)
 	s.Require().NoError(err)
-	s.Empty(loaderLinesOfKind(lines, types.CommitmentLineOnDemand))
+	s.Empty(loaderLinesOfKind(lines, types.CommitmentLineOverage))
 	s.True(s.loaderLine(lines, types.CommitmentLineTrueUp, y.ID).Quantity.Round(6).Equal(dec("2")))
 	// X 12.5 + Y 7.5 within + Y true-up 1.
 	s.True(total.Equal(dec("21")), "total %s", total)
@@ -796,9 +796,9 @@ func (s *BillingServiceSuite) TestCommitmentLoader_DailyGridIsUTCForChargesKeyed
 	s.True(stacks[0].Lines[0].Usage[4].Equal(dec("15")))
 	s.True(stacks[0].Lines[0].Usage[19].Equal(dec("4")))
 
-	// 10 of 5 Aug's 15 and all 4 of 20 Aug's fall within the commitment; the other 5 are on demand.
+	// 10 of 5 Aug's 15 and all 4 of 20 Aug's fall within the commitment; the other 5 are overage.
 	s.True(allocs[0].Commitments[0].Used.Equal(dec("14")), "used %s", allocs[0].Commitments[0].Used)
-	s.True(allocs[0].OnDemand[0][4].Equal(dec("5")))
+	s.True(allocs[0].Overage[0][4].Equal(dec("5")))
 	s.True(allocs[0].Commitments[0].Capacity.Equal(dec("310")), "capacity %s", allocs[0].Commitments[0].Capacity)
 	s.Equal(c.ID, stacks[0].Commitments[0].C.ID)
 }
@@ -913,10 +913,10 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodPricesEachBucket
 	s.Require().NoError(err)
 	within := s.loaderLine(lines, types.CommitmentLineWithin, c.ID)
 	s.True(within.Quantity.Equal(dec("1")) && within.Amount.Equal(dec("0.5")), "within %s for %s", within.Amount, within.Quantity)
-	onDemand := loaderLinesOfKind(lines, types.CommitmentLineOnDemand)
-	s.Require().Len(onDemand, 1)
-	s.True(onDemand[0].Quantity.Equal(dec("119")), "on-demand quantity %s", onDemand[0].Quantity)
-	s.True(onDemand[0].Amount.Equal(dec("119")), "on-demand %s", onDemand[0].Amount)
+	overage := loaderLinesOfKind(lines, types.CommitmentLineOverage)
+	s.Require().Len(overage, 1)
+	s.True(overage[0].Quantity.Equal(dec("119")), "overage quantity %s", overage[0].Quantity)
+	s.True(overage[0].Amount.Equal(dec("119")), "overage %s", overage[0].Amount)
 	s.Empty(loaderLinesOfKind(lines, types.CommitmentLineTrueUp))
 	s.True(total.Equal(dec("119.5")), "total %s", total)
 }
@@ -950,9 +950,9 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodMixedLinesShareO
 	s.False(stacks[0].Lines[apiAt].PerWindow)
 	s.True(stacks[0].Lines[gpuAt].Usage[1].Equal(dec("60")), "gpu usage %v", stacks[0].Lines[gpuAt].Usage)
 
-	// 1 Aug: the api's 40 leave 10 of the 50; 5 Aug: the bucket's 60 take those 10 and 50 go on demand.
-	s.True(allocs[0].OnDemand[apiAt][0].IsZero())
-	s.True(allocs[0].OnDemand[gpuAt][1].Equal(dec("50")), "gpu on-demand %s", allocs[0].OnDemand[gpuAt][1])
+	// 1 Aug: the api's 40 leave 10 of the 50; 5 Aug: the bucket's 60 take those 10 and 50 go to overage.
+	s.True(allocs[0].Overage[apiAt][0].IsZero())
+	s.True(allocs[0].Overage[gpuAt][1].Equal(dec("50")), "gpu overage %s", allocs[0].Overage[gpuAt][1])
 	_, total, err := l.InvoiceLines(ctx)
 	s.Require().NoError(err)
 	s.True(total.Equal(dec("100")), "total %s", total)
@@ -1061,27 +1061,27 @@ func (s *BillingServiceSuite) TestCommitmentLoader_PartialWithinIsCappedAtTheFlo
 // and the week keyed 2 Aug each keep a window of their own, so each still prices alone as normal billing prices it.
 func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodWeeklyBucketsKeepTheirOwnWindows() {
 	tests := []struct {
-		name     string
-		typ      types.CommitmentType
-		value    string
-		onDemand string
-		total    string
+		name    string
+		typ     types.CommitmentType
+		value   string
+		overage string
+		total   string
 	}{
 		{
 			// 60 + 70 cost 60 + 70 = 130 per bucket; merged, 130 would cost 100 + 30 x 0.10 = 103.
-			name:     "amount stack bills the normal path's 130",
-			typ:      types.COMMITMENT_TYPE_AMOUNT,
-			value:    "100",
-			onDemand: "30",
-			total:    "130",
+			name:    "amount stack bills the normal path's 130",
+			typ:     types.COMMITMENT_TYPE_AMOUNT,
+			value:   "100",
+			overage: "30",
+			total:   "130",
 		},
 		{
 			// The unit comes off the 26 Jul week: cost(60)-cost(1) = 59, then cost(70) = 70.
-			name:     "quantity stack prices on demand per bucket",
-			typ:      types.COMMITMENT_TYPE_QUANTITY,
-			value:    "1",
-			onDemand: "129",
-			total:    "129.5",
+			name:    "quantity stack prices overage per bucket",
+			typ:     types.COMMITMENT_TYPE_QUANTITY,
+			value:   "1",
+			overage: "129",
+			total:   "129.5",
 		},
 	}
 
@@ -1120,9 +1120,9 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodWeeklyBucketsKee
 			}}}
 			lines, total, err := s.loaderFor(sub, usage, sub.CurrentPeriodStart, sub.CurrentPeriodEnd).InvoiceLines(ctx)
 			s.Require().NoError(err)
-			onDemand := loaderLinesOfKind(lines, types.CommitmentLineOnDemand)
-			s.Require().Len(onDemand, 1)
-			s.True(onDemand[0].Amount.Equal(dec(tt.onDemand)), "on-demand %s", onDemand[0].Amount)
+			overage := loaderLinesOfKind(lines, types.CommitmentLineOverage)
+			s.Require().Len(overage, 1)
+			s.True(overage[0].Amount.Equal(dec(tt.overage)), "overage %s", overage[0].Amount)
 			s.True(total.Equal(dec(tt.total)), "total %s", total)
 		})
 	}
@@ -1218,9 +1218,9 @@ func (s *BillingServiceSuite) TestCommitmentLoader_AmountSpansSpreadThePeriodCos
 	lines, total, err := l.InvoiceLines(ctx)
 	s.Require().NoError(err)
 	s.True(s.loaderLine(lines, types.CommitmentLineWithin, c.ID).Amount.Equal(dec("10")))
-	onDemand := loaderLinesOfKind(lines, types.CommitmentLineOnDemand)
-	s.Require().Len(onDemand, 1)
-	s.True(onDemand[0].Amount.Equal(dec("20")), "on-demand %s", onDemand[0].Amount)
+	overage := loaderLinesOfKind(lines, types.CommitmentLineOverage)
+	s.Require().Len(overage, 1)
+	s.True(overage[0].Amount.Equal(dec("20")), "overage %s", overage[0].Amount)
 	// $100 for the 17 days from 15 Aug is $54.84, of which $10 is used.
 	s.True(s.loaderLine(lines, types.CommitmentLineTrueUp, c.ID).Amount.Equal(dec("44.84")))
 	s.True(total.Equal(dec("74.84")), "total %s", total)
@@ -1600,7 +1600,7 @@ func (s *BillingServiceSuite) TestCommitmentWiring_PreviewMatchesInvoice() {
 			kinds: []types.CommitmentLineKind{types.CommitmentLineWithin, types.CommitmentLineTrueUp},
 		},
 		{
-			name: "quantity commitment with on-demand",
+			name: "quantity commitment with overage",
 			setup: func(periodStart time.Time) {
 				committed := s.usagePriceFor("price_parity_committed", s.testData.meters.apiCalls, "0.01")
 				overage := s.usagePriceFor("price_parity_overage", s.testData.meters.apiCalls, "0.03")
@@ -1609,7 +1609,7 @@ func (s *BillingServiceSuite) TestCommitmentWiring_PreviewMatchesInvoice() {
 				c.CommittedPriceID, c.OveragePriceID = lo.ToPtr(committed.ID), lo.ToPtr(overage.ID)
 				s.storeCommitment(c)
 			},
-			kinds: []types.CommitmentLineKind{types.CommitmentLineWithin, types.CommitmentLineOnDemand},
+			kinds: []types.CommitmentLineKind{types.CommitmentLineWithin, types.CommitmentLineOverage},
 		},
 	}
 
@@ -1787,7 +1787,7 @@ func (s *EntitlementQuantityTestSuite) TestCommitmentWiring_RecalculateDraft_Tru
 func (s *EntitlementQuantityTestSuite) TestCommitmentWiring_RecalculateDraft_StackedStaysStable() {
 	inv := s.recalcFixture("recalc_stack",
 		s.recalcCommitment("cmt_recalc_4", "4", 1), s.recalcCommitment("cmt_recalc_3", "3", 2))
-	// Within $4 and $3 on the same line item, plus $3 on-demand.
+	// Within $4 and $3 on the same line item, plus $3 overage.
 	s.requireStableRecalculation(inv, 3, "10")
 }
 

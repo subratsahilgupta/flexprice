@@ -2130,7 +2130,7 @@ type CommitmentUsageBreakdown struct {
 	Binding      bool                        `json:"binding"`
 	Currency     string                      `json:"currency"`
 	// AppliesFrom/To is the stretch of the queried window the commitment covers; usage outside it
-	// bills on demand and is not counted here.
+	// bills as overage and is not counted here.
 	AppliesFrom time.Time `json:"applies_from" format:"date-time"`
 	AppliesTo   time.Time `json:"applies_to" format:"date-time"`
 	// Committed is the full capacity for the stretch; its amount is the floor a binding commitment owes.

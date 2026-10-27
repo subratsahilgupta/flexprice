@@ -91,7 +91,7 @@ type CommitmentLineKind string
 
 const (
 	CommitmentLineWithin          CommitmentLineKind = "within_commitment"
-	CommitmentLineOnDemand        CommitmentLineKind = "on_demand"
+	CommitmentLineOverage         CommitmentLineKind = "overage"
 	CommitmentLineTrueUp          CommitmentLineKind = "true_up"
 	CommitmentLineInstalment      CommitmentLineKind = "instalment"
 	CommitmentLineSettlement      CommitmentLineKind = "settlement"

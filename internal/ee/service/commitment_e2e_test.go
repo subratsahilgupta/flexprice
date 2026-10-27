@@ -200,7 +200,7 @@ func (s *CommitmentE2ESuite) requireInvoice(req *dto.CreateInvoiceRequest, total
 	s.True(req.AmountDue.Equal(dec(total)), "amount due: want %s, got %s", total, req.AmountDue)
 }
 
-// A $100 monthly floor bills its true-up when usage falls short and on-demand usage when it runs over.
+// A $100 monthly floor bills its true-up when usage falls short and overage when it runs over.
 func (s *CommitmentE2ESuite) TestMonthlyAmountFloor_UnderThenOverUse() {
 	tokens := s.planWith("monthly_floor", types.BILLING_PERIOD_MONTHLY, s.tokens, "0.10")
 	sub := s.subscribe(tokens, s.jan)
@@ -218,7 +218,7 @@ func (s *CommitmentE2ESuite) TestMonthlyAmountFloor_UnderThenOverUse() {
 	// February: 1,500 tokens cost $150; the floor covers $100 of it.
 	s.requireInvoice(s.invoiceFor(sub.ID, s.jan.AddDate(0, 1, 0), s.jan.AddDate(0, 2, 0)), "150",
 		wantLine{types.CommitmentLineWithin, "Platform floor", "1000", "100"},
-		wantLine{types.CommitmentLineOnDemand, "Tokens", "500", "50"},
+		wantLine{types.CommitmentLineOverage, "Tokens", "500", "50"},
 	)
 }
 
@@ -239,7 +239,7 @@ func (s *CommitmentE2ESuite) TestQuantityCommitment_CommittedAndOverageRates() {
 	// January: 1,000 committed at $0.08, the other 300 at the $0.12 overage rate.
 	s.requireInvoice(s.invoiceFor(sub.ID, s.jan, s.jan.AddDate(0, 1, 0)), "116",
 		wantLine{types.CommitmentLineWithin, "Reserved tokens", "1000", "80"},
-		wantLine{types.CommitmentLineOnDemand, "Tokens", "300", "36"},
+		wantLine{types.CommitmentLineOverage, "Tokens", "300", "36"},
 	)
 
 	// February: 700 used, so 300 committed units are billed unused.
@@ -249,7 +249,7 @@ func (s *CommitmentE2ESuite) TestQuantityCommitment_CommittedAndOverageRates() {
 	)
 }
 
-// Eight GPUs a day: full days fill the window, idle days leave it unused, and GPUs above eight bill on demand
+// Eight GPUs a day: full days fill the window, idle days leave it unused, and GPUs above eight bill as overage
 // at the margin of each day's own usage.
 func (s *CommitmentE2ESuite) TestDailyWindowQuantityCommitment() {
 	gpus := s.planWith("daily_gpus", types.BILLING_PERIOD_MONTHLY, s.gpus, "2")
@@ -273,12 +273,12 @@ func (s *CommitmentE2ESuite) TestDailyWindowQuantityCommitment() {
 	s.requireInvoice(s.invoiceFor(sub.ID, s.jan, s.jan.AddDate(0, 1, 0)), "416",
 		wantLine{types.CommitmentLineWithin, "Reserved GPUs", "168", "252"},
 		wantLine{types.CommitmentLineTrueUp, "Reserved GPUs (unused)", "80", "120"},
-		wantLine{types.CommitmentLineOnDemand, "GPUs", "22", "44"},
+		wantLine{types.CommitmentLineOverage, "GPUs", "22", "44"},
 	)
 }
 
 // A price edit on 16 Jan versions the scoped line onto a flat price on the same meter. The meter-scoped commitment
-// keeps covering both versions, and each prices its own usage: on-demand units of the slab version bill at the
+// keeps covering both versions, and each prices its own usage: overage units of the slab version bill at the
 // margin of its tiers.
 func (s *CommitmentE2ESuite) TestMidPeriodPriceEdit_CommitmentSpansBothVersions() {
 	// The "00" ID sorts before generated price IDs, so the original version fills first.
@@ -307,16 +307,16 @@ func (s *CommitmentE2ESuite) TestMidPeriodPriceEdit_CommitmentSpansBothVersions(
 	s.record(s.tokens, time.Date(2026, 1, 20, 12, 0, 0, 0, time.UTC), "60")
 
 	// The 100 committed come from the slab version's 150. Its other 50 sit in the $0.25 tier: $12.50. All 60 on
-	// the flat version are on demand at $1.
+	// the flat version are overage at $1.
 	s.requireInvoice(s.invoiceFor(sub.ID, s.jan, s.jan.AddDate(0, 1, 0)), "92.5",
 		wantLine{types.CommitmentLineWithin, "Reserved tokens", "100", "20"},
-		wantLine{types.CommitmentLineOnDemand, "Tokens", "50", "12.5"},
-		wantLine{types.CommitmentLineOnDemand, "Tokens", "60", "60"},
+		wantLine{types.CommitmentLineOverage, "Tokens", "50", "12.5"},
+		wantLine{types.CommitmentLineOverage, "Tokens", "60", "60"},
 	)
 }
 
 // A commitment added halfway through a quarter has a floor for the half it covers; usage before it starts bills
-// on demand.
+// as overage.
 func (s *CommitmentE2ESuite) TestQuarterlyCommitmentCreatedMidPeriod_ProratesItsFirstFloor() {
 	tokens := s.planWith("quarterly", types.BILLING_PERIOD_QUARTER, s.tokens, "1")
 	sub := s.subscribe(tokens, s.jan)
@@ -331,7 +331,7 @@ func (s *CommitmentE2ESuite) TestQuarterlyCommitmentCreatedMidPeriod_ProratesIts
 	s.requireInvoice(s.invoiceFor(sub.ID, s.jan, s.jan.AddDate(0, 3, 0)), "650",
 		wantLine{types.CommitmentLineWithin, "Quarterly floor", "300", "300"},
 		wantLine{types.CommitmentLineTrueUp, "Quarterly floor (unused)", "1", "150"},
-		wantLine{types.CommitmentLineOnDemand, "Tokens", "200", "200"},
+		wantLine{types.CommitmentLineOverage, "Tokens", "200", "200"},
 	)
 }
 
@@ -349,7 +349,7 @@ func (s *CommitmentE2ESuite) TestInlineCommitment_BillsOnTheFirstInvoice() {
 }
 
 // Terminated on 11 Jan with a $500 fee: January's floor shrinks to the ten days the commitment ran, usage after
-// it bills on demand, and the fee is billed on its own one-off invoice.
+// it bills as overage, and the fee is billed on its own one-off invoice.
 func (s *CommitmentE2ESuite) TestTerminateMidPeriod_ClipsTheFloorAndBillsTheFee() {
 	tokens := s.planWith("terminated", types.BILLING_PERIOD_MONTHLY, s.tokens, "0.10")
 	sub := s.subscribe(tokens, s.jan)
@@ -380,7 +380,7 @@ func (s *CommitmentE2ESuite) TestTerminateMidPeriod_ClipsTheFloorAndBillsTheFee(
 	s.requireInvoice(s.invoiceFor(sub.ID, s.jan, s.jan.AddDate(0, 1, 0)), "130",
 		wantLine{types.CommitmentLineWithin, "Platform floor", "400", "40"},
 		wantLine{types.CommitmentLineTrueUp, "Platform floor (unused)", "1", "60"},
-		wantLine{types.CommitmentLineOnDemand, "Tokens", "300", "30"},
+		wantLine{types.CommitmentLineOverage, "Tokens", "300", "30"},
 	)
 }
 
@@ -465,11 +465,11 @@ func (s *CommitmentE2ESuite) TestAnalytics_GroupedAmountFloorSplitsTheInvoice() 
 	s.True(console.TrueUpEnabled)
 	s.True(console.ComputedCommitmentUtilizedAmount.Equal(dec("50")), "within %s", console.ComputedCommitmentUtilizedAmount)
 	s.True(console.ComputedTrueUpAmount.Equal(dec("25")), "true-up %s", console.ComputedTrueUpAmount)
-	s.True(console.ComputedOverageAmount.IsZero(), "on-demand %s", console.ComputedOverageAmount)
+	s.True(console.ComputedOverageAmount.IsZero(), "overage %s", console.ComputedOverageAmount)
 	s.True(console.Amount.Equal(dec("75")), "committed share %s", console.Amount)
 }
 
-// 200 reserved tokens at $0.20 and 100 on demand at the $0.40 overage price bill $80; every source pays the same
+// 200 reserved tokens at $0.20 and 100 more at the $0.40 overage price bill $80; every source pays the same
 // blended rate on its tokens.
 func (s *CommitmentE2ESuite) TestAnalytics_GroupedQuantityOverUseBlendsOneRate() {
 	tokens := s.planWith("analytics_quantity", types.BILLING_PERIOD_MONTHLY, s.tokens, "0", tokenSlabs...)
@@ -484,7 +484,7 @@ func (s *CommitmentE2ESuite) TestAnalytics_GroupedQuantityOverUseBlendsOneRate()
 	invoice := s.invoiceFor(sub.ID, s.jan, s.jan.AddDate(0, 1, 0))
 	s.requireInvoice(invoice, "80",
 		wantLine{types.CommitmentLineWithin, "Reserved tokens", "200", "40"},
-		wantLine{types.CommitmentLineOnDemand, "Tokens", "100", "40"},
+		wantLine{types.CommitmentLineOverage, "Tokens", "100", "40"},
 	)
 
 	got := s.requireSourceCosts(s.usageAnalytics([]string{"source"}, nil, ""), invoice,
@@ -492,7 +492,7 @@ func (s *CommitmentE2ESuite) TestAnalytics_GroupedQuantityOverUseBlendsOneRate()
 	for source, item := range got {
 		rate := item.TotalCost.Div(item.TotalUsage)
 		s.True(rate.Equal(dec("80").Div(dec("300"))), "%s pays %s a token", source, rate)
-		s.True(item.CommitmentInfo.ComputedOverageAmount.Equal(item.TotalCost.Div(dec("2"))), "%s on-demand share", source)
+		s.True(item.CommitmentInfo.ComputedOverageAmount.Equal(item.TotalCost.Div(dec("2"))), "%s overage share", source)
 	}
 }
 
@@ -563,7 +563,7 @@ func (s *CommitmentE2ESuite) TestAnalytics_TrueUpSharedByWithinAcrossScopedLines
 }
 
 // Eight reserved GPUs a day on a daily MAX meter fed by two sources: each source takes its share of the window
-// stack's within, true-up and on-demand by the GPU-days it reported.
+// stack's within, true-up and overage by the GPU-days it reported.
 func (s *CommitmentE2ESuite) TestAnalytics_GroupedDailyWindowSplitsTheInvoice() {
 	gpus := s.planWith("analytics_gpus", types.BILLING_PERIOD_MONTHLY, s.gpus, "2")
 	sub := s.subscribe(gpus, s.jan)
@@ -584,12 +584,12 @@ func (s *CommitmentE2ESuite) TestAnalytics_GroupedDailyWindowSplitsTheInvoice() 
 		}
 	}
 
-	// The line peaks at 8 GPUs for 10 days and 10 for 11: 168 GPU-days used, 80 unused, 22 on demand.
+	// The line peaks at 8 GPUs for 10 days and 10 for 11: 168 GPU-days used, 80 unused, 22 overage.
 	invoice := s.invoiceFor(sub.ID, s.jan, s.jan.AddDate(0, 1, 0))
 	s.requireInvoice(invoice, "416",
 		wantLine{types.CommitmentLineWithin, "Reserved GPUs", "168", "252"},
 		wantLine{types.CommitmentLineTrueUp, "Reserved GPUs (unused)", "80", "120"},
-		wantLine{types.CommitmentLineOnDemand, "GPUs", "22", "44"},
+		wantLine{types.CommitmentLineOverage, "GPUs", "22", "44"},
 	)
 
 	// The trainer reported 146 GPU-days and inference 110, so they split $416 as 146:110.
