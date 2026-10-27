@@ -825,8 +825,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RefreshesStaleUsage
 	stored, err := s.GetStores().EntitlementGrantRepo.Get(s.GetContext(), g.ID)
 	s.Require().NoError(err)
 	s.True(decimal.NewFromInt(30).Equal(stored.Usage), "stored usage: got %s", stored.Usage)
-	s.Require().NotNil(stored.LastComputedAt)
-	s.True(at.Equal(*stored.LastComputedAt))
+	s.Nil(stored.LastComputedAt, "finalizing is alert evaluation's job")
 
 	lines := invoiceLines(fx, "10", "20")
 	reduction := s.applySubGrants(fx, lines, subGrantBlockers{})
@@ -834,4 +833,24 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RefreshesStaleUsage
 	s.True(decimal.NewFromInt(30).Equal(reduction), "got %s", reduction)
 	s.True(lines[0].Amount.IsZero(), "calls: got %s", lines[0].Amount)
 	s.True(lines[1].Amount.IsZero(), "storage: got %s", lines[1].Amount)
+}
+
+// Billing refreshes an ended window's usage but leaves it unfinalized, so alert evaluation still sees it.
+func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RefreshLeavesEndedWindowToAlerts() {
+	fx := s.newSubGrantFixture("bill-ended", dailySubscriptionGrant(20, types.EntitlementGrantAllocationBehaviorFirstUsage))
+	start := fx.sub.CurrentPeriodStart
+	end := start.Add(24 * time.Hour)
+	g := s.seedSubGrantWindow("eg-ended", fx, start, end, 20, 0, nil)
+	s.seedMeterUsage(fx.extID, fx.callsMeter, start.Add(time.Hour), 300) // $30
+
+	items, err := s.GetStores().SubscriptionLineItemRepo.ListBySubscription(s.GetContext(), fx.sub)
+	s.Require().NoError(err)
+	fx.sub.LineItems = items
+	s.Require().NoError(refreshSubscriptionGrantUsage(s.GetContext(), s.buildServiceParams(), fx.sub, start, fx.sub.CurrentPeriodEnd, end.Add(time.Hour)))
+
+	stored, err := s.GetStores().EntitlementGrantRepo.Get(s.GetContext(), g.ID)
+	s.Require().NoError(err)
+	s.True(decimal.NewFromInt(30).Equal(stored.Usage), "stored usage: got %s", stored.Usage)
+	s.Equal(types.EntitlementGrantStatusExhausted, stored.GrantStatus)
+	s.Nil(stored.LastComputedAt, "an ended window stays open to alert evaluation")
 }

@@ -481,7 +481,11 @@ func (s *entitlementService) liveSubscriptionGrantWindows(ctx context.Context, e
 	if err != nil {
 		return nil, err
 	}
-	filter := subscriptionGrantWindowFilter(sub).WithLiveOnly(time.Now().UTC())
+	filter := types.NewNoLimitEntitlementGrantFilter().
+		WithCustomerIDs(sub.CustomerID).
+		WithSubscriptionIDs(sub.ID).
+		WithScopeEntityType(types.EntitlementGrantScopeSubscription).
+		WithLiveOnly(time.Now().UTC())
 	if defaultedMode(ec.AggregationMode) == types.EntitlementAggregationModeParallel {
 		filter = filter.WithEntitlementConfigIDs(ec.ID)
 	}
@@ -577,27 +581,34 @@ func (s *entitlementService) measureSubscriptionGrantWindows(ctx context.Context
 }
 
 // refreshSubscriptionGrantUsage measures each subscription grant window in the period up to `at` and
-// stores it, so billing does not read usage the alert refresh has not caught up with.
+// stores it, so billing does not read usage the alert refresh has not caught up with. It leaves
+// last_computed_at alone: finalizing a window, and firing its exhaustion alert, is alert evaluation's job.
 func refreshSubscriptionGrantUsage(ctx context.Context, params ServiceParams, sub *subscription.Subscription, periodStart, periodEnd, at time.Time) error {
 	if params.EntitlementGrantRepo == nil || sub == nil {
 		return nil
 	}
-	grants, err := params.EntitlementGrantRepo.List(ctx, subscriptionGrantWindowFilter(sub).WithCycleOverlap(periodStart, periodEnd))
+	filter := types.NewNoLimitEntitlementGrantFilter().
+		WithCustomerIDs(sub.CustomerID).
+		WithSubscriptionIDs(sub.ID).
+		WithScopeEntityType(types.EntitlementGrantScopeSubscription).
+		WithCycleOverlap(periodStart, periodEnd)
+	grants, err := params.EntitlementGrantRepo.List(ctx, filter)
 	if err != nil {
 		return err
 	}
 	for _, g := range grants {
-		// Stamped just before valid_to, an ended window stays open to alert evaluation, which
-		// fires its exhaustion alert and finalizes it.
-		measuredTo := types.EarliestOf(at, g.ValidTo.Add(-time.Nanosecond))
-		if !measuredTo.After(g.ValidFrom) || (g.LastComputedAt != nil && !g.LastComputedAt.Before(measuredTo)) {
+		finalized := g.LastComputedAt != nil && !g.LastComputedAt.Before(g.ValidTo)
+		if !at.After(g.ValidFrom) || finalized {
 			continue
 		}
 		usage, err := NewEntitlementGrantService(params).SubscriptionGrantUsage(ctx, sub, g, at)
 		if err != nil {
 			return err
 		}
-		if err := params.EntitlementGrantRepo.UpdateSnapshot(ctx, grantUsageSnapshot(g, decimal.Max(usage, decimal.Zero), measuredTo)); err != nil {
+		refreshed := entitlementgrant.NewEntitlementGrantBuilder(grantUsageSnapshot(g, decimal.Max(usage, decimal.Zero), at)).
+			WithLastComputedAt(g.LastComputedAt).
+			Build()
+		if err := params.EntitlementGrantRepo.UpdateSnapshot(ctx, refreshed); err != nil {
 			return err
 		}
 	}
@@ -622,10 +633,95 @@ func subscriptionGrantConfigFilter(subIDs ...string) *types.EntitlementFilter {
 	return filter
 }
 
-// subscriptionGrantWindowFilter matches the subscription's grant windows.
-func subscriptionGrantWindowFilter(sub *subscription.Subscription) *types.EntitlementGrantFilter {
-	return types.NewNoLimitEntitlementGrantFilter().
-		WithCustomerIDs(sub.CustomerID).
-		WithSubscriptionIDs(sub.ID).
-		WithScopeEntityType(types.EntitlementGrantScopeSubscription)
+// subscriptionUsageMeterIDs is the meters of the usage lines priced from `from`, the usage a
+// subscription grant covers.
+func (s *entitlementGrantService) subscriptionUsageMeterIDs(ctx context.Context, sub *subscription.Subscription, from time.Time) ([]string, error) {
+	items, err := NewMeterUsageService(s.ServiceParams).ListUsageLineItems(ctx, sub, from, false)
+	if err != nil {
+		return nil, err
+	}
+	return lo.Uniq(lo.FilterMap(items, func(item *subscription.SubscriptionLineItem, _ int) (string, bool) {
+		return item.MeterID, item.PriceType == types.PRICE_TYPE_USAGE && item.MeterID != ""
+	})), nil
+}
+
+// subscriptionGrantConfigsBySub is the published subscription grants of each subscription.
+func (s *entitlementGrantService) subscriptionGrantConfigsBySub(
+	ctx context.Context,
+	subs []*subscription.Subscription,
+) (map[string][]*entitlement.Entitlement, error) {
+	subIDs := lo.Map(subs, func(sub *subscription.Subscription, _ int) string { return sub.ID })
+	ecs, err := s.EntitlementRepo.List(ctx, subscriptionGrantConfigFilter(subIDs...))
+	if err != nil {
+		return nil, err
+	}
+	return lo.GroupBy(ecs, func(ec *entitlement.Entitlement) string { return ec.EntityID }), nil
+}
+
+// SubscriptionGrantState is the ledger of the subscription's own grants, or nil when it has none.
+func (s *entitlementGrantService) SubscriptionGrantState(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	at time.Time,
+) (*dto.GrantState, error) {
+	states, err := s.grantStateBy(ctx, sub, types.EntitlementGrantScopeSubscription, at,
+		func(g *entitlementgrant.EntitlementGrant) string { return g.ScopeEntityID })
+	if err != nil || sub == nil {
+		return nil, err
+	}
+	return states[sub.ID], nil
+}
+
+// checkFeatureAllowanceAgainstSubscriptionGrants refuses a feature allowance that would reach a
+// subscription with a subscription grant, directly or through its plan or addon.
+func (s *entitlementService) checkFeatureAllowanceAgainstSubscriptionGrants(ctx context.Context, e *entitlement.Entitlement, owner any) error {
+	if !isFeatureAllowance(e) {
+		return nil
+	}
+	guard := newSubscriptionGrantGuard(s.ServiceParams)
+	change := subscriptionGrantChange{entitlements: []*entitlement.Entitlement{e}}
+	switch e.EntityType {
+	case types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION:
+		sub, ok := owner.(*subscription.Subscription)
+		if !ok || sub == nil {
+			var err error
+			if sub, err = s.SubRepo.Get(ctx, e.EntityID); err != nil {
+				return err
+			}
+		}
+		return guard.checkIfGranted(ctx, sub, change)
+	case types.ENTITLEMENT_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_ADDON:
+		return guard.checkCatalogChange(ctx, e.EntityType, e.EntityID, func(*subscription.Subscription) subscriptionGrantChange { return change })
+	}
+	return nil
+}
+
+// subscriptionGrantsView returns the subscription's grants and their ledger, or nil when it has none.
+func (s *subscriptionService) subscriptionGrantsView(ctx context.Context, sub *subscription.Subscription) (*dto.SubscriptionGrantsResponse, error) {
+	ecs, err := s.EntitlementRepo.List(ctx, subscriptionGrantConfigFilter(sub.ID))
+	if err != nil || len(ecs) == 0 {
+		return nil, err
+	}
+
+	state, err := NewEntitlementGrantService(s.ServiceParams).SubscriptionGrantState(ctx, sub, time.Now().UTC())
+	if err != nil {
+		s.Logger.Error(ctx, "failed to load subscription grant state, returning grants without it",
+			"error", err, "subscription_id", sub.ID)
+	}
+	return &dto.SubscriptionGrantsResponse{
+		Entitlements: lo.Map(ecs, func(ec *entitlement.Entitlement, _ int) *dto.EntitlementResponse {
+			return &dto.EntitlementResponse{Entitlement: ec}
+		}),
+		GrantState: state,
+	}, nil
+}
+
+// checkSubscriptionGrants refuses a plan or addon usage price that would break a subscription grant
+// on a subscription using that plan or addon.
+func (s *priceService) checkSubscriptionGrants(ctx context.Context, p *priceDomain.Price) error {
+	if p.Type != types.PRICE_TYPE_USAGE || (p.EntityType != types.PRICE_ENTITY_TYPE_PLAN && p.EntityType != types.PRICE_ENTITY_TYPE_ADDON) {
+		return nil
+	}
+	owner := lo.Ternary(p.EntityType == types.PRICE_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_ADDON)
+	return newSubscriptionGrantGuard(s.ServiceParams).checkCatalogChange(ctx, owner, p.EntityID, priceChange(p))
 }

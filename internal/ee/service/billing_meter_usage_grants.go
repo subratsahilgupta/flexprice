@@ -381,7 +381,12 @@ func (s *billingService) loadSubscriptionGrants(
 	if s.EntitlementGrantRepo == nil || sub == nil {
 		return nil, nil
 	}
-	grants, err := s.EntitlementGrantRepo.List(ctx, subscriptionGrantWindowFilter(sub).WithCycleOverlap(periodStart, periodEnd))
+	filter := types.NewNoLimitEntitlementGrantFilter().
+		WithCustomerIDs(sub.CustomerID).
+		WithSubscriptionIDs(sub.ID).
+		WithScopeEntityType(types.EntitlementGrantScopeSubscription).
+		WithCycleOverlap(periodStart, periodEnd)
+	grants, err := s.EntitlementGrantRepo.List(ctx, filter)
 	if err != nil || len(grants) == 0 {
 		return nil, err
 	}

@@ -507,7 +507,7 @@ func (s *entitlementGrantService) EnsureGrantsForSubscriptions(
 		return nil, nil, err
 	}
 
-	subGrantECsBySub, err := s.subscriptionGrantConfigs(ctx, subs)
+	subGrantECsBySub, err := s.subscriptionGrantConfigsBySub(ctx, subs)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1051,31 +1051,6 @@ func (s *entitlementGrantService) earliestUncoveredUsage(
 	return timestamp, nil
 }
 
-// subscriptionUsageMeterIDs is the meters of the usage lines priced from `from`, the usage a
-// subscription grant covers.
-func (s *entitlementGrantService) subscriptionUsageMeterIDs(ctx context.Context, sub *subscription.Subscription, from time.Time) ([]string, error) {
-	items, err := NewMeterUsageService(s.ServiceParams).ListUsageLineItems(ctx, sub, from, false)
-	if err != nil {
-		return nil, err
-	}
-	return lo.Uniq(lo.FilterMap(items, func(item *subscription.SubscriptionLineItem, _ int) (string, bool) {
-		return item.MeterID, item.PriceType == types.PRICE_TYPE_USAGE && item.MeterID != ""
-	})), nil
-}
-
-// subscriptionGrantConfigs is the published subscription grants of each subscription.
-func (s *entitlementGrantService) subscriptionGrantConfigs(
-	ctx context.Context,
-	subs []*subscription.Subscription,
-) (map[string][]*entitlement.Entitlement, error) {
-	subIDs := lo.Map(subs, func(sub *subscription.Subscription, _ int) string { return sub.ID })
-	ecs, err := s.EntitlementRepo.List(ctx, subscriptionGrantConfigFilter(subIDs...))
-	if err != nil {
-		return nil, err
-	}
-	return lo.GroupBy(ecs, func(ec *entitlement.Entitlement) string { return ec.EntityID }), nil
-}
-
 // validateEntitlementGrantShape enforces the rules that need the meter, its prices and
 // the sibling ECs. No-op without a grant config; each rejection explains itself.
 func (s *entitlementService) validateEntitlementGrantShape(
@@ -1296,20 +1271,6 @@ func (s *entitlementGrantService) GrantStateByFeature(
 ) (map[string]*dto.GrantState, error) {
 	return s.grantStateBy(ctx, sub, types.EntitlementGrantScopeFeature, at,
 		func(g *entitlementgrant.EntitlementGrant) string { return g.FeatureID() })
-}
-
-// SubscriptionGrantState is the ledger of the subscription's own grants, or nil when it has none.
-func (s *entitlementGrantService) SubscriptionGrantState(
-	ctx context.Context,
-	sub *subscription.Subscription,
-	at time.Time,
-) (*dto.GrantState, error) {
-	states, err := s.grantStateBy(ctx, sub, types.EntitlementGrantScopeSubscription, at,
-		func(g *entitlementgrant.EntitlementGrant) string { return g.ScopeEntityID })
-	if err != nil || sub == nil {
-		return nil, err
-	}
-	return states[sub.ID], nil
 }
 
 // grantStateBy groups the cycle's windows of one scope into ledgers keyed by keyOf.

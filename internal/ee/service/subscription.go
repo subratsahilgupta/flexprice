@@ -7080,26 +7080,6 @@ func (s *subscriptionService) aggregateSubscriptionEntitlements(ctx context.Cont
 	return response
 }
 
-// subscriptionGrantsView returns the subscription's grants and their ledger, or nil when it has none.
-func (s *subscriptionService) subscriptionGrantsView(ctx context.Context, sub *subscription.Subscription) (*dto.SubscriptionGrantsResponse, error) {
-	ecs, err := s.EntitlementRepo.List(ctx, subscriptionGrantConfigFilter(sub.ID))
-	if err != nil || len(ecs) == 0 {
-		return nil, err
-	}
-
-	state, err := NewEntitlementGrantService(s.ServiceParams).SubscriptionGrantState(ctx, sub, time.Now().UTC())
-	if err != nil {
-		s.Logger.Error(ctx, "failed to load subscription grant state, returning grants without it",
-			"error", err, "subscription_id", sub.ID)
-	}
-	return &dto.SubscriptionGrantsResponse{
-		Entitlements: lo.Map(ecs, func(ec *entitlement.Entitlement, _ int) *dto.EntitlementResponse {
-			return &dto.EntitlementResponse{Entitlement: ec}
-		}),
-		GrantState: state,
-	}, nil
-}
-
 // GetAggregatedSubscriptionEntitlements retrieves and aggregates all entitlements for a subscription
 // and returns them in a structured response format with aggregated features
 func (s *subscriptionService) GetAggregatedSubscriptionEntitlements(ctx context.Context, subscriptionID string, req *dto.GetSubscriptionEntitlementsRequest) (*dto.SubscriptionEntitlementsResponse, error) {

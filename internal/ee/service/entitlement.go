@@ -1148,27 +1148,3 @@ func (s *entitlementService) entitlementAlertsEnabled(ctx context.Context) (bool
 	}
 	return cfg.IsAlertEnabled(), nil
 }
-
-// checkFeatureAllowanceAgainstSubscriptionGrants refuses a feature allowance that would reach a
-// subscription with a subscription grant, directly or through its plan or addon.
-func (s *entitlementService) checkFeatureAllowanceAgainstSubscriptionGrants(ctx context.Context, e *entitlement.Entitlement, owner any) error {
-	if !isFeatureAllowance(e) {
-		return nil
-	}
-	guard := newSubscriptionGrantGuard(s.ServiceParams)
-	change := subscriptionGrantChange{entitlements: []*entitlement.Entitlement{e}}
-	switch e.EntityType {
-	case types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION:
-		sub, ok := owner.(*subscription.Subscription)
-		if !ok || sub == nil {
-			var err error
-			if sub, err = s.SubRepo.Get(ctx, e.EntityID); err != nil {
-				return err
-			}
-		}
-		return guard.checkIfGranted(ctx, sub, change)
-	case types.ENTITLEMENT_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_ADDON:
-		return guard.checkCatalogChange(ctx, e.EntityType, e.EntityID, func(*subscription.Subscription) subscriptionGrantChange { return change })
-	}
-	return nil
-}
