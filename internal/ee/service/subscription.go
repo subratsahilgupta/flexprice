@@ -7061,7 +7061,8 @@ func (s *subscriptionService) aggregateSubscriptionEntitlements(ctx context.Cont
 
 	subscriptionGrants, err := s.subscriptionGrantsView(ctx, sub)
 	if err != nil {
-		return nil, err
+		s.Logger.Error(ctx, "failed to load subscription grants, returning entitlements without them",
+			"error", err, "subscription_id", sub.ID)
 	}
 
 	// Build final response

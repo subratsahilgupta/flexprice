@@ -458,7 +458,7 @@ func (s *entitlementService) settleDeletedSubscriptionGrant(ctx context.Context,
 		}
 	}
 
-	_, err = NewEntitlementGrantService(s.ServiceParams).CloseEntitlementGrants(ctx, live, time.Now().UTC())
+	_, err = NewEntitlementGrantService(s.ServiceParams).CloseEntitlementGrants(ctx, live, time.Now().UTC(), false)
 	return err
 }
 
@@ -490,7 +490,7 @@ func (s *entitlementService) reissueSubscriptionGrantWindows(
 	at time.Time,
 	source string,
 ) error {
-	closedByID, err := NewEntitlementGrantService(s.ServiceParams).CloseEntitlementGrants(ctx, live, at)
+	closedByID, err := NewEntitlementGrantService(s.ServiceParams).CloseEntitlementGrants(ctx, live, at, false)
 	if err != nil {
 		return err
 	}
