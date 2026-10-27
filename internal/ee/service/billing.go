@@ -1663,6 +1663,10 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 		return nil, err
 	}
 
+	if err := refreshSubscriptionGrantUsage(ctx, s.ServiceParams, sub, periodStart, periodEnd, asOf); err != nil {
+		return nil, err
+	}
+
 	// nothing to invoice default response 0$ invoice
 	zeroAmountInvoice, err := s.CreateInvoiceRequestForCharges(ctx, &dto.CreateInvoiceRequestForChargesParams{
 		Subscription:   sub,

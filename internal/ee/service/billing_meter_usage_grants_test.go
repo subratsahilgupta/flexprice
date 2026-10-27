@@ -804,3 +804,31 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_SpendOutsideTheWind
 		})
 	}
 }
+
+func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RefreshesStaleUsageBeforeBilling() {
+	fx := s.newSubGrantFixture("bill-stale", dailySubscriptionGrant(50, types.EntitlementGrantAllocationBehaviorFirstUsage))
+	start := fx.sub.CurrentPeriodStart
+	// The window ends with the period, and its stored usage predates $30 of spend.
+	g := s.seedSubGrantWindow("eg-stale", fx, start, fx.sub.CurrentPeriodEnd, 50, 0, nil)
+	s.seedMeterUsage(fx.extID, fx.callsMeter, start.Add(time.Hour), 100)
+	s.seedMeterUsage(fx.extID, fx.storeMeter, start.Add(time.Hour), 20)
+
+	items, err := s.GetStores().SubscriptionLineItemRepo.ListBySubscription(s.GetContext(), fx.sub)
+	s.Require().NoError(err)
+	fx.sub.LineItems = items
+	at := start.Add(2 * time.Hour)
+	s.Require().NoError(refreshSubscriptionGrantUsage(s.GetContext(), s.buildServiceParams(), fx.sub, start, fx.sub.CurrentPeriodEnd, at))
+
+	stored, err := s.GetStores().EntitlementGrantRepo.Get(s.GetContext(), g.ID)
+	s.Require().NoError(err)
+	s.True(decimal.NewFromInt(30).Equal(stored.Usage), "stored usage: got %s", stored.Usage)
+	s.Require().NotNil(stored.LastComputedAt)
+	s.True(at.Equal(*stored.LastComputedAt))
+
+	lines := invoiceLines(fx, "10", "20")
+	reduction := s.applySubGrants(fx, lines, subGrantBlockers{})
+
+	s.True(decimal.NewFromInt(30).Equal(reduction), "got %s", reduction)
+	s.True(lines[0].Amount.IsZero(), "calls: got %s", lines[0].Amount)
+	s.True(lines[1].Amount.IsZero(), "storage: got %s", lines[1].Amount)
+}

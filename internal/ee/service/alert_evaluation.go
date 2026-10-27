@@ -283,7 +283,7 @@ func (s *alertService) evaluateEntitlementGrantsForCustomer(
 		var err error
 		switch g.ScopeEntityType {
 		case types.EntitlementGrantScopeSubscription:
-			rawUsage, err = s.refreshSubscriptionGrantUsage(ctx, g, sub, at)
+			rawUsage, err = subscriptionGrantUsage(ctx, s.ServiceParams, sub, g, at)
 		case types.EntitlementGrantScopeFeature:
 			f, ok := meta.featureByID[g.ScopeEntityID]
 			if !ok || f.MeterID == "" {
@@ -326,28 +326,7 @@ func (s *alertService) evaluateEntitlementGrantsForCustomer(
 			errs = append(errs, err)
 		}
 
-		// Keep the evaluation-time crossing while exhausted; recovery starts a new crossing cycle.
-		cross := g.QuotaCrossedAt
-		if g.IsExhausted(usage) {
-			if cross == nil {
-				cross = &at
-			}
-		} else {
-			cross = nil
-		}
-
-		// Snapshot the refreshed state; last_computed_at >= valid_to marks a
-		// closed window as finalized so it never re-enters the refresh set.
-		builder := entitlementgrant.NewEntitlementGrantBuilder(g).
-			WithUsage(usage).
-			WithLastComputedAt(&at).
-			WithQuotaCrossedAt(cross)
-		if g.IsExhausted(usage) {
-			builder = builder.WithGrantStatus(types.EntitlementGrantStatusExhausted)
-		} else {
-			builder = builder.WithGrantStatus(types.EntitlementGrantStatusActive)
-		}
-		if err := s.EntitlementGrantRepo.UpdateSnapshot(ctx, builder.Build()); err != nil {
+		if err := s.EntitlementGrantRepo.UpdateSnapshot(ctx, grantUsageSnapshot(g, usage, at)); err != nil {
 			s.Logger.Error(ctx, "entitlement grant evaluation: snapshot write failed",
 				"grant_id", g.ID, "error", err)
 			errs = append(errs, err)
@@ -417,18 +396,6 @@ func (s *alertService) refreshEntitlementGrantUsage(
 		"grant_id", g.ID, "usage", total,
 	)
 	return total, nil
-}
-
-// refreshSubscriptionGrantUsage prices every usage line on the subscription over
-// [valid_from, min(at, valid_to)); the total is the grant's usage.
-func (s *alertService) refreshSubscriptionGrantUsage(
-	ctx context.Context,
-	g *entitlementgrant.EntitlementGrant,
-	sub *subscription.Subscription,
-	at time.Time,
-) (decimal.Decimal, error) {
-	total, _, err := NewMeterUsageService(s.ServiceParams).GetSubscriptionWindowSpend(ctx, sub, g.ValidFrom, types.EarliestOf(at, g.ValidTo))
-	return total, err
 }
 
 // transitionEntitlementGrantAlert emits an alert-log row on state change.

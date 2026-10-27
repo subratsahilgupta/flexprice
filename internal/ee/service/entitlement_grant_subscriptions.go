@@ -595,3 +595,61 @@ func (s *entitlementService) measureSubscriptionGrantWindows(ctx context.Context
 	}
 	return nil
 }
+
+// refreshSubscriptionGrantUsage measures each subscription grant window in the period up to `at` and
+// stores it, so billing does not read usage the alert refresh has not caught up with.
+func refreshSubscriptionGrantUsage(ctx context.Context, params ServiceParams, sub *subscription.Subscription, periodStart, periodEnd, at time.Time) error {
+	if params.EntitlementGrantRepo == nil || sub == nil {
+		return nil
+	}
+	filter := types.NewNoLimitEntitlementGrantFilter().
+		WithCustomerIDs(sub.CustomerID).
+		WithSubscriptionIDs(sub.ID).
+		WithScopeEntityType(types.EntitlementGrantScopeSubscription).
+		WithCycleOverlap(periodStart, periodEnd)
+	grants, err := params.EntitlementGrantRepo.List(ctx, filter)
+	if err != nil {
+		return err
+	}
+	for _, g := range grants {
+		measuredTo := types.EarliestOf(at, g.ValidTo)
+		if !measuredTo.After(g.ValidFrom) || (g.LastComputedAt != nil && !g.LastComputedAt.Before(measuredTo)) {
+			continue
+		}
+		usage, err := subscriptionGrantUsage(ctx, params, sub, g, at)
+		if err != nil {
+			return err
+		}
+		if err := params.EntitlementGrantRepo.UpdateSnapshot(ctx, grantUsageSnapshot(g, decimal.Max(usage, decimal.Zero), at)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// subscriptionGrantUsage prices every usage line on the subscription over [valid_from, min(at, valid_to)).
+func subscriptionGrantUsage(ctx context.Context, params ServiceParams, sub *subscription.Subscription, g *entitlementgrant.EntitlementGrant, at time.Time) (decimal.Decimal, error) {
+	total, _, err := subscriptionLineSpend(ctx, params, sub, g.ValidFrom, types.EarliestOf(at, g.ValidTo))
+	return total, err
+}
+
+// grantUsageSnapshot is the grant with its usage evaluated at `at`. The crossing keeps its first
+// evaluation time while exhausted; last_computed_at >= valid_to marks a closed window as finalized.
+func grantUsageSnapshot(g *entitlementgrant.EntitlementGrant, usage decimal.Decimal, at time.Time) *entitlementgrant.EntitlementGrant {
+	cross := g.QuotaCrossedAt
+	status := types.EntitlementGrantStatusActive
+	if g.IsExhausted(usage) {
+		status = types.EntitlementGrantStatusExhausted
+		if cross == nil {
+			cross = &at
+		}
+	} else {
+		cross = nil
+	}
+	return entitlementgrant.NewEntitlementGrantBuilder(g).
+		WithUsage(usage).
+		WithLastComputedAt(&at).
+		WithQuotaCrossedAt(cross).
+		WithGrantStatus(status).
+		Build()
+}
