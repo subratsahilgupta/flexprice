@@ -1777,7 +1777,7 @@ definitions:
       applies_from:
         description: |-
           AppliesFrom/To is the stretch of the queried window the commitment covers; usage outside it
-          bills on demand and is not counted here.
+          bills as overage and is not counted here.
         format: date-time
         type: string
       applies_to:

@@ -18056,7 +18056,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "applies_from": {
-                    "description": "AppliesFrom/To is the stretch of the queried window the commitment covers; usage outside it\nbills on demand and is not counted here.",
+                    "description": "AppliesFrom/To is the stretch of the queried window the commitment covers; usage outside it\nbills as overage and is not counted here.",
                     "type": "string",
                     "format": "date-time"
                 },

@@ -4202,7 +4202,7 @@ func (s *invoiceService) reconcileLineItems(
 		PeriodStart    time.Time
 		PeriodEnd      time.Time
 	}
-	// Commitment lines are keyed by commitment and line kind too: stacked commitments and on-demand
+	// Commitment lines are keyed by commitment and line kind too: stacked commitments and overage
 	// share a subscription line item, and true-up or settlement lines have none.
 	keyOf := func(item *invoice.InvoiceLineItem) (reconcileKey, bool) {
 		if item.PeriodStart == nil || item.PeriodEnd == nil {
