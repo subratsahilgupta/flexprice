@@ -350,7 +350,7 @@ func (l *commitmentLoader) UsageBreakdown(ctx context.Context) ([]*dto.Commitmen
 		}
 
 		switch types.CommitmentLineKind(line.Metadata[types.MetadataKeyCommitmentLineKind]) {
-		case types.CommitmentLineWithin:
+		case types.CommitmentLineUtilized:
 			b.Used.Amount = b.Used.Amount.Add(line.Amount)
 			b.BilledAmount = b.BilledAmount.Add(line.Amount)
 		case types.CommitmentLineTrueUp:

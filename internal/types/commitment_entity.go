@@ -90,7 +90,7 @@ func (s CommitmentStatus) Validate() error {
 type CommitmentLineKind string
 
 const (
-	CommitmentLineWithin          CommitmentLineKind = "within_commitment"
+	CommitmentLineUtilized        CommitmentLineKind = "utilized"
 	CommitmentLineOverage         CommitmentLineKind = "overage"
 	CommitmentLineTrueUp          CommitmentLineKind = "true_up"
 	CommitmentLineInstalment      CommitmentLineKind = "instalment"

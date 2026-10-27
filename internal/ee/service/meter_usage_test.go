@@ -1179,7 +1179,7 @@ func (s *MeterUsageServiceSuite) requireCombosSplitTheInvoice(combos []dto.Usage
 	}
 
 	s.True(cost.Equal(invoicedTotal), "combos cost %s, invoice lines %s", cost, invoicedTotal)
-	s.True(utilized.Equal(invoiced[types.CommitmentLineWithin]), "utilized %s, invoiced %s", utilized, invoiced[types.CommitmentLineWithin])
+	s.True(utilized.Equal(invoiced[types.CommitmentLineUtilized]), "utilized %s, invoiced %s", utilized, invoiced[types.CommitmentLineUtilized])
 	s.True(overage.Equal(invoiced[types.CommitmentLineOverage]), "overage %s, invoiced %s", overage, invoiced[types.CommitmentLineOverage])
 	s.True(trueUp.Equal(invoiced[types.CommitmentLineTrueUp]), "true-up %s, invoiced %s", trueUp, invoiced[types.CommitmentLineTrueUp])
 }

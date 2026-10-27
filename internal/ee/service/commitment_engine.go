@@ -229,7 +229,7 @@ type lineRenderer struct {
 	cost        lineCost
 }
 
-// commitmentInvoiceLines renders each stack and its allocation (index-aligned) as within, true-up
+// commitmentInvoiceLines renders each stack and its allocation (index-aligned) as utilized, true-up
 // and overage invoice lines.
 func commitmentInvoiceLines(
 	stacks []*commitmentStack,
@@ -253,8 +253,8 @@ func commitmentInvoiceLines(
 	return out
 }
 
-// commitmentLines renders one commitment's within lines and its true-up; for a binding commitment the rows sum
-// to the rounded period amount, and a partial period's within is capped there. A quantity commitment prices its
+// commitmentLines renders one commitment's utilized lines and its true-up; for a binding commitment the rows sum
+// to the rounded period amount, and a partial period's utilized value is capped there. A quantity commitment prices its
 // whole usage once on the committed price, so tiers walk the total, and splits that value across lines by quantity.
 func (r lineRenderer) commitmentLines(
 	stack *commitmentStack,
@@ -278,26 +278,26 @@ func (r lineRenderer) commitmentLines(
 			qty, amount = proportionalQuantity(line, share), share
 		}
 
-		rows = append(rows, r.row(sc.C, line, types.CommitmentLineWithin, sc.C.InvoiceLabel, qty, amount))
+		rows = append(rows, r.row(sc.C, line, types.CommitmentLineUtilized, sc.C.InvoiceLabel, qty, amount))
 	}
 
-	withinValue := r.absorbDrift(rows, usedValue)
+	utilizedValue := r.absorbDrift(rows, usedValue)
 	if !sc.C.Binding {
 		return rows
 	}
 
 	floor := types.RoundToCurrencyPrecision(sc.Period.Amount, r.currency)
-	if sc.Period.Clipped && withinValue.GreaterThan(floor) {
+	if sc.Period.Clipped && utilizedValue.GreaterThan(floor) {
 		// A partial floor is the period's value accrued in this window; usage valued from tier zero cannot exceed it.
 		for i := range rows {
-			rows[i].Amount = types.RoundToCurrencyPrecision(rows[i].Amount.Mul(floor).Div(withinValue), r.currency)
+			rows[i].Amount = types.RoundToCurrencyPrecision(rows[i].Amount.Mul(floor).Div(utilizedValue), r.currency)
 		}
 
 		r.absorbDrift(rows, floor)
 		return rows
 	}
 
-	trueUp := floor.Sub(withinValue)
+	trueUp := floor.Sub(utilizedValue)
 	if !trueUp.IsPositive() {
 		return rows
 	}

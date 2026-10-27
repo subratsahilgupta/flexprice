@@ -549,7 +549,7 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 			},
 			cost: unitCost,
 			want: []wantLine{
-				{types.CommitmentLineWithin, "Label c1", "100", "100"},
+				{types.CommitmentLineUtilized, "Label c1", "100", "100"},
 				{types.CommitmentLineOverage, "Usage a", "20", "20"},
 			},
 		},
@@ -569,7 +569,7 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 			},
 			cost: unitCost,
 			want: []wantLine{
-				{types.CommitmentLineWithin, "Label c1", "60", "120"},
+				{types.CommitmentLineUtilized, "Label c1", "60", "120"},
 				{types.CommitmentLineTrueUp, "Label c1 (unused)", "40", "80"},
 			},
 		},
@@ -598,8 +598,8 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 			},
 			cost: unitCost,
 			want: []wantLine{
-				{types.CommitmentLineWithin, "Label c1", "80", "73.33"},
-				{types.CommitmentLineWithin, "Label c1", "40", "36.67"},
+				{types.CommitmentLineUtilized, "Label c1", "80", "73.33"},
+				{types.CommitmentLineUtilized, "Label c1", "40", "36.67"},
 				{types.CommitmentLineTrueUp, "Label c1 (unused)", "30", "15"},
 			},
 		},
@@ -617,7 +617,7 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 			},
 			cost: unitCost,
 			want: []wantLine{
-				{types.CommitmentLineWithin, "Label c1", "60", "60"},
+				{types.CommitmentLineUtilized, "Label c1", "60", "60"},
 			},
 		},
 		{
@@ -636,8 +636,8 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 			cost: unitCost,
 			// b's 30 of 50 cost covers 25*30/50 = 15 units, the other 10 units cost 20.
 			want: []wantLine{
-				{types.CommitmentLineWithin, "Label c1", "70", "70"},
-				{types.CommitmentLineWithin, "Label c1", "15", "30"},
+				{types.CommitmentLineUtilized, "Label c1", "70", "70"},
+				{types.CommitmentLineUtilized, "Label c1", "15", "30"},
 				{types.CommitmentLineOverage, "Usage b", "10", "20"},
 			},
 		},
@@ -655,7 +655,7 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 			},
 			cost: unitCost,
 			want: []wantLine{
-				{types.CommitmentLineWithin, "Label c1", "20", "20"},
+				{types.CommitmentLineUtilized, "Label c1", "20", "20"},
 				{types.CommitmentLineTrueUp, "Label c1 (unused)", "30", "30"},
 			},
 		},
@@ -674,7 +674,7 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 			},
 			cost: overageCost,
 			want: []wantLine{
-				{types.CommitmentLineWithin, "Label c1", "100", "100"},
+				{types.CommitmentLineUtilized, "Label c1", "100", "100"},
 				{types.CommitmentLineOverage, "Usage a", "30", "90"},
 			},
 		},
@@ -694,7 +694,7 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 			cost: overageCost,
 			// Overage is 10 and 20: the summed 30 is 20*3 + 10*5 = 110, where per window would cost 10*3 + 20*3 = 90.
 			want: []wantLine{
-				{types.CommitmentLineWithin, "Label c1", "200", "200"},
+				{types.CommitmentLineUtilized, "Label c1", "200", "200"},
 				{types.CommitmentLineOverage, "Usage a", "30", "110"},
 			},
 		},
@@ -715,7 +715,7 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 			// Each window covers 100: cost(130)-cost(100) = 140-100 = 40 and cost(150)-cost(100) = 180-100 = 80, where
 			// the summed line would cost cost(280)-cost(200) = 440-280 = 160.
 			want: []wantLine{
-				{types.CommitmentLineWithin, "Label c1", "200", "200"},
+				{types.CommitmentLineUtilized, "Label c1", "200", "200"},
 				{types.CommitmentLineOverage, "Usage a", "80", "120"},
 			},
 		},
@@ -735,7 +735,7 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 			// 100 of 180 covered: cost(180)-cost(100) = 240-100 = 140, where per window would cost
 			// cost(60)-cost(40) + cost(60) = 20 + 60 = 80.
 			want: []wantLine{
-				{types.CommitmentLineWithin, "Label c1", "100", "100"},
+				{types.CommitmentLineUtilized, "Label c1", "100", "100"},
 				{types.CommitmentLineOverage, "Usage a", "80", "140"},
 			},
 		},
@@ -758,7 +758,7 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 				return first.Add(qty.Sub(first).Mul(dec("0.5")))
 			},
 			want: []wantLine{
-				{types.CommitmentLineWithin, "Label c1", "100", "100"},
+				{types.CommitmentLineUtilized, "Label c1", "100", "100"},
 				{types.CommitmentLineOverage, "Usage a", "100", "50"},
 			},
 		},
@@ -779,9 +779,9 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 			cost: unitCost,
 			// Rounded lines sum to 99.99 against a rounded total of 100.00, so c takes the extra cent.
 			want: []wantLine{
-				{types.CommitmentLineWithin, "Label c1", "10.004", "10.00"},
-				{types.CommitmentLineWithin, "Label c1", "10.004", "10.00"},
-				{types.CommitmentLineWithin, "Label c1", "79.992", "80.00"},
+				{types.CommitmentLineUtilized, "Label c1", "10.004", "10.00"},
+				{types.CommitmentLineUtilized, "Label c1", "10.004", "10.00"},
+				{types.CommitmentLineUtilized, "Label c1", "79.992", "80.00"},
 			},
 		},
 		{
@@ -801,9 +801,9 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 			cost: unitCost,
 			// Within rounds to 10.00 + 10.00 + 59.99 + 0.01 drift = 80.00; true-up is 100.00 - 80.00.
 			want: []wantLine{
-				{types.CommitmentLineWithin, "Label c1", "10.004", "10.00"},
-				{types.CommitmentLineWithin, "Label c1", "10.004", "10.00"},
-				{types.CommitmentLineWithin, "Label c1", "59.992", "60.00"},
+				{types.CommitmentLineUtilized, "Label c1", "10.004", "10.00"},
+				{types.CommitmentLineUtilized, "Label c1", "10.004", "10.00"},
+				{types.CommitmentLineUtilized, "Label c1", "59.992", "60.00"},
 				{types.CommitmentLineTrueUp, "Label c1 (unused)", "1", "20.00"},
 			},
 		},
@@ -845,7 +845,7 @@ func TestCommitmentInvoiceLinesFields(t *testing.T) {
 
 	got := renderStack(t, stack, func(_ *price.Price, qty decimal.Decimal) decimal.Decimal { return qty })
 	requireLines(t, []wantLine{
-		{types.CommitmentLineWithin, "Label c1", "100", "100"},
+		{types.CommitmentLineUtilized, "Label c1", "100", "100"},
 		{types.CommitmentLineTrueUp, "Label c1 (unused)", "0", "50"},
 		{types.CommitmentLineOverage, "Usage a", "30", "30"},
 	}, got)
@@ -906,10 +906,10 @@ func TestCommitmentInvoiceLinesNegativeDriftNeverGoesBelowZero(t *testing.T) {
 
 	got := renderStack(t, stack, func(_ *price.Price, qty decimal.Decimal) decimal.Decimal { return qty })
 	requireLines(t, []wantLine{
-		{types.CommitmentLineWithin, "Label c1", "1", "0"},
-		{types.CommitmentLineWithin, "Label c1", "1", "0"},
-		{types.CommitmentLineWithin, "Label c1", "1", "0.01"},
-		{types.CommitmentLineWithin, "Label c1", "1", "0.01"},
+		{types.CommitmentLineUtilized, "Label c1", "1", "0"},
+		{types.CommitmentLineUtilized, "Label c1", "1", "0"},
+		{types.CommitmentLineUtilized, "Label c1", "1", "0.01"},
+		{types.CommitmentLineUtilized, "Label c1", "1", "0.01"},
 		{types.CommitmentLineTrueUp, "Label c1 (unused)", "1", "99.98"},
 	}, got)
 
@@ -993,8 +993,8 @@ func TestCommitmentInvoiceLinesPartialWithinIsCappedAtTheFloor(t *testing.T) {
 			used:    []string{"50", "50"},
 			// Floors are 50 and 75-50 = 25; the second half's cost(50) = 50 within is capped at its 25.
 			want: [][]wantLine{
-				{{types.CommitmentLineWithin, "Label c1", "50", "50"}},
-				{{types.CommitmentLineWithin, "Label c1", "50", "25"}},
+				{{types.CommitmentLineUtilized, "Label c1", "50", "50"}},
+				{{types.CommitmentLineUtilized, "Label c1", "50", "25"}},
 			},
 			total: "75",
 		},
@@ -1004,8 +1004,8 @@ func TestCommitmentInvoiceLinesPartialWithinIsCappedAtTheFloor(t *testing.T) {
 			used:    []string{"30", "50"},
 			// Half one: within cost(30) = 30, true-up 50-30 = 20. Half two: within 50 capped at 25.
 			want: [][]wantLine{
-				{{types.CommitmentLineWithin, "Label c1", "30", "30"}, {types.CommitmentLineTrueUp, "Label c1 (unused)", "20", "20"}},
-				{{types.CommitmentLineWithin, "Label c1", "50", "25"}},
+				{{types.CommitmentLineUtilized, "Label c1", "30", "30"}, {types.CommitmentLineTrueUp, "Label c1 (unused)", "20", "20"}},
+				{{types.CommitmentLineUtilized, "Label c1", "50", "25"}},
 			},
 			total: "75",
 		},
@@ -1014,8 +1014,8 @@ func TestCommitmentInvoiceLinesPartialWithinIsCappedAtTheFloor(t *testing.T) {
 			binding: false,
 			used:    []string{"50", "50"},
 			want: [][]wantLine{
-				{{types.CommitmentLineWithin, "Label c1", "50", "50"}},
-				{{types.CommitmentLineWithin, "Label c1", "50", "50"}},
+				{{types.CommitmentLineUtilized, "Label c1", "50", "50"}},
+				{{types.CommitmentLineUtilized, "Label c1", "50", "50"}},
 			},
 			total: "100",
 		},
@@ -1050,9 +1050,9 @@ func TestCommitmentInvoiceLinesCappedWithinConservesTheFloorAcrossLines(t *testi
 
 	// 30 within capped at 10 scales each row to 3.33; the cent left over lands on the first, largest row.
 	requireLines(t, []wantLine{
-		{types.CommitmentLineWithin, "Label c1", "10", "3.34"},
-		{types.CommitmentLineWithin, "Label c1", "10", "3.33"},
-		{types.CommitmentLineWithin, "Label c1", "10", "3.33"},
+		{types.CommitmentLineUtilized, "Label c1", "10", "3.34"},
+		{types.CommitmentLineUtilized, "Label c1", "10", "3.33"},
+		{types.CommitmentLineUtilized, "Label c1", "10", "3.33"},
 	}, lines)
 }
 
@@ -1080,7 +1080,7 @@ func TestCommitmentInvoiceLinesVolumeLinePricesOverageAfresh(t *testing.T) {
 
 		// cost(50) lands in the first volume tier: 50 x 1 = 50.
 		requireLines(t, []wantLine{
-			{types.CommitmentLineWithin, "Label c1", "100", "100"},
+			{types.CommitmentLineUtilized, "Label c1", "100", "100"},
 			{types.CommitmentLineOverage, "Usage a", "50", "50"},
 		}, lines)
 	}
@@ -1105,7 +1105,7 @@ func TestCommitmentInvoiceLinesPackageLinePricesOverageAfresh(t *testing.T) {
 		}, packageCost)
 
 		requireLines(t, []wantLine{
-			{types.CommitmentLineWithin, "Label c1", "50", "50"},
+			{types.CommitmentLineUtilized, "Label c1", "50", "50"},
 			{types.CommitmentLineOverage, "Usage a", "50", "10"},
 		}, lines)
 	}
