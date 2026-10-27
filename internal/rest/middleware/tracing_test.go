@@ -27,11 +27,14 @@ func TestTracingMiddleware_SkipsHealth(t *testing.T) {
 
 	r := gin.New()
 	r.Use(TracingMiddleware(cfg)...)
-	r.GET("/health", func(c *gin.Context) { c.Status(http.StatusOK) })
-	r.GET("/v1/ping", func(c *gin.Context) { c.Status(http.StatusOK) })
+	r.GET("/health", func(c *gin.Context) { c.String(http.StatusOK, "health-ok") })
+	r.GET("/v1/ping", func(c *gin.Context) { c.String(http.StatusOK, "ping-ok") })
 
-	for _, p := range []string{"/health", "/v1/ping"} {
-		r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, p, nil))
+	for p, body := range map[string]string{"/health": "health-ok", "/v1/ping": "ping-ok"} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, p, nil))
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, body, w.Body.String())
 	}
 
 	ended := rec.Ended()

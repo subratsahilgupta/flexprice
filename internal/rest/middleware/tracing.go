@@ -22,7 +22,6 @@ func TracingMiddleware(cfg *config.Configuration) []gin.HandlerFunc {
 	if cfg.Otel.Enabled && cfg.Otel.Traces.Enabled {
 		handlers = append(handlers, otelgin.Middleware(
 			cfg.Otel.ResolveServiceName(cfg),
-			// Skip health probes
 			otelgin.WithFilter(func(r *http.Request) bool { return r.URL.Path != "/health" }),
 		))
 	}
