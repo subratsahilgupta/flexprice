@@ -1899,24 +1899,14 @@ func (s *BillingServiceSuite) TestCommitmentUsageBreakdown_AmountCommitment() {
 	s.True(b.Used.Amount.Add(b.Unused.Amount).Equal(b.Committed.Amount))
 	s.True(b.BilledAmount.Equal(dec("100")), "billed %s", b.BilledAmount)
 
-	// A mid-period window reports what the preview for that window bills.
-	now := time.Now().UTC()
-	partial := s.rawUsageWindow(sub, periodStart, now)
+	// A window ending inside the open period projects to its end: the breakdown reports the
+	// period invoice's capacity and floor, not a preview clipped at the query time.
+	partial := s.rawUsageWindow(sub, periodStart, time.Now().UTC())
 	s.Require().Len(partial.Commitments, 1)
-	preview, err := s.service.CalculateUsageCharges(s.GetContext(), &dto.CalculateUsageChargesParams{
-		Subscription: sub,
-		Usage:        partial,
-		PeriodStart:  periodStart,
-		PeriodEnd:    now,
-	})
-	s.Require().NoError(err)
-	within := loaderLinesOfKind(preview.LineItems, types.CommitmentLineUtilized)
-	trueUp := loaderLinesOfKind(preview.LineItems, types.CommitmentLineTrueUp)
-	s.Require().Len(within, 1)
-	s.Require().Len(trueUp, 1)
-	s.True(partial.Commitments[0].Used.Amount.Equal(within[0].Amount))
-	s.True(partial.Commitments[0].Unused.Amount.Equal(trueUp[0].Amount))
-	s.True(partial.Commitments[0].BilledAmount.Equal(preview.TotalAmount))
+	s.True(partial.Commitments[0].Used.Amount.Equal(b.Used.Amount))
+	s.True(partial.Commitments[0].Unused.Amount.Equal(b.Unused.Amount))
+	s.True(partial.Commitments[0].BilledAmount.Equal(b.BilledAmount))
+	s.True(partial.Commitments[0].AppliesTo.Equal(sub.CurrentPeriodEnd), "applies to %s", partial.Commitments[0].AppliesTo)
 }
 
 // The public usage API reads meter_usage; its response carries the breakdown, while internal callers

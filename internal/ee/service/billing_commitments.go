@@ -365,16 +365,28 @@ func (l *commitmentLoader) UsageBreakdown(ctx context.Context) ([]*dto.Commitmen
 	return out, nil
 }
 
+// projectedCommitmentEnd extends an end inside the subscription's open billing period to that period's
+// end: a to-date window must not prorate capacity and report covered usage as overage.
+func projectedCommitmentEnd(sub *subscription.Subscription, end time.Time) time.Time {
+	if end.After(sub.CurrentPeriodStart) && end.Before(sub.CurrentPeriodEnd) {
+		return sub.CurrentPeriodEnd
+	}
+
+	return end
+}
+
 // commitmentUsageBreakdown reports each commitment's usage for the window from the usage response's charges; nil when none applies.
-// The loader projects to the window's end (asOf = end) so window capacities agree with the floor the invoice bills.
+// The loader projects to the end of the billing period holding the window's end, so capacities and
+// floors are the ones the period invoice bills even when the query stops mid-period.
 func (s *billingService) commitmentUsageBreakdown(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	usage *dto.GetUsageBySubscriptionResponse,
 	start, end time.Time,
 ) ([]*dto.CommitmentUsageBreakdown, error) {
+	projectedEnd := projectedCommitmentEnd(sub, end)
 	loader, err := s.newCommitmentLoader(
-		ctx, sub, start, end, end, rawChargesByLine(sub, usage), nil, "",
+		ctx, sub, start, projectedEnd, projectedEnd, rawChargesByLine(sub, usage), nil, "",
 	)
 	if err != nil || len(loader.commitments) == 0 {
 		return nil, err
