@@ -1050,7 +1050,7 @@ func (s *entitlementGrantService) earliestUncoveredUsage(
 // subscriptionUsageMeterIDs is the meters of the usage lines priced from `from`, the usage a
 // subscription grant covers.
 func (s *entitlementGrantService) subscriptionUsageMeterIDs(ctx context.Context, sub *subscription.Subscription, from time.Time) ([]string, error) {
-	items, err := NewMeterUsageService(s.ServiceParams).UsageLineItems(ctx, sub, from)
+	items, err := NewMeterUsageService(s.ServiceParams).ListUsageLineItems(ctx, sub, from, false)
 	if err != nil {
 		return nil, err
 	}

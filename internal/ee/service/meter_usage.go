@@ -82,9 +82,9 @@ type MeterUsageService interface {
 	// returning the total and the amount per subscription line item.
 	GetSubscriptionWindowSpend(ctx context.Context, sub *subscription.Subscription, from, to time.Time) (decimal.Decimal, map[string]decimal.Decimal, error)
 
-	// UsageLineItems returns the line items that price the subscription's usage from `from`; an
-	// inherited subscription uses its parent's.
-	UsageLineItems(ctx context.Context, sub *subscription.Subscription, from time.Time) ([]*subscription.SubscriptionLineItem, error)
+	// ListUsageLineItems returns the line items that price the subscription's usage from `from`, or
+	// every published line when lifetime; an inherited subscription uses its parent's.
+	ListUsageLineItems(ctx context.Context, sub *subscription.Subscription, from time.Time, lifetime bool) ([]*subscription.SubscriptionLineItem, error)
 
 	// DebugEvent powers GET /events/:id — reports processing status and
 	// per-lookup diagnostics for a single event under the meter-usage pipeline.
@@ -152,10 +152,6 @@ func (s *meterUsageService) GetSubscriptionWindowSpend(ctx context.Context, sub 
 		perLine[c.SubscriptionLineItemID] = perLine[c.SubscriptionLineItemID].Add(amount)
 	}
 	return total, perLine, nil
-}
-
-func (s *meterUsageService) UsageLineItems(ctx context.Context, sub *subscription.Subscription, from time.Time) ([]*subscription.SubscriptionLineItem, error) {
-	return s.listLineItemsForUsageWindow(ctx, usageLineItemOwnerID(sub), from, false)
 }
 
 // windowCharges prices the subscription's usage over [from, to) at final consistency, limited to
@@ -465,7 +461,7 @@ func (s *meterUsageService) GetSubscriptionMeterUsageWithSub(
 	}
 
 	// 4. Get line items for this subscription
-	lineItems, err := s.listLineItemsForUsageWindow(ctx, usageLineItemOwnerID(sub), usageStartTime, req.LifetimeUsage)
+	lineItems, err := s.ListUsageLineItems(ctx, sub, usageStartTime, req.LifetimeUsage)
 	if err != nil {
 		return nil, err
 	}
@@ -2399,25 +2395,20 @@ func (s *meterUsageService) resolveExternalCustomerIDs(ctx context.Context, sub 
 	return externalIDs, nil
 }
 
-// usageLineItemOwnerID is the subscription whose line items price sub's usage: an inherited
-// subscription bills on its parent's.
-func usageLineItemOwnerID(sub *subscription.Subscription) string {
+func (s *meterUsageService) ListUsageLineItems(ctx context.Context, sub *subscription.Subscription, from time.Time, lifetime bool) ([]*subscription.SubscriptionLineItem, error) {
+	// An inherited subscription bills on its parent's lines.
+	ownerID := sub.ID
 	if sub.SubscriptionType == types.SubscriptionTypeInherited && lo.FromPtr(sub.ParentSubscriptionID) != "" {
-		return lo.FromPtr(sub.ParentSubscriptionID)
+		ownerID = lo.FromPtr(sub.ParentSubscriptionID)
 	}
-	return sub.ID
-}
-
-// listLineItemsForUsageWindow retrieves line items active within the usage window.
-func (s *meterUsageService) listLineItemsForUsageWindow(ctx context.Context, subscriptionID string, usageStartTime time.Time, lifetime bool) ([]*subscription.SubscriptionLineItem, error) {
 	filter := types.NewNoLimitSubscriptionLineItemFilter()
-	filter.SubscriptionIDs = []string{subscriptionID}
+	filter.SubscriptionIDs = []string{ownerID}
 	if lifetime {
 		filter.ActiveFilter = false
 		filter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
 	} else {
 		filter.ActiveFilter = true
-		filter.CurrentPeriodStart = &usageStartTime
+		filter.CurrentPeriodStart = &from
 	}
 	return s.SubscriptionLineItemRepo.List(ctx, filter)
 }
