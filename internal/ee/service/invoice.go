@@ -99,6 +99,7 @@ type InvoiceService interface {
 	SyncInvoiceToMoyasarIfEnabled(ctx context.Context, inv *invoice.Invoice) error
 	PublishInvoiceSyncWebhook(ctx context.Context, invoiceID string, provider types.SecretProvider, syncErr string)
 	IsFinalizationDue(ctx context.Context, invoiceID string) (bool, error)
+	IsInvoiceFinalizationDue(ctx context.Context, inv *invoice.Invoice) (bool, error)
 	ListAllTenantDraftInvoices(ctx context.Context, batchSize, offset int) ([]*invoice.Invoice, error)
 
 	// ListSubscriptionsDueForDailyDraftCompute returns subscriptions due for daily processing.
@@ -1397,6 +1398,19 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 			return errInvoiceCheckoutGated(inv.ID, "finalize")
 		}
 
+		// Taken after the invoice row lock and before the gate read, so a
+		// deletion guard reading the other way round cannot pass at the same time.
+		if err := s.lockInvoiceCustomersForEventDeletion(txCtx, lockedInv); err != nil {
+			return err
+		}
+		gatedDeletion, err := s.isInvoiceGatedOnEventDeletion(txCtx, lockedInv)
+		if err != nil {
+			return err
+		}
+		if gatedDeletion != nil {
+			return errInvoiceEventDeletionGated(inv.ID, gatedDeletion.RequestID)
+		}
+
 		// Re-check status after acquiring lock
 		if lockedInv.InvoiceStatus != types.InvoiceStatusDraft {
 			return ierr.NewError("invoice is not in draft status").WithHint("invoice was finalized concurrently").Mark(ierr.ErrValidation)
@@ -1567,7 +1581,12 @@ func (s *invoiceService) IsFinalizationDue(ctx context.Context, invoiceID string
 	if err != nil {
 		return false, err
 	}
+	return s.IsInvoiceFinalizationDue(ctx, inv)
+}
 
+// IsInvoiceFinalizationDue is IsFinalizationDue for an already-loaded invoice,
+// so scans over many drafts skip the per-invoice reload.
+func (s *invoiceService) IsInvoiceFinalizationDue(ctx context.Context, inv *invoice.Invoice) (bool, error) {
 	if inv.InvoiceStatus != types.InvoiceStatusDraft {
 		return false, nil
 	}
@@ -1593,6 +1612,21 @@ func (s *invoiceService) IsFinalizationDue(ctx context.Context, invoiceID string
 		return false, err
 	}
 	if gatedSession != nil {
+		return false, nil
+	}
+
+	// A draft whose period is being deleted is not the cron's to finalize. This is
+	// the cheap pre-filter: the authoritative gate is inside
+	// performFinalizeInvoiceActions, under the invoice row lock.
+	gatedDeletion, err := s.isInvoiceGatedOnEventDeletion(ctx, inv)
+	if err != nil {
+		return false, err
+	}
+	if gatedDeletion != nil {
+		s.Logger.Info(ctx, "skipping finalization while an event deletion is in progress",
+			"invoice_id", inv.ID,
+			"request_id", gatedDeletion.RequestID,
+		)
 		return false, nil
 	}
 

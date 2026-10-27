@@ -155,7 +155,7 @@ Usage reads, grant state, preview and invoice calculations must agree for the sa
 
 ## 9. Technical debt
 
-Seven agreed follow-ups remain open.
+Eight agreed follow-ups remain open.
 
 ### 1. Reconcile expired credits after negative usage
 
@@ -200,3 +200,7 @@ Example: quota 100, stored usage 20, real usage 80, incoming quota 1000. The suc
 Parent/child customers are out of scope for NEVER SUM. A checkpoint is keyed by one customer, but a parent subscription's total spans the parent and its current inherited children. Parent subscriptions therefore save no checkpoint and read none: every read sums the current members from their first event. That is correct but costs a full-history query per read.
 
 Save one checkpoint per customer holding only its own usage, and build family reads from the current members' checkpoints. Members can then have checkpoints at different times, so the tail query needs a start time per customer.
+
+### 8. Negative credit invoices through the API are rejected
+
+Create-invoice validation compares `amount_due` with the line sum floored at zero. A credit invoice whose lines sum to -50 with `amount_due` -50 passed before and is now rejected. No internal path creates credit invoices, so only API callers are affected. Allow the signed sum for credit invoices if a customer needs them.

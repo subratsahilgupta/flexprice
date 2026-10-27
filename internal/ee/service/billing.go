@@ -873,7 +873,7 @@ func (s *billingService) CalculateUsageCharges(
 	if err != nil {
 		return nil, err
 	}
-	eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config, s.TracingSvc)
+	eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config, s.TracingSvc, nil)
 
 	commitments, err := s.newCommitmentLoader(
 		ctx, sub, periodStart, periodEnd, time.Now().UTC(), rawChargesByLine(sub, usage), meterMap, "",
@@ -2993,7 +2993,7 @@ func (s *billingService) GetCustomerEntitlementsForSubscriptions(ctx context.Con
 		}
 
 		// Get all entitlements for this subscription (plan + addons)
-		subEntitlements, err := subscriptionService.GetSubscriptionEntitlementsForSubscription(ctx, sub)
+		subEntitlements, err := subscriptionService.GetActiveSubscriptionEntitlementsForSubscription(ctx, sub, time.Now().UTC())
 		if err != nil {
 			s.Logger.Info(ctx, "failed to get subscription entitlements, skipping",
 				"subscription_id", sub.ID,
@@ -3083,7 +3083,7 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 		return nil, err
 	}
 	subscriptionService := NewSubscriptionService(s.ServiceParams)
-	eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config, s.TracingSvc)
+	eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config, s.TracingSvc, nil)
 
 	// get customer
 	customer, err := s.CustomerRepo.Get(ctx, customerID)

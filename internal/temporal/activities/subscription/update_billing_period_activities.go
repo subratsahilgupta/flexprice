@@ -227,7 +227,7 @@ func (s *BillingActivities) refreshEntitlementGrantsAfterRollover(ctx context.Co
 	}
 	refreshed := make(map[string]bool, len(subs))
 	for _, sub := range subs {
-		if refreshed[sub.CustomerID] || !s.holdsNeverMeterGrant(ctx, sub) {
+		if refreshed[sub.CustomerID] || !s.hasNeverResetGrant(ctx, sub) {
 			continue
 		}
 		refreshed[sub.CustomerID] = true
@@ -238,7 +238,8 @@ func (s *BillingActivities) refreshEntitlementGrantsAfterRollover(ctx context.Co
 	}
 }
 
-func (s *BillingActivities) holdsNeverMeterGrant(ctx context.Context, sub *subscription.Subscription) bool {
+// hasNeverResetGrant reports whether a live subscription has a grant entitlement on a never-reset meter.
+func (s *BillingActivities) hasNeverResetGrant(ctx context.Context, sub *subscription.Subscription) bool {
 	if sub.SubscriptionStatus != types.SubscriptionStatusActive && sub.SubscriptionStatus != types.SubscriptionStatusTrialing {
 		return false
 	}

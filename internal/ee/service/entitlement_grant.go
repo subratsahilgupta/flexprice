@@ -603,6 +603,10 @@ type grantCandidate struct {
 	// the whole cycle. The window cannot open before it, or a slot introduced
 	// mid-cycle would backdate to the cycle start and eat usage that predates it.
 	startDate time.Time
+
+	// endDate is the earliest end_date among the contributors; no window runs past it.
+	// Zero when none has one.
+	endDate time.Time
 }
 
 // openMissingGrants: parallel = one grant per EC, additive = one on the primary EC with
@@ -644,6 +648,10 @@ func (s *entitlementGrantService) eligibleGrantConfigsByFeature(
 		if !ec.HasGrantConfig() {
 			continue
 		}
+		// Skip configs that start at or after cycle end, or ended by cycle start.
+		if (ec.StartDate != nil && !ec.StartDate.Before(sub.CurrentPeriodEnd)) || (ec.EndDate != nil && !ec.EndDate.After(sub.CurrentPeriodStart)) {
+			continue
+		}
 		dur, err := ec.GrantDuration()
 		if err != nil {
 			s.Logger.Error(ctx, "invalid grant duration on entitlement, skipping",
@@ -673,6 +681,7 @@ func grantCandidatesForFeature(featureECs []*entitlement.Entitlement) []grantCan
 				quota:     lo.FromPtr(ec.GrantQuota),
 				unlimited: ec.IsUnlimitedGrant(),
 				startDate: lo.FromPtr(ec.StartDate),
+				endDate:   lo.FromPtr(ec.EndDate),
 			}
 		})
 	}
@@ -682,6 +691,7 @@ func grantCandidatesForFeature(featureECs []*entitlement.Entitlement) []grantCan
 	unlimited := false
 
 	earliest := lo.FromPtr(featureECs[0].StartDate)
+	var endDate time.Time
 
 	for _, ec := range featureECs {
 		if ec.ID < primary.ID {
@@ -695,6 +705,9 @@ func grantCandidatesForFeature(featureECs []*entitlement.Entitlement) []grantCan
 		if start := lo.FromPtr(ec.StartDate); start.Before(earliest) {
 			earliest = start
 		}
+		if ec.EndDate != nil && (endDate.IsZero() || ec.EndDate.Before(endDate)) {
+			endDate = *ec.EndDate
+		}
 	}
 
 	// No ceiling, so no quota to record. Keeping the bounded contributors' sum here
@@ -703,7 +716,7 @@ func grantCandidatesForFeature(featureECs []*entitlement.Entitlement) []grantCan
 		total = decimal.Zero
 	}
 
-	return []grantCandidate{{ec: primary, quota: total, unlimited: unlimited, startDate: earliest}}
+	return []grantCandidate{{ec: primary, quota: total, unlimited: unlimited, startDate: earliest, endDate: endDate}}
 }
 
 // openIfSlotFree walks the slot forward until it is caught up, so one tick clears a
@@ -866,6 +879,13 @@ func (s *entitlementGrantService) computeGrantWindow(
 	// start: backdating it would hand the window usage recorded before it existed.
 	coveredUntil := types.LatestOf(types.LatestOf(lastWindowEnd, cycleStart), candidate.startDate)
 	searchUntil := types.EarliestOf(at, cycleEnd)
+	if !candidate.endDate.IsZero() {
+		if !coveredUntil.Before(candidate.endDate) {
+			return time.Time{}, time.Time{}, false, nil
+		}
+		cycleEnd = types.EarliestOf(cycleEnd, candidate.endDate)
+		searchUntil = types.EarliestOf(searchUntil, candidate.endDate)
+	}
 
 	s.Logger.Debug(ctx, "computing grant window",
 		"coveredUntil", coveredUntil,

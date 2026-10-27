@@ -227,6 +227,7 @@ func NewRouter(
 			events.POST("/raw/bulk", ingestBodyLimit, write(types.EntityEvent, types.ActionWrite, allowSuspended), handlers.Events.BulkIngestRawEvent)
 			events.POST("/raw/reprocess/all", write(types.EntityEvent, types.ActionWrite), handlers.Events.ReprocessRawEvents)
 			events.POST("/raw/reprocess/pending", write(types.EntityEvent, types.ActionWrite), handlers.Events.ReprocessUnprocessedRawEvents)
+			events.POST("/delete", write(types.EntityEvent, types.ActionWrite, superAdminOnly), handlers.Events.DeleteEvents)
 		}
 
 		// Meter usage query endpoints (reads from meter_usage ClickHouse table)
@@ -731,7 +732,7 @@ func NewRouter(
 		// Webhook routes
 		webhookGroup := v1Private.Group("/webhooks")
 		{
-			webhookGroup.GET("/dashboard", handlers.Webhook.GetDashboardURL)
+			webhookGroup.GET("/dashboard", write(types.EntityWebhook, types.ActionWrite), handlers.Webhook.GetDashboardURL)
 			webhookGroup.POST("/retry", write(types.EntityWebhook, types.ActionWrite), handlers.Webhook.RetryOutboundWebhook)
 		}
 	}
@@ -808,7 +809,7 @@ func NewRouter(
 
 	// Public webhook endpoints (no authentication required)
 	webhooks := v1Public.Group("/webhooks")
-	webhooks.Use(middleware.WebhookActorMiddleware, middleware.WebhookLoggingMiddleware(logger, webhookRequestRepo))
+	webhooks.Use(middleware.WebhookBodyLimitMiddleware(middleware.MaxWebhookBodyBytes), middleware.WebhookActorMiddleware, middleware.WebhookLoggingMiddleware(logger, webhookRequestRepo))
 	{
 		// Stripe webhook endpoint: POST /v1/webhooks/stripe/{tenant_id}/{environment_id}
 		webhooks.POST("/stripe/:tenant_id/:environment_id", handlers.Webhook.HandleStripeWebhook)

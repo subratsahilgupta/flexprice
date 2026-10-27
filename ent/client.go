@@ -38,6 +38,7 @@ import (
 	"github.com/flexprice/flexprice/ent/entitlementgrant"
 	"github.com/flexprice/flexprice/ent/entityintegrationmapping"
 	"github.com/flexprice/flexprice/ent/environment"
+	"github.com/flexprice/flexprice/ent/eventdeletionrequest"
 	"github.com/flexprice/flexprice/ent/feature"
 	"github.com/flexprice/flexprice/ent/fxrate"
 	"github.com/flexprice/flexprice/ent/group"
@@ -130,6 +131,8 @@ type Client struct {
 	EntityIntegrationMapping *EntityIntegrationMappingClient
 	// Environment is the client for interacting with the Environment builders.
 	Environment *EnvironmentClient
+	// EventDeletionRequest is the client for interacting with the EventDeletionRequest builders.
+	EventDeletionRequest *EventDeletionRequestClient
 	// FXRate is the client for interacting with the FXRate builders.
 	FXRate *FXRateClient
 	// Feature is the client for interacting with the Feature builders.
@@ -238,6 +241,7 @@ func (c *Client) init() {
 	c.EntitlementGrant = NewEntitlementGrantClient(c.config)
 	c.EntityIntegrationMapping = NewEntityIntegrationMappingClient(c.config)
 	c.Environment = NewEnvironmentClient(c.config)
+	c.EventDeletionRequest = NewEventDeletionRequestClient(c.config)
 	c.FXRate = NewFXRateClient(c.config)
 	c.Feature = NewFeatureClient(c.config)
 	c.Group = NewGroupClient(c.config)
@@ -390,6 +394,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		EntitlementGrant:         NewEntitlementGrantClient(cfg),
 		EntityIntegrationMapping: NewEntityIntegrationMappingClient(cfg),
 		Environment:              NewEnvironmentClient(cfg),
+		EventDeletionRequest:     NewEventDeletionRequestClient(cfg),
 		FXRate:                   NewFXRateClient(cfg),
 		Feature:                  NewFeatureClient(cfg),
 		Group:                    NewGroupClient(cfg),
@@ -469,6 +474,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		EntitlementGrant:         NewEntitlementGrantClient(cfg),
 		EntityIntegrationMapping: NewEntityIntegrationMappingClient(cfg),
 		Environment:              NewEnvironmentClient(cfg),
+		EventDeletionRequest:     NewEventDeletionRequestClient(cfg),
 		FXRate:                   NewFXRateClient(cfg),
 		Feature:                  NewFeatureClient(cfg),
 		Group:                    NewGroupClient(cfg),
@@ -540,14 +546,14 @@ func (c *Client) Use(hooks ...Hook) {
 		c.Costsheet, c.Coupon, c.CouponApplication, c.CouponAssociation, c.CreditGrant,
 		c.CreditGrantApplication, c.CreditNote, c.CreditNoteLineItem, c.Customer,
 		c.Entitlement, c.EntitlementGrant, c.EntityIntegrationMapping, c.Environment,
-		c.FXRate, c.Feature, c.Group, c.HostedInvoiceToken, c.IncomingWebhookEvent,
-		c.Invoice, c.InvoiceLineItem, c.InvoiceSequence, c.Meter,
-		c.MeterUsageCheckpoint, c.Payment, c.PaymentAttempt, c.PaymentMethod, c.Plan,
-		c.Price, c.PriceUnit, c.Refund, c.RevenueFact, c.ScheduledTask, c.Secret,
-		c.Settings, c.Subscription, c.SubscriptionLineItem, c.SubscriptionPause,
-		c.SubscriptionPhase, c.SubscriptionSchedule, c.SystemEvent, c.Task,
-		c.TaxApplied, c.TaxAssociation, c.TaxRate, c.Tenant, c.UsageRecord, c.User,
-		c.Wallet, c.WalletTransaction, c.WorkflowExecution,
+		c.EventDeletionRequest, c.FXRate, c.Feature, c.Group, c.HostedInvoiceToken,
+		c.IncomingWebhookEvent, c.Invoice, c.InvoiceLineItem, c.InvoiceSequence,
+		c.Meter, c.MeterUsageCheckpoint, c.Payment, c.PaymentAttempt, c.PaymentMethod,
+		c.Plan, c.Price, c.PriceUnit, c.Refund, c.RevenueFact, c.ScheduledTask,
+		c.Secret, c.Settings, c.Subscription, c.SubscriptionLineItem,
+		c.SubscriptionPause, c.SubscriptionPhase, c.SubscriptionSchedule,
+		c.SystemEvent, c.Task, c.TaxApplied, c.TaxAssociation, c.TaxRate, c.Tenant,
+		c.UsageRecord, c.User, c.Wallet, c.WalletTransaction, c.WorkflowExecution,
 	} {
 		n.Use(hooks...)
 	}
@@ -562,14 +568,14 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.Costsheet, c.Coupon, c.CouponApplication, c.CouponAssociation, c.CreditGrant,
 		c.CreditGrantApplication, c.CreditNote, c.CreditNoteLineItem, c.Customer,
 		c.Entitlement, c.EntitlementGrant, c.EntityIntegrationMapping, c.Environment,
-		c.FXRate, c.Feature, c.Group, c.HostedInvoiceToken, c.IncomingWebhookEvent,
-		c.Invoice, c.InvoiceLineItem, c.InvoiceSequence, c.Meter,
-		c.MeterUsageCheckpoint, c.Payment, c.PaymentAttempt, c.PaymentMethod, c.Plan,
-		c.Price, c.PriceUnit, c.Refund, c.RevenueFact, c.ScheduledTask, c.Secret,
-		c.Settings, c.Subscription, c.SubscriptionLineItem, c.SubscriptionPause,
-		c.SubscriptionPhase, c.SubscriptionSchedule, c.SystemEvent, c.Task,
-		c.TaxApplied, c.TaxAssociation, c.TaxRate, c.Tenant, c.UsageRecord, c.User,
-		c.Wallet, c.WalletTransaction, c.WorkflowExecution,
+		c.EventDeletionRequest, c.FXRate, c.Feature, c.Group, c.HostedInvoiceToken,
+		c.IncomingWebhookEvent, c.Invoice, c.InvoiceLineItem, c.InvoiceSequence,
+		c.Meter, c.MeterUsageCheckpoint, c.Payment, c.PaymentAttempt, c.PaymentMethod,
+		c.Plan, c.Price, c.PriceUnit, c.Refund, c.RevenueFact, c.ScheduledTask,
+		c.Secret, c.Settings, c.Subscription, c.SubscriptionLineItem,
+		c.SubscriptionPause, c.SubscriptionPhase, c.SubscriptionSchedule,
+		c.SystemEvent, c.Task, c.TaxApplied, c.TaxAssociation, c.TaxRate, c.Tenant,
+		c.UsageRecord, c.User, c.Wallet, c.WalletTransaction, c.WorkflowExecution,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -624,6 +630,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.EntityIntegrationMapping.mutate(ctx, m)
 	case *EnvironmentMutation:
 		return c.Environment.mutate(ctx, m)
+	case *EventDeletionRequestMutation:
+		return c.EventDeletionRequest.mutate(ctx, m)
 	case *FXRateMutation:
 		return c.FXRate.mutate(ctx, m)
 	case *FeatureMutation:
@@ -4047,6 +4055,139 @@ func (c *EnvironmentClient) mutate(ctx context.Context, m *EnvironmentMutation) 
 		return (&EnvironmentDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Environment mutation op: %q", m.Op())
+	}
+}
+
+// EventDeletionRequestClient is a client for the EventDeletionRequest schema.
+type EventDeletionRequestClient struct {
+	config
+}
+
+// NewEventDeletionRequestClient returns a client for the EventDeletionRequest from the given config.
+func NewEventDeletionRequestClient(c config) *EventDeletionRequestClient {
+	return &EventDeletionRequestClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `eventdeletionrequest.Hooks(f(g(h())))`.
+func (c *EventDeletionRequestClient) Use(hooks ...Hook) {
+	c.hooks.EventDeletionRequest = append(c.hooks.EventDeletionRequest, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `eventdeletionrequest.Intercept(f(g(h())))`.
+func (c *EventDeletionRequestClient) Intercept(interceptors ...Interceptor) {
+	c.inters.EventDeletionRequest = append(c.inters.EventDeletionRequest, interceptors...)
+}
+
+// Create returns a builder for creating a EventDeletionRequest entity.
+func (c *EventDeletionRequestClient) Create() *EventDeletionRequestCreate {
+	mutation := newEventDeletionRequestMutation(c.config, OpCreate)
+	return &EventDeletionRequestCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of EventDeletionRequest entities.
+func (c *EventDeletionRequestClient) CreateBulk(builders ...*EventDeletionRequestCreate) *EventDeletionRequestCreateBulk {
+	return &EventDeletionRequestCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *EventDeletionRequestClient) MapCreateBulk(slice any, setFunc func(*EventDeletionRequestCreate, int)) *EventDeletionRequestCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &EventDeletionRequestCreateBulk{err: fmt.Errorf("calling to EventDeletionRequestClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*EventDeletionRequestCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &EventDeletionRequestCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for EventDeletionRequest.
+func (c *EventDeletionRequestClient) Update() *EventDeletionRequestUpdate {
+	mutation := newEventDeletionRequestMutation(c.config, OpUpdate)
+	return &EventDeletionRequestUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *EventDeletionRequestClient) UpdateOne(_m *EventDeletionRequest) *EventDeletionRequestUpdateOne {
+	mutation := newEventDeletionRequestMutation(c.config, OpUpdateOne, withEventDeletionRequest(_m))
+	return &EventDeletionRequestUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *EventDeletionRequestClient) UpdateOneID(id string) *EventDeletionRequestUpdateOne {
+	mutation := newEventDeletionRequestMutation(c.config, OpUpdateOne, withEventDeletionRequestID(id))
+	return &EventDeletionRequestUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for EventDeletionRequest.
+func (c *EventDeletionRequestClient) Delete() *EventDeletionRequestDelete {
+	mutation := newEventDeletionRequestMutation(c.config, OpDelete)
+	return &EventDeletionRequestDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *EventDeletionRequestClient) DeleteOne(_m *EventDeletionRequest) *EventDeletionRequestDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *EventDeletionRequestClient) DeleteOneID(id string) *EventDeletionRequestDeleteOne {
+	builder := c.Delete().Where(eventdeletionrequest.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &EventDeletionRequestDeleteOne{builder}
+}
+
+// Query returns a query builder for EventDeletionRequest.
+func (c *EventDeletionRequestClient) Query() *EventDeletionRequestQuery {
+	return &EventDeletionRequestQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeEventDeletionRequest},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a EventDeletionRequest entity by its id.
+func (c *EventDeletionRequestClient) Get(ctx context.Context, id string) (*EventDeletionRequest, error) {
+	return c.Query().Where(eventdeletionrequest.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *EventDeletionRequestClient) GetX(ctx context.Context, id string) *EventDeletionRequest {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *EventDeletionRequestClient) Hooks() []Hook {
+	return c.hooks.EventDeletionRequest
+}
+
+// Interceptors returns the client interceptors.
+func (c *EventDeletionRequestClient) Interceptors() []Interceptor {
+	return c.inters.EventDeletionRequest
+}
+
+func (c *EventDeletionRequestClient) mutate(ctx context.Context, m *EventDeletionRequestMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&EventDeletionRequestCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&EventDeletionRequestUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&EventDeletionRequestUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&EventDeletionRequestDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown EventDeletionRequest mutation op: %q", m.Op())
 	}
 }
 
@@ -9346,8 +9487,8 @@ type (
 		BillingSequence, CheckoutSession, Commitment, Connection, Costsheet, Coupon,
 		CouponApplication, CouponAssociation, CreditGrant, CreditGrantApplication,
 		CreditNote, CreditNoteLineItem, Customer, Entitlement, EntitlementGrant,
-		EntityIntegrationMapping, Environment, FXRate, Feature, Group,
-		HostedInvoiceToken, IncomingWebhookEvent, Invoice, InvoiceLineItem,
+		EntityIntegrationMapping, Environment, EventDeletionRequest, FXRate, Feature,
+		Group, HostedInvoiceToken, IncomingWebhookEvent, Invoice, InvoiceLineItem,
 		InvoiceSequence, Meter, MeterUsageCheckpoint, Payment, PaymentAttempt,
 		PaymentMethod, Plan, Price, PriceUnit, Refund, RevenueFact, ScheduledTask,
 		Secret, Settings, Subscription, SubscriptionLineItem, SubscriptionPause,
@@ -9360,8 +9501,8 @@ type (
 		BillingSequence, CheckoutSession, Commitment, Connection, Costsheet, Coupon,
 		CouponApplication, CouponAssociation, CreditGrant, CreditGrantApplication,
 		CreditNote, CreditNoteLineItem, Customer, Entitlement, EntitlementGrant,
-		EntityIntegrationMapping, Environment, FXRate, Feature, Group,
-		HostedInvoiceToken, IncomingWebhookEvent, Invoice, InvoiceLineItem,
+		EntityIntegrationMapping, Environment, EventDeletionRequest, FXRate, Feature,
+		Group, HostedInvoiceToken, IncomingWebhookEvent, Invoice, InvoiceLineItem,
 		InvoiceSequence, Meter, MeterUsageCheckpoint, Payment, PaymentAttempt,
 		PaymentMethod, Plan, Price, PriceUnit, Refund, RevenueFact, ScheduledTask,
 		Secret, Settings, Subscription, SubscriptionLineItem, SubscriptionPause,
