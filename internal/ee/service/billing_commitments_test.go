@@ -669,6 +669,41 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodStartsMidPeriod(
 	s.True(total.Equal(dec("37")), "total %s", total)
 }
 
+// A billing-period commitment ending mid-period allocates only the usage before its end; the rest bills as overage.
+func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodEndsMidPeriod() {
+	ctx := s.GetContext()
+	s.setupTestData()
+	s.enableCommitmentsV2()
+	sub, p := s.apiFixture("sub_mid_end")
+	periodStart, periodEnd := sub.CurrentPeriodStart, sub.CurrentPeriodEnd
+	endAt := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+	committed := s.usagePriceFor("price_mid_end_committed", s.testData.meters.apiCalls, "0.5")
+	// 62 over the whole month is 28 for the 14 days to 15 Aug, more than the 20 calls made in them.
+	c := s.newTestCommitment("cmt_mid_end", sub, types.COMMITMENT_TYPE_QUANTITY, "62", p.ID, periodStart, endAt)
+	c.CommittedPriceID = lo.ToPtr(committed.ID)
+	s.storeCommitment(c)
+
+	l := s.loaderFor(sub, s.meterUsage(sub), periodStart, periodEnd)
+	stacks, allocs, err := l.Stacks(ctx)
+	s.Require().NoError(err)
+	s.Require().Len(stacks, 1)
+	s.False(stacks[0].Commitments[0].Period.Clipped)
+	s.Equal([]time.Time{periodStart, endAt}, stacks[0].Windows)
+	s.Equal([]int{0, -1}, stacks[0].Commitments[0].PoolOf)
+	s.True(allocs[0].Commitments[0].Used.Equal(dec("20")), "used %s", allocs[0].Commitments[0].Used)
+	s.True(allocs[0].Commitments[0].Capacity.Round(6).Equal(dec("28")), "capacity %s", allocs[0].Commitments[0].Capacity)
+	s.True(allocs[0].Overage[0][0].IsZero())
+	s.True(allocs[0].Overage[0][1].Equal(dec("20")), "post-end usage stays overage")
+
+	lines, total, err := l.InvoiceLines(ctx)
+	s.Require().NoError(err)
+	s.True(s.loaderLine(lines, types.CommitmentLineUtilized, c.ID).Quantity.Equal(dec("20")))
+	s.True(s.loaderLine(lines, types.CommitmentLineTrueUp, c.ID).Amount.Equal(dec("4")))
+	s.True(loaderLinesOfKind(lines, types.CommitmentLineOverage)[0].Quantity.Equal(dec("20")))
+	// 20 within at $0.5, true-up of the $4 unused, and 20 overage at the $1 price.
+	s.True(total.Equal(dec("34")), "total %s", total)
+}
+
 // One pool spans every span a commitment is in force, so usage before a later commitment starts draws it down.
 func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodPoolsAcrossTheSplit() {
 	ctx := s.GetContext()
@@ -728,6 +763,37 @@ func (s *BillingServiceSuite) TestCommitmentLoader_PartialInvoicesSumToThePeriod
 		{from: sub.CurrentPeriodStart, to: split, want: "48.39"},
 		{from: split, to: sub.CurrentPeriodEnd, want: "51.61"},
 		{from: sub.CurrentPeriodStart, to: sub.CurrentPeriodEnd, want: "100"},
+	}
+
+	for _, tt := range tests {
+		l := s.loaderFor(sub, &dto.GetUsageBySubscriptionResponse{Currency: "usd"}, tt.from, tt.to)
+		lines, total, err := l.InvoiceLines(ctx)
+		s.Require().NoError(err)
+		s.True(s.loaderLine(lines, types.CommitmentLineTrueUp, c.ID).Amount.Equal(dec(tt.want)), "window %s-%s", tt.from, tt.to)
+		s.True(total.Equal(dec(tt.want)), "total %s for %s-%s", total, tt.from, tt.to)
+	}
+}
+
+// A $100 floor ending 15 Oct is worth 14 of October's 31 days, $45.16; invoicing October in two parts bills it exactly.
+func (s *BillingServiceSuite) TestCommitmentLoader_PartialInvoicesSumToTheLastPeriodFloor() {
+	ctx := s.GetContext()
+	s.setupTestData()
+	s.enableCommitmentsV2()
+	p := s.usagePriceFor("price_flat_api", s.testData.meters.apiCalls, "1")
+	li := &subscription.SubscriptionLineItem{ID: "subs_line_flat_api", PriceID: p.ID, MeterID: s.testData.meters.apiCalls.ID, DisplayName: "API"}
+	sub := s.fixedDateSub("sub_last_partial", li)
+	oct, nov := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	c := s.newTestCommitment("cmt_last_partial", sub, types.COMMITMENT_TYPE_AMOUNT, "100", p.ID, sub.CurrentPeriodStart, time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC))
+	s.storeCommitment(c)
+
+	split := time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		from, to time.Time
+		want     string
+	}{
+		{from: oct, to: split, want: "29.03"},
+		{from: split, to: nov, want: "16.13"},
+		{from: oct, to: nov, want: "45.16"},
 	}
 
 	for _, tt := range tests {

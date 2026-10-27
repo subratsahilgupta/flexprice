@@ -384,6 +384,45 @@ func (s *CommitmentE2ESuite) TestTerminateMidPeriod_ClipsTheFloorAndBillsTheFee(
 	)
 }
 
+// A $310 monthly floor for exactly one year from 15 Jan: January bills the 17 days from the start, a middle month
+// the full floor, and the next January the 14 days to the end, with usage after the end billed as overage.
+func (s *CommitmentE2ESuite) TestOneYearCommitmentFromMidPeriod_ProratesItsFirstAndLastFloors() {
+	tokens := s.planWith("one_year", types.BILLING_PERIOD_MONTHLY, s.tokens, "0.10")
+	sub := s.subscribe(tokens, s.jan)
+	start := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+	created := s.commit(sub.ID, floorRequest("Annual floor", tokens.ID, "310", start, start.AddDate(1, 0, 0)))
+	// $170 + 11 × $310 + $140.
+	s.True(created.CommitmentValue.Equal(dec("3720")), "commitment value %s", created.CommitmentValue)
+
+	s.record(s.tokens, time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC), "200")
+	s.record(s.tokens, time.Date(2026, 1, 20, 12, 0, 0, 0, time.UTC), "1000")
+	s.record(s.tokens, time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC), "2000")
+	s.record(s.tokens, time.Date(2027, 1, 5, 12, 0, 0, 0, time.UTC), "600")
+	s.record(s.tokens, time.Date(2027, 1, 20, 12, 0, 0, 0, time.UTC), "500")
+
+	// January 2026: 17 of 31 days is a $170 floor; $100 used after the start, $20 before it.
+	s.requireInvoice(s.invoiceFor(sub.ID, s.jan, s.jan.AddDate(0, 1, 0)), "190",
+		wantLine{types.CommitmentLineUtilized, "Annual floor", "1000", "100"},
+		wantLine{types.CommitmentLineTrueUp, "Annual floor (unused)", "1", "70"},
+		wantLine{types.CommitmentLineOverage, "Tokens", "200", "20"},
+	)
+
+	// June 2026: the full $310 floor against $200 used.
+	june := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	s.requireInvoice(s.invoiceFor(sub.ID, june, june.AddDate(0, 1, 0)), "310",
+		wantLine{types.CommitmentLineUtilized, "Annual floor", "2000", "200"},
+		wantLine{types.CommitmentLineTrueUp, "Annual floor (unused)", "1", "110"},
+	)
+
+	// January 2027: 14 of 31 days is a $140 floor; $60 used before the end, $50 after it.
+	lastJan := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	s.requireInvoice(s.invoiceFor(sub.ID, lastJan, lastJan.AddDate(0, 1, 0)), "190",
+		wantLine{types.CommitmentLineUtilized, "Annual floor", "600", "60"},
+		wantLine{types.CommitmentLineTrueUp, "Annual floor (unused)", "1", "80"},
+		wantLine{types.CommitmentLineOverage, "Tokens", "500", "50"},
+	)
+}
+
 // tokenSlabs bills the first 100 tokens at $0.50 and the rest at $0.25.
 var tokenSlabs = []price.PriceTier{
 	{UpTo: lo.ToPtr(uint64(100)), UnitAmount: dec("0.5")},
