@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/domain/connection"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entityintegrationmapping"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
@@ -16,6 +17,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/types/integrations"
 	"github.com/flexprice/flexprice/internal/utils"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -39,18 +41,19 @@ type ZohoInvoiceService interface {
 }
 
 type InvoiceService struct {
-	client       ZohoClient
-	customerSvc  ZohoCustomerService
-	itemSyncSvc  ZohoItemSyncService
-	taxSvc       ZohoTaxService
-	customerRepo customer.Repository
-	invoiceRepo  invoice.Repository
-	priceRepo    price.Repository
-	mappingRepo  entityintegrationmapping.Repository
-	paymentRepo  payment.Repository
-	subRepo      subscription.Repository
-	settingsRepo settings.Repository
-	logger       *logger.Logger
+	client         ZohoClient
+	customerSvc    ZohoCustomerService
+	itemSyncSvc    ZohoItemSyncService
+	taxSvc         ZohoTaxService
+	customerRepo   customer.Repository
+	invoiceRepo    invoice.Repository
+	priceRepo      price.Repository
+	mappingRepo    entityintegrationmapping.Repository
+	paymentRepo    payment.Repository
+	subRepo        subscription.Repository
+	settingsRepo   settings.Repository
+	connectionRepo connection.Repository
+	logger         *logger.Logger
 }
 
 func NewInvoiceService(
@@ -65,21 +68,23 @@ func NewInvoiceService(
 	paymentRepo payment.Repository,
 	subRepo subscription.Repository,
 	settingsRepo settings.Repository,
+	connectionRepo connection.Repository,
 	logger *logger.Logger,
 ) ZohoInvoiceService {
 	return &InvoiceService{
-		client:       client,
-		customerSvc:  customerSvc,
-		itemSyncSvc:  itemSyncSvc,
-		taxSvc:       taxSvc,
-		customerRepo: customerRepo,
-		invoiceRepo:  invoiceRepo,
-		priceRepo:    priceRepo,
-		mappingRepo:  mappingRepo,
-		paymentRepo:  paymentRepo,
-		subRepo:      subRepo,
-		settingsRepo: settingsRepo,
-		logger:       logger,
+		client:         client,
+		customerSvc:    customerSvc,
+		itemSyncSvc:    itemSyncSvc,
+		taxSvc:         taxSvc,
+		customerRepo:   customerRepo,
+		invoiceRepo:    invoiceRepo,
+		priceRepo:      priceRepo,
+		mappingRepo:    mappingRepo,
+		paymentRepo:    paymentRepo,
+		subRepo:        subRepo,
+		settingsRepo:   settingsRepo,
+		connectionRepo: connectionRepo,
+		logger:         logger,
 	}
 }
 
@@ -231,6 +236,11 @@ func (s *InvoiceService) buildInvoiceRequest(ctx context.Context, flexInvoice *i
 	reqPayload.CustomFields = append(reqPayload.CustomFields,
 		metadataCustomFields(settings, flexInvoice.Metadata, flexCustomer.Metadata)...)
 
+	reqPayload.PaymentOptions, err = s.paymentOptions(ctx, flexInvoice.ID, settings)
+	if err != nil {
+		return nil, err
+	}
+
 	curCode, exchRate, err := s.client.ResolveInvoiceCurrency(ctx, flexInvoice.Currency)
 	if err != nil {
 		return nil, err
@@ -243,6 +253,33 @@ func (s *InvoiceService) buildInvoiceRequest(ctx context.Context, flexInvoice *i
 	reqPayload.CurrencyCode = curCode
 	reqPayload.ExchangeRate = exchRate
 	return reqPayload, nil
+}
+
+// paymentOptions lists the tenant's connected payment gateways that Zoho Books can collect
+// through. Nil when the setting is off or no supported gateway is connected.
+func (s *InvoiceService) paymentOptions(ctx context.Context, invoiceID string, settings *types.InvoiceSyncSettings) (*PaymentOptions, error) {
+	if !settings.IsAttachPaymentGatewaysEnabled() {
+		return nil, nil
+	}
+
+	var gateways []PaymentGateway
+	for _, gateway := range integrations.ZohoPaymentGateways() {
+		_, err := s.connectionRepo.GetByProvider(ctx, gateway.GatewayProvider())
+		if ierr.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		gateways = append(gateways, PaymentGateway{Configured: true, GatewayName: gateway})
+	}
+
+	if len(gateways) == 0 {
+		s.logger.Info(ctx, "no supported payment gateway connected, syncing Zoho invoice without payment options",
+			"invoice_id", invoiceID)
+		return nil, nil
+	}
+	return &PaymentOptions{PaymentGateways: gateways}, nil
 }
 
 // resyncInvoice updates the Zoho contact, then the Zoho invoice when it is still editable.

@@ -93,6 +93,16 @@ type ZohoInvoiceSyncSettings struct {
 	// Zoho chart-of-accounts id ("Deposit To"). Empty omits account_id, leaving Zoho's
 	// Undeposited Funds default.a
 	DepositToAccountID string `json:"deposit_to_account_id,omitempty"`
+
+	// Attaches the tenant's connected payment gateways to the Zoho invoice as payment options,
+	// so the Zoho invoice carries online payment links.
+	AttachPaymentGateways bool `json:"attach_payment_gateways,omitempty"`
+}
+
+// IsAttachPaymentGatewaysEnabled reports whether synced invoices carry the tenant's connected
+// payment gateways as Zoho payment options.
+func (s *InvoiceSyncSettings) IsAttachPaymentGatewaysEnabled() bool {
+	return s != nil && s.AttachPaymentGateways
 }
 
 // IsSubmitForApprovalEnabled reports whether synced invoices should be submitted into the

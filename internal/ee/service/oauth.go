@@ -460,6 +460,16 @@ func (s *oauthService) GetOAuthSession(ctx context.Context, sessionID string) (*
 					Outbound: outbound,
 				}
 			}
+
+			// Parse invoice sync settings
+			if invoiceSyncSettingsMap, ok := scMap["invoice_sync_settings"].(map[string]interface{}); ok {
+				attachPaymentGateways, _ := invoiceSyncSettingsMap["attach_payment_gateways"].(bool)
+				syncConfig.InvoiceSyncSettings = &types.InvoiceSyncSettings{
+					ZohoInvoiceSyncSettings: types.ZohoInvoiceSyncSettings{
+						AttachPaymentGateways: attachPaymentGateways,
+					},
+				}
+			}
 		}
 	}
 
