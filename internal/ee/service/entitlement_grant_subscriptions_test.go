@@ -315,12 +315,12 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantGuard_ChecksLinesOnlyWhenGr
 	granted := s.newSubGrantSubscription("guard-granted")
 	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(granted.sub.ID, 50, ""))
 	s.Require().NoError(err)
-	err = guard.checkIfGranted(s.GetContext(), granted.sub, subscriptionGrantChange{items: tiered(granted)})
+	err = guard.validateChangeIfGranted(s.GetContext(), granted.sub, subscriptionGrantChange{items: tiered(granted)})
 	s.Require().Error(err)
 	s.Contains(err.Error(), "tiered")
 
 	plain := s.newSubGrantSubscription("guard-plain")
-	s.NoError(guard.checkIfGranted(s.GetContext(), plain.sub, subscriptionGrantChange{items: tiered(plain)}))
+	s.NoError(guard.validateChangeIfGranted(s.GetContext(), plain.sub, subscriptionGrantChange{items: tiered(plain)}))
 }
 
 func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_ParallelEditReopensOnlyItsWindow() {
@@ -437,7 +437,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantGuard_ChecksLinesStartingNe
 		BillingPeriod: fx.sub.BillingPeriod, StartDate: fx.sub.CurrentPeriodEnd.Add(time.Hour),
 	}
 	tiered := &price.Price{ID: "price-future-tiered", Type: types.PRICE_TYPE_USAGE, BillingModel: types.BILLING_MODEL_TIERED, MeterID: fx.callsMeter}
-	err = newSubscriptionGrantGuard(s.buildServiceParams()).checkIfGranted(s.GetContext(), fx.sub, subscriptionGrantChange{
+	err = newSubscriptionGrantGuard(s.buildServiceParams()).validateChangeIfGranted(s.GetContext(), fx.sub, subscriptionGrantChange{
 		items: []*subscription.SubscriptionLineItem{future}, prices: []*price.Price{tiered},
 	})
 	s.Require().Error(err)

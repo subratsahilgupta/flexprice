@@ -198,7 +198,7 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 		if err := s.assertSingleContributor(txCtx, e); err != nil {
 			return err
 		}
-		if err := s.checkFeatureAllowanceAgainstSubscriptionGrants(txCtx, e, entity); err != nil {
+		if err := s.validateFeatureAllowanceAgainstGrants(txCtx, e, entity); err != nil {
 			return err
 		}
 
@@ -411,7 +411,7 @@ func (s *entitlementService) CreateBulkEntitlement(ctx context.Context, req dto.
 		}
 
 		for _, e := range entitlements {
-			if err := s.checkFeatureAllowanceAgainstSubscriptionGrants(txCtx, e, subscriptionsByID[e.EntityID]); err != nil {
+			if err := s.validateFeatureAllowanceAgainstGrants(txCtx, e, subscriptionsByID[e.EntityID]); err != nil {
 				return err
 			}
 		}
@@ -837,7 +837,7 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 			return err
 		}
 		if !isFeatureAllowance(&stored) {
-			if err := s.checkFeatureAllowanceAgainstSubscriptionGrants(txCtx, existing, nil); err != nil {
+			if err := s.validateFeatureAllowanceAgainstGrants(txCtx, existing, nil); err != nil {
 				return err
 			}
 		}

@@ -2566,7 +2566,7 @@ func (s *subscriptionService) ListSubscriptions(ctx context.Context, filter *typ
 		// land as an "" key in customerIDMap above) and skip the fetch entirely when none
 		// remain — the customer repo's `if len(CustomerIDs) > 0` guard would otherwise
 		// treat an empty slice as "no filter" and, combined with NewNoLimitCustomerFilter,
-		// load every customer in the tenant/env.
+		// stateWithChange every customer in the tenant/env.
 		validCustomerIDs := lo.Compact(uniqueCustomerIDs)
 		if len(validCustomerIDs) > 0 {
 			customerService := NewCustomerService(s.ServiceParams)
@@ -5124,7 +5124,7 @@ func (s *subscriptionService) createAddonAttachParams(
 		return nil, err
 	}
 
-	if err := newSubscriptionGrantGuard(s.ServiceParams).checkAddonAttach(ctx, sub, req.AddonID, lineItems); err != nil {
+	if err := newSubscriptionGrantGuard(s.ServiceParams).validateAddonAttach(ctx, sub, req.AddonID, lineItems); err != nil {
 		return nil, err
 	}
 

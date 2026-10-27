@@ -49,7 +49,7 @@ func subscriptionGrantBlocker(st subscriptionGrantState) error {
 		if item == nil || item.PriceType != types.PRICE_TYPE_USAGE {
 			continue
 		}
-		if !st.pendingItemIDs[item.ID] && !overlapsPeriod(item, st.periodStart, st.periodEnd) {
+		if !st.pendingItemIDs[item.ID] && !lineOverlapsPeriod(item, st.periodStart, st.periodEnd) {
 			continue
 		}
 		if st.commitmentLineIDs[item.ID] {
@@ -65,7 +65,8 @@ func subscriptionGrantBlocker(st subscriptionGrantState) error {
 	return nil
 }
 
-func overlapsPeriod(item *subscription.SubscriptionLineItem, periodStart, periodEnd time.Time) bool {
+// lineOverlapsPeriod reports whether the line is live at some point in [periodStart, periodEnd).
+func lineOverlapsPeriod(item *subscription.SubscriptionLineItem, periodStart, periodEnd time.Time) bool {
 	startsInTime := item.StartDate.IsZero() || item.StartDate.Before(periodEnd)
 	endsInTime := item.EndDate.IsZero() || item.EndDate.After(periodStart)
 	return startsInTime && endsInTime
@@ -111,17 +112,17 @@ func (g *subscriptionGrantGuard) hasSubscriptionGrant(ctx context.Context, subID
 	return len(ecs) > 0, nil
 }
 
-// checkIfGranted refuses the change when the subscription has a subscription grant it would break.
-func (g *subscriptionGrantGuard) checkIfGranted(ctx context.Context, sub *subscription.Subscription, change subscriptionGrantChange) error {
+// validateChangeIfGranted refuses the change when the subscription has a subscription grant it would break.
+func (g *subscriptionGrantGuard) validateChangeIfGranted(ctx context.Context, sub *subscription.Subscription, change subscriptionGrantChange) error {
 	granted, err := g.hasSubscriptionGrant(ctx, sub.ID)
 	if err != nil || !granted {
 		return err
 	}
-	return g.check(ctx, sub, change)
+	return g.validateChange(ctx, sub, change)
 }
 
-// checkAddonAttach refuses an addon whose lines or feature allowances would break the subscription grant.
-func (g *subscriptionGrantGuard) checkAddonAttach(ctx context.Context, sub *subscription.Subscription, addonID string, items []*subscription.SubscriptionLineItem) error {
+// validateAddonAttach refuses an addon whose lines or feature allowances would break the subscription grant.
+func (g *subscriptionGrantGuard) validateAddonAttach(ctx context.Context, sub *subscription.Subscription, addonID string, items []*subscription.SubscriptionLineItem) error {
 	granted, err := g.hasSubscriptionGrant(ctx, sub.ID)
 	if err != nil || !granted {
 		return err
@@ -130,7 +131,7 @@ func (g *subscriptionGrantGuard) checkAddonAttach(ctx context.Context, sub *subs
 	if err != nil {
 		return err
 	}
-	return g.check(ctx, sub, subscriptionGrantChange{
+	return g.validateChange(ctx, sub, subscriptionGrantChange{
 		items: items,
 		entitlements: lo.Map(addonEntitlements.Items, func(r *dto.EntitlementResponse, _ int) *entitlement.Entitlement {
 			return r.Entitlement
@@ -138,9 +139,9 @@ func (g *subscriptionGrantGuard) checkAddonAttach(ctx context.Context, sub *subs
 	})
 }
 
-// check refuses when the subscription, with the change applied, cannot carry a subscription grant.
-func (g *subscriptionGrantGuard) check(ctx context.Context, sub *subscription.Subscription, change subscriptionGrantChange) error {
-	st, err := g.load(ctx, sub, change)
+// validateChange refuses when the subscription, with the change applied, cannot carry a subscription grant.
+func (g *subscriptionGrantGuard) validateChange(ctx context.Context, sub *subscription.Subscription, change subscriptionGrantChange) error {
+	st, err := g.stateWithChange(ctx, sub, change)
 	if err != nil {
 		return err
 	}
@@ -161,7 +162,8 @@ func (g *subscriptionGrantGuard) check(ctx context.Context, sub *subscription.Su
 		Mark(ierr.ErrValidation)
 }
 
-func (g *subscriptionGrantGuard) load(ctx context.Context, sub *subscription.Subscription, change subscriptionGrantChange) (subscriptionGrantState, error) {
+// stateWithChange is the subscription's billing setup with the change applied, as subscriptionGrantBlocker reads it.
+func (g *subscriptionGrantGuard) stateWithChange(ctx context.Context, sub *subscription.Subscription, change subscriptionGrantChange) (subscriptionGrantState, error) {
 	stored, err := g.SubscriptionLineItemRepo.ListBySubscription(ctx, sub)
 	if err != nil {
 		return subscriptionGrantState{}, err
@@ -260,7 +262,7 @@ func (s *entitlementService) CreateSubscriptionGrant(ctx context.Context, req dt
 		if err := s.validateSubscriptionGrantSiblings(txCtx, e); err != nil {
 			return err
 		}
-		if err := newSubscriptionGrantGuard(s.ServiceParams).check(txCtx, sub, subscriptionGrantChange{}); err != nil {
+		if err := newSubscriptionGrantGuard(s.ServiceParams).validateChange(txCtx, sub, subscriptionGrantChange{}); err != nil {
 			return err
 		}
 		created, err = s.EntitlementRepo.Create(txCtx, e)
@@ -281,7 +283,7 @@ func (s *entitlementService) CreateSubscriptionGrant(ctx context.Context, req dt
 // validateSubscriptionGrantSiblings keeps one mode per subscription, and one window length when the
 // grants pool additively.
 func (s *entitlementService) validateSubscriptionGrantSiblings(ctx context.Context, e *entitlement.Entitlement) error {
-	siblings, err := s.subscriptionGrantConfigs(ctx, e.EntityID)
+	siblings, err := s.subscriptionGrantConfigsFor(ctx, e.EntityID)
 	if err != nil {
 		return err
 	}
@@ -311,33 +313,33 @@ func sameGrantWindow(a, b *entitlement.Entitlement) bool {
 		a.GrantAllocationBehavior == b.GrantAllocationBehavior
 }
 
-// subscriptionGrantConfigs returns the published subscription grants on one subscription.
-func (s *entitlementService) subscriptionGrantConfigs(ctx context.Context, subID string) ([]*entitlement.Entitlement, error) {
+// subscriptionGrantConfigsFor returns the published subscription grants on one subscription.
+func (s *entitlementService) subscriptionGrantConfigsFor(ctx context.Context, subID string) ([]*entitlement.Entitlement, error) {
 	return s.EntitlementRepo.List(ctx, subscriptionGrantConfigFilter(subID))
 }
 
-// checkCatalogChange refuses a plan or addon change that would break the subscription grant on any
+// validateCatalogChange refuses a plan or addon change that would break the subscription grant on any
 // subscription using that plan or addon. change builds the write as it lands on one subscription.
-func (g *subscriptionGrantGuard) checkCatalogChange(
+func (g *subscriptionGrantGuard) validateCatalogChange(
 	ctx context.Context,
 	entityType types.EntitlementEntityType,
 	entityID string,
 	change func(sub *subscription.Subscription) subscriptionGrantChange,
 ) error {
-	subs, err := g.grantedSubscriptions(ctx, entityType, entityID)
+	subs, err := g.grantedSubscriptionsUsing(ctx, entityType, entityID)
 	if err != nil {
 		return err
 	}
 	for _, sub := range subs {
-		if err := g.check(ctx, sub, change(sub)); err != nil {
+		if err := g.validateChange(ctx, sub, change(sub)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// grantedSubscriptions returns the live subscriptions with a subscription grant that use the plan or addon.
-func (g *subscriptionGrantGuard) grantedSubscriptions(ctx context.Context, entityType types.EntitlementEntityType, entityID string) ([]*subscription.Subscription, error) {
+// grantedSubscriptionsUsing returns the live subscriptions with a subscription grant that use the plan or addon.
+func (g *subscriptionGrantGuard) grantedSubscriptionsUsing(ctx context.Context, entityType types.EntitlementEntityType, entityID string) ([]*subscription.Subscription, error) {
 	if g.EntitlementRepo == nil {
 		return nil, nil
 	}
@@ -375,9 +377,9 @@ func (g *subscriptionGrantGuard) grantedSubscriptions(ctx context.Context, entit
 	return g.SubRepo.List(ctx, subFilter)
 }
 
-// priceChange is how a new plan or addon price lands on a subscription: one line, or nothing when the
+// changeForNewPrice is how a new plan or addon price lands on a subscription: one line, or nothing when the
 // price's cadence or currency keeps it off that subscription.
-func priceChange(p *priceDomain.Price) func(sub *subscription.Subscription) subscriptionGrantChange {
+func changeForNewPrice(p *priceDomain.Price) func(sub *subscription.Subscription) subscriptionGrantChange {
 	return func(sub *subscription.Subscription) subscriptionGrantChange {
 		candidates := []*dto.PriceResponse{{Price: p}}
 		lands := filterValidPricesForSubscription(candidates, sub, nil)
@@ -459,7 +461,7 @@ func (s *entitlementService) settleDeletedSubscriptionGrant(ctx context.Context,
 		return err
 	}
 	if defaultedMode(deleted.AggregationMode) == types.EntitlementAggregationModeAdditive {
-		survivors, err := s.subscriptionGrantConfigs(ctx, deleted.EntityID)
+		survivors, err := s.subscriptionGrantConfigsFor(ctx, deleted.EntityID)
 		if err != nil {
 			return err
 		}
@@ -672,9 +674,9 @@ func (s *entitlementGrantService) SubscriptionGrantState(
 	return states[sub.ID], nil
 }
 
-// checkFeatureAllowanceAgainstSubscriptionGrants refuses a feature allowance that would reach a
+// validateFeatureAllowanceAgainstGrants refuses a feature allowance that would reach a
 // subscription with a subscription grant, directly or through its plan or addon.
-func (s *entitlementService) checkFeatureAllowanceAgainstSubscriptionGrants(ctx context.Context, e *entitlement.Entitlement, owner any) error {
+func (s *entitlementService) validateFeatureAllowanceAgainstGrants(ctx context.Context, e *entitlement.Entitlement, owner any) error {
 	if !isFeatureAllowance(e) {
 		return nil
 	}
@@ -689,9 +691,9 @@ func (s *entitlementService) checkFeatureAllowanceAgainstSubscriptionGrants(ctx 
 				return err
 			}
 		}
-		return guard.checkIfGranted(ctx, sub, change)
+		return guard.validateChangeIfGranted(ctx, sub, change)
 	case types.ENTITLEMENT_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_ADDON:
-		return guard.checkCatalogChange(ctx, e.EntityType, e.EntityID, func(*subscription.Subscription) subscriptionGrantChange { return change })
+		return guard.validateCatalogChange(ctx, e.EntityType, e.EntityID, func(*subscription.Subscription) subscriptionGrantChange { return change })
 	}
 	return nil
 }
@@ -716,12 +718,12 @@ func (s *subscriptionService) subscriptionGrantsView(ctx context.Context, sub *s
 	}, nil
 }
 
-// checkSubscriptionGrants refuses a plan or addon usage price that would break a subscription grant
+// validateAgainstSubscriptionGrants refuses a plan or addon usage price that would break a subscription grant
 // on a subscription using that plan or addon.
-func (s *priceService) checkSubscriptionGrants(ctx context.Context, p *priceDomain.Price) error {
+func (s *priceService) validateAgainstSubscriptionGrants(ctx context.Context, p *priceDomain.Price) error {
 	if p.Type != types.PRICE_TYPE_USAGE || (p.EntityType != types.PRICE_ENTITY_TYPE_PLAN && p.EntityType != types.PRICE_ENTITY_TYPE_ADDON) {
 		return nil
 	}
 	owner := lo.Ternary(p.EntityType == types.PRICE_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_ADDON)
-	return newSubscriptionGrantGuard(s.ServiceParams).checkCatalogChange(ctx, owner, p.EntityID, priceChange(p))
+	return newSubscriptionGrantGuard(s.ServiceParams).validateCatalogChange(ctx, owner, p.EntityID, changeForNewPrice(p))
 }

@@ -85,6 +85,18 @@ func (g *EntitlementGrant) Overage() decimal.Decimal {
 	return over
 }
 
+// Covered is how much of usage the grant covers: all of it when unlimited, otherwise up to the quota.
+func (g *EntitlementGrant) Covered(usage decimal.Decimal) decimal.Decimal {
+	usage = decimal.Max(usage, decimal.Zero)
+	if g == nil {
+		return decimal.Zero
+	}
+	if g.Unlimited {
+		return usage
+	}
+	return decimal.Min(usage, g.Quota)
+}
+
 func (g *EntitlementGrant) Remaining() (decimal.Decimal, bool) {
 	if g == nil || g.Unlimited {
 		return decimal.Zero, false

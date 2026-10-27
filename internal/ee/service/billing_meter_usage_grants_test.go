@@ -510,27 +510,28 @@ func decs(vals ...string) []decimal.Decimal {
 	return lo.Map(vals, func(v string, _ int) decimal.Decimal { return decimal.RequireFromString(v) })
 }
 
-func TestSplitByShare(t *testing.T) {
+func TestBilledAfterAllowance(t *testing.T) {
 	tests := []struct {
-		name     string
-		gross    []decimal.Decimal
-		billable string
-		want     []decimal.Decimal
+		name      string
+		gross     []decimal.Decimal
+		allowance string
+		want      []decimal.Decimal
 	}{
-		{"prd example", decs("70", "50"), "90", decs("52.5", "37.5")},
+		{"prd example", decs("70", "50"), "30", decs("52.5", "37.5")},
 		{"daily windows example", decs("30", "10"), "20", decs("15", "5")},
-		{"nothing over quota", decs("70", "50"), "0", decs("0", "0")},
-		{"billable above gross bills gross", decs("70", "50"), "150", decs("70", "50")},
-		{"exact split", decs("10", "10", "20"), "10", decs("2.5", "2.5", "5")},
-		{"thirds add up to the billable", decs("10", "10", "10.01"), "10", decs("3.33", "3.33", "3.34")},
-		{"zero and negative lines get nothing", decs("0", "-5", "40"), "10", decs("0", "0", "10")},
-		{"tiny shares never go negative", decs("0.02", "0.02", "0.02", "0.02"), "0.02", decs("0.01", "0.01", "0", "0")},
-		{"rounded-down shares keep every cent", decs("0.01", "0.01", "0.01"), "0.02", decs("0.01", "0.01", "0")},
-		{"sub-cent line still takes its rounded cent", decs("0.006"), "0.01", decs("0.01")},
+		{"allowance covers everything", decs("70", "50"), "120", decs("0", "0")},
+		{"allowance above gross bills nothing", decs("70", "50"), "200", decs("0", "0")},
+		{"no allowance bills gross", decs("70", "50"), "0", decs("70", "50")},
+		{"exact split", decs("10", "10", "20"), "30", decs("2.5", "2.5", "5")},
+		{"thirds add up to the billable", decs("10", "10", "10.01"), "20.01", decs("3.33", "3.33", "3.34")},
+		{"zero and negative lines get nothing", decs("0", "-5", "40"), "30", decs("0", "0", "10")},
+		{"tiny shares never go negative", decs("0.02", "0.02", "0.02", "0.02"), "0.06", decs("0.01", "0.01", "0", "0")},
+		{"rounded-down shares keep every cent", decs("0.01", "0.01", "0.01"), "0.01", decs("0.01", "0.01", "0")},
+		{"sub-cent line still takes its rounded cent", decs("0.006"), "0", decs("0.01")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := splitByShare(tt.gross, decimal.RequireFromString(tt.billable), 2)
+			got := billedAfterAllowance(tt.gross, decimal.RequireFromString(tt.allowance), 2)
 			require.Len(t, got, len(tt.want))
 			for i := range tt.want {
 				require.True(t, tt.want[i].Equal(got[i]), "line %d: want %s, got %s", i, tt.want[i], got[i])

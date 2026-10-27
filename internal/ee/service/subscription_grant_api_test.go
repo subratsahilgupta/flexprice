@@ -75,14 +75,14 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_RefusesPlanChangesThatBrea
 
 	// A tiered usage price on the plan lands on the subscription.
 	tiered := planPrice("price-api-plan-tiered", types.BILLING_MODEL_TIERED, fx.sub.BillingPeriod)
-	err = guard.checkCatalogChange(ctx, types.ENTITLEMENT_ENTITY_TYPE_PLAN, fx.sub.PlanID, priceChange(tiered))
+	err = guard.validateCatalogChange(ctx, types.ENTITLEMENT_ENTITY_TYPE_PLAN, fx.sub.PlanID, changeForNewPrice(tiered))
 	s.Require().Error(err)
 	s.Contains(err.Error(), "tiered")
 
 	// A price on another billing period never lands on this subscription.
 	other := lo.Ternary(fx.sub.BillingPeriod == types.BILLING_PERIOD_ANNUAL, types.BILLING_PERIOD_MONTHLY, types.BILLING_PERIOD_ANNUAL)
-	s.NoError(guard.checkCatalogChange(ctx, types.ENTITLEMENT_ENTITY_TYPE_PLAN, fx.sub.PlanID,
-		priceChange(planPrice("price-api-plan-other", types.BILLING_MODEL_TIERED, other))))
+	s.NoError(guard.validateCatalogChange(ctx, types.ENTITLEMENT_ENTITY_TYPE_PLAN, fx.sub.PlanID,
+		changeForNewPrice(planPrice("price-api-plan-other", types.BILLING_MODEL_TIERED, other))))
 }
 
 // Bulk price create runs the same guard as a single create.
