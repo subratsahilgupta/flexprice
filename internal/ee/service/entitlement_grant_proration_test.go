@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
 	"github.com/flexprice/flexprice/internal/domain/feature"
+	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/types"
@@ -341,6 +342,35 @@ func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_BehaviorNone_Gr
 
 	s.Equal("1", live.Metadata["proration_coefficient"], "the delta was not scaled")
 	s.True(live.ValidTo.Equal(s.testData.subscription.CurrentPeriodEnd))
+}
+
+// A never-reset allowance is compared with the running total, so a mid-cycle change grants it
+// in full; a resetting meter on the same change is still prorated.
+func (s *SubscriptionServiceSuite) TestResolveGrantProration_NeverResetMeterTakesFullQuota() {
+	ctx := s.GetContext()
+	neverMeter := &meter.Meter{ID: "meter_eg_never", Name: "Running storage", EventName: "running_storage",
+		Aggregation: meter.Aggregation{Type: types.AggregationSum, Field: "qty"}, ResetUsage: types.ResetUsageNever,
+		BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.Require().NoError(s.GetStores().MeterRepo.CreateMeter(ctx, neverMeter))
+	s.Require().NoError(s.GetStores().FeatureRepo.Create(ctx, &feature.Feature{ID: "feat_eg_never", Name: "feat_eg_never",
+		Type: types.FeatureTypeMetered, MeterID: neverMeter.ID, BaseModel: types.GetDefaultBaseModel(ctx)}))
+	resetting := s.seedGrantFeature("feat_eg_reset")
+
+	never := s.seedGrantEC("ent_eg_never", "feat_eg_never", types.ENTITLEMENT_ENTITY_TYPE_PLAN, s.testData.plan.ID, 150, "")
+	reset := s.seedGrantEC("ent_eg_reset", resetting, types.ENTITLEMENT_ENTITY_TYPE_PLAN, s.testData.plan.ID, 150, "")
+
+	grants, err := s.grantService().resolveGrantProration(ctx, s.testData.subscription,
+		[]*entitlement.Entitlement{never, reset}, nil, s.testData.now,
+		types.ProrationBehaviorCreateProrations, grantProrationSourcePlanChange)
+	s.Require().NoError(err)
+
+	byFeature := lo.KeyBy(grants, func(g *entitlementgrant.EntitlementGrant) string { return g.FeatureID() })
+	s.Require().Contains(byFeature, "feat_eg_never")
+	s.Require().Contains(byFeature, resetting)
+	s.True(byFeature["feat_eg_never"].Quota.Equal(decimal.NewFromInt(150)),
+		"never-reset allowance must not be prorated, got %s", byFeature["feat_eg_never"].Quota)
+	s.True(byFeature[resetting].Quota.Equal(s.expectedProrated(150)),
+		"resetting allowance is still prorated, expected %s got %s", s.expectedProrated(150), byFeature[resetting].Quota)
 }
 
 // An attach at the period start covers the whole cycle, so the coefficient is 1

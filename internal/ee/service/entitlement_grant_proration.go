@@ -89,14 +89,21 @@ func (s *subscriptionGrantService) resolveGrantProration(
 			continue
 		}
 
+		// A never-reset allowance is measured against the running total, so it takes the full quota.
+		neverReset, err := (&entitlementGrantService{ServiceParams: s.ServiceParams}).isNeverResetMeter(ctx, featureID)
+		if err != nil {
+			return nil, err
+		}
+		prorate := behavior == types.ProrationBehaviorCreateProrations && !neverReset
+
 		prorationDate := p.Start
-		if behavior == types.ProrationBehaviorCreateProrations && effectiveDate.After(p.Start) {
+		if prorate && effectiveDate.After(p.Start) {
 			prorationDate = effectiveDate
 		}
 
 		// Same coefficient as the charge; e.g. 100 units attached Jan 20 in [Jan 1, Feb 1) → 38.71 (12/31).
 		coefficient, full := decimal.NewFromInt(1), p
-		if behavior == types.ProrationBehaviorCreateProrations {
+		if prorate {
 			serviceablePeriod := types.Period{Start: prorationDate, End: p.End}
 			coefficient, full, err = proration.CalculateProrationCoefficient(sub, sub.BillingPeriod, sub.BillingPeriodCount,
 				serviceablePeriod, types.StrategySecondBased)
