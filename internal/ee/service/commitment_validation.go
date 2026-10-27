@@ -187,8 +187,8 @@ func (s *commitmentService) validateAgainstSubscription(
 		return ierr.Validationf("start_date cannot be before the subscription start %s", sub.StartDate.Format(time.RFC3339))
 	}
 
-	if err := validateBoundary(sub, req.EndDate); err != nil {
-		return err
+	if sub.EndDate != nil && req.EndDate.After(*sub.EndDate) {
+		return ierr.Validationf("end_date cannot be after the subscription end %s", sub.EndDate.Format(time.RFC3339))
 	}
 
 	if req.Scope.EntityType == types.CommitmentScopeSubscription && req.Scope.EntityID != sub.ID {
@@ -455,76 +455,6 @@ func (s *commitmentService) sameOverage(
 	}
 
 	return p.BillingModel == types.BILLING_MODEL_FLAT_FEE && p.Amount.Equal(lo.FromPtr(req.OveragePrice.Amount)), nil
-}
-
-// validateBoundary requires end to fall on a subscription billing-period end or the subscription end,
-// and never after the subscription end.
-func validateBoundary(sub *subscription.Subscription, end time.Time) error {
-	if sub.EndDate != nil {
-		if end.Equal(*sub.EndDate) {
-			return nil
-		}
-
-		if end.After(*sub.EndDate) {
-			return ierr.Validationf("end_date cannot be after the subscription end %s", sub.EndDate.Format(time.RFC3339))
-		}
-	}
-
-	// Extend one period past end so the last period is not clipped at end.
-	horizon, err := types.NextBillingDate(&types.NextBillingDateParams{
-		CurrentPeriodStart: end,
-		BillingAnchor:      sub.BillingAnchor,
-		Unit:               sub.BillingPeriodCount,
-		Period:             sub.BillingPeriod,
-		Timezone:           sub.Timezone,
-	})
-	if err != nil {
-		return ierr.WithError(err).
-			WithHint("Failed to compute billing periods for commitment").
-			Mark(ierr.ErrInternal)
-	}
-
-	periods, err := types.CalculateBillingPeriods(&types.CalculateBillingPeriodsParams{
-		InitialPeriodStart: sub.StartDate,
-		EndDate:            &horizon,
-		Anchor:             sub.BillingAnchor,
-		PeriodCount:        sub.BillingPeriodCount,
-		BillingPeriod:      sub.BillingPeriod,
-		Timezone:           sub.Timezone,
-	})
-	if err != nil {
-		return ierr.WithError(err).
-			WithHint("Failed to compute billing periods for commitment").
-			Mark(ierr.ErrInternal)
-	}
-
-	var before, after *time.Time
-	for _, p := range periods {
-		switch {
-		case p.End.Equal(end):
-			return nil
-		case p.End.Before(end):
-			before = lo.ToPtr(p.End)
-		case after == nil:
-			after = lo.ToPtr(p.End)
-		}
-	}
-
-	const layout = "2 Jan 2006"
-	switch {
-	case before != nil && after != nil:
-		return ierr.Validationf(
-			"end_date must fall on a billing date; nearest are %s and %s",
-			before.Format(layout),
-			after.Format(layout),
-		)
-	case after != nil:
-		return ierr.Validationf("end_date must fall on a billing date; nearest is %s", after.Format(layout))
-	case before != nil:
-		return ierr.Validationf("end_date must fall on a billing date; nearest is %s", before.Format(layout))
-	}
-
-	return ierr.Validation("end_date must fall on a billing date")
 }
 
 // entitledMeter returns the first of the meters carrying an enabled metered entitlement on the

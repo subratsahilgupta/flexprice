@@ -209,25 +209,6 @@ func TestCreateCommitmentRequest_Validate(t *testing.T) {
 	}
 }
 
-func TestValidateBoundary(t *testing.T) {
-	start := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
-	sub := &subscription.Subscription{
-		StartDate:          start,
-		BillingAnchor:      start,
-		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-		BillingPeriodCount: 1,
-		Timezone:           "UTC",
-	}
-
-	require.NoError(t, validateBoundary(sub, time.Date(2027, 5, 1, 0, 0, 0, 0, time.UTC)))
-
-	err := validateBoundary(sub, time.Date(2027, 4, 23, 0, 0, 0, 0, time.UTC))
-	require.Error(t, err)
-	require.True(t, ierr.IsValidation(err))
-	require.Contains(t, err.Error(), "1 Apr 2027")
-	require.Contains(t, err.Error(), "1 May 2027")
-}
-
 func (s *CommitmentServiceSuite) TestValidation_ScheduledSecondMeterBreaksQuantityCommitment() {
 	future := *s.fx.lineAPI
 	future.ID, future.PriceID, future.MeterID = "subs_line_other_meter", s.fx.priceOtherMeterInGroup.ID, s.fx.meterStorage.ID
