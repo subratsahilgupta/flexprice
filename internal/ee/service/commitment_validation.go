@@ -310,8 +310,8 @@ func billsEverySubscriptionPeriod(sub *subscription.Subscription, period types.B
 }
 
 // validateOverlaps requires commitments sharing a line item and still allocating to differ in priority, and
-// all overlapping ones to agree on type, measurement, bucket size (for windows) and overage rate; a terminated
-// commitment still counts for the latter through the end of the billing period it was terminated in.
+// all overlapping ones to agree on type, measurement, bucket size (for windows) and overage rate; for the latter
+// a commitment counts through the end of the billing period holding its effective end.
 func (s *commitmentService) validateOverlaps(
 	ctx context.Context,
 	req *dto.CreateCommitmentRequest,
@@ -326,6 +326,11 @@ func (s *commitmentService) validateOverlaps(
 		return err
 	}
 
+	reqSpanEnd, err := inForceEnd(cc.Sub, &commitment.Commitment{StartDate: req.StartDate, EndDate: req.EndDate})
+	if err != nil {
+		return err
+	}
+
 	lineIDs := lo.Map(lines, func(li *subscription.SubscriptionLineItem, _ int) string {
 		return li.ID
 	})
@@ -335,7 +340,7 @@ func (s *commitmentService) validateOverlaps(
 			return err
 		}
 
-		if !spanEnd.After(other.StartDate) || !other.StartDate.Before(req.EndDate) || !req.StartDate.Before(spanEnd) {
+		if !spanEnd.After(other.StartDate) || !other.StartDate.Before(reqSpanEnd) || !req.StartDate.Before(spanEnd) {
 			continue
 		}
 
@@ -344,7 +349,7 @@ func (s *commitmentService) validateOverlaps(
 			other.ScopeEntityID,
 			cc,
 			maxTime(req.StartDate, other.StartDate),
-			minTime(req.EndDate, spanEnd),
+			minTime(reqSpanEnd, spanEnd),
 		)
 		otherLineIDs := lo.Map(otherLines, func(li *subscription.SubscriptionLineItem, _ int) string {
 			return li.ID
@@ -353,7 +358,8 @@ func (s *commitmentService) validateOverlaps(
 			continue
 		}
 
-		if other.Priority == req.Priority && req.StartDate.Before(other.EffectiveEnd()) {
+		allocatingTogether := req.StartDate.Before(other.EffectiveEnd()) && other.StartDate.Before(req.EndDate)
+		if allocatingTogether && other.Priority == req.Priority {
 			return ierr.Validationf("priority %d is already used by overlapping commitment %s", req.Priority, other.ID)
 		}
 
@@ -394,27 +400,32 @@ func (s *commitmentService) validateOverlaps(
 	return nil
 }
 
-// inForceEnd returns when a commitment stops constraining others: its end, or for a terminated one the end of
-// the billing period holding its cutoff.
+// inForceEnd returns when a commitment stops constraining others: the end of the subscription billing period
+// holding its effective end, whose invoice still bills it. One ended at or before its start spans nothing.
 func inForceEnd(sub *subscription.Subscription, c *commitment.Commitment) (time.Time, error) {
-	if c.TerminatedAt == nil {
-		return c.EndDate, nil
-	}
-
-	return terminatedSpanEnd(sub, c)
-}
-
-// terminatedSpanEnd returns the end of the subscription billing period holding a terminated commitment's
-// effective end; a commitment terminated at or before its start spans nothing.
-func terminatedSpanEnd(sub *subscription.Subscription, c *commitment.Commitment) (time.Time, error) {
 	endedAt := c.EffectiveEnd()
 	if !endedAt.After(c.StartDate) {
 		return endedAt, nil
 	}
 
+	// Run the periods one billing date past endedAt, so the period holding it is not cut at endedAt.
+	horizon, err := types.NextBillingDate(&types.NextBillingDateParams{
+		CurrentPeriodStart:  endedAt,
+		BillingAnchor:       sub.BillingAnchor,
+		Unit:                sub.BillingPeriodCount,
+		Period:              sub.BillingPeriod,
+		SubscriptionEndDate: sub.EndDate,
+		Timezone:            sub.Timezone,
+	})
+	if err != nil {
+		return time.Time{}, ierr.WithError(err).
+			WithHint("Failed to compute billing periods for commitment").
+			Mark(ierr.ErrInternal)
+	}
+
 	periods, err := types.CalculateBillingPeriods(&types.CalculateBillingPeriodsParams{
 		InitialPeriodStart: sub.StartDate,
-		EndDate:            &c.EndDate,
+		EndDate:            &horizon,
 		Anchor:             sub.BillingAnchor,
 		PeriodCount:        sub.BillingPeriodCount,
 		BillingPeriod:      sub.BillingPeriod,
@@ -569,8 +580,8 @@ func rejectLegacyCommitmentInScope(
 	return nil
 }
 
-// overlapsLine reports whether the line's billing interval overlaps the commitment's term, extended for a
-// terminated one.
+// overlapsLine reports whether the line's billing interval overlaps the commitment's term, extended to the end
+// of the billing period holding its effective end.
 func overlapsLine(sub *subscription.Subscription, c *commitment.Commitment, li *subscription.SubscriptionLineItem) (bool, error) {
 	spanEnd, err := inForceEnd(sub, c)
 	if err != nil {

@@ -320,6 +320,80 @@ func (s *CommitmentServiceSuite) TestValidation_TerminatedCommitmentOverlap() {
 	}
 }
 
+func (s *CommitmentServiceSuite) TestValidation_MidPeriodEndOverlap() {
+	// A ends on 10 May 2027, mid-way through a billing period whose invoice still bills its floor.
+	endsMidMay := func(r *dto.CreateCommitmentRequest) { r.EndDate = time.Date(2027, 5, 10, 0, 0, 0, 0, time.UTC) }
+	amountFrom := func(start time.Time) func(r *dto.CreateCommitmentRequest) {
+		return func(r *dto.CreateCommitmentRequest) {
+			r.Type, r.CommittedPrice, r.Value = types.COMMITMENT_TYPE_AMOUNT, nil, decimal.NewFromInt(100)
+			r.StartDate = start
+		}
+	}
+	tests := []struct {
+		name         string
+		mutateFirst  func(r *dto.CreateCommitmentRequest)
+		mutateSecond func(r *dto.CreateCommitmentRequest)
+		wantErr      string
+	}{
+		{
+			name:         "different type after A's end in its final billing period",
+			mutateFirst:  endsMidMay,
+			mutateSecond: amountFrom(time.Date(2027, 5, 15, 0, 0, 0, 0, time.UTC)),
+			wantErr:      "different type or measurement",
+		},
+		{
+			name:         "A ending before a different type starts in the same billing period",
+			mutateFirst:  amountFrom(time.Date(2027, 5, 15, 0, 0, 0, 0, time.UTC)),
+			mutateSecond: endsMidMay,
+			wantErr:      "different type or measurement",
+		},
+		{
+			name: "different overage rate after A's end in its final billing period",
+			mutateFirst: func(r *dto.CreateCommitmentRequest) {
+				endsMidMay(r)
+				r.OveragePrice = ratePrice("0.07")
+			},
+			mutateSecond: func(r *dto.CreateCommitmentRequest) {
+				r.StartDate = time.Date(2027, 5, 20, 0, 0, 0, 0, time.UTC)
+				r.OveragePrice = ratePrice("0.08")
+			},
+			wantErr: "different overage price",
+		},
+		{
+			name:         "different type from the next billing period",
+			mutateFirst:  endsMidMay,
+			mutateSecond: amountFrom(time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:        "same type and priority after A's end",
+			mutateFirst: endsMidMay,
+			mutateSecond: func(r *dto.CreateCommitmentRequest) {
+				r.StartDate = time.Date(2027, 5, 15, 0, 0, 0, 0, time.UTC)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			s.SetupTest()
+			first := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+			tc.mutateFirst(&first)
+			_, err := s.svc.Create(s.GetContext(), first)
+			s.Require().NoError(err)
+
+			second := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+			tc.mutateSecond(&second)
+			_, err = s.svc.Create(s.GetContext(), second)
+			if tc.wantErr == "" {
+				s.Require().NoError(err)
+				return
+			}
+
+			s.requireValidation(err, tc.wantErr)
+		})
+	}
+}
+
 // quantityCommitmentOnAPIOnlyGroup creates a quantity commitment scoped to the group holding only the API meter.
 func (s *CommitmentServiceSuite) quantityCommitmentOnAPIOnlyGroup() {
 	req := validReq(s.fx.sub.ID, "")
@@ -501,6 +575,20 @@ func (s *CommitmentServiceSuite) TestCheckPriceAttach_GuardsTerminatedCommitment
 	s.Require().NoError(err)
 
 	err = s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, s.fx.priceOtherMeterInGroup, cutoff.AddDate(0, 0, 5), nil)
+	s.requireValidation(err, "different meter")
+
+	periodEnd := time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC)
+	s.Require().NoError(s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, s.fx.priceOtherMeterInGroup, periodEnd, nil))
+}
+
+func (s *CommitmentServiceSuite) TestCheckPriceAttach_GuardsMidPeriodEndThroughPeriodEnd() {
+	req := validReq(s.fx.sub.ID, "")
+	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeGroup, EntityID: s.fx.groupAPIOnly.ID}
+	req.EndDate = time.Date(2027, 5, 10, 0, 0, 0, 0, time.UTC)
+	_, err := s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+
+	err = s.svc.CheckPriceAttach(s.GetContext(), s.fx.sub, s.fx.priceOtherMeterInGroup, req.EndDate.AddDate(0, 0, 5), nil)
 	s.requireValidation(err, "different meter")
 
 	periodEnd := time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC)
