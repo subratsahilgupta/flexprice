@@ -105,9 +105,12 @@ type billingService struct {
 }
 
 func NewBillingService(params ServiceParams) BillingService {
-	return &billingService{
-		ServiceParams: params,
-	}
+	return newBillingService(params)
+}
+
+// newBillingService hands same-package callers the concrete type, for helpers beyond the public API.
+func newBillingService(params ServiceParams) *billingService {
+	return &billingService{ServiceParams: params}
 }
 
 // bucketedMeterCost holds the result of calculating cost for a bucketed meter

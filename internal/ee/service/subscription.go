@@ -6626,8 +6626,7 @@ func (s *subscriptionService) attachCommitmentBreakdown(
 		return nil
 	}
 
-	billingSvc := &billingService{ServiceParams: s.ServiceParams}
-	breakdown, err := billingSvc.commitmentUsageBreakdown(ctx, sub, response, start, end)
+	breakdown, err := newBillingService(s.ServiceParams).commitmentUsageBreakdown(ctx, sub, response, start, end)
 	if err != nil {
 		return err
 	}
