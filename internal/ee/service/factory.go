@@ -57,6 +57,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/domain/workflowexecution"
 	contractsvc "github.com/flexprice/flexprice/internal/ee/service/contract"
+	journalsvc "github.com/flexprice/flexprice/internal/ee/service/journal"
 	pobsvc "github.com/flexprice/flexprice/internal/ee/service/pob"
 	"github.com/flexprice/flexprice/internal/httpclient"
 	"github.com/flexprice/flexprice/internal/integration"
@@ -66,6 +67,7 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/pubsub"
+	journalRepo "github.com/flexprice/flexprice/internal/repository/journal"
 	productRepo "github.com/flexprice/flexprice/internal/repository/product"
 	"github.com/flexprice/flexprice/internal/security"
 	"github.com/flexprice/flexprice/internal/storage"
@@ -152,6 +154,8 @@ type ServiceParams struct {
 	ProductRepo                  productRepo.Repository
 	ContractService              contractsvc.ContractService
 	POBService                   pobsvc.PerformanceObligationService
+	JournalRepo                  journalRepo.Repository
+	JournalService               journalsvc.JournalService
 	EventDeletionRequestRepo     events.DeletionRequestRepository
 	EventDeletionLogRepo         events.DeletedEventsLogRepository
 
@@ -274,6 +278,8 @@ func NewServiceParams(
 	productRepo productRepo.Repository,
 	contractService contractsvc.ContractService,
 	pobService pobsvc.PerformanceObligationService,
+	journalRepo journalRepo.Repository,
+	journalService journalsvc.JournalService,
 	eventDeletionRequestRepo events.DeletionRequestRepository,
 	eventDeletionLogRepo events.DeletedEventsLogRepository,
 ) ServiceParams {
@@ -360,6 +366,8 @@ func NewServiceParams(
 		ProductRepo:                  productRepo,
 		ContractService:              contractService,
 		POBService:                   pobService,
+		JournalRepo:                  journalRepo,
+		JournalService:               journalService,
 		EventDeletionRequestRepo:     eventDeletionRequestRepo,
 		EventDeletionLogRepo:         eventDeletionLogRepo,
 	}

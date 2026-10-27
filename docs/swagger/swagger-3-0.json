@@ -8558,6 +8558,135 @@
         ]
       }
     },
+    "/journal_entries/search": {
+      "post": {
+        "tags": [
+          "Journal Entries"
+        ],
+        "summary": "Query journal entries",
+        "description": "Use when listing journal entries by period, event type, account, customer, contract, performance obligation or source. Returns a paginated list with lines.",
+        "operationId": "queryJournalEntry",
+        "requestBody": {
+          "description": "Filter",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/journal.Filter"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListJournalEntriesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "read",
+        "x-codegen-request-body-name": "filter"
+      }
+    },
+    "/journal_entries/{id}": {
+      "get": {
+        "tags": [
+          "Journal Entries"
+        ],
+        "summary": "Get journal entry",
+        "description": "Use when you need one revenue recognition journal entry with its debit and credit lines. The journal is derived from billing and recognition and is read-only.",
+        "operationId": "getJournalEntry",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Journal entry ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalEntryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "read"
+      }
+    },
     "/marketplace/agreements": {
       "post": {
         "tags": [
@@ -19187,6 +19316,20 @@
           }
         }
       },
+      "ListJournalEntriesResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JournalEntryResponse"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/types.PaginationResponse"
+          }
+        }
+      },
       "ListPerformanceObligationsResponse": {
         "type": "object",
         "properties": {
@@ -26973,6 +27116,72 @@
             "type": "string",
             "description": "voided_at is the timestamp when this invoice was voided or cancelled",
             "format": "date-time"
+          }
+        }
+      },
+      "JournalEntryResponse": {
+        "type": "object",
+        "properties": {
+          "accounting_period_id": {
+            "type": "string"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "contract_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "customer_id": {
+            "type": "string"
+          },
+          "event_type": {
+            "$ref": "#/components/schemas/types.JournalEventType"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JournalLineResponse"
+            }
+          },
+          "reversal_of": {
+            "type": "string"
+          },
+          "source_entity_id": {
+            "type": "string"
+          },
+          "source_entity_type": {
+            "$ref": "#/components/schemas/types.RevRecEntityType"
+          }
+        }
+      },
+      "JournalLineResponse": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/types.LedgerAccountKey"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/types.JournalDirection"
+          },
+          "id": {
+            "type": "string"
+          },
+          "pob_id": {
+            "type": "string"
           }
         }
       },
@@ -38829,6 +39038,104 @@
           }
         }
       },
+      "journal.Filter": {
+        "type": "object",
+        "properties": {
+          "accounting_period_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "accounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.LedgerAccountKey"
+            }
+          },
+          "contract_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "customer_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "event_types": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.JournalEventType"
+            }
+          },
+          "expand": {
+            "type": "string"
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.FilterCondition"
+            }
+          },
+          "journal_entry_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limit": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "pob_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.SortCondition"
+            }
+          },
+          "source_entity_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_entity_type": {
+            "$ref": "#/components/schemas/types.RevRecEntityType"
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.Status"
+          }
+        }
+      },
       "meter.Aggregation": {
         "type": "object",
         "properties": {
@@ -39688,6 +39995,68 @@
         ],
         "x-speakeasy-name-override": "ImprovementDirection"
       },
+      "types.JournalDirection": {
+        "type": "string",
+        "enum": [
+          "debit",
+          "credit"
+        ],
+        "x-enum-varnames": [
+          "JournalDirectionDebit",
+          "JournalDirectionCredit"
+        ],
+        "x-speakeasy-name-override": "JournalDirection"
+      },
+      "types.JournalEventType": {
+        "type": "string",
+        "enum": [
+          "invoice_finalized",
+          "invoice_voided",
+          "credit_note_finalized",
+          "credit_note_voided",
+          "payment_succeeded",
+          "payment_reversed",
+          "refund_succeeded",
+          "revenue_earned",
+          "revenue_offset"
+        ],
+        "x-enum-varnames": [
+          "JournalEventInvoiceFinalized",
+          "JournalEventInvoiceVoided",
+          "JournalEventCreditNoteFinalized",
+          "JournalEventCreditNoteVoided",
+          "JournalEventPaymentSucceeded",
+          "JournalEventPaymentReversed",
+          "JournalEventRefundSucceeded",
+          "JournalEventRevenueEarned",
+          "JournalEventRevenueOffset"
+        ],
+        "x-speakeasy-name-override": "JournalEventType"
+      },
+      "types.LedgerAccountKey": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "accounts_receivable",
+          "unbilled_receivable",
+          "deferred_revenue",
+          "customer_credit",
+          "tax_payable",
+          "revenue",
+          "contra_revenue"
+        ],
+        "x-enum-varnames": [
+          "LedgerAccountCash",
+          "LedgerAccountReceivable",
+          "LedgerAccountUnbilledReceivable",
+          "LedgerAccountDeferredRevenue",
+          "LedgerAccountCustomerCredit",
+          "LedgerAccountTaxPayable",
+          "LedgerAccountRevenue",
+          "LedgerAccountContraRevenue"
+        ],
+        "x-speakeasy-name-override": "LedgerAccountKey"
+      },
       "types.ListResponse-dto_WalletResponse": {
         "type": "object",
         "properties": {
@@ -39790,11 +40159,21 @@
         "type": "string",
         "enum": [
           "subscription",
-          "subscription_line_item"
+          "subscription_line_item",
+          "invoice",
+          "credit_note",
+          "payment",
+          "refund",
+          "pob"
         ],
         "x-enum-varnames": [
           "RevRecEntityTypeSubscription",
-          "RevRecEntityTypeSubscriptionLineItem"
+          "RevRecEntityTypeSubscriptionLineItem",
+          "RevRecEntityTypeInvoice",
+          "RevRecEntityTypeCreditNote",
+          "RevRecEntityTypePayment",
+          "RevRecEntityTypeRefund",
+          "RevRecEntityTypePOB"
         ],
         "x-speakeasy-name-override": "RevRecEntityType"
       },

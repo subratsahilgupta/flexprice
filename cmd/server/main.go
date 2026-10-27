@@ -24,6 +24,7 @@ import (
 	accountingperiodsvc "github.com/flexprice/flexprice/internal/ee/service/accountingperiod"
 	adminsvc "github.com/flexprice/flexprice/internal/ee/service/admin"
 	contractsvc "github.com/flexprice/flexprice/internal/ee/service/contract"
+	journalsvc "github.com/flexprice/flexprice/internal/ee/service/journal"
 	pobsvc "github.com/flexprice/flexprice/internal/ee/service/pob"
 	"github.com/flexprice/flexprice/internal/ee/service/revenue"
 	"github.com/flexprice/flexprice/internal/ee/service/selfbilling"
@@ -200,6 +201,7 @@ func main() {
 			repository.NewContractRepository,
 			repository.NewPerformanceObligationRepository,
 			repository.NewAccountingPeriodRepository,
+			repository.NewJournalRepository,
 			repository.NewAddonAssociationRepository,
 			repository.NewSubscriptionLineItemRepository,
 			repository.NewSubscriptionPhaseRepository,
@@ -333,6 +335,7 @@ func main() {
 			contractsvc.NewContractService,
 			pobsvc.NewPerformanceObligationService,
 			accountingperiodsvc.NewAccountingPeriodService,
+			journalsvc.NewJournalService,
 			service.NewSettingsService,
 			service.NewSubscriptionChangeService,
 			service.NewSubscriptionModificationService,
@@ -431,6 +434,7 @@ func provideHandlers(
 	contractService contractsvc.ContractService,
 	pobService pobsvc.PerformanceObligationService,
 	accountingPeriodService accountingperiodsvc.AccountingPeriodService,
+	journalService journalsvc.JournalService,
 	settingsService service.SettingsService,
 	subscriptionChangeService service.SubscriptionChangeService,
 	subscriptionModificationService service.SubscriptionModificationService,
@@ -506,6 +510,7 @@ func provideHandlers(
 		Contract:                 v1.NewContractHandler(contractService, logger),
 		PerformanceObligation:    v1.NewPerformanceObligationHandler(pobService, logger),
 		AccountingPeriod:         v1.NewAccountingPeriodHandler(accountingPeriodService, logger),
+		JournalEntry:             v1.NewJournalEntryHandler(journalService, logger),
 		Commitment:               v1.NewCommitmentHandler(commitmentService, logger),
 		Settings:                 v1.NewSettingsHandler(settingsService, logger),
 		SetupIntent:              v1.NewSetupIntentHandler(integrationFactory, customerService, cfg, logger),

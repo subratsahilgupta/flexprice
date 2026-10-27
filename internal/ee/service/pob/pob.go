@@ -28,6 +28,8 @@ type PerformanceObligationService interface {
 	// with every POB of the contract present. It is the one place recognition and reports read earned revenue from.
 	EarnedToDate(ctx context.Context, contractID string, asOfs []time.Time) ([]map[string]decimal.Decimal, error)
 	Reconcile(ctx context.Context, contractID string) error
+	// POBIDForInvoiceLine is the line's POB, empty without a subscription line item; NotFound before the sync.
+	POBIDForInvoiceLine(ctx context.Context, li *invoice.InvoiceLineItem) (string, error)
 	GetPerformanceObligation(ctx context.Context, id string) (*dto.PerformanceObligationResponse, error)
 	GetPerformanceObligations(ctx context.Context, filter *pobRepo.Filter) (*dto.ListPerformanceObligationsResponse, error)
 }
@@ -346,6 +348,17 @@ func earnedByPOB(lineItemPOBs map[string]*domainPOB.PerformanceObligation, input
 	}
 
 	return earned
+}
+
+func (s *performanceObligationService) POBIDForInvoiceLine(ctx context.Context, li *invoice.InvoiceLineItem) (string, error) {
+	if li == nil || lo.FromPtr(li.SubscriptionLineItemID) == "" {
+		return "", nil
+	}
+	p, err := s.pobRepo.GetByLineItemID(ctx, *li.SubscriptionLineItemID)
+	if err != nil {
+		return "", err
+	}
+	return p.ID(), nil
 }
 
 // resolveForLineItem returns the line item's POB: its own, else its predecessor's when the method matches, else a new one.

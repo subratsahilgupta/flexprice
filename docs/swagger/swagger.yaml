@@ -127,6 +127,15 @@ definitions:
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
     type: object
+  ListJournalEntriesResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/JournalEntryResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+    type: object
   ListPerformanceObligationsResponse:
     properties:
       items:
@@ -6029,6 +6038,48 @@ definitions:
         type: integer
       voided_at:
         description: voided_at is the timestamp when this invoice was voided or cancelled
+        type: string
+    type: object
+  JournalEntryResponse:
+    properties:
+      accounting_period_id:
+        type: string
+      business_date:
+        type: string
+      contract_id:
+        type: string
+      created_at:
+        type: string
+      currency:
+        type: string
+      customer_id:
+        type: string
+      event_type:
+        $ref: '#/definitions/types.JournalEventType'
+      id:
+        type: string
+      lines:
+        items:
+          $ref: '#/definitions/JournalLineResponse'
+        type: array
+      reversal_of:
+        type: string
+      source_entity_id:
+        type: string
+      source_entity_type:
+        $ref: '#/definitions/types.RevRecEntityType'
+    type: object
+  JournalLineResponse:
+    properties:
+      account:
+        $ref: '#/definitions/types.LedgerAccountKey'
+      amount:
+        type: string
+      direction:
+        $ref: '#/definitions/types.JournalDirection'
+      id:
+        type: string
+      pob_id:
         type: string
     type: object
   LineItemChange:
@@ -14859,6 +14910,71 @@ definitions:
       updated_by:
         type: string
     type: object
+  journal.Filter:
+    properties:
+      accounting_period_ids:
+        items:
+          type: string
+        type: array
+      accounts:
+        items:
+          $ref: '#/definitions/types.LedgerAccountKey'
+        type: array
+      contract_ids:
+        items:
+          type: string
+        type: array
+      customer_ids:
+        items:
+          type: string
+        type: array
+      end_time:
+        type: string
+      event_types:
+        items:
+          $ref: '#/definitions/types.JournalEventType'
+        type: array
+      expand:
+        type: string
+      filters:
+        items:
+          $ref: '#/definitions/types.FilterCondition'
+        type: array
+      journal_entry_ids:
+        items:
+          type: string
+        type: array
+      limit:
+        maximum: 1000
+        minimum: 1
+        type: integer
+      offset:
+        minimum: 0
+        type: integer
+      order:
+        enum:
+        - asc
+        - desc
+        type: string
+      pob_ids:
+        items:
+          type: string
+        type: array
+      sort:
+        items:
+          $ref: '#/definitions/types.SortCondition'
+        type: array
+      source_entity_ids:
+        items:
+          type: string
+        type: array
+      source_entity_type:
+        $ref: '#/definitions/types.RevRecEntityType'
+      start_time:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+    type: object
   meter.Aggregation:
     properties:
       bucket_size:
@@ -15515,6 +15631,56 @@ definitions:
     x-enum-varnames:
     - ImprovementHigher
     - ImprovementLower
+  types.JournalDirection:
+    enum:
+    - debit
+    - credit
+    type: string
+    x-enum-varnames:
+    - JournalDirectionDebit
+    - JournalDirectionCredit
+  types.JournalEventType:
+    enum:
+    - invoice_finalized
+    - invoice_voided
+    - credit_note_finalized
+    - credit_note_voided
+    - payment_succeeded
+    - payment_reversed
+    - refund_succeeded
+    - revenue_earned
+    - revenue_offset
+    type: string
+    x-enum-varnames:
+    - JournalEventInvoiceFinalized
+    - JournalEventInvoiceVoided
+    - JournalEventCreditNoteFinalized
+    - JournalEventCreditNoteVoided
+    - JournalEventPaymentSucceeded
+    - JournalEventPaymentReversed
+    - JournalEventRefundSucceeded
+    - JournalEventRevenueEarned
+    - JournalEventRevenueOffset
+  types.LedgerAccountKey:
+    enum:
+    - cash
+    - accounts_receivable
+    - unbilled_receivable
+    - deferred_revenue
+    - customer_credit
+    - tax_payable
+    - revenue
+    - contra_revenue
+    type: string
+    x-enum-varnames:
+    - LedgerAccountCash
+    - LedgerAccountReceivable
+    - LedgerAccountUnbilledReceivable
+    - LedgerAccountDeferredRevenue
+    - LedgerAccountCustomerCredit
+    - LedgerAccountTaxPayable
+    - LedgerAccountRevenue
+    - LedgerAccountContraRevenue
   types.ListResponse-dto_WalletResponse:
     properties:
       items:
@@ -15588,10 +15754,20 @@ definitions:
     enum:
     - subscription
     - subscription_line_item
+    - invoice
+    - credit_note
+    - payment
+    - refund
+    - pob
     type: string
     x-enum-varnames:
     - RevRecEntityTypeSubscription
     - RevRecEntityTypeSubscriptionLineItem
+    - RevRecEntityTypeInvoice
+    - RevRecEntityTypeCreditNote
+    - RevRecEntityTypePayment
+    - RevRecEntityTypeRefund
+    - RevRecEntityTypePOB
   types.TenantInternalStatus:
     enum:
     - trialing
@@ -21233,6 +21409,79 @@ paths:
       summary: Query invoices
       tags:
       - Invoices
+  /journal_entries/{id}:
+    get:
+      description: Use when you need one revenue recognition journal entry with its
+        debit and credit lines. The journal is derived from billing and recognition
+        and is read-only.
+      operationId: getJournalEntry
+      parameters:
+      - description: Journal entry ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/JournalEntryResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Resource not found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get journal entry
+      tags:
+      - Journal Entries
+      x-scope: read
+  /journal_entries/search:
+    post:
+      consumes:
+      - application/json
+      description: Use when listing journal entries by period, event type, account,
+        customer, contract, performance obligation or source. Returns a paginated
+        list with lines.
+      operationId: queryJournalEntry
+      parameters:
+      - description: Filter
+        in: body
+        name: filter
+        required: true
+        schema:
+          $ref: '#/definitions/journal.Filter'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ListJournalEntriesResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Query journal entries
+      tags:
+      - Journal Entries
+      x-scope: read
   /marketplace/agreements:
     post:
       consumes:
