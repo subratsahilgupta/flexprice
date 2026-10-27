@@ -809,7 +809,9 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 		}
 
 		isTrialStart := types.InvoiceBillingReason(inv.BillingReason) == types.InvoiceBillingReasonSubscriptionTrialStart
-		if inv.InvoiceType == types.InvoiceTypeSubscription && inv.Subtotal.IsZero() && !isTrialStart && !creditsAppliedToDraft.IsPositive() {
+		if inv.InvoiceType == types.InvoiceTypeSubscription && inv.Subtotal.IsZero() && !lo.SomeBy(inv.LineItems, func(item *invoice.InvoiceLineItem) bool {
+			return item != nil && !item.Amount.IsZero()
+		}) && !isTrialStart && !creditsAppliedToDraft.IsPositive() {
 			now := time.Now().UTC()
 			inv.LastComputedAt = &now
 			inv.InvoiceStatus = types.InvoiceStatusSkipped
@@ -840,7 +842,7 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 				}
 				inv.TotalPrepaidCreditsApplied = creditsAppliedToDraft
 				if creditsAppliedToDraft.IsPositive() {
-					inv.Total = decimal.Max(decimal.Zero, inv.Subtotal.Sub(inv.TotalDiscount).Sub(creditsAppliedToDraft))
+					inv.Total = decimal.Max(inv.Subtotal.Sub(inv.TotalDiscount).Sub(creditsAppliedToDraft), decimal.Zero)
 					inv.AmountDue = inv.Total
 				}
 			}
@@ -859,7 +861,11 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 			}
 		}
 
-		inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
+		inv.AmountRemaining = decimal.Max(inv.AmountDue.Sub(inv.AmountPaid), decimal.Zero)
+		// Negative usage can lower a paid draft below what was already collected.
+		if inv.AmountPaid.GreaterThan(inv.AmountDue) {
+			inv.PaymentStatus = types.PaymentStatusOverpaid
+		}
 		for _, item := range inv.LineItems {
 			if err := s.InvoiceLineItemRepo.Update(txCtx, item); err != nil {
 				return err
@@ -873,6 +879,14 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 	})
 	if err != nil {
 		return nil, skipped, err
+	}
+
+	// Period-end computation also runs for zero-value invoices and after rollover has advanced the subscription.
+	if computed {
+		if err := s.saveCompletedCycleUsageCheckpoints(ctx, inv); err != nil {
+			s.Logger.Error(ctx, "saving usage checkpoints failed; reads use the preceding checkpoint",
+				"subscription_id", *inv.SubscriptionID, "invoice_id", inv.ID, "error", err)
+		}
 	}
 
 	// Notify draft-stage listeners (currently just Tabs sync) that the invoice changed. Skip when
@@ -895,6 +909,26 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 	}
 
 	return inv, skipped, nil
+}
+
+func (s *invoiceService) saveCompletedCycleUsageCheckpoints(ctx context.Context, inv *invoice.Invoice) error {
+	if s.MeterUsageCheckpointRepo == nil || inv == nil || inv.InvoiceType != types.InvoiceTypeSubscription ||
+		inv.SubscriptionID == nil || inv.PeriodStart == nil || inv.PeriodEnd == nil ||
+		inv.PeriodEnd.After(time.Now().UTC()) || types.InvoiceBillingReason(inv.BillingReason) != types.InvoiceBillingReasonSubscriptionCycle {
+		return nil
+	}
+	sub, err := s.SubRepo.Get(ctx, *inv.SubscriptionID)
+	if err != nil {
+		return err
+	}
+	subscriptionForInvoicePeriod := *sub
+	subscriptionForInvoicePeriod.CurrentPeriodStart = *inv.PeriodStart
+	items, err := s.SubscriptionLineItemRepo.ListBySubscription(ctx, &subscriptionForInvoicePeriod)
+	if err != nil {
+		return err
+	}
+	subscriptionForInvoicePeriod.LineItems = items
+	return NewMeterUsageService(s.ServiceParams).SaveUsageCheckpointsForSubscription(ctx, &subscriptionForInvoicePeriod, *inv.PeriodEnd, lo.ToPtr(inv.ID))
 }
 
 // getInvoiceWithLineItems fetches an invoice and populates its LineItems from the dedicated repo.
@@ -1431,16 +1465,13 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 
 				// Recalculate total with credits applied
 				newTotal := lockedInv.Subtotal.Sub(lockedInv.TotalDiscount).Sub(lockedInv.TotalPrepaidCreditsApplied)
-				if newTotal.IsNegative() {
-					newTotal = decimal.Zero
-				}
-				lockedInv.Total = newTotal
+				lockedInv.Total = decimal.Max(newTotal, decimal.Zero)
 				lockedInv.AmountDue = lockedInv.Total
 
 				// Back to fiat: one conversion, at the frozen rate.
 				lockedInv.CaptureCustomCurrencyDenomination()
 				lockedInv.ProjectCustomCurrency()
-				lockedInv.AmountRemaining = lockedInv.AmountDue.Sub(lockedInv.AmountPaid)
+				lockedInv.AmountRemaining = decimal.Max(lockedInv.AmountDue.Sub(lockedInv.AmountPaid), decimal.Zero)
 				for _, item := range lockedInv.LineItems {
 					if err := s.InvoiceLineItemRepo.Update(txCtx, item); err != nil {
 						return err
@@ -1494,7 +1525,7 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 		// attemptPaymentForSubscriptionInvoice will set the correct status based on
 		// collection method: SUCCEEDED for charge_automatically, PENDING for send_invoice.
 		isTrialStart := types.InvoiceBillingReason(lockedInv.BillingReason) == types.InvoiceBillingReasonSubscriptionTrialStart
-		if lockedInv.Total.IsZero() && !isTrialStart {
+		if lockedInv.Total.IsZero() && !isTrialStart && !lockedInv.AmountPaid.GreaterThan(lockedInv.AmountDue) {
 			lockedInv.PaymentStatus = types.PaymentStatusSucceeded
 		}
 
@@ -2738,7 +2769,12 @@ func (s *invoiceService) CreatePreviewInvoice(ctx context.Context, req dto.Creat
 		return nil, err
 	}
 
-	if !inv.Subtotal.IsPositive() {
+	inv.Total = decimal.Max(inv.Subtotal.Sub(inv.TotalDiscount).Sub(inv.TotalPrepaidCreditsApplied), decimal.Zero)
+	inv.AmountDue = inv.Total
+	inv.AmountRemaining = decimal.Max(inv.AmountDue.Sub(inv.AmountPaid), decimal.Zero)
+	if inv.Subtotal.IsZero() && !lo.SomeBy(inv.LineItems, func(item *invoice.InvoiceLineItem) bool {
+		return item != nil && !item.Amount.IsZero()
+	}) {
 		return dto.NewInvoiceResponse(inv), nil
 	}
 
@@ -2756,7 +2792,6 @@ func (s *invoiceService) CreatePreviewInvoice(ctx context.Context, req dto.Creat
 	if err := s.projectPreviewToFiat(ctx, inv); err != nil {
 		return nil, err
 	}
-
 	// Calculate, never apply: applying writes a tax_applied record per rate, and this
 	// invoice is never created.
 	taxes := s.previewTax(ctx, inv, rates)
@@ -3136,11 +3171,11 @@ func (s *invoiceService) GetUnpaidInvoicesToBePaid(ctx context.Context, req dto.
 		unpaidAmount = unpaidAmount.Add(remaining)
 		totalInvoiceAmountPaid = totalInvoiceAmountPaid.Add(paid)
 
-		creditsOnLines := decimal.Zero
+		invUsageCharges, creditsOnLines := decimal.Zero, decimal.Zero
 		for _, item := range inv.LineItems {
 			denomination := item.Denomination()
 			if lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_USAGE) {
-				unpaidUsageCharges = unpaidUsageCharges.Add(denomination.Amount).Sub(denomination.PrepaidCreditsApplied).Sub(denomination.LineItemDiscount)
+				invUsageCharges = invUsageCharges.Add(denomination.Amount).Sub(denomination.PrepaidCreditsApplied).Sub(denomination.LineItemDiscount)
 				creditsOnLines = creditsOnLines.Add(denomination.PrepaidCreditsApplied)
 			} else {
 				unpaidFixedCharges = unpaidFixedCharges.Add(denomination.Amount)
@@ -3153,8 +3188,10 @@ func (s *invoiceService) GetUnpaidInvoicesToBePaid(ctx context.Context, req dto.
 			appliedCredits = inv.CustomCurrency.TotalPrepaidCreditsApplied
 		}
 		if notOnLines := appliedCredits.Sub(creditsOnLines); notOnLines.IsPositive() {
-			unpaidUsageCharges = unpaidUsageCharges.Sub(notOnLines)
+			invUsageCharges = invUsageCharges.Sub(notOnLines)
 		}
+		// Net-negative usage on one invoice is not wallet credit.
+		unpaidUsageCharges = unpaidUsageCharges.Add(decimal.Max(invUsageCharges, decimal.Zero))
 	}
 
 	return &dto.GetUnpaidInvoicesToBePaidResponse{
@@ -4016,7 +4053,9 @@ func (s *invoiceService) RecalculateInvoiceAmounts(ctx context.Context, invoiceI
 	}
 
 	// Update the payment status if the invoice is fully paid
-	if inv.AmountRemaining.Equal(decimal.Zero) {
+	if inv.AmountPaid.GreaterThan(inv.AmountDue) {
+		inv.PaymentStatus = types.PaymentStatusOverpaid
+	} else if inv.AmountRemaining.Equal(decimal.Zero) {
 		s.Logger.Info(ctx, "invoice is fully paid, updating payment status to succeeded", "invoice_id", inv.ID)
 		inv.PaymentStatus = types.PaymentStatusSucceeded
 	}
@@ -4387,18 +4426,20 @@ func (s *invoiceService) RecalculateInvoiceV2(ctx context.Context, id string, fi
 		// Use invoicing customer ID from the new invoice request (which uses sub.GetInvoicingCustomerID())
 		// This ensures backward compatibility - if subscription has invoicing customer ID, use it; otherwise use subscription customer ID
 		prevAmountDue := inv.AmountDue
-		inv.Total = newInvoiceReq.Total
-		inv.Subtotal = newInvoiceReq.Subtotal
+		inv.Total = decimal.Max(newInvoiceReq.Total, decimal.Zero)
+		inv.Subtotal = decimal.Max(newInvoiceReq.Subtotal, decimal.Zero)
 		inv.CustomerID = newInvoiceReq.CustomerID
-		inv.AmountDue = newInvoiceReq.AmountDue
-		inv.AmountRemaining = newInvoiceReq.AmountDue.Sub(inv.AmountPaid)
+		inv.AmountDue = inv.Total
+		inv.AmountRemaining = decimal.Max(inv.AmountDue.Sub(inv.AmountPaid), decimal.Zero)
 		inv.Description = newInvoiceReq.Description
 		if newInvoiceReq.Metadata != nil {
 			inv.Metadata = newInvoiceReq.Metadata
 		}
 
 		// Update payment status if amount due changed
-		if inv.AmountRemaining.IsZero() {
+		if inv.AmountPaid.GreaterThan(inv.AmountDue) {
+			inv.PaymentStatus = types.PaymentStatusOverpaid
+		} else if inv.AmountRemaining.IsZero() {
 			inv.PaymentStatus = types.PaymentStatusSucceeded
 		} else if inv.AmountPaid.IsZero() {
 			inv.PaymentStatus = types.PaymentStatusPending
@@ -4837,17 +4878,15 @@ func (s *invoiceService) nativeTax(ctx context.Context, inv *invoice.Invoice, re
 }
 
 func applyTaxResultToInvoice(inv *invoice.Invoice, result *dto.TaxCalculationResult) {
+	inv.Subtotal = decimal.Max(inv.Subtotal, decimal.Zero)
 	inv.TotalTax = result.TotalTaxAmount
 
 	// Inclusive tax is already inside subtotal and only reported, never added back. Only
 	// exclusive tax moves the total.
-	inv.Total = inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount).Add(result.ExclusiveTax)
+	inv.Total = decimal.Max(inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount).Add(result.ExclusiveTax), decimal.Zero)
 
-	if inv.Total.IsNegative() {
-		inv.Total = decimal.Zero
-	}
 	inv.AmountDue = inv.Total
-	inv.AmountRemaining = inv.Total.Sub(inv.AmountPaid)
+	inv.AmountRemaining = decimal.Max(inv.AmountDue.Sub(inv.AmountPaid), decimal.Zero)
 
 	switch {
 	case result.ExemptionReason != nil:
@@ -5452,24 +5491,15 @@ func (s *invoiceService) recalculateInvoiceTotals(inv *dto.InvoiceResponse) {
 	for _, lineItem := range inv.LineItems {
 		newSubtotal = newSubtotal.Add(lineItem.Amount)
 	}
-	inv.Subtotal = newSubtotal
+	inv.Subtotal = decimal.Max(newSubtotal, decimal.Zero)
 
-	// Calculate new total: subtotal - discount + tax
-	newTotal := newSubtotal.Sub(inv.TotalDiscount).Add(inv.TotalTax)
-	if newTotal.IsNegative() {
-		newTotal = decimal.Zero
-	}
-
-	inv.Total = newTotal
-	inv.AmountDue = newTotal
-
+	// Preserve prepaid credits when rebuilding totals for the usage breakdown.
+	newTotal := newSubtotal.Sub(inv.TotalDiscount).Sub(inv.TotalPrepaidCreditsApplied).Add(inv.TotalTax)
+	inv.Total = decimal.Max(newTotal, decimal.Zero)
+	inv.AmountDue = inv.Total
 	inv.CaptureCustomCurrencyDenomination()
 	inv.ProjectCustomCurrency()
-
-	inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
-	if inv.AmountRemaining.IsNegative() {
-		inv.AmountRemaining = decimal.Zero
-	}
+	inv.AmountRemaining = decimal.Max(inv.AmountDue.Sub(inv.AmountPaid), decimal.Zero)
 
 	s.Logger.Debug(context.Background(), "recalculated invoice totals after usage breakdown",
 		"invoice_id", inv.ID,
@@ -5702,6 +5732,7 @@ func (s *invoiceService) SyncInvoiceToExternalVendors(ctx context.Context, invoi
 
 // applyCreditsAndCouponsToInvoice applies wallet credits and coupons to invoice, updating totals once
 func (s *invoiceService) applyCreditsAndCouponsToInvoice(ctx context.Context, inv *invoice.Invoice, req dto.InvoiceComputeRequest) error {
+	inv.Subtotal = decimal.Max(inv.Subtotal, decimal.Zero)
 	s.Logger.Debug(ctx, "applying credit adjustments and coupons to invoice",
 		"invoice_id", inv.ID,
 		"customer_id", inv.CustomerID,
@@ -5732,14 +5763,9 @@ func (s *invoiceService) applyCreditsAndCouponsToInvoice(ctx context.Context, in
 	inv.TotalPrepaidCreditsApplied = creditResult.TotalPrepaidCreditsApplied
 
 	newTotal := inv.Subtotal.Sub(inv.TotalDiscount).Sub(inv.TotalPrepaidCreditsApplied)
-	if newTotal.IsNegative() {
-		newTotal = decimal.Zero
-	}
-
-	inv.Total = newTotal
-
+	inv.Total = decimal.Max(newTotal, decimal.Zero)
 	inv.AmountDue = inv.Total
-	inv.AmountRemaining = inv.Total.Sub(inv.AmountPaid)
+	inv.AmountRemaining = decimal.Max(inv.AmountDue.Sub(inv.AmountPaid), decimal.Zero)
 
 	s.Logger.Info(ctx, "successfully applied credit adjustments and coupons to invoice",
 		"invoice_id", inv.ID,
@@ -5757,6 +5783,7 @@ func (s *invoiceService) applyCreditsAndCouponsToInvoice(ctx context.Context, in
 // applyCouponsToInvoice applies only coupons/discounts to an invoice (no credit deduction or taxes).
 // Credits and taxes are deferred to the finalization step.
 func (s *invoiceService) applyCouponsToInvoice(ctx context.Context, inv *invoice.Invoice, req dto.InvoiceComputeRequest) error {
+	inv.Subtotal = decimal.Max(inv.Subtotal, decimal.Zero)
 	s.Logger.Debug(ctx, "applying coupons to invoice",
 		"invoice_id", inv.ID,
 		"customer_id", inv.CustomerID,
@@ -5777,13 +5804,9 @@ func (s *invoiceService) applyCouponsToInvoice(ctx context.Context, inv *invoice
 	inv.TotalDiscount = couponResult.TotalDiscountAmount
 
 	newTotal := inv.Subtotal.Sub(inv.TotalDiscount)
-	if newTotal.IsNegative() {
-		newTotal = decimal.Zero
-	}
-
-	inv.Total = newTotal
+	inv.Total = decimal.Max(newTotal, decimal.Zero)
 	inv.AmountDue = inv.Total
-	inv.AmountRemaining = inv.Total.Sub(inv.AmountPaid)
+	inv.AmountRemaining = decimal.Max(inv.AmountDue.Sub(inv.AmountPaid), decimal.Zero)
 
 	s.Logger.Info(ctx, "successfully applied coupons to invoice",
 		"invoice_id", inv.ID,
