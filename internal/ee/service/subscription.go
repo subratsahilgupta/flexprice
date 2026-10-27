@@ -6715,7 +6715,21 @@ func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx con
 			WithHint("A subscription must be provided to resolve entitlements").
 			Mark(ierr.ErrValidation)
 	}
+	return s.resolveSubscriptionEntitlements(ctx, sub, time.Now().UTC(), false)
+}
 
+func (s *subscriptionService) GetActiveSubscriptionEntitlementsForSubscription(ctx context.Context, sub *subscription.Subscription, at time.Time) ([]*dto.EntitlementResponse, error) {
+	if sub == nil {
+		return nil, ierr.NewError("subscription is required").
+			WithHint("A subscription must be provided to resolve entitlements").
+			Mark(ierr.ErrValidation)
+	}
+	return s.resolveSubscriptionEntitlements(ctx, sub, at, true)
+}
+
+// resolveSubscriptionEntitlements combines plan, addon and override entitlements as of at.
+// activeOnly drops inactive entitlements before overrides apply, so a dropped override no longer hides its parent.
+func (s *subscriptionService) resolveSubscriptionEntitlements(ctx context.Context, sub *subscription.Subscription, at time.Time, activeOnly bool) ([]*dto.EntitlementResponse, error) {
 	// Initialize entitlement service
 	entitlementService := NewEntitlementService(s.ServiceParams)
 
@@ -6742,7 +6756,7 @@ func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx con
 		// A cancellation dated at period end keeps the entitlement to the boundary the
 		// customer paid through; one dated mid-period revokes it there. Both write
 		// addon_status=cancelled, so end_date is the only thing that tells them apart.
-		ActiveAt: lo.ToPtr(time.Now().UTC()),
+		ActiveAt: lo.ToPtr(at),
 	})
 	if err != nil {
 		return nil, ierr.WithError(err).
@@ -6808,19 +6822,39 @@ func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx con
 	if err != nil {
 		return nil, err
 	}
-	subscriptionEntitlements := subscriptionEntResp.Items
+	filter := func(ents []*dto.EntitlementResponse) []*dto.EntitlementResponse {
+		return lo.Filter(ents, func(ent *dto.EntitlementResponse, _ int) bool {
+			// Billing keeps every entitlement; customer-facing reads keep only active ones.
+			return ent != nil && ent.Entitlement != nil && (!activeOnly || isEntitlementActive(ent.Entitlement, sub, at))
+		})
+	}
+	planItems := filter(planEntitlements.Items)
+	addonEntitlements = filter(addonEntitlements)
+	subscriptionEntitlements := filter(subscriptionEntResp.Items)
 
-	carryParentSourceToOverrides(planEntitlements.Items, addonEntitlements, subscriptionEntitlements)
+	carryParentSourceToOverrides(planItems, addonEntitlements, subscriptionEntitlements)
 
 	// Step 6: Filter out overridden entitlements and combine results
 	finalEntitlements := s.filterOverriddenEntitlements(
-		planEntitlements.Items,
+		planItems,
 		addonEntitlements,
 		subscriptionEntitlements,
 		sub.ID,
+		at,
 	)
 
 	return finalEntitlements, nil
+}
+
+// isEntitlementActive reports whether customer-facing reads show e at at. A grant-backed
+// entitlement stays until the cycle it ended in is over, so its grant state still shows.
+func isEntitlementActive(e *entitlement.Entitlement, sub *subscription.Subscription, at time.Time) bool {
+	if !e.HasGrantConfig() {
+		return e.IsLiveAt(at)
+	}
+	hasStarted := e.StartDate == nil || !e.StartDate.After(at)
+	endedBeforeThisCycle := e.EndDate != nil && !e.EndDate.After(sub.CurrentPeriodStart)
+	return hasStarted && !endedBeforeThisCycle
 }
 
 // filterOverriddenEntitlements removes plan/addon entitlements that have been overridden
@@ -6830,10 +6864,10 @@ func (s *subscriptionService) filterOverriddenEntitlements(
 	addonEntitlements []*dto.EntitlementResponse,
 	subscriptionEntitlements []*dto.EntitlementResponse,
 	subscriptionID string,
+	now time.Time,
 ) []*dto.EntitlementResponse {
 	// Build a map of parent_entitlement_id -> true for quick lookup
-	// Only include subscription entitlements that are currently active (time-based check)
-	now := time.Now().UTC()
+	// Only include subscription entitlements that are active at now (time-based check)
 	overriddenIDs := make(map[string]bool)
 	activeSubEntitlements := make([]*dto.EntitlementResponse, 0, len(subscriptionEntitlements))
 
@@ -6950,7 +6984,30 @@ func (s *subscriptionService) GetAggregatedSubscriptionEntitlementsForSubscripti
 	if err != nil {
 		return nil, err
 	}
+	return s.aggregateSubscriptionEntitlements(ctx, sub, req, entitlements), nil
+}
 
+// GetActiveAggregatedSubscriptionEntitlements is the aggregated view as of now, for customer-facing
+// reads; billing keeps GetAggregatedSubscriptionEntitlementsForSubscription.
+func (s *subscriptionService) GetActiveAggregatedSubscriptionEntitlements(ctx context.Context, subscriptionID string, req *dto.GetSubscriptionEntitlementsRequest) (*dto.SubscriptionEntitlementsResponse, error) {
+	if req == nil {
+		req = &dto.GetSubscriptionEntitlementsRequest{}
+	}
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+	entitlements, err := s.GetActiveSubscriptionEntitlementsForSubscription(ctx, sub, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	return s.aggregateSubscriptionEntitlements(ctx, sub, req, entitlements), nil
+}
+
+func (s *subscriptionService) aggregateSubscriptionEntitlements(ctx context.Context, sub *subscription.Subscription, req *dto.GetSubscriptionEntitlementsRequest, entitlements []*dto.EntitlementResponse) *dto.SubscriptionEntitlementsResponse {
 	// Filter by feature IDs if specified
 	if len(req.FeatureIDs) > 0 {
 		filteredEntitlements := make([]*dto.EntitlementResponse, 0)
@@ -7001,7 +7058,7 @@ func (s *subscriptionService) GetAggregatedSubscriptionEntitlementsForSubscripti
 		Features:       aggregatedFeatures,
 	}
 
-	return response, nil
+	return response
 }
 
 // GetAggregatedSubscriptionEntitlements retrieves and aggregates all entitlements for a subscription
