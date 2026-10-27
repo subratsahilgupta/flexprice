@@ -81,7 +81,12 @@ func NotifySubscriptionChanged(ctx context.Context, params ServiceParams, subscr
 			return err
 		}
 
-		_, err = params.ContractService.SyncForSubscription(ctx, sub)
+		c, err := params.ContractService.SyncForSubscription(ctx, sub)
+		if err != nil {
+			return err
+		}
+
+		_, err = params.POBService.SyncForSubscription(ctx, sub, c)
 		return err
 	})
 }

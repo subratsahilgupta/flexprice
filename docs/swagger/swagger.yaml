@@ -118,6 +118,15 @@ definitions:
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
     type: object
+  ListPerformanceObligationsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/PerformanceObligationResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+    type: object
   ListPlansResponse:
     properties:
       items:
@@ -6486,6 +6495,46 @@ definitions:
       updated_by:
         type: string
       voided_at:
+        type: string
+    type: object
+  PerformanceObligationAssociationResponse:
+    properties:
+      created_at:
+        type: string
+      entity_id:
+        type: string
+      entity_type:
+        $ref: '#/definitions/types.RevRecEntityType'
+      id:
+        type: string
+    type: object
+  PerformanceObligationResponse:
+    properties:
+      amortization_method:
+        $ref: '#/definitions/types.AmortizationMethod'
+      associations:
+        items:
+          $ref: '#/definitions/PerformanceObligationAssociationResponse'
+        type: array
+      contract_id:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      pob_status:
+        $ref: '#/definitions/types.PerformanceObligationStatus'
+      recognition_method:
+        $ref: '#/definitions/types.RecognitionMethod'
+      service_end:
+        type: string
+      service_start:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      updated_at:
         type: string
     type: object
   PlanChangeScheduleDetails:
@@ -14813,6 +14862,57 @@ definitions:
       workflow_id:
         type: string
     type: object
+  pob.Filter:
+    properties:
+      contract_ids:
+        items:
+          type: string
+        type: array
+      customer_ids:
+        items:
+          type: string
+        type: array
+      end_time:
+        type: string
+      expand:
+        type: string
+      filters:
+        items:
+          $ref: '#/definitions/types.FilterCondition'
+        type: array
+      limit:
+        maximum: 1000
+        minimum: 1
+        type: integer
+      offset:
+        minimum: 0
+        type: integer
+      order:
+        enum:
+        - asc
+        - desc
+        type: string
+      performance_obligation_ids:
+        items:
+          type: string
+        type: array
+      pob_statuses:
+        items:
+          $ref: '#/definitions/types.PerformanceObligationStatus'
+        type: array
+      recognition_methods:
+        items:
+          $ref: '#/definitions/types.RecognitionMethod'
+        type: array
+      sort:
+        items:
+          $ref: '#/definitions/types.SortCondition'
+        type: array
+      start_time:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+    type: object
   price.JSONBFilters:
     additionalProperties:
       items:
@@ -15252,6 +15352,16 @@ definitions:
       quantity:
         type: string
     type: object
+  types.AmortizationMethod:
+    enum:
+    - daily
+    - period_even
+    - period_even_prorated
+    type: string
+    x-enum-varnames:
+    - AmortizationDaily
+    - AmortizationPeriodEven
+    - AmortizationPeriodEvenProrated
   types.CommitmentCollectionMethod:
     enum:
     - per_period
@@ -15343,6 +15453,28 @@ definitions:
     additionalProperties:
       type: string
     type: object
+  types.PerformanceObligationStatus:
+    enum:
+    - draft
+    - active
+    - satisfied
+    - cancelled
+    type: string
+    x-enum-varnames:
+    - PerformanceObligationStatusDraft
+    - PerformanceObligationStatusActive
+    - PerformanceObligationStatusSatisfied
+    - PerformanceObligationStatusCancelled
+  types.RecognitionMethod:
+    enum:
+    - point_in_time
+    - straight_line
+    - as_consumed
+    type: string
+    x-enum-varnames:
+    - RecognitionMethodPointInTime
+    - RecognitionMethodStraightLine
+    - RecognitionMethodAsConsumed
   types.ReportCategory:
     enum:
     - billing
@@ -15380,9 +15512,11 @@ definitions:
   types.RevRecEntityType:
     enum:
     - subscription
+    - subscription_line_item
     type: string
     x-enum-varnames:
     - RevRecEntityTypeSubscription
+    - RevRecEntityTypeSubscriptionLineItem
   types.TenantInternalStatus:
     enum:
     - trialing
@@ -21292,6 +21426,78 @@ paths:
       summary: Process payment
       tags:
       - Payments
+  /performance_obligations/{id}:
+    get:
+      description: Use when you need to load a single performance obligation with
+        the subscription line items it covers. Performance obligations are derived
+        from subscriptions and are read-only.
+      operationId: getPerformanceObligation
+      parameters:
+      - description: Performance obligation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/PerformanceObligationResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Resource not found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get performance obligation
+      tags:
+      - Performance Obligations
+      x-scope: read
+  /performance_obligations/search:
+    post:
+      consumes:
+      - application/json
+      description: Use when searching performance obligations by contract, customer,
+        status or recognition method. Returns a paginated list.
+      operationId: queryPerformanceObligation
+      parameters:
+      - description: Filter
+        in: body
+        name: filter
+        required: true
+        schema:
+          $ref: '#/definitions/pob.Filter'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ListPerformanceObligationsResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Query performance obligations
+      tags:
+      - Performance Obligations
+      x-scope: read
   /plans:
     post:
       consumes:

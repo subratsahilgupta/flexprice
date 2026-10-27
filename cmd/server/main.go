@@ -23,6 +23,7 @@ import (
 	"github.com/flexprice/flexprice/internal/ee/service"
 	adminsvc "github.com/flexprice/flexprice/internal/ee/service/admin"
 	contractsvc "github.com/flexprice/flexprice/internal/ee/service/contract"
+	pobsvc "github.com/flexprice/flexprice/internal/ee/service/pob"
 	"github.com/flexprice/flexprice/internal/ee/service/revenue"
 	"github.com/flexprice/flexprice/internal/ee/service/selfbilling"
 	"github.com/flexprice/flexprice/internal/httpclient"
@@ -196,6 +197,7 @@ func main() {
 			repository.NewAddonRepository,
 			repository.NewProductRepository,
 			repository.NewContractRepository,
+			repository.NewPerformanceObligationRepository,
 			repository.NewAddonAssociationRepository,
 			repository.NewSubscriptionLineItemRepository,
 			repository.NewSubscriptionPhaseRepository,
@@ -327,6 +329,7 @@ func main() {
 			service.NewAddonService,
 			service.NewProductService,
 			contractsvc.NewContractService,
+			pobsvc.NewPerformanceObligationService,
 			service.NewSettingsService,
 			service.NewSubscriptionChangeService,
 			service.NewSubscriptionModificationService,
@@ -423,6 +426,7 @@ func provideHandlers(
 	addonService service.AddonService,
 	productService service.ProductService,
 	contractService contractsvc.ContractService,
+	pobService pobsvc.PerformanceObligationService,
 	settingsService service.SettingsService,
 	subscriptionChangeService service.SubscriptionChangeService,
 	subscriptionModificationService service.SubscriptionModificationService,
@@ -496,6 +500,7 @@ func provideHandlers(
 		Addon:                    v1.NewAddonHandler(addonService, entitlementService, temporalService, logger),
 		Product:                  v1.NewProductHandler(productService, logger),
 		Contract:                 v1.NewContractHandler(contractService, logger),
+		PerformanceObligation:    v1.NewPerformanceObligationHandler(pobService, logger),
 		Commitment:               v1.NewCommitmentHandler(commitmentService, logger),
 		Settings:                 v1.NewSettingsHandler(settingsService, logger),
 		SetupIntent:              v1.NewSetupIntentHandler(integrationFactory, customerService, cfg, logger),

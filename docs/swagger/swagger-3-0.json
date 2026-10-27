@@ -9054,6 +9054,135 @@
         ]
       }
     },
+    "/performance_obligations/search": {
+      "post": {
+        "tags": [
+          "Performance Obligations"
+        ],
+        "summary": "Query performance obligations",
+        "description": "Use when searching performance obligations by contract, customer, status or recognition method. Returns a paginated list.",
+        "operationId": "queryPerformanceObligation",
+        "requestBody": {
+          "description": "Filter",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/pob.Filter"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListPerformanceObligationsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "read",
+        "x-codegen-request-body-name": "filter"
+      }
+    },
+    "/performance_obligations/{id}": {
+      "get": {
+        "tags": [
+          "Performance Obligations"
+        ],
+        "summary": "Get performance obligation",
+        "description": "Use when you need to load a single performance obligation with the subscription line items it covers. Performance obligations are derived from subscriptions and are read-only.",
+        "operationId": "getPerformanceObligation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Performance obligation ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PerformanceObligationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "read"
+      }
+    },
     "/plans": {
       "post": {
         "tags": [
@@ -18984,6 +19113,20 @@
           }
         }
       },
+      "ListPerformanceObligationsResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PerformanceObligationResponse"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/types.PaginationResponse"
+          }
+        }
+      },
       "ListPlansResponse": {
         "type": "object",
         "properties": {
@@ -27426,6 +27569,72 @@
             "type": "string"
           },
           "voided_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PerformanceObligationAssociationResponse": {
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "entity_id": {
+            "type": "string"
+          },
+          "entity_type": {
+            "$ref": "#/components/schemas/types.RevRecEntityType"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "PerformanceObligationResponse": {
+        "type": "object",
+        "properties": {
+          "amortization_method": {
+            "$ref": "#/components/schemas/types.AmortizationMethod"
+          },
+          "associations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PerformanceObligationAssociationResponse"
+            }
+          },
+          "contract_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pob_status": {
+            "$ref": "#/components/schemas/types.PerformanceObligationStatus"
+          },
+          "recognition_method": {
+            "$ref": "#/components/schemas/types.RecognitionMethod"
+          },
+          "service_end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "service_start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.Status"
+          },
+          "updated_at": {
             "type": "string",
             "format": "date-time"
           }
@@ -38514,6 +38723,83 @@
           }
         }
       },
+      "pob.Filter": {
+        "type": "object",
+        "properties": {
+          "contract_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "customer_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expand": {
+            "type": "string"
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.FilterCondition"
+            }
+          },
+          "limit": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "performance_obligation_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pob_statuses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.PerformanceObligationStatus"
+            }
+          },
+          "recognition_methods": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.RecognitionMethod"
+            }
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.SortCondition"
+            }
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.Status"
+          }
+        }
+      },
       "price.JSONBFilters": {
         "type": "object",
         "additionalProperties": {
@@ -39100,6 +39386,20 @@
         },
         "x-speakeasy-name-override": "AddonPriceOverrideRef"
       },
+      "types.AmortizationMethod": {
+        "type": "string",
+        "enum": [
+          "daily",
+          "period_even",
+          "period_even_prorated"
+        ],
+        "x-enum-varnames": [
+          "AmortizationDaily",
+          "AmortizationPeriodEven",
+          "AmortizationPeriodEvenProrated"
+        ],
+        "x-speakeasy-name-override": "AmortizationMethod"
+      },
       "types.CommitmentCollectionMethod": {
         "type": "string",
         "enum": [
@@ -39232,6 +39532,36 @@
         },
         "x-speakeasy-name-override": "Metadata"
       },
+      "types.PerformanceObligationStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "active",
+          "satisfied",
+          "cancelled"
+        ],
+        "x-enum-varnames": [
+          "PerformanceObligationStatusDraft",
+          "PerformanceObligationStatusActive",
+          "PerformanceObligationStatusSatisfied",
+          "PerformanceObligationStatusCancelled"
+        ],
+        "x-speakeasy-name-override": "PerformanceObligationStatus"
+      },
+      "types.RecognitionMethod": {
+        "type": "string",
+        "enum": [
+          "point_in_time",
+          "straight_line",
+          "as_consumed"
+        ],
+        "x-enum-varnames": [
+          "RecognitionMethodPointInTime",
+          "RecognitionMethodStraightLine",
+          "RecognitionMethodAsConsumed"
+        ],
+        "x-speakeasy-name-override": "RecognitionMethod"
+      },
       "types.ReportCategory": {
         "type": "string",
         "enum": [
@@ -39281,10 +39611,12 @@
       "types.RevRecEntityType": {
         "type": "string",
         "enum": [
-          "subscription"
+          "subscription",
+          "subscription_line_item"
         ],
         "x-enum-varnames": [
-          "RevRecEntityTypeSubscription"
+          "RevRecEntityTypeSubscription",
+          "RevRecEntityTypeSubscriptionLineItem"
         ],
         "x-speakeasy-name-override": "RevRecEntityType"
       },

@@ -128,6 +128,8 @@ const (
 	UUID_PREFIX_PRODUCT                    = "product"
 	UUID_PREFIX_CONTRACT                   = "contract"
 	UUID_PREFIX_CONTRACT_ASSOCIATION       = "contract_assoc"
+	UUID_PREFIX_PERFORMANCE_OBLIGATION     = "pob"
+	UUID_PREFIX_POB_ASSOCIATION            = "pob_assoc"
 	UUID_PREFIX_EVENT_DELETION_REQUEST     = "evtdel"
 
 	// UUID_PREFIX_COMMITMENT prefixes first-class subscription commitment IDs.

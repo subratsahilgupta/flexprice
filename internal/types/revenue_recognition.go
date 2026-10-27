@@ -1,5 +1,14 @@
 package types
 
+// AmortizationMethod weights the days of a revenue schedule segment.
+type AmortizationMethod string
+
+const (
+	AmortizationDaily              AmortizationMethod = "daily"
+	AmortizationPeriodEven         AmortizationMethod = "period_even"
+	AmortizationPeriodEvenProrated AmortizationMethod = "period_even_prorated"
+)
+
 type ContractStatus string
 
 const (
@@ -9,9 +18,19 @@ const (
 	ContractStatusCancelled ContractStatus = "cancelled"
 )
 
+type PerformanceObligationStatus string
+
+const (
+	PerformanceObligationStatusDraft     PerformanceObligationStatus = "draft"
+	PerformanceObligationStatusActive    PerformanceObligationStatus = "active"
+	PerformanceObligationStatusSatisfied PerformanceObligationStatus = "satisfied"
+	PerformanceObligationStatusCancelled PerformanceObligationStatus = "cancelled"
+)
+
 // RevRecEntityType is the kind of entity a revrec record links to or is sourced from.
 type RevRecEntityType string
 
 const (
-	RevRecEntityTypeSubscription RevRecEntityType = "subscription"
+	RevRecEntityTypeSubscription         RevRecEntityType = "subscription"
+	RevRecEntityTypeSubscriptionLineItem RevRecEntityType = "subscription_line_item"
 )
