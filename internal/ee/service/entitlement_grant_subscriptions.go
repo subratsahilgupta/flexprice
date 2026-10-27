@@ -229,19 +229,9 @@ func (g *subscriptionGrantGuard) hasActiveCommitment(ctx context.Context, sub *s
 	return len(active) > 0, err
 }
 
-// createSubscriptionGrant creates a dollar allowance shared by every usage line on one subscription.
+// createSubscriptionGrant creates a dollar allowance shared by every usage line on one subscription. It
+// starts now unless the request dates it; inside a caller's transaction the webhook waits for its commit.
 func (s *entitlementService) createSubscriptionGrant(ctx context.Context, req dto.CreateEntitlementRequest, sub *subscription.Subscription) (*dto.EntitlementResponse, error) {
-	created, err := s.saveSubscriptionGrant(ctx, req, sub)
-	if err != nil {
-		return nil, err
-	}
-	s.publishSystemEvent(ctx, types.WebhookEventEntitlementCreated, created.ID)
-	return &dto.EntitlementResponse{Entitlement: created}, nil
-}
-
-// saveSubscriptionGrant validates and stores a subscription grant without publishing, for callers that
-// commit later. It starts now unless the request dates it.
-func (s *entitlementService) saveSubscriptionGrant(ctx context.Context, req dto.CreateEntitlementRequest, sub *subscription.Subscription) (*entitlement.Entitlement, error) {
 	e := req.ToEntitlement(ctx)
 	e.EntityType = types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION
 	e.EntityID = sub.ID
@@ -276,7 +266,14 @@ func (s *entitlementService) saveSubscriptionGrant(ctx context.Context, req dto.
 	}); err != nil {
 		return nil, err
 	}
-	return created, nil
+
+	// The publisher writes to Postgres, so it must not run on the caller's transaction.
+	publishCtx := types.WithoutDBTransaction(ctx)
+	publish := func() { s.publishSystemEvent(publishCtx, types.WebhookEventEntitlementCreated, created.ID) }
+	if !types.RegisterPostCommit(ctx, publish) {
+		publish()
+	}
+	return &dto.EntitlementResponse{Entitlement: created}, nil
 }
 
 // validateSubscriptionGrantSiblings keeps one mode per subscription, and one window length when the
@@ -428,21 +425,27 @@ func (s *entitlementService) updateSubscriptionGrant(ctx context.Context, existi
 			WithReportableDetails(map[string]any{"entitlement_id": existing.ID}).
 			Mark(ierr.ErrValidation)
 	}
-	if req.GrantQuota == nil || entitlement.QuotaEquals(existing.GrantQuota, req.GrantQuota) {
+	if req.GrantQuota == nil {
 		return &dto.EntitlementResponse{Entitlement: existing}, nil
 	}
 
-	delta := req.GrantQuota.Sub(lo.FromPtr(existing.GrantQuota))
-	existing.GrantQuota = req.GrantQuota
-	if err := existing.Validate(); err != nil {
-		return nil, err
-	}
-
-	var updated *entitlement.Entitlement
+	updated := existing
 	if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
-		var err error
-		updated, err = s.EntitlementRepo.Update(txCtx, existing)
+		// Locked and re-read, so concurrent edits each see the quota the other left.
+		locked, err := s.EntitlementRepo.GetForUpdate(txCtx, existing.ID)
 		if err != nil {
+			return err
+		}
+		if entitlement.QuotaEquals(locked.GrantQuota, req.GrantQuota) {
+			updated = locked
+			return nil
+		}
+		delta := req.GrantQuota.Sub(lo.FromPtr(locked.GrantQuota))
+		locked.GrantQuota = req.GrantQuota
+		if err := locked.Validate(); err != nil {
+			return err
+		}
+		if updated, err = s.EntitlementRepo.Update(txCtx, locked); err != nil {
 			return err
 		}
 		live, err := s.liveSubscriptionGrantWindows(txCtx, updated)

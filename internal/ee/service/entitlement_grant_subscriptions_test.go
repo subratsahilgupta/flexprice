@@ -443,3 +443,33 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantGuard_ChecksLinesStartingNe
 	s.Require().Error(err)
 	s.Contains(err.Error(), "tiered")
 }
+
+func (s *EntitlementGrantSuite) TestSubscriptionGrant_RefusesCommitmentAddedLater() {
+	s.enableEntitlementAlerts()
+	fx := s.newSubGrantSubscription("commit-later")
+	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 50, ""))
+	s.Require().NoError(err)
+
+	_, err = NewCommitmentService(s.buildServiceParams()).Create(s.GetContext(), dto.CreateCommitmentRequest{SubscriptionID: fx.sub.ID})
+	s.Require().Error(err)
+	s.Contains(err.Error(), "subscription has a subscription grant")
+}
+
+func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_RepeatedEditAddsNothing() {
+	s.enableEntitlementAlerts()
+	fx := s.newSubGrantSubscription("edit-repeat")
+	s.backdate(fx)
+	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 30, ""))
+	s.Require().NoError(err)
+	s.seedEvaluatedSubGrantWindow("eg-edit-repeat", fx, fx.sub.CurrentPeriodStart, fx.sub.CurrentPeriodEnd, 30, 0)
+
+	edit := dto.UpdateEntitlementRequest{GrantQuota: lo.ToPtr(decimal.NewFromInt(50))}
+	_, err = s.entService.UpdateEntitlement(s.GetContext(), created.ID, edit)
+	s.Require().NoError(err)
+	_, err = s.entService.UpdateEntitlement(s.GetContext(), created.ID, edit)
+	s.Require().NoError(err)
+
+	windows := s.subGrantWindowsOf(fx.sub.ID)
+	s.Require().Len(windows, 2, "the second edit to the same quota re-cuts nothing")
+	s.True(decimal.NewFromInt(50).Equal(windows[1].Quota), "got %s", windows[1].Quota)
+}

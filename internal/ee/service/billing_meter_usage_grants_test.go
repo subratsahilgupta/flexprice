@@ -526,6 +526,7 @@ func TestSplitByShare(t *testing.T) {
 		{"zero and negative lines get nothing", decs("0", "-5", "40"), "10", decs("0", "0", "10")},
 		{"tiny shares never go negative", decs("0.02", "0.02", "0.02", "0.02"), "0.02", decs("0.01", "0.01", "0", "0")},
 		{"rounded-down shares keep every cent", decs("0.01", "0.01", "0.01"), "0.02", decs("0.01", "0.01", "0")},
+		{"sub-cent line still takes its rounded cent", decs("0.006"), "0.01", decs("0.01")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -633,6 +633,7 @@ func subscriptionLineSpend(
 // units: each share is rounded down and the leftover units go to the largest remainders. The parts add
 // up to min(billable, total gross) and no line goes below zero or above its gross.
 func splitByShare(gross []decimal.Decimal, billable decimal.Decimal, precision int32) []decimal.Decimal {
+	gross = lo.Map(gross, func(g decimal.Decimal, _ int) decimal.Decimal { return g.Round(precision) })
 	billed := make([]decimal.Decimal, len(gross))
 	total := decimal.Zero
 	for _, g := range gross {
