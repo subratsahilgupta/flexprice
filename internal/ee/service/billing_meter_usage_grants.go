@@ -391,10 +391,6 @@ func (s *billingService) loadSubscriptionGrants(
 		return nil, err
 	}
 
-	items, err := s.SubscriptionLineItemRepo.ListBySubscription(ctx, sub)
-	if err != nil {
-		return nil, err
-	}
 	priceByItemID := make(map[string]*priceDomain.Price, len(chargesByLineItemID))
 	for id, charges := range chargesByLineItemID {
 		if len(charges) > 0 {
@@ -403,7 +399,7 @@ func (s *billingService) loadSubscriptionGrants(
 	}
 	reason := subscriptionGrantBlocker(subscriptionGrantState{
 		sub:                 sub,
-		items:               items,
+		items:               sub.LineItems,
 		priceByItemID:       priceByItemID,
 		meters:              meters,
 		hasFeatureAllowance: hasFeatureAllowance,
@@ -452,11 +448,8 @@ func (s *billingService) applySubscriptionGrants(
 	return reduction, nil
 }
 
-// subscriptionGrantBilled returns what each line is billed after the grants, in line order.
-//
-//   - Windows never overlap: overage = sum of (usage - quota), split by each line's share.
-//     $30 grant, X $70 + Y $50: charge $90, X $52.50, Y $37.50.
-//   - Parallel windows overlap: each line is billed its own spend after a crossing.
+// subscriptionGrantBilled returns what each line is billed after the grants, in line order. Spend
+// outside every window, or covered by the grant on an earlier invoice, stays billed.
 func (s *billingService) subscriptionGrantBilled(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -468,23 +461,69 @@ func (s *billingService) subscriptionGrantBilled(
 	amounts := lo.Map(lines, func(l dto.CreateInvoiceLineItemRequest, _ int) decimal.Decimal { return l.Amount })
 
 	if !grantWindowsOverlap(grants) {
-		overage := decimal.Zero
+		covered := decimal.Zero
 		for _, g := range grants {
-			overage = overage.Add(decimal.Max(g.Overage(), decimal.Zero))
+			c, err := s.coveredWithin(ctx, sub, g, periodStart, periodEnd)
+			if err != nil {
+				return nil, err
+			}
+			covered = covered.Add(c)
 		}
-		return splitByShare(amounts, overage, precision), nil
+		gross := decimal.Sum(decimal.Zero, lo.Map(amounts, func(a decimal.Decimal, _ int) decimal.Decimal { return decimal.Max(a, decimal.Zero) })...)
+		return splitByShare(amounts, decimal.Max(gross.Sub(covered), decimal.Zero), precision), nil
 	}
 
-	spend, err := s.lineSpendAfterCrossing(ctx, sub, grants, periodStart, periodEnd)
+	free, err := s.lineSpendCoveredByParallelGrants(ctx, sub, grants, periodStart, periodEnd)
 	if err != nil {
 		return nil, err
 	}
 	billed := make([]decimal.Decimal, len(lines))
 	for i, l := range lines {
-		own := decimal.Max(spend[lo.FromPtr(l.SubscriptionLineItemID)], decimal.Zero)
-		billed[i] = decimal.Min(l.Amount, own).Round(precision)
+		left := l.Amount.Sub(decimal.Max(free[lo.FromPtr(l.SubscriptionLineItemID)], decimal.Zero))
+		billed[i] = decimal.Min(l.Amount, decimal.Max(left, decimal.Zero)).Round(precision)
 	}
 	return billed, nil
+}
+
+// coveredWithin is how much of the grant's quota was used inside [periodStart, periodEnd): what it had
+// covered by the period end less what it had covered by the period start.
+func (s *billingService) coveredWithin(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	g *entitlementgrant.EntitlementGrant,
+	periodStart, periodEnd time.Time,
+) (decimal.Decimal, error) {
+	start := types.LatestOf(g.ValidFrom, periodStart)
+	end := types.EarliestOf(g.ValidTo, periodEnd)
+	if !end.After(start) {
+		return decimal.Zero, nil
+	}
+
+	usageAtEnd := g.Usage
+	if g.ValidTo.After(periodEnd) {
+		total, _, err := subscriptionLineSpend(ctx, s.ServiceParams, sub, g.ValidFrom, periodEnd)
+		if err != nil {
+			return decimal.Zero, err
+		}
+		usageAtEnd = total
+	}
+	usageAtStart := decimal.Zero
+	if g.ValidFrom.Before(periodStart) {
+		total, _, err := subscriptionLineSpend(ctx, s.ServiceParams, sub, g.ValidFrom, periodStart)
+		if err != nil {
+			return decimal.Zero, err
+		}
+		usageAtStart = total
+	}
+
+	coveredBy := func(usage decimal.Decimal) decimal.Decimal {
+		usage = decimal.Max(usage, decimal.Zero)
+		if g.Unlimited {
+			return usage
+		}
+		return decimal.Min(usage, g.Quota)
+	}
+	return decimal.Max(coveredBy(usageAtEnd).Sub(coveredBy(usageAtStart)), decimal.Zero), nil
 }
 
 // lowerLineAmount sets the line's billed amount and records the allowance taken off it.
@@ -509,35 +548,44 @@ func (s *billingService) lowerLineAmount(ctx context.Context, line *dto.CreateIn
 	return nil
 }
 
-// lineSpendAfterCrossing prices every usage line inside the merged [quota_crossed_at, valid_to)
-// windows, clipped to the period, and returns the spend per subscription line item.
-func (s *billingService) lineSpendAfterCrossing(
+// lineSpendCoveredByParallelGrants returns, per subscription line item, the spend the grants made free:
+// spend inside any window, clipped to the period, less spend after a quota was crossed.
+func (s *billingService) lineSpendCoveredByParallelGrants(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	grants []*entitlementgrant.EntitlementGrant,
 	periodStart, periodEnd time.Time,
 ) (map[string]decimal.Decimal, error) {
+	windows := make([]TimeInterval, 0, len(grants))
 	crossed := make([]TimeInterval, 0, len(grants))
 	for _, g := range grants {
+		end := types.EarliestOf(g.ValidTo, periodEnd)
+		windows = append(windows, TimeInterval{Start: types.LatestOf(g.ValidFrom, periodStart), End: end})
 		if g.QuotaCrossedAt != nil {
-			crossed = append(crossed, TimeInterval{
-				Start: types.LatestOf(*g.QuotaCrossedAt, periodStart),
-				End:   types.EarliestOf(g.ValidTo, periodEnd),
-			})
+			crossed = append(crossed, TimeInterval{Start: types.LatestOf(*g.QuotaCrossedAt, periodStart), End: end})
 		}
 	}
 
-	spend := make(map[string]decimal.Decimal)
-	for _, w := range MergeIntervals(crossed) {
-		_, perLine, err := subscriptionLineSpend(ctx, s.ServiceParams, sub, w.Start, w.End)
-		if err != nil {
-			return nil, err
+	free := make(map[string]decimal.Decimal)
+	add := func(intervals []TimeInterval, sign decimal.Decimal) error {
+		for _, w := range MergeIntervals(intervals) {
+			_, perLine, err := subscriptionLineSpend(ctx, s.ServiceParams, sub, w.Start, w.End)
+			if err != nil {
+				return err
+			}
+			for lineID, amount := range perLine {
+				free[lineID] = free[lineID].Add(amount.Mul(sign))
+			}
 		}
-		for lineID, amount := range perLine {
-			spend[lineID] = spend[lineID].Add(amount)
-		}
+		return nil
 	}
-	return spend, nil
+	if err := add(windows, decimal.NewFromInt(1)); err != nil {
+		return nil, err
+	}
+	if err := add(crossed, decimal.NewFromInt(-1)); err != nil {
+		return nil, err
+	}
+	return free, nil
 }
 
 // subscriptionLineSpend prices every usage line on the subscription over [start, end), returning
@@ -581,30 +629,53 @@ func subscriptionLineSpend(
 	return total, perLine, nil
 }
 
-// splitByShare spreads the overage over the lines in proportion to their gross amounts, rounded to
-// the currency. Rounding drift goes to the largest line so the parts add up to min(overage, total gross).
-func splitByShare(gross []decimal.Decimal, overage decimal.Decimal, precision int32) []decimal.Decimal {
+// splitByShare spreads billable over the lines in proportion to their gross amounts, in whole currency
+// units: each share is rounded down and the leftover units go to the largest remainders. The parts add
+// up to min(billable, total gross) and no line goes below zero or above its gross.
+func splitByShare(gross []decimal.Decimal, billable decimal.Decimal, precision int32) []decimal.Decimal {
 	billed := make([]decimal.Decimal, len(gross))
-	total, largest := decimal.Zero, 0
-	for i, g := range gross {
+	total := decimal.Zero
+	for _, g := range gross {
 		total = total.Add(decimal.Max(g, decimal.Zero))
-		if g.GreaterThan(gross[largest]) {
-			largest = i
-		}
 	}
-	if !total.IsPositive() || !overage.IsPositive() {
+	if !total.IsPositive() || !billable.IsPositive() {
 		return billed
 	}
-	// Never bill more than was spent.
-	overage = decimal.Min(overage, total).Round(precision)
+	billable = decimal.Min(billable, total).Round(precision)
 
-	sum := decimal.Zero
+	type remainder struct {
+		index int
+		value decimal.Decimal
+	}
+	remainders := make([]remainder, 0, len(gross))
+	left := billable
 	for i, g := range gross {
-		if g.IsPositive() {
-			billed[i] = g.Mul(overage).Div(total).Round(precision)
-			sum = sum.Add(billed[i])
+		if !g.IsPositive() {
+			continue
+		}
+		exact := g.Mul(billable).Div(total)
+		billed[i] = exact.RoundFloor(precision)
+		left = left.Sub(billed[i])
+		remainders = append(remainders, remainder{index: i, value: exact.Sub(billed[i])})
+	}
+	sort.SliceStable(remainders, func(a, b int) bool { return remainders[a].value.GreaterThan(remainders[b].value) })
+
+	unit := decimal.New(1, -precision)
+	for left.IsPositive() {
+		progressed := false
+		for _, r := range remainders {
+			if !left.IsPositive() {
+				break
+			}
+			if next := billed[r.index].Add(unit); next.LessThanOrEqual(gross[r.index]) {
+				billed[r.index] = next
+				left = left.Sub(unit)
+				progressed = true
+			}
+		}
+		if !progressed {
+			break
 		}
 	}
-	billed[largest] = decimal.Min(gross[largest], billed[largest].Add(overage.Sub(sum)))
 	return billed
 }

@@ -118,7 +118,12 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 	}
 
 	if req.IsSubscriptionGrant() {
-		return s.createSubscriptionGrant(ctx, req, entity.(*subscription.Subscription))
+		sub, ok := entity.(*subscription.Subscription)
+		if !ok {
+			return nil, ierr.NewError("a subscription grant needs entity_id set to the subscription").
+				Mark(ierr.ErrValidation)
+		}
+		return s.createSubscriptionGrant(ctx, req, sub)
 	}
 
 	// Validate feature exists

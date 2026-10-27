@@ -21817,7 +21817,8 @@
             "type": "string"
           },
           "usage_limit": {
-            "type": "integer"
+            "type": "integer",
+            "description": "Deprecated: use grant_quota; a metered usage_limit is converted to a grant on create."
           },
           "usage_reset_period": {
             "$ref": "#/components/schemas/types.EntitlementUsageResetPeriod"
@@ -22569,6 +22570,10 @@
           "aggregation_mode": {
             "$ref": "#/components/schemas/types.EntitlementAggregationMode"
           },
+          "end_date": {
+            "type": "string",
+            "format": "date-time"
+          },
           "grant_allocation_behavior": {
             "$ref": "#/components/schemas/types.EntitlementGrantAllocationBehavior"
           },
@@ -22580,6 +22585,11 @@
           },
           "grant_quota": {
             "type": "string"
+          },
+          "start_date": {
+            "type": "string",
+            "description": "StartDate defaults to the subscription's start; EndDate leaves the grant open.",
+            "format": "date-time"
           }
         }
       },
@@ -30617,7 +30627,8 @@
             "type": "string"
           },
           "usage_limit": {
-            "type": "integer"
+            "type": "integer",
+            "description": "Deprecated: use grant_quota."
           },
           "usage_reset_period": {
             "$ref": "#/components/schemas/types.EntitlementUsageResetPeriod"

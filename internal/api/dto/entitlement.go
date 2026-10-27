@@ -43,7 +43,7 @@ type CreateEntitlementRequest struct {
 
 // IsSubscriptionGrant reports a subscription grant: a grant config on a subscription with no feature.
 func (r *CreateEntitlementRequest) IsSubscriptionGrant() bool {
-	return r.EntityType == types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION && r.FeatureID == "" && r.hasGrantConfig()
+	return r.EntityType == types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION && r.EntityID != "" && r.FeatureID == "" && r.hasGrantConfig()
 }
 
 func (r *CreateEntitlementRequest) hasGrantConfig() bool {

@@ -31,6 +31,7 @@ type subscriptionGrantState struct {
 	meters              map[string]*meter.Meter
 	hasFeatureAllowance bool
 	commitmentLineIDs   map[string]bool
+	pendingItemIDs      map[string]bool // being added now: judged whenever they start
 	periodStart         time.Time
 	periodEnd           time.Time
 }
@@ -45,7 +46,10 @@ func subscriptionGrantBlocker(st subscriptionGrantState) error {
 		return errSubGrantWithFeatureGrant
 	}
 	for _, item := range st.items {
-		if item == nil || item.PriceType != types.PRICE_TYPE_USAGE || !overlapsPeriod(item, st.periodStart, st.periodEnd) {
+		if item == nil || item.PriceType != types.PRICE_TYPE_USAGE {
+			continue
+		}
+		if !st.pendingItemIDs[item.ID] && !overlapsPeriod(item, st.periodStart, st.periodEnd) {
 			continue
 		}
 		if st.commitmentLineIDs[item.ID] {
@@ -205,8 +209,11 @@ func (g *subscriptionGrantGuard) load(ctx context.Context, sub *subscription.Sub
 			func(li *subscription.SubscriptionLineItem, _ string) *priceDomain.Price { return priceByID[li.PriceID] }),
 		meters:              lo.KeyBy(meters, func(m *meter.Meter) string { return m.ID }),
 		hasFeatureAllowance: hasFeatureAllowance,
-		periodStart:         sub.CurrentPeriodStart,
-		periodEnd:           sub.CurrentPeriodEnd,
+		pendingItemIDs: lo.SliceToMap(change.items, func(li *subscription.SubscriptionLineItem) (string, bool) {
+			return li.ID, true
+		}),
+		periodStart: sub.CurrentPeriodStart,
+		periodEnd:   sub.CurrentPeriodEnd,
 	}, nil
 }
 
@@ -224,9 +231,23 @@ func (g *subscriptionGrantGuard) hasActiveCommitment(ctx context.Context, sub *s
 
 // createSubscriptionGrant creates a dollar allowance shared by every usage line on one subscription.
 func (s *entitlementService) createSubscriptionGrant(ctx context.Context, req dto.CreateEntitlementRequest, sub *subscription.Subscription) (*dto.EntitlementResponse, error) {
+	created, err := s.saveSubscriptionGrant(ctx, req, sub)
+	if err != nil {
+		return nil, err
+	}
+	s.publishSystemEvent(ctx, types.WebhookEventEntitlementCreated, created.ID)
+	return &dto.EntitlementResponse{Entitlement: created}, nil
+}
+
+// saveSubscriptionGrant validates and stores a subscription grant without publishing, for callers that
+// commit later. It starts now unless the request dates it.
+func (s *entitlementService) saveSubscriptionGrant(ctx context.Context, req dto.CreateEntitlementRequest, sub *subscription.Subscription) (*entitlement.Entitlement, error) {
 	e := req.ToEntitlement(ctx)
 	e.EntityType = types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION
 	e.EntityID = sub.ID
+	if e.StartDate == nil {
+		e.StartDate = lo.ToPtr(time.Now().UTC())
+	}
 	e.ApplyGrantDefaults()
 	if err := e.Validate(); err != nil {
 		return nil, err
@@ -255,9 +276,7 @@ func (s *entitlementService) createSubscriptionGrant(ctx context.Context, req dt
 	}); err != nil {
 		return nil, err
 	}
-
-	s.publishSystemEvent(ctx, types.WebhookEventEntitlementCreated, created.ID)
-	return &dto.EntitlementResponse{Entitlement: created}, nil
+	return created, nil
 }
 
 // validateSubscriptionGrantSiblings keeps one mode per subscription, and one window length when the
@@ -490,6 +509,9 @@ func (s *entitlementService) reissueSubscriptionGrantWindows(
 	at time.Time,
 	source string,
 ) error {
+	if err := s.measureSubscriptionGrantWindows(ctx, live, at); err != nil {
+		return err
+	}
 	closedByID, err := NewEntitlementGrantService(s.ServiceParams).CloseEntitlementGrants(ctx, live, at, false)
 	if err != nil {
 		return err
@@ -536,6 +558,31 @@ func (s *entitlementService) reissueSubscriptionGrantWindows(
 		if _, err := s.EntitlementGrantRepo.Create(ctx, successor); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// measureSubscriptionGrantWindows brings each window's usage up to `at`, so the balance a successor
+// carries is not the last evaluation's.
+func (s *entitlementService) measureSubscriptionGrantWindows(ctx context.Context, live []*entitlementgrant.EntitlementGrant, at time.Time) error {
+	if len(live) == 0 {
+		return nil
+	}
+	sub, err := s.SubRepo.Get(ctx, live[0].SubscriptionID)
+	if err != nil {
+		return err
+	}
+	for _, g := range live {
+		end := types.EarliestOf(at, g.ValidTo)
+		if !end.After(g.ValidFrom) {
+			continue
+		}
+		usage, _, err := subscriptionLineSpend(ctx, s.ServiceParams, sub, g.ValidFrom, end)
+		if err != nil {
+			return err
+		}
+		g.Usage = decimal.Max(usage, decimal.Zero)
+		g.LastComputedAt = &end
 	}
 	return nil
 }

@@ -512,22 +512,24 @@ func decs(vals ...string) []decimal.Decimal {
 
 func TestSplitByShare(t *testing.T) {
 	tests := []struct {
-		name    string
-		gross   []decimal.Decimal
-		overage string
-		want    []decimal.Decimal
+		name     string
+		gross    []decimal.Decimal
+		billable string
+		want     []decimal.Decimal
 	}{
 		{"prd example", decs("70", "50"), "90", decs("52.5", "37.5")},
 		{"daily windows example", decs("30", "10"), "20", decs("15", "5")},
 		{"nothing over quota", decs("70", "50"), "0", decs("0", "0")},
-		{"overage above gross bills gross", decs("70", "50"), "150", decs("70", "50")},
+		{"billable above gross bills gross", decs("70", "50"), "150", decs("70", "50")},
 		{"exact split", decs("10", "10", "20"), "10", decs("2.5", "2.5", "5")},
-		{"thirds add up to the overage", decs("10", "10", "10.01"), "10", decs("3.33", "3.33", "3.34")},
+		{"thirds add up to the billable", decs("10", "10", "10.01"), "10", decs("3.33", "3.33", "3.34")},
 		{"zero and negative lines get nothing", decs("0", "-5", "40"), "10", decs("0", "0", "10")},
+		{"tiny shares never go negative", decs("0.02", "0.02", "0.02", "0.02"), "0.02", decs("0.01", "0.01", "0", "0")},
+		{"rounded-down shares keep every cent", decs("0.01", "0.01", "0.01"), "0.02", decs("0.01", "0.01", "0")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := splitByShare(tt.gross, decimal.RequireFromString(tt.overage), 2)
+			got := splitByShare(tt.gross, decimal.RequireFromString(tt.billable), 2)
 			require.Len(t, got, len(tt.want))
 			for i := range tt.want {
 				require.True(t, tt.want[i].Equal(got[i]), "line %d: want %s, got %s", i, tt.want[i], got[i])
@@ -581,6 +583,10 @@ func invoiceLines(fx subGrantFixture, calls, store string) []dto.CreateInvoiceLi
 func (s *EntitlementGrantSuite) applySubGrants(fx subGrantFixture, lines []dto.CreateInvoiceLineItemRequest, blockers subGrantBlockers) decimal.Decimal {
 	b := s.subGrantBilling()
 	start, end := fx.sub.CurrentPeriodStart, fx.sub.CurrentPeriodEnd
+	// Billing hands in the lines it is billing.
+	items, err := s.GetStores().SubscriptionLineItemRepo.ListBySubscription(s.GetContext(), fx.sub)
+	s.Require().NoError(err)
+	fx.sub.LineItems = items
 	grants, err := b.loadSubscriptionGrants(s.GetContext(), fx.sub, len(blockers.featureGrants) > 0, nil, blockers.commitmentLineIDs, nil, start, end)
 	s.Require().NoError(err)
 	reduction, err := b.applySubscriptionGrants(s.GetContext(), fx.sub, grants, lines, start, end)
@@ -767,4 +773,33 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_MonthlyGrantAcrossT
 	last := billedSince(fx.sub.CurrentPeriodStart, periodEnd)
 	s.True(decimal.NewFromInt(18).Equal(last), "month-end invoice: got %s", last)
 	s.True(decimal.NewFromInt(50).Equal(first.Add(second).Add(last)), "$100 spent less the $50 grant")
+}
+
+// Spend outside the grant's window stays billed: before a grant that starts mid-period, and after one
+// that ends early. $90 spent, the window saw $40 of it against a $30 quota: $60 is billed.
+func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_SpendOutsideTheWindowStaysBilled() {
+	tests := []struct {
+		name     string
+		from, to func(fx subGrantFixture) time.Time
+	}{
+		{"grant starts mid-period",
+			func(fx subGrantFixture) time.Time { return fx.sub.CurrentPeriodStart.Add(19 * 24 * time.Hour) },
+			func(fx subGrantFixture) time.Time { return fx.sub.CurrentPeriodEnd }},
+		{"grant ends early",
+			func(fx subGrantFixture) time.Time { return fx.sub.CurrentPeriodStart },
+			func(fx subGrantFixture) time.Time { return fx.sub.CurrentPeriodStart.Add(10 * 24 * time.Hour) }},
+	}
+	for i, tt := range tests {
+		s.Run(tt.name, func() {
+			fx := s.newSubGrantFixture("bill-outside-"+string(rune('a'+i)), dailySubscriptionGrant(30, types.EntitlementGrantAllocationBehaviorFirstUsage))
+			s.seedSubGrantWindow("eg-outside-"+string(rune('a'+i)), fx, tt.from(fx), tt.to(fx), 30, 40, nil)
+
+			lines := invoiceLines(fx, "60", "30")
+			reduction := s.applySubGrants(fx, lines, subGrantBlockers{})
+
+			s.True(decimal.NewFromInt(30).Equal(reduction), "the grant covers $30: got %s", reduction)
+			s.True(decimal.NewFromInt(40).Equal(lines[0].Amount), "calls: got %s", lines[0].Amount)
+			s.True(decimal.NewFromInt(20).Equal(lines[1].Amount), "storage: got %s", lines[1].Amount)
+		})
+	}
 }

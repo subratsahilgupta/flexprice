@@ -119,3 +119,23 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_RefusesIncompatibleSub
 	s.Require().Error(err)
 	s.Contains(err.Error(), "tiered")
 }
+
+func (s *SubscriptionServiceSuite) TestCreateSubscription_RefusesGrantsWithCommitments() {
+	_, err := s.service.CreateSubscription(s.GetContext(), dto.CreateSubscriptionRequest{
+		CustomerID:         s.testData.customer.ID,
+		PlanID:             s.testData.plan.ID,
+		StartDate:          lo.ToPtr(s.testData.now),
+		Currency:           "usd",
+		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		SubscriptionGrants: []dto.CreateSubscriptionGrantRequest{{
+			GrantQuota:        lo.ToPtr(decimal.NewFromInt(50)),
+			GrantDurationUnit: types.EntitlementGrantDurationUnitSubscriptionPeriod,
+		}},
+		Commitments: []dto.CreateCommitmentRequest{{}},
+	})
+	s.Require().Error(err)
+	s.Contains(err.Error(), "cannot be combined with commitments")
+}

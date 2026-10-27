@@ -423,8 +423,13 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 			return nil, err
 		}
 	}
+	// Saved without webhooks, like override_entitlements: the subscription may still roll back.
+	grantSvc := &entitlementService{ServiceParams: s.ServiceParams}
 	for _, grantReq := range req.SubscriptionGrants {
-		if _, err = NewEntitlementService(s.ServiceParams).CreateEntitlement(ctx, grantReq.ToCreateEntitlementRequest(sub.ID)); err != nil {
+		if grantReq.StartDate == nil {
+			grantReq.StartDate = lo.ToPtr(sub.StartDate)
+		}
+		if _, err = grantSvc.saveSubscriptionGrant(ctx, grantReq.ToCreateEntitlementRequest(sub.ID), sub); err != nil {
 			return nil, err
 		}
 	}

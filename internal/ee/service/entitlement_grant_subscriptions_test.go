@@ -198,9 +198,11 @@ func (s *EntitlementGrantSuite) subGrantWindowsOf(subID string) []*entitlementgr
 func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_QuotaEditCarriesUsage() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("edit-quota")
+	s.backdate(fx)
 	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 30, ""))
 	s.Require().NoError(err)
 	window := s.seedEvaluatedSubGrantWindow("eg-edit-quota", fx, fx.sub.CurrentPeriodStart, fx.sub.CurrentPeriodEnd, 30, 20)
+	s.seedMeterUsage(fx.extID, fx.storeMeter, window.ValidFrom.Add(time.Hour), 20) // $20
 
 	_, err = s.entService.UpdateEntitlement(s.GetContext(), created.ID, dto.UpdateEntitlementRequest{
 		GrantQuota: lo.ToPtr(decimal.NewFromInt(50)),
@@ -233,6 +235,8 @@ func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_OnlyQuotaCanChange()
 func (s *EntitlementGrantSuite) TestDeleteSubscriptionGrant_AdditiveSurvivorKeepsTheRest() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("delete-pool")
+	s.backdate(fx)
+	s.seedMeterUsage(fx.extID, fx.storeMeter, fx.sub.CurrentPeriodStart.Add(time.Hour), 10) // $10
 	kept, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 50, ""))
 	s.Require().NoError(err)
 	removed, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 25, ""))
@@ -322,6 +326,8 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantGuard_ChecksLinesOnlyWhenGr
 func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_ParallelEditReopensOnlyItsWindow() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("edit-parallel")
+	s.backdate(fx)
+	s.seedMeterUsage(fx.extID, fx.storeMeter, fx.sub.CurrentPeriodStart.Add(time.Hour), 20) // $20
 	edited, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 30, types.EntitlementAggregationModeParallel))
 	s.Require().NoError(err)
 	other, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 100, types.EntitlementAggregationModeParallel))
@@ -351,4 +357,89 @@ func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_ParallelEditReopensO
 	stillLive, err := s.GetStores().EntitlementGrantRepo.Get(s.GetContext(), untouched.ID)
 	s.Require().NoError(err)
 	s.True(stillLive.ValidTo.Equal(untouched.ValidTo), "the other parallel grant's window is not cut")
+}
+
+// backdate moves the fixture subscription and its lines a day into the past, so usage can land in it.
+func (s *EntitlementGrantSuite) backdate(fx subGrantFixture) {
+	ctx := s.GetContext()
+	start := fx.sub.StartDate.Add(-24 * time.Hour)
+	fx.sub.StartDate, fx.sub.CurrentPeriodStart = start, start
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, fx.sub))
+	items, err := s.GetStores().SubscriptionLineItemRepo.ListBySubscription(ctx, fx.sub)
+	s.Require().NoError(err)
+	for _, li := range items {
+		li.StartDate = start
+		s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, li))
+	}
+}
+
+func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_QuotaEditMeasuresUsageFirst() {
+	s.enableEntitlementAlerts()
+	fx := s.newSubGrantSubscription("edit-stale")
+	s.backdate(fx)
+	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 30, ""))
+	s.Require().NoError(err)
+	// Last evaluated at $10 used, but $25 has been spent since the window opened.
+	window := s.seedEvaluatedSubGrantWindow("eg-edit-stale", fx, fx.sub.CurrentPeriodStart, fx.sub.CurrentPeriodEnd, 30, 10)
+	s.seedMeterUsage(fx.extID, fx.storeMeter, window.ValidFrom.Add(time.Hour), 25)
+
+	_, err = s.entService.UpdateEntitlement(s.GetContext(), created.ID, dto.UpdateEntitlementRequest{
+		GrantQuota: lo.ToPtr(decimal.NewFromInt(50)),
+	})
+	s.Require().NoError(err)
+
+	windows := s.subGrantWindowsOf(fx.sub.ID)
+	s.Require().Len(windows, 2)
+	s.True(decimal.NewFromInt(25).Equal(windows[1].Quota), "$5 really left + $20 more, not $40: got %s", windows[1].Quota)
+}
+
+func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_StartsNowUnlessDated() {
+	s.enableEntitlementAlerts()
+	fx := s.newSubGrantSubscription("create-start")
+	before := time.Now().UTC()
+	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 30, ""))
+	s.Require().NoError(err)
+	s.Require().NotNil(created.StartDate)
+	s.False(created.StartDate.Before(before), "an undated grant starts when it is created")
+	s.Nil(created.EndDate)
+
+	dated := s.newSubGrantSubscription("create-start-dated")
+	req := subscriptionGrantRequest(dated.sub.ID, 30, "")
+	req.StartDate = lo.ToPtr(dated.sub.CurrentPeriodStart)
+	req.EndDate = lo.ToPtr(dated.sub.CurrentPeriodStart.Add(10 * 24 * time.Hour))
+	got, err := s.entService.CreateEntitlement(s.GetContext(), req)
+	s.Require().NoError(err)
+	s.True(got.StartDate.Equal(*req.StartDate))
+	s.True(got.EndDate.Equal(*req.EndDate))
+}
+
+func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_PlanIDWithoutEntityIDIsRefused() {
+	s.enableEntitlementAlerts()
+	fx := s.newSubGrantSubscription("create-plan-id")
+	req := subscriptionGrantRequest("", 30, "")
+	req.PlanID = fx.sub.PlanID
+	s.NotPanics(func() {
+		_, err := s.entService.CreateEntitlement(s.GetContext(), req)
+		s.Require().Error(err)
+		s.True(ierr.IsValidation(err), "got %v", err)
+	})
+}
+
+func (s *EntitlementGrantSuite) TestSubscriptionGrantGuard_ChecksLinesStartingNextPeriod() {
+	s.enableEntitlementAlerts()
+	fx := s.newSubGrantSubscription("guard-future")
+	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 50, ""))
+	s.Require().NoError(err)
+
+	future := &subscription.SubscriptionLineItem{
+		ID: "sli-future-tiered", SubscriptionID: fx.sub.ID, PriceID: "price-future-tiered",
+		PriceType: types.PRICE_TYPE_USAGE, MeterID: fx.callsMeter,
+		BillingPeriod: fx.sub.BillingPeriod, StartDate: fx.sub.CurrentPeriodEnd.Add(time.Hour),
+	}
+	tiered := &price.Price{ID: "price-future-tiered", Type: types.PRICE_TYPE_USAGE, BillingModel: types.BILLING_MODEL_TIERED, MeterID: fx.callsMeter}
+	err = newSubscriptionGrantGuard(s.buildServiceParams()).checkIfGranted(s.GetContext(), fx.sub, subscriptionGrantChange{
+		items: []*subscription.SubscriptionLineItem{future}, prices: []*price.Price{tiered},
+	})
+	s.Require().Error(err)
+	s.Contains(err.Error(), "tiered")
 }

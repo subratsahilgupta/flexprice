@@ -1075,6 +1075,12 @@ func (r *CreateSubscriptionRequest) Validate() error {
 		return err
 	}
 
+	if len(r.SubscriptionGrants) > 0 && len(r.Commitments) > 0 {
+		return ierr.NewError("subscription_grants cannot be combined with commitments").
+			WithHint("A subscription with a commitment cannot carry a subscription grant.").
+			Mark(ierr.ErrValidation)
+	}
+
 	if r.OpeningInvoiceAdjustmentAmount != nil && r.OpeningInvoiceAdjustmentAmount.IsNegative() {
 		return ierr.NewError("opening invoice adjustment amount must be >= 0").
 			Mark(ierr.ErrValidation)
@@ -1694,11 +1700,16 @@ type CreateSubscriptionGrantRequest struct {
 	GrantDurationValue      *int                                     `json:"grant_duration_value,omitempty"`
 	GrantAllocationBehavior types.EntitlementGrantAllocationBehavior `json:"grant_allocation_behavior,omitempty"`
 	AggregationMode         types.EntitlementAggregationMode         `json:"aggregation_mode,omitempty"`
+	// StartDate defaults to the subscription's start; EndDate leaves the grant open.
+	StartDate *time.Time `json:"start_date,omitempty"`
+	EndDate   *time.Time `json:"end_date,omitempty"`
 }
 
 // ToCreateEntitlementRequest is the POST /entitlements request for this grant on the subscription.
 func (r CreateSubscriptionGrantRequest) ToCreateEntitlementRequest(subscriptionID string) CreateEntitlementRequest {
 	return CreateEntitlementRequest{
+		StartDate:               r.StartDate,
+		EndDate:                 r.EndDate,
 		EntityType:              types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION,
 		EntityID:                subscriptionID,
 		GrantMeasure:            types.EntitlementGrantMeasureAmount,

@@ -19268,6 +19268,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "usage_limit": {
+                    "description": "Deprecated: use grant_quota; a metered usage_limit is converted to a grant on create.",
                     "type": "integer"
                 },
                 "usage_reset_period": {
@@ -20073,6 +20074,9 @@ const docTemplate = `{
                 "aggregation_mode": {
                     "$ref": "#/definitions/types.EntitlementAggregationMode"
                 },
+                "end_date": {
+                    "type": "string"
+                },
                 "grant_allocation_behavior": {
                     "$ref": "#/definitions/types.EntitlementGrantAllocationBehavior"
                 },
@@ -20083,6 +20087,10 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "grant_quota": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "description": "StartDate defaults to the subscription's start; EndDate leaves the grant open.",
                     "type": "string"
                 }
             }
@@ -28567,6 +28575,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "usage_limit": {
+                    "description": "Deprecated: use grant_quota.",
                     "type": "integer"
                 },
                 "usage_reset_period": {
