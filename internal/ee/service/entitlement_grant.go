@@ -630,8 +630,10 @@ func (s *entitlementGrantService) openMissingGrants(
 	for _, sub := range subs {
 		// Each group is the entitlements that share one set of windows: one group
 		// per feature, plus one for all of the subscription's grants.
-		ecGroups := lo.Values(s.eligibleGrantConfigsByFeature(ctx, sub, ecsBySub[sub.ID]))
-		if subGrantECs := lo.Flatten(lo.Values(s.eligibleGrantConfigsByFeature(ctx, sub, subGrantECsBySub[sub.ID]))); len(subGrantECs) > 0 {
+		ecGroups := lo.Values(lo.GroupBy(s.eligibleGrantConfigs(ctx, sub, ecsBySub[sub.ID]), func(ec *entitlement.Entitlement) string {
+			return ec.FeatureID
+		}))
+		if subGrantECs := s.eligibleGrantConfigs(ctx, sub, subGrantECsBySub[sub.ID]); len(subGrantECs) > 0 {
 			ecGroups = append(ecGroups, subGrantECs)
 		}
 		for _, groupECs := range ecGroups {
@@ -647,16 +649,16 @@ func (s *entitlementGrantService) openMissingGrants(
 	return opened, nil
 }
 
-// eligibleGrantConfigsByFeature skips durations >= the cycle: a cycle-long grant is
-// just the cycle quota, which is usage_reset_period's job.
-func (s *entitlementGrantService) eligibleGrantConfigsByFeature(
+// eligibleGrantConfigs is the grant configs that open windows this cycle. It skips durations >= the
+// cycle: a cycle-long grant is just the cycle quota, which is usage_reset_period's job.
+func (s *entitlementGrantService) eligibleGrantConfigs(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	ecs []*entitlement.Entitlement,
-) map[string][]*entitlement.Entitlement {
+) []*entitlement.Entitlement {
 	cycleLen := sub.CurrentPeriodEnd.Sub(sub.CurrentPeriodStart)
 
-	byFeature := make(map[string][]*entitlement.Entitlement)
+	eligible := make([]*entitlement.Entitlement, 0, len(ecs))
 	for _, ec := range ecs {
 		if !ec.HasGrantConfig() {
 			continue
@@ -679,9 +681,9 @@ func (s *entitlementGrantService) eligibleGrantConfigsByFeature(
 				"cycle_length", cycleLen.String())
 			continue
 		}
-		byFeature[ec.FeatureID] = append(byFeature[ec.FeatureID], ec)
+		eligible = append(eligible, ec)
 	}
-	return byFeature
+	return eligible
 }
 
 // grantCandidates: parallel → one candidate per EC; additive → one
@@ -1003,9 +1005,9 @@ func (s *entitlementGrantService) earliestUncoveredUsage(
 		StartTime:     coveredUntil,
 		EndTime:       until,
 	}
-	switch ec.GrantScope {
+	switch ec.EffectiveGrantScope() {
 	case types.EntitlementGrantScopeSubscription:
-		meterIDs, err := s.subscriptionUsageMeterIDs(ctx, sub)
+		meterIDs, err := s.subscriptionUsageMeterIDs(ctx, sub, coveredUntil)
 		if err != nil {
 			return nil, err
 		}
@@ -1013,8 +1015,7 @@ func (s *entitlementGrantService) earliestUncoveredUsage(
 			return nil, nil
 		}
 		params.MeterIDs = meterIDs
-	case types.EntitlementGrantScopeFeature, "":
-		// Empty is a feature grant built in memory before the scope column existed.
+	case types.EntitlementGrantScopeFeature:
 		f := meta.featureByID[ec.FeatureID]
 		if f == nil || f.MeterID == "" {
 			s.Logger.Debug(ctx, "computing grant window: no meter found for feature",
@@ -1046,19 +1047,10 @@ func (s *entitlementGrantService) earliestUncoveredUsage(
 	return timestamp, nil
 }
 
-// subscriptionUsageMeterIDs is the meters of the subscription's usage lines, the
-// usage a subscription grant covers.
-func (s *entitlementGrantService) subscriptionUsageMeterIDs(ctx context.Context, sub *subscription.Subscription) ([]string, error) {
-	// An inherited subscription bills on its parent's lines.
-	lineOwner := sub
-	if sub.SubscriptionType == types.SubscriptionTypeInherited && lo.FromPtr(sub.ParentSubscriptionID) != "" {
-		parent, err := s.SubRepo.Get(ctx, *sub.ParentSubscriptionID)
-		if err != nil {
-			return nil, err
-		}
-		lineOwner = parent
-	}
-	items, err := s.SubscriptionLineItemRepo.ListBySubscription(ctx, lineOwner)
+// subscriptionUsageMeterIDs is the meters of the usage lines priced from `from`, the usage a
+// subscription grant covers.
+func (s *entitlementGrantService) subscriptionUsageMeterIDs(ctx context.Context, sub *subscription.Subscription, from time.Time) ([]string, error) {
+	items, err := listLineItemsForUsageWindow(ctx, s.SubscriptionLineItemRepo, usageLineItemOwnerID(sub), from, false)
 	if err != nil {
 		return nil, err
 	}

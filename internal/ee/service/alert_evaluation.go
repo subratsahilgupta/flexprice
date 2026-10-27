@@ -427,37 +427,8 @@ func (s *alertService) refreshSubscriptionGrantUsage(
 	sub *subscription.Subscription,
 	at time.Time,
 ) (decimal.Decimal, error) {
-	end := at
-	if end.After(g.ValidTo) {
-		end = g.ValidTo
-	}
-	if !end.After(g.ValidFrom) {
-		return decimal.Zero, nil
-	}
-
-	meterUsageSvc := NewMeterUsageService(s.ServiceParams)
-	subUsage, err := meterUsageSvc.GetSubscriptionMeterUsageWithSub(ctx, sub, &GetSubscriptionMeterUsageRequest{
-		SubscriptionID:  sub.ID,
-		StartTime:       g.ValidFrom,
-		EndTime:         end,
-		UseFinal:        true,
-		IncludeChildren: true,
-	})
-	if err != nil {
-		return decimal.Zero, err
-	}
-	charges, _, err := meterUsageSvc.ConvertToBillingCharges(ctx, subUsage)
-	if err != nil {
-		return decimal.Zero, err
-	}
-
-	total := decimal.Zero
-	for _, c := range charges {
-		if c != nil {
-			total = total.Add(c.AmountDecimal())
-		}
-	}
-	return total, nil
+	total, _, err := NewMeterUsageService(s.ServiceParams).GetSubscriptionWindowSpend(ctx, sub, g.ValidFrom, types.EarliestOf(at, g.ValidTo))
+	return total, err
 }
 
 // transitionEntitlementGrantAlert emits an alert-log row on state change.

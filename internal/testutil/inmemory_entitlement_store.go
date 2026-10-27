@@ -86,11 +86,7 @@ func entitlementFilterFn(ctx context.Context, e *entitlement.Entitlement, filter
 		return false
 	}
 
-	scope := e.GrantScope
-	if scope == "" {
-		scope = types.EntitlementGrantScopeFeature
-	}
-	if !lo.Contains(f.EffectiveGrantScopes(), scope) {
+	if !lo.Contains(f.EffectiveGrantScopes(), e.EffectiveGrantScope()) {
 		return false
 	}
 

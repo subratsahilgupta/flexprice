@@ -665,8 +665,8 @@ func (s *EntitlementGrantSuite) TestEligibleGrantConfigs_SkipsConfigsOutsidePeri
 	future := s.newTimeBoxedEC("ec-next", fx.ec.FeatureID, 5, types.EntitlementGrantDurationUnitHour, decimal.NewFromInt(10))
 	future.StartDate = &nextCycle
 
-	got := svc.eligibleGrantConfigsByFeature(s.GetContext(), fx.sub, []*entitlement.Entitlement{live, gone, future})
-	ids := lo.Map(got[fx.ec.FeatureID], func(e *entitlement.Entitlement, _ int) string { return e.ID })
+	got := svc.eligibleGrantConfigs(s.GetContext(), fx.sub, []*entitlement.Entitlement{live, gone, future})
+	ids := lo.Map(got, func(e *entitlement.Entitlement, _ int) string { return e.ID })
 	s.Equal([]string{live.ID}, ids)
 }
 

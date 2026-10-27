@@ -47,13 +47,6 @@ func defaultedAggregationMode(m types.EntitlementAggregationMode) types.Entitlem
 	return m
 }
 
-func defaultedGrantScope(scope types.EntitlementGrantScopeEntityType) types.EntitlementGrantScopeEntityType {
-	if scope == "" {
-		return types.EntitlementGrantScopeFeature
-	}
-	return scope
-}
-
 func (r *entitlementRepository) Create(ctx context.Context, e *domainEntitlement.Entitlement) (*domainEntitlement.Entitlement, error) {
 	client := r.client.Writer(ctx)
 
@@ -77,7 +70,7 @@ func (r *entitlementRepository) Create(ctx context.Context, e *domainEntitlement
 		SetEntityID(e.EntityID).
 		SetNillableFeatureID(lo.EmptyableToPtr(e.FeatureID)).
 		SetNillableFeatureType(lo.EmptyableToPtr(e.FeatureType)).
-		SetGrantScope(defaultedGrantScope(e.GrantScope)).
+		SetGrantScope(e.EffectiveGrantScope()).
 		SetIsEnabled(e.IsEnabled).
 		SetNillableUsageLimit(e.UsageLimit).
 		SetUsageResetPeriod(e.UsageResetPeriod).
@@ -525,7 +518,7 @@ func (r *entitlementRepository) CreateBulk(ctx context.Context, entitlements []*
 			SetEntityID(e.EntityID).
 			SetNillableFeatureID(lo.EmptyableToPtr(e.FeatureID)).
 			SetNillableFeatureType(lo.EmptyableToPtr(e.FeatureType)).
-			SetGrantScope(defaultedGrantScope(e.GrantScope)).
+			SetGrantScope(e.EffectiveGrantScope()).
 			SetIsEnabled(e.IsEnabled).
 			SetNillableUsageLimit(e.UsageLimit).
 			SetUsageResetPeriod(e.UsageResetPeriod).
