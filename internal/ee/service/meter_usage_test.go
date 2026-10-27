@@ -1414,11 +1414,17 @@ func (s *MeterUsageServiceSuite) TestGroupBy_DailyPointsAmortizeEveryCommitmentF
 
 	for source, item := range bySource {
 		s.Require().NotEmpty(item.Points, source)
-		pointsCost := decimal.Zero
+		pointsCost, pointsUtilized, pointsOverage, pointsTrueUp := decimal.Zero, decimal.Zero, decimal.Zero, decimal.Zero
 		for _, point := range item.Points {
 			pointsCost = pointsCost.Add(point.Cost)
+			pointsUtilized = pointsUtilized.Add(point.ComputedCommitmentUtilizedAmount)
+			pointsOverage = pointsOverage.Add(point.ComputedOverageAmount)
+			pointsTrueUp = pointsTrueUp.Add(point.ComputedTrueUpAmount)
 		}
 		s.True(pointsCost.Equal(item.TotalCost), "%s points sum to %s, item costs %s", source, pointsCost, item.TotalCost)
+		s.True(pointsUtilized.Equal(item.CommitmentInfo.ComputedCommitmentUtilizedAmount), "%s points utilized %s", source, pointsUtilized)
+		s.True(pointsOverage.Equal(item.CommitmentInfo.ComputedOverageAmount), "%s points overage %s", source, pointsOverage)
+		s.True(pointsTrueUp.Equal(item.CommitmentInfo.ComputedTrueUpAmount), "%s points true-up %s", source, pointsTrueUp)
 
 		info := item.CommitmentInfo
 		s.Require().NotNil(info, source)
