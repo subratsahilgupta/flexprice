@@ -1,5 +1,14 @@
 basePath: /v1
 definitions:
+  ListAccountingPeriodsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/AccountingPeriodResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+    type: object
   ListAddonAssociationsResponse:
     properties:
       items:
@@ -234,6 +243,45 @@ definitions:
         type: array
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
+    type: object
+  accountingperiod.Filter:
+    properties:
+      accounting_period_ids:
+        items:
+          type: string
+        type: array
+      end_time:
+        type: string
+      expand:
+        type: string
+      filters:
+        items:
+          $ref: '#/definitions/types.FilterCondition'
+        type: array
+      limit:
+        maximum: 1000
+        minimum: 1
+        type: integer
+      offset:
+        minimum: 0
+        type: integer
+      order:
+        enum:
+        - asc
+        - desc
+        type: string
+      period_statuses:
+        items:
+          $ref: '#/definitions/types.AccountingPeriodStatus'
+        type: array
+      sort:
+        items:
+          $ref: '#/definitions/types.SortCondition'
+        type: array
+      start_time:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
     type: object
   analytics.Filter:
     properties:
@@ -676,6 +724,23 @@ definitions:
     - dimension
     - license_arn
     - product_code
+    type: object
+  AccountingPeriodResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      period_end:
+        type: string
+      period_start:
+        type: string
+      period_status:
+        $ref: '#/definitions/types.AccountingPeriodStatus'
+      status:
+        $ref: '#/definitions/types.Status'
+      updated_at:
+        type: string
     type: object
   ActivateDraftSubscriptionRequest:
     properties:
@@ -15336,6 +15401,16 @@ definitions:
       updated_by:
         type: string
     type: object
+  types.AccountingPeriodStatus:
+    enum:
+    - open
+    - closed
+    type: string
+    x-enum-comments:
+      AccountingPeriodStatusClosed: reserved; close is deferred
+    x-enum-varnames:
+    - AccountingPeriodStatusOpen
+    - AccountingPeriodStatusClosed
   types.ActiveWindow:
     properties:
       end:
@@ -16469,6 +16544,41 @@ info:
   title: Flexprice API
   version: "1.0"
 paths:
+  /accounting_periods/search:
+    post:
+      consumes:
+      - application/json
+      description: Use when listing the monthly accounting periods revenue recognition
+        posts to, by period status or a period start range. Returns a paginated list.
+      operationId: queryAccountingPeriod
+      parameters:
+      - description: Filter
+        in: body
+        name: filter
+        required: true
+        schema:
+          $ref: '#/definitions/accountingperiod.Filter'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ListAccountingPeriodsResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Query accounting periods
+      tags:
+      - Accounting Periods
+      x-scope: read
   /activity:
     post:
       consumes:

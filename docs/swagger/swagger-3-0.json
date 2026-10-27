@@ -23,6 +23,66 @@
     }
   ],
   "paths": {
+    "/accounting_periods/search": {
+      "post": {
+        "tags": [
+          "Accounting Periods"
+        ],
+        "summary": "Query accounting periods",
+        "description": "Use when listing the monthly accounting periods revenue recognition posts to, by period status or a period start range. Returns a paginated list.",
+        "operationId": "queryAccountingPeriod",
+        "requestBody": {
+          "description": "Filter",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/accountingperiod.Filter"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListAccountingPeriodsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "read",
+        "x-codegen-request-body-name": "filter"
+      }
+    },
     "/activity": {
       "post": {
         "tags": [
@@ -18930,6 +18990,20 @@
   },
   "components": {
     "schemas": {
+      "ListAccountingPeriodsResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountingPeriodResponse"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/types.PaginationResponse"
+          }
+        }
+      },
       "ListAddonAssociationsResponse": {
         "type": "object",
         "properties": {
@@ -19292,6 +19366,65 @@
           },
           "pagination": {
             "$ref": "#/components/schemas/types.PaginationResponse"
+          }
+        }
+      },
+      "accountingperiod.Filter": {
+        "type": "object",
+        "properties": {
+          "accounting_period_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expand": {
+            "type": "string"
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.FilterCondition"
+            }
+          },
+          "limit": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "period_statuses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.AccountingPeriodStatus"
+            }
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.SortCondition"
+            }
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.Status"
           }
         }
       },
@@ -19898,6 +20031,36 @@
           "product_code": {
             "type": "string",
             "description": "-> BatchMeterUsage's ProductCode (omitted when ConcurrentAgreements)"
+          }
+        }
+      },
+      "AccountingPeriodResponse": {
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "period_start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "period_status": {
+            "$ref": "#/components/schemas/types.AccountingPeriodStatus"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.Status"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -39358,6 +39521,21 @@
             "type": "string"
           }
         }
+      },
+      "types.AccountingPeriodStatus": {
+        "type": "string",
+        "enum": [
+          "open",
+          "closed"
+        ],
+        "x-enum-comments": {
+          "AccountingPeriodStatusClosed": "reserved; close is deferred"
+        },
+        "x-enum-varnames": [
+          "AccountingPeriodStatusOpen",
+          "AccountingPeriodStatusClosed"
+        ],
+        "x-speakeasy-name-override": "AccountingPeriodStatus"
       },
       "types.ActiveWindow": {
         "type": "object",

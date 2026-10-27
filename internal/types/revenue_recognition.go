@@ -27,6 +27,13 @@ const (
 	PerformanceObligationStatusCancelled PerformanceObligationStatus = "cancelled"
 )
 
+type AccountingPeriodStatus string
+
+const (
+	AccountingPeriodStatusOpen   AccountingPeriodStatus = "open"
+	AccountingPeriodStatusClosed AccountingPeriodStatus = "closed" // reserved; close is deferred
+)
+
 // RevRecEntityType is the kind of entity a revrec record links to or is sourced from.
 type RevRecEntityType string
 

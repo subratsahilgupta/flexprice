@@ -22,6 +22,59 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/accounting_periods/search": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use when listing the monthly accounting periods revenue recognition posts to, by period status or a period start range. Returns a paginated list.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Accounting Periods"
+                ],
+                "summary": "Query accounting periods",
+                "operationId": "queryAccountingPeriod",
+                "parameters": [
+                    {
+                        "description": "Filter",
+                        "name": "filter",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/accountingperiod.Filter"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ListAccountingPeriodsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "read"
+            }
+        },
         "/activity": {
             "post": {
                 "security": [
@@ -16034,6 +16087,20 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "ListAccountingPeriodsResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/AccountingPeriodResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                }
+            }
+        },
         "ListAddonAssociationsResponse": {
             "type": "object",
             "properties": {
@@ -16396,6 +16463,63 @@ const docTemplate = `{
                 },
                 "pagination": {
                     "$ref": "#/definitions/types.PaginationResponse"
+                }
+            }
+        },
+        "accountingperiod.Filter": {
+            "type": "object",
+            "properties": {
+                "accounting_period_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "end_time": {
+                    "type": "string"
+                },
+                "expand": {
+                    "type": "string"
+                },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FilterCondition"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "order": {
+                    "type": "string",
+                    "enum": [
+                        "asc",
+                        "desc"
+                    ]
+                },
+                "period_statuses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.AccountingPeriodStatus"
+                    }
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.SortCondition"
+                    }
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
                 }
             }
         },
@@ -17051,6 +17175,32 @@ const docTemplate = `{
                 },
                 "product_code": {
                     "description": "-\u003e BatchMeterUsage's ProductCode (omitted when ConcurrentAgreements)",
+                    "type": "string"
+                }
+            }
+        },
+        "AccountingPeriodResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "period_status": {
+                    "$ref": "#/definitions/types.AccountingPeriodStatus"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }
@@ -37109,6 +37259,20 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "types.AccountingPeriodStatus": {
+            "type": "string",
+            "enum": [
+                "open",
+                "closed"
+            ],
+            "x-enum-comments": {
+                "AccountingPeriodStatusClosed": "reserved; close is deferred"
+            },
+            "x-enum-varnames": [
+                "AccountingPeriodStatusOpen",
+                "AccountingPeriodStatusClosed"
+            ]
         },
         "types.ActiveWindow": {
             "type": "object",
