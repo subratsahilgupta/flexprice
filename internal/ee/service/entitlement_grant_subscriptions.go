@@ -566,7 +566,7 @@ func (s *entitlementService) measureSubscriptionGrantWindows(ctx context.Context
 		if !end.After(g.ValidFrom) {
 			continue
 		}
-		usage, err := subscriptionGrantUsage(ctx, s.ServiceParams, sub, g, at)
+		usage, err := NewEntitlementGrantService(s.ServiceParams).SubscriptionGrantUsage(ctx, sub, g, at)
 		if err != nil {
 			return err
 		}
@@ -593,7 +593,7 @@ func refreshSubscriptionGrantUsage(ctx context.Context, params ServiceParams, su
 		if !measuredTo.After(g.ValidFrom) || (g.LastComputedAt != nil && !g.LastComputedAt.Before(measuredTo)) {
 			continue
 		}
-		usage, err := subscriptionGrantUsage(ctx, params, sub, g, at)
+		usage, err := NewEntitlementGrantService(params).SubscriptionGrantUsage(ctx, sub, g, at)
 		if err != nil {
 			return err
 		}
@@ -604,9 +604,8 @@ func refreshSubscriptionGrantUsage(ctx context.Context, params ServiceParams, su
 	return nil
 }
 
-// subscriptionGrantUsage prices every usage line on the subscription over [valid_from, min(at, valid_to)).
-func subscriptionGrantUsage(ctx context.Context, params ServiceParams, sub *subscription.Subscription, g *entitlementgrant.EntitlementGrant, at time.Time) (decimal.Decimal, error) {
-	total, _, err := NewMeterUsageService(params).GetSubscriptionWindowSpend(ctx, sub, g.ValidFrom, types.EarliestOf(at, g.ValidTo))
+func (s *entitlementGrantService) SubscriptionGrantUsage(ctx context.Context, sub *subscription.Subscription, g *entitlementgrant.EntitlementGrant, at time.Time) (decimal.Decimal, error) {
+	total, _, err := NewMeterUsageService(s.ServiceParams).GetSubscriptionWindowSpend(ctx, sub, g.ValidFrom, types.EarliestOf(at, g.ValidTo))
 	return total, err
 }
 
