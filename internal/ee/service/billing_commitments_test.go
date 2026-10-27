@@ -1899,24 +1899,14 @@ func (s *BillingServiceSuite) TestCommitmentUsageBreakdown_AmountCommitment() {
 	s.True(b.Used.Amount.Add(b.Unused.Amount).Equal(b.Committed.Amount))
 	s.True(b.BilledAmount.Equal(dec("100")), "billed %s", b.BilledAmount)
 
-	// A mid-period window reports what the preview for that window bills.
-	now := time.Now().UTC()
-	partial := s.rawUsageWindow(sub, periodStart, now)
+	// A window ending inside the open period projects to its end: the breakdown reports the
+	// period invoice's capacity and floor, not a preview clipped at the query time.
+	partial := s.rawUsageWindow(sub, periodStart, time.Now().UTC())
 	s.Require().Len(partial.Commitments, 1)
-	preview, err := s.service.CalculateUsageCharges(s.GetContext(), &dto.CalculateUsageChargesParams{
-		Subscription: sub,
-		Usage:        partial,
-		PeriodStart:  periodStart,
-		PeriodEnd:    now,
-	})
-	s.Require().NoError(err)
-	within := loaderLinesOfKind(preview.LineItems, types.CommitmentLineUtilized)
-	trueUp := loaderLinesOfKind(preview.LineItems, types.CommitmentLineTrueUp)
-	s.Require().Len(within, 1)
-	s.Require().Len(trueUp, 1)
-	s.True(partial.Commitments[0].Used.Amount.Equal(within[0].Amount))
-	s.True(partial.Commitments[0].Unused.Amount.Equal(trueUp[0].Amount))
-	s.True(partial.Commitments[0].BilledAmount.Equal(preview.TotalAmount))
+	s.True(partial.Commitments[0].Used.Amount.Equal(b.Used.Amount))
+	s.True(partial.Commitments[0].Unused.Amount.Equal(b.Unused.Amount))
+	s.True(partial.Commitments[0].BilledAmount.Equal(b.BilledAmount))
+	s.True(partial.Commitments[0].AppliesTo.Equal(sub.CurrentPeriodEnd), "applies to %s", partial.Commitments[0].AppliesTo)
 }
 
 // The public usage API reads meter_usage; its response carries the breakdown, while internal callers
@@ -2141,6 +2131,30 @@ func (s *BillingServiceSuite) TestCommitmentUsageBreakdown_MidPeriodWindow() {
 	s.True(api[0].Committed.Amount.Equal(dec("155")), "api floor %s", api[0].Committed.Amount)
 	s.True(api[0].Used.Quantity.Equal(dec("14")), "api used %s", api[0].Used.Quantity)
 	s.True(api[0].BilledAmount.Equal(dec("155")), "api billed %s", api[0].BilledAmount)
+
+	// A to-date query projects capacity to the period end but counts only usage inside its window:
+	// Aug 20's GPUs stay out of an Aug 11 cutoff even though the loader re-reads bucketed usage.
+	toDate, err := s.service.(*billingService).commitmentUsageBreakdown(
+		ctx, sub, usage, periodStart, time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC),
+	)
+	s.Require().NoError(err)
+	s.Require().Len(toDate, 1)
+	s.True(toDate[0].Committed.Quantity.Equal(dec("310")), "to-date capacity %s", toDate[0].Committed.Quantity)
+	s.True(toDate[0].Committed.Amount.Equal(dec("155")), "to-date floor %s", toDate[0].Committed.Amount)
+	s.True(toDate[0].Used.Quantity.Equal(dec("10")), "to-date used %s", toDate[0].Used.Quantity)
+
+	// A window starting mid-period misses earlier usage, so it keeps clipped-preview semantics:
+	// six days of capacity, none of it used.
+	midStart, err := s.service.(*billingService).commitmentUsageBreakdown(
+		ctx, sub, usage,
+		time.Date(2026, 8, 5, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC),
+	)
+	s.Require().NoError(err)
+	s.Require().Len(midStart, 1)
+	s.True(midStart[0].Committed.Quantity.Equal(dec("60")), "mid-start capacity %s", midStart[0].Committed.Quantity)
+	s.True(midStart[0].Committed.Amount.Equal(dec("30")), "mid-start floor %s", midStart[0].Committed.Amount)
+	s.True(midStart[0].Used.Quantity.IsZero(), "mid-start used %s", midStart[0].Used.Quantity)
 }
 
 func TestRawChargesByLine_SplitsChargesAcrossLinesSharingAPrice(t *testing.T) {

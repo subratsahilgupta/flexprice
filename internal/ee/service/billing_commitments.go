@@ -28,7 +28,9 @@ type commitmentLoader struct {
 	charges           map[string][]*dto.SubscriptionUsageByMetersResponse
 	meters            map[string]*meter.Meter
 	source            types.UsageSource
-	subContext        *commitmentContext
+	// usageEnd caps usage reads when periodEnd is projected past the queried window; zero means periodEnd.
+	usageEnd   time.Time
+	subContext *commitmentContext
 	priceSvc          PriceService
 	commitments       []*stackedCommitment    // in D5 order
 	scopeByCommitment map[string]*loadedScope // keyed by commitment ID
@@ -365,20 +367,40 @@ func (l *commitmentLoader) UsageBreakdown(ctx context.Context) ([]*dto.Commitmen
 	return out, nil
 }
 
+// projectedCommitmentEnd extends an end inside the subscription's open billing period to that period's
+// end: a to-date window must not prorate capacity and report covered usage as overage. A window
+// starting mid-period misses the period's earlier usage and cannot project coherently, so it keeps
+// its own end (clipped-preview semantics).
+func projectedCommitmentEnd(sub *subscription.Subscription, start, end time.Time) time.Time {
+	if start.After(sub.CurrentPeriodStart) {
+		return end
+	}
+
+	if end.After(sub.CurrentPeriodStart) && end.Before(sub.CurrentPeriodEnd) {
+		return sub.CurrentPeriodEnd
+	}
+
+	return end
+}
+
 // commitmentUsageBreakdown reports each commitment's usage for the window from the usage response's charges; nil when none applies.
-// The loader projects to the window's end (asOf = end) so window capacities agree with the floor the invoice bills.
+// The loader projects to the end of the billing period holding the window's end, so capacities and
+// floors are the ones the period invoice bills even when the query stops mid-period.
 func (s *billingService) commitmentUsageBreakdown(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	usage *dto.GetUsageBySubscriptionResponse,
 	start, end time.Time,
 ) ([]*dto.CommitmentUsageBreakdown, error) {
+	projectedEnd := projectedCommitmentEnd(sub, start, end)
 	loader, err := s.newCommitmentLoader(
-		ctx, sub, start, end, end, rawChargesByLine(sub, usage), nil, "",
+		ctx, sub, start, projectedEnd, projectedEnd, rawChargesByLine(sub, usage), nil, "",
 	)
 	if err != nil || len(loader.commitments) == 0 {
 		return nil, err
 	}
+
+	loader.usageEnd = end
 
 	return loader.UsageBreakdown(ctx)
 }
@@ -770,6 +792,14 @@ func (l *commitmentLoader) lineUsage(
 	extIDs, err := l.externalIDs(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	if !l.usageEnd.IsZero() && end.After(l.usageEnd) {
+		end = l.usageEnd
+	}
+
+	if !start.Before(end) {
+		return &events.AggregationResult{}, nil
 	}
 
 	item, p, s := line.Item, line.Price, l.billing

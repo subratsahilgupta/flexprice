@@ -551,6 +551,41 @@ func (s *CommitmentE2ESuite) TestAnalytics_UngroupedLineCarriesTheCommitment() {
 	s.True(item.CommitmentInfo.ComputedTrueUpAmount.Equal(dec("50")))
 }
 
+// A query ending mid-period projects the commitment to its period end: covered usage is not
+// misreported as overage against a to-date capacity, and the floor is the one the invoice bills.
+func (s *CommitmentE2ESuite) TestAnalytics_MidWindowQueryProjectsToThePeriodEnd() {
+	tokens := s.planWith("analytics_midwindow", types.BILLING_PERIOD_MONTHLY, s.tokens, "0", tokenSlabs...)
+	sub := s.subscribe(tokens, s.jan)
+	s.commit(sub.ID, floorRequest("Platform floor", tokens.ID, "150", s.jan, s.jan.AddDate(0, 6, 0)))
+	s.recordSourcedTokens()
+
+	for _, groupBy := range [][]string{nil, {"source"}} {
+		resp, err := s.analytics.GetDetailedAnalytics(s.GetContext(), &events.MeterUsageDetailedAnalyticsParams{
+			TenantID:           types.GetTenantID(s.GetContext()),
+			EnvironmentID:      types.GetEnvironmentID(s.GetContext()),
+			ExternalCustomerID: s.customer.ExternalID,
+			StartTime:          s.jan,
+			EndTime:            s.jan.AddDate(0, 0, 20),
+			GroupBy:            groupBy,
+		})
+		s.Require().NoError(err)
+
+		total, utilized, trueUp, overage := decimal.Zero, decimal.Zero, decimal.Zero, decimal.Zero
+		for _, item := range resp.Items {
+			total = total.Add(item.TotalCost)
+			s.Require().NotNil(item.CommitmentInfo, "group_by %v", groupBy)
+			utilized = utilized.Add(item.CommitmentInfo.ComputedCommitmentUtilizedAmount)
+			trueUp = trueUp.Add(item.CommitmentInfo.ComputedTrueUpAmount)
+			overage = overage.Add(item.CommitmentInfo.ComputedOverageAmount)
+		}
+
+		s.True(total.Equal(dec("150")), "group_by %v: total %s", groupBy, total)
+		s.True(utilized.Equal(dec("100")), "group_by %v: utilized %s", groupBy, utilized)
+		s.True(trueUp.Equal(dec("50")), "group_by %v: true-up %s", groupBy, trueUp)
+		s.True(overage.IsZero(), "group_by %v: overage %s", groupBy, overage)
+	}
+}
+
 // A month with no usage still shows the line, carrying the floor the invoice bills as true-up.
 func (s *CommitmentE2ESuite) TestAnalytics_UnusedFloorStillShows() {
 	tokens := s.planWith("analytics_unused", types.BILLING_PERIOD_MONTHLY, s.tokens, "0", tokenSlabs...)
