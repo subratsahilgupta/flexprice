@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/commitment"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/feature"
@@ -1076,6 +1077,193 @@ func (s *MeterUsageServiceSuite) TestGroupBySource_WalksTheTiersOverTheWholeLine
 			s.True(sum.Equal(decimal.RequireFromString(tc.lineCost)), "sources sum to %s, line costs %s", sum, tc.lineCost)
 			s.False(sum.Equal(perSourceWalk), "per-source tier walk would bill %s", perSourceWalk)
 		})
+	}
+}
+
+// newCommitment returns a binding v2 amount commitment of value per billing period on the suite's subscription,
+// scoped to the entity and active from the period start for six months; tests adjust it before storing it.
+func (s *MeterUsageServiceSuite) newCommitment(
+	id string,
+	scopeType types.CommitmentScopeType,
+	scopeID string,
+	value string,
+) *commitment.Commitment {
+	ctx := s.GetContext()
+	return &commitment.Commitment{
+		ID:                 id,
+		SubscriptionID:     s.sub.ID,
+		CustomerID:         s.customer.ID,
+		Name:               id,
+		InvoiceLabel:       id,
+		Currency:           s.sub.Currency,
+		ScopeEntityType:    scopeType,
+		ScopeEntityID:      scopeID,
+		Type:               types.COMMITMENT_TYPE_AMOUNT,
+		Value:              dec(value),
+		Measurement:        types.CommitmentMeasurementBillingPeriod,
+		Timezone:           "UTC",
+		Priority:           1,
+		Binding:            true,
+		CollectionMethod:   lo.ToPtr(types.CommitmentCollectionPerPeriod),
+		StartDate:          s.periodStart,
+		EndDate:            s.periodStart.AddDate(0, 6, 0),
+		CommitmentStatus:   types.CommitmentStatusActive,
+		OnEarlyTermination: lo.ToPtr(types.CommitmentTerminationForfeit),
+		EnvironmentID:      types.GetEnvironmentID(ctx),
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+}
+
+func (s *MeterUsageServiceSuite) storeCommitment(c *commitment.Commitment) {
+	_, err := s.GetStores().CommitmentRepo.Create(s.GetContext(), c)
+	s.Require().NoError(err)
+}
+
+// detailedAnalytics returns the customer's January analytics with the given filters, group_by and window.
+func (s *MeterUsageServiceSuite) detailedAnalytics(
+	meterIDs []string,
+	featureIDs []string,
+	groupBy []string,
+	window types.WindowSize,
+) *dto.GetUsageAnalyticsResponse {
+	ctx := s.GetContext()
+	resp, err := s.svc.GetDetailedAnalytics(ctx, &events.MeterUsageDetailedAnalyticsParams{
+		TenantID:           types.GetTenantID(ctx),
+		EnvironmentID:      types.GetEnvironmentID(ctx),
+		ExternalCustomerID: s.customer.ExternalID,
+		MeterIDs:           meterIDs,
+		FeatureIDs:         featureIDs,
+		StartTime:          s.periodStart,
+		EndTime:            s.periodEnd,
+		GroupBy:            groupBy,
+		WindowSize:         window,
+	})
+	s.Require().NoError(err)
+	return resp
+}
+
+// A $150 floor over two meters prices its whole scope even when a filter asks for one: A's $40 takes 40% of the $50
+// true-up whether B is in the query or not, and B gets no rows.
+func (s *MeterUsageServiceSuite) TestCommitment_FilterPricesTheWholeScope() {
+	ctx := s.GetContext()
+	setCommitmentsV2(s.T(), ctx, s.GetStores(), true)
+	meterA := s.createMeterWithAggregation(ctx, "meter_scope_a", "api_call", types.AggregationSum)
+	meterB := s.createMeterWithAggregation(ctx, "meter_scope_b", "api_call", types.AggregationSum)
+	priceA := s.createPriceForMeter(ctx, "price_scope_a", meterA.ID, dec("1"))
+	priceB := s.createPriceForMeter(ctx, "price_scope_b", meterB.ID, dec("1"))
+	lineA := s.createLineItemForMeter(ctx, "li_scope_a", meterA.ID, priceA.ID)
+	s.createLineItemForMeter(ctx, "li_scope_b", meterB.ID, priceB.ID)
+	featureA := &feature.Feature{ID: "feat_scope_a", Name: "A", MeterID: meterA.ID, BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.Require().NoError(s.GetStores().FeatureRepo.Create(ctx, featureA))
+	s.storeCommitment(s.newCommitment("cmt_scope_floor", types.CommitmentScopeSubscription, s.sub.ID, "150"))
+
+	s.insertMeterUsageWithProps(ctx, meterA.ID, s.customer.ExternalID, "api", time.Date(2026, 1, 5, 10, 0, 0, 0, time.UTC), 40, nil)
+	s.insertMeterUsageWithProps(ctx, meterB.ID, s.customer.ExternalID, "api", time.Date(2026, 1, 6, 10, 0, 0, 0, time.UTC), 60, nil)
+
+	unfiltered := s.detailedAnalytics(nil, nil, nil, "")
+	byLine := lo.KeyBy(unfiltered.Items, func(item dto.UsageAnalyticItem) string { return item.SubLineItemID })
+	s.Require().Len(byLine, 2)
+	s.True(unfiltered.TotalCost.Equal(dec("150")), "unfiltered total %s", unfiltered.TotalCost)
+
+	tests := []struct {
+		name       string
+		meterIDs   []string
+		featureIDs []string
+	}{
+		{name: "unfiltered"},
+		{name: "meter filter", meterIDs: []string{meterA.ID}},
+		{name: "feature filter", featureIDs: []string{featureA.ID}},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			items := s.detailedAnalytics(tt.meterIDs, tt.featureIDs, nil, "").Items
+			item, ok := lo.Find(items, func(item dto.UsageAnalyticItem) bool { return item.SubLineItemID == lineA.ID })
+			s.Require().True(ok, "no item for line A")
+			if len(tt.meterIDs)+len(tt.featureIDs) > 0 {
+				s.Len(items, 1, "the filtered-out line gets no rows")
+			}
+
+			s.True(item.TotalCost.Equal(dec("60")), "A costs %s", item.TotalCost)
+			s.Require().NotNil(item.CommitmentInfo)
+			s.True(item.CommitmentInfo.ComputedCommitmentUtilizedAmount.Equal(dec("40")), "utilized %s", item.CommitmentInfo.ComputedCommitmentUtilizedAmount)
+			s.True(item.CommitmentInfo.ComputedTrueUpAmount.Equal(dec("20")), "true-up %s", item.CommitmentInfo.ComputedTrueUpAmount)
+			s.True(item.CommitmentInfo.Amount.Equal(byLine[lineA.ID].CommitmentInfo.Amount), "committed share %s", item.CommitmentInfo.Amount)
+		})
+	}
+}
+
+// A filter pays one whole-line read per left-out line of the commitments covering a queried line, and none for a
+// commitment that covers only left-out lines.
+func (s *MeterUsageServiceSuite) TestCommitment_FilterReadsOnlyTheSharedScope() {
+	ctx := s.GetContext()
+	setCommitmentsV2(s.T(), ctx, s.GetStores(), true)
+	meterA := s.createMeterWithAggregation(ctx, "meter_reads_a", "api_call", types.AggregationSum)
+	meterB := s.createMeterWithAggregation(ctx, "meter_reads_b", "api_call", types.AggregationSum)
+	priceA := s.createPriceForMeter(ctx, "price_reads_a", meterA.ID, dec("1"))
+	priceB := s.createPriceForMeter(ctx, "price_reads_b", meterB.ID, dec("1"))
+	s.createLineItemForMeter(ctx, "li_reads_a", meterA.ID, priceA.ID)
+	s.createLineItemForMeter(ctx, "li_reads_b", meterB.ID, priceB.ID)
+	s.insertMeterUsageWithProps(ctx, meterA.ID, s.customer.ExternalID, "api", time.Date(2026, 1, 5, 10, 0, 0, 0, time.UTC), 40, nil)
+	s.insertMeterUsageWithProps(ctx, meterB.ID, s.customer.ExternalID, "api", time.Date(2026, 1, 6, 10, 0, 0, 0, time.UTC), 60, nil)
+
+	repo := &countingMeterUsageRepo{MeterUsageRepository: s.meterUsageRepo}
+	params := fullServiceParams(&s.BaseServiceTestSuite)
+	params.MeterUsageRepo = repo
+	svc := NewMeterUsageService(params)
+	readsForA := func() int {
+		repo.reads = 0
+		_, err := svc.GetDetailedAnalytics(ctx, &events.MeterUsageDetailedAnalyticsParams{
+			TenantID:           types.GetTenantID(ctx),
+			EnvironmentID:      types.GetEnvironmentID(ctx),
+			ExternalCustomerID: s.customer.ExternalID,
+			MeterIDs:           []string{meterA.ID},
+			StartTime:          s.periodStart,
+			EndTime:            s.periodEnd,
+		})
+		s.Require().NoError(err)
+		return repo.reads
+	}
+
+	uncommitted := readsForA()
+	s.storeCommitment(s.newCommitment("cmt_reads_b", types.CommitmentScopePrice, priceB.ID, "100"))
+	s.Equal(uncommitted, readsForA(), "a commitment on B alone does not read B")
+
+	s.storeCommitment(s.newCommitment("cmt_reads_both", types.CommitmentScopeSubscription, s.sub.ID, "150"))
+	s.Equal(uncommitted+1, readsForA(), "B is read once to price the commitments covering A")
+}
+
+// group_by reads a monthly-bucketed line whole on the request's billing anchor, as its combos are read: anchored on
+// the 15th, the 5 Jan and 20 Jan peaks fall in two months and the line bills both.
+func (s *MeterUsageServiceSuite) TestGroupBy_WholeLineReadUsesTheRequestAnchor() {
+	ctx := s.GetContext()
+	monthly := &meter.Meter{
+		ID:          "meter_monthly_peak",
+		Name:        "Monthly peak",
+		EventName:   "api_call",
+		Aggregation: meter.Aggregation{Type: types.AggregationMax, BucketSize: types.WindowSizeMonth},
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().MeterRepo.CreateMeter(ctx, monthly))
+	p := s.createPriceForMeter(ctx, "price_monthly_peak", monthly.ID, dec("1"))
+	s.createLineItemForMeter(ctx, "li_monthly_peak", monthly.ID, p.ID)
+	s.insertMeterUsageWithProps(ctx, monthly.ID, s.customer.ExternalID, "api", time.Date(2026, 1, 5, 10, 0, 0, 0, time.UTC), 100, nil)
+	s.insertMeterUsageWithProps(ctx, monthly.ID, s.customer.ExternalID, "batch", time.Date(2026, 1, 20, 10, 0, 0, 0, time.UTC), 100, nil)
+
+	resp, err := s.svc.GetDetailedAnalytics(ctx, &events.MeterUsageDetailedAnalyticsParams{
+		TenantID:           types.GetTenantID(ctx),
+		EnvironmentID:      types.GetEnvironmentID(ctx),
+		ExternalCustomerID: s.customer.ExternalID,
+		MeterIDs:           []string{monthly.ID},
+		StartTime:          s.periodStart,
+		EndTime:            s.periodEnd,
+		GroupBy:            []string{"source"},
+		BillingAnchor:      lo.ToPtr(time.Date(2025, 12, 15, 0, 0, 0, 0, time.UTC)),
+	})
+	s.Require().NoError(err)
+	s.Require().Len(resp.Items, 2)
+	for _, item := range resp.Items {
+		s.True(item.TotalCost.Equal(dec("100")), "%s: want 100, got %s", item.Source, item.TotalCost)
 	}
 }
 
