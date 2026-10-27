@@ -473,3 +473,14 @@ func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_RepeatedEditAddsNoth
 	s.Require().Len(windows, 2, "the second edit to the same quota re-cuts nothing")
 	s.True(decimal.NewFromInt(50).Equal(windows[1].Quota), "got %s", windows[1].Quota)
 }
+
+func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_RefusesWindowAsLongAsThePeriod() {
+	s.enableEntitlementAlerts()
+	fx := s.newSubGrantSubscription("create-long-window")
+	req := subscriptionGrantRequest(fx.sub.ID, 30, "")
+	req.GrantDurationUnit = types.EntitlementGrantDurationUnitDay
+	req.GrantDurationValue = lo.ToPtr(int(fx.sub.CurrentPeriodEnd.Sub(fx.sub.CurrentPeriodStart).Hours()/24) + 1)
+	_, err := s.entService.CreateEntitlement(s.GetContext(), req)
+	s.Require().Error(err)
+	s.Contains(err.Error(), "as long as the billing period")
+}

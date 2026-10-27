@@ -242,6 +242,12 @@ func (s *entitlementService) createSubscriptionGrant(ctx context.Context, req dt
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
+	// Windows as long as the cycle never open; that allowance is what subscription_period is for.
+	if dur, err := e.GrantDuration(); err == nil && dur > 0 && dur >= sub.CurrentPeriodEnd.Sub(sub.CurrentPeriodStart) {
+		return nil, ierr.NewError("grant window is as long as the billing period").
+			WithHint("Use grant_duration_unit=subscription_period for an allowance per billing period.").
+			Mark(ierr.ErrValidation)
+	}
 
 	enabled, err := s.entitlementAlertsEnabled(ctx)
 	if err != nil {

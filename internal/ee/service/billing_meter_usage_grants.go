@@ -622,7 +622,7 @@ func subscriptionLineSpend(
 		if c == nil {
 			continue
 		}
-		amount := decimal.NewFromFloat(c.Amount)
+		amount := c.AmountDecimal()
 		total = total.Add(amount)
 		perLine[c.SubscriptionLineItemID] = perLine[c.SubscriptionLineItemID].Add(amount)
 	}
