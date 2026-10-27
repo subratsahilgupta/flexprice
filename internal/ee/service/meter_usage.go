@@ -2532,6 +2532,19 @@ func amortizeLineTotals(data *AnalyticsData) {
 				for j, cost := range amortize(combo.TotalCost, pointUsage) {
 					points[j].Cost = cost
 				}
+
+				if combo.CommitmentInfo == nil {
+					continue
+				}
+
+				utilized := amortize(combo.CommitmentInfo.ComputedCommitmentUtilizedAmount, pointUsage)
+				overage := amortize(combo.CommitmentInfo.ComputedOverageAmount, pointUsage)
+				trueUp := amortize(combo.CommitmentInfo.ComputedTrueUpAmount, pointUsage)
+				for j := range points {
+					points[j].ComputedCommitmentUtilizedAmount = utilized[j]
+					points[j].ComputedOverageAmount = overage[j]
+					points[j].ComputedTrueUpAmount = trueUp[j]
+				}
 			}
 		}
 	}
