@@ -285,15 +285,17 @@ func (s *rawEventConsumptionService) processMessage(ctx context.Context, msg *me
 		}
 	}
 
+	logBatch := s.Logger.Debug
 	if skipCount > 0 || errorCount > 0 {
-		s.Logger.Info(ctx, "completed raw event batch processing",
-			"batch_size", len(batch.Data),
-			"success_count", successCount,
-			"skip_count", skipCount,
-			"error_count", errorCount,
-			"message_uuid", msg.UUID,
-		)
+		logBatch = s.Logger.Info
 	}
+	logBatch(ctx, "completed raw event batch processing",
+		"batch_size", len(batch.Data),
+		"success_count", successCount,
+		"skip_count", skipCount,
+		"error_count", errorCount,
+		"message_uuid", msg.UUID,
+	)
 
 	// Return error if any events failed (causes batch retry)
 	// Skip count is acceptable (validation failures), but error count requires retry

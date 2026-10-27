@@ -51,7 +51,7 @@ var catalog = map[Name]definition{
 	InvoiceTransitions: {"Invoice status changes by new status, including draft creation", "{transition}"},
 	RefundTransitions:  {"Refund status changes by new status, including creation", "{transition}"},
 	GatewayWebhooks:    {"Inbound gateway webhooks by processing outcome; unhandled types are labelled other", "{webhook}"},
-	RawEvents:          {"Raw events consumed from Kafka by outcome (success, skipped, error)", "{event}"},
+	RawEvents:          {"Raw events handled per attempt by outcome (success, skipped, error); retried batches are counted again", "{event}"},
 
 	ActivityDropped:            {"Activity entries dropped before reaching Kafka, by reason", "{entry}"},
 	ActivityUncaptured:         {"Bulk writes on a logged entity that returned only a row count, by entity", "{write}"},

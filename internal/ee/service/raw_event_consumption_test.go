@@ -231,14 +231,16 @@ func (s *RawEventConsumptionSuite) TestBatchOutcomesCounted() {
 			json.RawMessage(validBentoPayload("org_003", "evt_3")),
 		},
 	}
-	s.Require().NoError(s.svc.processMessage(context.Background(), buildBatchMsg(batch)))
-
 	count := func(outcome string) int64 {
 		return r.Sum("raw_events.processed", map[string]string{"outcome": outcome})
 	}
-	s.Equal(int64(1), count("success"))
-	s.Equal(int64(2), count("skipped"))
-	s.Equal(int64(0), count("error"))
+	successBefore, skippedBefore, errorBefore := count("success"), count("skipped"), count("error")
+
+	s.Require().NoError(s.svc.processMessage(context.Background(), buildBatchMsg(batch)))
+
+	s.Equal(successBefore+1, count("success"))
+	s.Equal(skippedBefore+2, count("skipped"))
+	s.Equal(errorBefore, count("error"))
 }
 
 // TestInvalidBentoEvent_SkippedBeforeFilterCheck — invalid events are dropped before the
