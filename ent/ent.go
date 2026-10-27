@@ -35,6 +35,7 @@ import (
 	"github.com/flexprice/flexprice/ent/entitlementgrant"
 	"github.com/flexprice/flexprice/ent/entityintegrationmapping"
 	"github.com/flexprice/flexprice/ent/environment"
+	"github.com/flexprice/flexprice/ent/eventdeletionrequest"
 	"github.com/flexprice/flexprice/ent/feature"
 	"github.com/flexprice/flexprice/ent/fxrate"
 	"github.com/flexprice/flexprice/ent/group"
@@ -154,6 +155,7 @@ func checkColumn(t, c string) error {
 			entitlementgrant.Table:         entitlementgrant.ValidColumn,
 			entityintegrationmapping.Table: entityintegrationmapping.ValidColumn,
 			environment.Table:              environment.ValidColumn,
+			eventdeletionrequest.Table:     eventdeletionrequest.ValidColumn,
 			fxrate.Table:                   fxrate.ValidColumn,
 			feature.Table:                  feature.ValidColumn,
 			group.Table:                    group.ValidColumn,

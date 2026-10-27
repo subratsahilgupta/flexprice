@@ -144,6 +144,8 @@ type ServiceParams struct {
 	SelfBillingClickHouseRepo    domainsb.ClickHouseRepository
 	SelfBillingPostgresRepo      domainsb.PostgresRepository
 	CommitmentRepo               commitment.Repository
+	EventDeletionRequestRepo     events.DeletionRequestRepository
+	EventDeletionLogRepo         events.DeletedEventsLogRepository
 
 	// Publishers
 	EventPublisher   publisher.EventPublisher
@@ -260,6 +262,8 @@ func NewServiceParams(
 	selfBillingClickHouseRepo domainsb.ClickHouseRepository,
 	selfBillingPostgresRepo domainsb.PostgresRepository,
 	commitmentRepo commitment.Repository,
+	eventDeletionRequestRepo events.DeletionRequestRepository,
+	eventDeletionLogRepo events.DeletedEventsLogRepository,
 ) ServiceParams {
 	return ServiceParams{
 		Logger:                       logger,
@@ -340,5 +344,7 @@ func NewServiceParams(
 		SelfBillingClickHouseRepo:    selfBillingClickHouseRepo,
 		SelfBillingPostgresRepo:      selfBillingPostgresRepo,
 		CommitmentRepo:               commitmentRepo,
+		EventDeletionRequestRepo:     eventDeletionRequestRepo,
+		EventDeletionLogRepo:         eventDeletionLogRepo,
 	}
 }

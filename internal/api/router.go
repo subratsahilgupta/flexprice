@@ -227,6 +227,7 @@ func NewRouter(
 			events.POST("/raw/bulk", ingestBodyLimit, write(types.EntityEvent, types.ActionWrite, allowSuspended), handlers.Events.BulkIngestRawEvent)
 			events.POST("/raw/reprocess/all", write(types.EntityEvent, types.ActionWrite), handlers.Events.ReprocessRawEvents)
 			events.POST("/raw/reprocess/pending", write(types.EntityEvent, types.ActionWrite), handlers.Events.ReprocessUnprocessedRawEvents)
+			events.POST("/delete", write(types.EntityEvent, types.ActionWrite, superAdminOnly), handlers.Events.DeleteEvents)
 		}
 
 		// Meter usage query endpoints (reads from meter_usage ClickHouse table)
