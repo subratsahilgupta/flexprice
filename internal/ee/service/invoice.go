@@ -99,6 +99,7 @@ type InvoiceService interface {
 	SyncInvoiceToMoyasarIfEnabled(ctx context.Context, inv *invoice.Invoice) error
 	PublishInvoiceSyncWebhook(ctx context.Context, invoiceID string, provider types.SecretProvider, syncErr string)
 	IsFinalizationDue(ctx context.Context, invoiceID string) (bool, error)
+	IsInvoiceFinalizationDue(ctx context.Context, inv *invoice.Invoice) (bool, error)
 	ListAllTenantDraftInvoices(ctx context.Context, batchSize, offset int) ([]*invoice.Invoice, error)
 
 	// ListSubscriptionsDueForDailyDraftCompute returns subscriptions due for daily processing.
@@ -1536,7 +1537,12 @@ func (s *invoiceService) IsFinalizationDue(ctx context.Context, invoiceID string
 	if err != nil {
 		return false, err
 	}
+	return s.IsInvoiceFinalizationDue(ctx, inv)
+}
 
+// IsInvoiceFinalizationDue is IsFinalizationDue for an already-loaded invoice,
+// so scans over many drafts skip the per-invoice reload.
+func (s *invoiceService) IsInvoiceFinalizationDue(ctx context.Context, inv *invoice.Invoice) (bool, error) {
 	if inv.InvoiceStatus != types.InvoiceStatusDraft {
 		return false, nil
 	}
