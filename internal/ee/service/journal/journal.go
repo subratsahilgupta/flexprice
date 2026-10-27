@@ -2,22 +2,31 @@ package journal
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"sort"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	domainContract "github.com/flexprice/flexprice/internal/domain/contract"
 	"github.com/flexprice/flexprice/internal/domain/creditnote"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	domainJournal "github.com/flexprice/flexprice/internal/domain/journal"
 	"github.com/flexprice/flexprice/internal/domain/payment"
+	domainPOB "github.com/flexprice/flexprice/internal/domain/pob"
 	"github.com/flexprice/flexprice/internal/domain/refund"
+	"github.com/flexprice/flexprice/internal/domain/settings"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/taxapplied"
 	accountingperiodsvc "github.com/flexprice/flexprice/internal/ee/service/accountingperiod"
+	contractsvc "github.com/flexprice/flexprice/internal/ee/service/contract"
 	pobsvc "github.com/flexprice/flexprice/internal/ee/service/pob"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/postgres"
 	contractRepo "github.com/flexprice/flexprice/internal/repository/contract"
 	journalRepo "github.com/flexprice/flexprice/internal/repository/journal"
+	pobRepo "github.com/flexprice/flexprice/internal/repository/pob"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
 	"github.com/samber/lo"
@@ -34,40 +43,103 @@ type JournalService interface {
 	PostPayment(ctx context.Context, p *payment.Payment) error
 	// PostRefund posts a settled refund; safe to repeat.
 	PostRefund(ctx context.Context, r *refund.Refund) error
+	// Recognize posts, for each ended month of the contract's active and satisfied POBs, the recognition and offset
+	// the journal is missing, and returns them; a rerun posts nothing. A dry run also counts the open month up to AsOf
+	// and saves nothing.
+	Recognize(ctx context.Context, req RecognizeRequest) ([]*domainJournal.Entry, error)
+	// RunRecognition posts missed billing and recognizes the changed contracts of every environment with revenue
+	// recognition on; failures are collected per environment and contract.
+	RunRecognition(ctx context.Context, req RecognitionRunRequest) error
+	// Backfill rebuilds the ctx environment from history: contracts and POBs for every subscription, all billing, then
+	// recognition of every contract; safe to rerun, it only adds what is missing or wrong.
+	Backfill(ctx context.Context, req BackfillRequest) error
+	// Reconcile posts what hooks missed for every billing source changed since `since`; errors are collected per source.
+	Reconcile(ctx context.Context, since time.Time) error
 	GetJournalEntry(ctx context.Context, id string) (*dto.JournalEntryResponse, error)
 	GetJournalEntries(ctx context.Context, filter *journalRepo.Filter) (*dto.ListJournalEntriesResponse, error)
 }
 
 type journalService struct {
-	journalRepo    journalRepo.Repository
-	periodService  accountingperiodsvc.AccountingPeriodService
-	pobService     pobsvc.PerformanceObligationService
-	contractRepo   contractRepo.Repository
-	subRepo        subscription.Repository
-	customerRepo   customer.Repository
-	invoiceRepo    invoice.Repository
-	taxAppliedRepo taxapplied.Repository
+	db              postgres.IClient
+	journalRepo     journalRepo.Repository
+	periodService   accountingperiodsvc.AccountingPeriodService
+	pobService      pobsvc.PerformanceObligationService
+	pobRepo         pobRepo.Repository
+	contractService contractsvc.ContractService
+	contractRepo    contractRepo.Repository
+	subRepo         subscription.Repository
+	customerRepo    customer.Repository
+	invoiceRepo     invoice.Repository
+	creditNoteRepo  creditnote.Repository
+	paymentRepo     payment.Repository
+	refundRepo      refund.Repository
+	taxAppliedRepo  taxapplied.Repository
+	settingsRepo    settings.Repository
+}
+
+// RecognitionCursor is the last contract a recognition run finished; a retry resumes after it.
+type RecognitionCursor struct {
+	EnvironmentID string `json:"environment_id"`
+	ContractID    string `json:"contract_id"`
+}
+
+// RecognizeRequest recognizes ContractID as of AsOf; DryRun returns the missing entries without the lock or saving.
+type RecognizeRequest struct {
+	ContractID string
+	AsOf       time.Time
+	DryRun     bool
+}
+
+// BackfillRequest recognizes as of AsOf, resuming after Resume when it is in the ctx environment; OnProgress receives
+// the cursor after each contract.
+type BackfillRequest struct {
+	AsOf       time.Time
+	Resume     *RecognitionCursor
+	OnProgress func(RecognitionCursor)
+}
+
+// RecognitionRunRequest is one run: billing changed since Since is posted, contracts are recognized as of AsOf, and
+// OnProgress receives the cursor after each contract.
+type RecognitionRunRequest struct {
+	Since      time.Time
+	AsOf       time.Time
+	Resume     *RecognitionCursor
+	OnProgress func(RecognitionCursor)
 }
 
 func NewJournalService(
+	db postgres.IClient,
 	journalRepo journalRepo.Repository,
 	periodService accountingperiodsvc.AccountingPeriodService,
 	pobService pobsvc.PerformanceObligationService,
+	pobRepo pobRepo.Repository,
+	contractService contractsvc.ContractService,
 	contractRepo contractRepo.Repository,
 	subRepo subscription.Repository,
 	customerRepo customer.Repository,
 	invoiceRepo invoice.Repository,
+	creditNoteRepo creditnote.Repository,
+	paymentRepo payment.Repository,
+	refundRepo refund.Repository,
 	taxAppliedRepo taxapplied.Repository,
+	settingsRepo settings.Repository,
 ) JournalService {
 	return &journalService{
-		journalRepo:    journalRepo,
-		periodService:  periodService,
-		pobService:     pobService,
-		contractRepo:   contractRepo,
-		subRepo:        subRepo,
-		customerRepo:   customerRepo,
-		invoiceRepo:    invoiceRepo,
-		taxAppliedRepo: taxAppliedRepo,
+		db:              db,
+		journalRepo:     journalRepo,
+		periodService:   periodService,
+		pobService:      pobService,
+		pobRepo:         pobRepo,
+		contractService: contractService,
+		contractRepo:    contractRepo,
+		subRepo:         subRepo,
+		customerRepo:    customerRepo,
+		invoiceRepo:     invoiceRepo,
+		creditNoteRepo:  creditNoteRepo,
+		paymentRepo:     paymentRepo,
+		refundRepo:      refundRepo,
+		taxAppliedRepo:  taxAppliedRepo,
+		settingsRepo:    settingsRepo,
 	}
 }
 
@@ -326,6 +398,337 @@ func (s *journalService) PostRefund(ctx context.Context, r *refund.Refund) error
 	return err
 }
 
+// e.g. a $1,200 annual prepaid from Jan 1, run Feb 1: Dr unbilled 100 / Cr revenue 100 and Dr deferred 100 / Cr unbilled
+// 100, dated Jan 31; a backdated cut of January to 90 later posts −10 and −10 to January.
+func (s *journalService) Recognize(ctx context.Context, req RecognizeRequest) ([]*domainJournal.Entry, error) {
+	contractID := req.ContractID
+	c, err := s.contractRepo.GetByID(ctx, contractID)
+	if err != nil {
+		return nil, err
+	}
+	pobs, err := s.pobRepo.List(ctx, &pobRepo.Filter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+		ContractIDs: []string{contractID},
+		POBStatuses: []types.PerformanceObligationStatus{types.PerformanceObligationStatusActive, types.PerformanceObligationStatusSatisfied},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(pobs) == 0 {
+		return nil, nil
+	}
+
+	sources, err := s.contractRepo.ListAssociations(ctx, contractID)
+	if err != nil {
+		return nil, err
+	}
+	sub, hasSub := lo.Find(sources, func(a *domainContract.Association) bool { return a.EntityType() == types.RevRecEntityTypeSubscription })
+	loc, _, err := s.sourceContext(ctx, c.CustomerID(), lo.Ternary(hasSub, lo.ToPtr(sub.EntityID()), nil))
+	if err != nil {
+		return nil, err
+	}
+
+	// e.g. a POB from Jan 15 run on Apr 2 → Feb 1, Mar 1, Apr 1: the ends of January, February and March
+	first := utils.LocalDay(lo.Earliest(lo.Map(pobs, func(p *domainPOB.PerformanceObligation, _ int) time.Time { return p.ServiceStart() })...), loc)
+	today := utils.LocalDay(req.AsOf, loc)
+	// Months ended in the customer's local time, not UTC: each month's start is the previous month's end.
+	monthEnds := lo.Drop(utils.Months(first, today), 1)
+
+	// A dry run ends the open month at today, e.g. Feb 15 → Feb 1–14; on the 1st the open month has no days yet.
+	if req.DryRun && today.Day() != 1 && today.After(first) {
+		monthEnds = append(monthEnds, today)
+	}
+	if len(monthEnds) == 0 {
+		return nil, nil
+	}
+
+	// EarnedToDate reads local days, so each month end is local midnight.
+	earned, err := s.pobService.EarnedToDate(ctx, contractID, lo.Map(monthEnds, func(m time.Time, _ int) time.Time {
+		return time.Date(m.Year(), m.Month(), m.Day(), 0, 0, 0, 0, loc)
+	}))
+	if err != nil {
+		return nil, err
+	}
+
+	precision := types.GetCurrencyPrecision(c.Currency())
+	var recognized []*domainJournal.Entry
+	var errs []error
+	for _, p := range pobs {
+		recognizePOB := func(ctx context.Context) error {
+			entries, err := s.journalRepo.List(ctx, &journalRepo.Filter{QueryFilter: types.NewNoLimitQueryFilter(), POBIDs: []string{p.ID()}})
+			if err != nil {
+				return err
+			}
+
+			entry := func(eventType types.JournalEventType, lastDay time.Time, postings []posting) *domainJournal.Entry {
+				return domainJournal.NewBuilder(nil).
+					WithEventType(eventType).
+					WithSource(types.RevRecEntityTypePOB, p.ID()).
+					WithBusinessDate(lastDay).
+					WithCustomerID(c.CustomerID()).
+					WithContractID(c.ID()).
+					WithCurrency(c.Currency()).
+					WithLines(toLines(postings)).
+					Build()
+			}
+
+			for i, monthEnd := range monthEnds {
+				lastDay := monthEnd.AddDate(0, 0, -1)
+				pos := positionAt(entries, p.ID(), lastDay)
+				toRecognize, toOffset := computeMonth(pos, earned[i][p.ID()].Round(precision))
+
+				// Zero amounts leave no lines, so post skips them; posted entries join the in-memory totals.
+				// e.g. arrears Feb 28: [revenue_earned Dr unbilled 250, revenue_offset Dr deferred 300 / Cr unbilled 300]
+				month := []*domainJournal.Entry{
+					entry(types.JournalEventRevenueEarned, lastDay, []posting{
+						{account: types.LedgerAccountUnbilledReceivable, amount: toRecognize.Neg(), pobID: p.ID()},
+						{account: types.LedgerAccountRevenue, amount: toRecognize, pobID: p.ID()},
+					}),
+					entry(types.JournalEventRevenueOffset, lastDay, []posting{
+						{account: types.LedgerAccountDeferredRevenue, amount: toOffset.Neg(), pobID: p.ID()},
+						{account: types.LedgerAccountUnbilledReceivable, amount: toOffset, pobID: p.ID()},
+					}),
+				}
+				// Billed ahead and fully earned with nothing in unbilled: unbilled would rise and fall by the same amount, so
+				// post one entry instead. e.g. prepaid Jan 31: revenue_earned Dr deferred 100 / Cr revenue 100
+				if toOffset.Equal(toRecognize) && pos.revenue.Equal(pos.offset) {
+					month = []*domainJournal.Entry{
+						entry(types.JournalEventRevenueEarned, lastDay, []posting{
+							{account: types.LedgerAccountDeferredRevenue, amount: toRecognize.Neg(), pobID: p.ID()},
+							{account: types.LedgerAccountRevenue, amount: toRecognize, pobID: p.ID()},
+						}),
+					}
+				}
+
+				if !req.DryRun {
+					for _, e := range month {
+						if _, err := s.post(ctx, e); err != nil {
+							return err
+						}
+					}
+				}
+				entries = append(entries, month...)
+				recognized = append(recognized, lo.Filter(month, func(e *domainJournal.Entry, _ int) bool { return len(e.Lines()) > 0 })...)
+			}
+			return nil
+		}
+
+		if req.DryRun {
+			errs = append(errs, sourceError("pob", p.ID(), recognizePOB(ctx)))
+			continue
+		}
+
+		err := s.db.WithTx(ctx, func(txCtx context.Context) error {
+			if err := s.db.LockWithWait(txCtx, postgres.LockRequest{Key: "revrec:pob:" + p.ID()}); err != nil {
+				return err
+			}
+			return recognizePOB(txCtx)
+		})
+		errs = append(errs, sourceError("pob", p.ID(), err))
+	}
+
+	return recognized, errors.Join(errs...)
+}
+
+// e.g. a retry resuming after contract_7 of env_2 skips env_1 and env_2's contracts up to contract_7.
+func (s *journalService) RunRecognition(ctx context.Context, req RecognitionRunRequest) error {
+	configs, err := s.settingsRepo.ListAllTenantEnvSettingsByKey(ctx, types.SettingKeyRevenueRecognitionConfig)
+	if err != nil {
+		return err
+	}
+	envs := lo.Filter(configs, func(c *types.TenantEnvConfig, _ int) bool {
+		cfg, err := utils.ToStruct[types.RevenueRecognitionConfig](c.Config)
+		return err == nil && cfg.Enabled && c.TenantID != "" && c.EnvironmentID != ""
+	})
+	// Stable order, so a cursor means the same thing on a retry.
+	sort.Slice(envs, func(i, j int) bool {
+		return envs[i].TenantID+envs[i].EnvironmentID < envs[j].TenantID+envs[j].EnvironmentID
+	})
+
+	// A cursor whose environment is no longer enabled restarts from the top.
+	resume := req.Resume
+	if resume != nil && !lo.ContainsBy(envs, func(c *types.TenantEnvConfig) bool { return c.EnvironmentID == resume.EnvironmentID }) {
+		resume = nil
+	}
+
+	var errs []error
+	for _, env := range envs {
+		after := ""
+		if resume != nil {
+			if env.EnvironmentID != resume.EnvironmentID {
+				continue
+			}
+			after, resume = resume.ContractID, nil
+		}
+
+		envCtx := types.SetEnvironmentID(types.SetTenantID(ctx, env.TenantID), env.EnvironmentID)
+		errs = append(errs, sourceError("environment", env.EnvironmentID, s.recognizeEnvironment(envCtx, req, after)))
+	}
+
+	return errors.Join(errs...)
+}
+
+// e.g. a subscription created before enabling gets its contract and POBs, its 2025 invoices post to their 2025 months,
+// and its months are recognized from its start; a rerun posts nothing.
+func (s *journalService) Backfill(ctx context.Context, req BackfillRequest) error {
+	after := ""
+	if req.Resume != nil && req.Resume.EnvironmentID == types.GetEnvironmentID(ctx) {
+		after = req.Resume.ContractID
+	}
+	unchanged := RecognitionCursor{EnvironmentID: types.GetEnvironmentID(ctx), ContractID: after}
+
+	syncErr := postChanged(func(page *types.QueryFilter) ([]*subscription.Subscription, error) {
+		f := types.NewNoLimitSubscriptionFilter()
+		f.QueryFilter = page
+		return s.subRepo.List(ctx, f)
+	}, func(listed *subscription.Subscription) error {
+		defer req.OnProgress(unchanged)
+		sub, _, err := s.subRepo.GetWithLineItems(ctx, listed.ID)
+		if err != nil {
+			return sourceError("subscription", listed.ID, err)
+		}
+
+		c, err := s.contractService.SyncForSubscription(ctx, sub)
+		if err == nil {
+			_, err = s.pobService.SyncForSubscription(ctx, sub, c)
+		}
+
+		return sourceError("subscription", sub.ID, err)
+	})
+
+	return errors.Join(syncErr, s.recognizeEnvironment(ctx, RecognitionRunRequest{AsOf: req.AsOf, OnProgress: req.OnProgress}, after))
+}
+
+// recognizeEnvironment repairs the POBs of each selected contract with an ID after `after`, posts missed billing (which
+// needs those POBs), then recognizes each contract.
+func (s *journalService) recognizeEnvironment(ctx context.Context, req RecognitionRunRequest, after string) error {
+	contractIDs, err := s.recognitionContracts(ctx, req.Since, req.AsOf)
+	if err != nil {
+		return err
+	}
+	contractIDs = lo.Filter(contractIDs, func(id string, _ int) bool { return id > after })
+
+	// The repair pass reports the unchanged cursor: it shows progress without moving the resume point.
+	unchanged := RecognitionCursor{EnvironmentID: types.GetEnvironmentID(ctx), ContractID: after}
+	var errs []error
+	for _, id := range contractIDs {
+		errs = append(errs, sourceError("contract", id, s.pobService.Reconcile(ctx, id)))
+		req.OnProgress(unchanged)
+	}
+	errs = append(errs, s.Reconcile(ctx, req.Since))
+
+	for _, id := range contractIDs {
+		_, err := s.Recognize(ctx, RecognizeRequest{ContractID: id, AsOf: req.AsOf})
+		errs = append(errs, sourceError("contract", id, err))
+		req.OnProgress(RecognitionCursor{EnvironmentID: types.GetEnvironmentID(ctx), ContractID: id})
+	}
+
+	return errors.Join(errs...)
+}
+
+// recognitionContracts is, sorted by ID, every active contract, every contract ended in the last two months (it may
+// still owe its last month), and every contract of a subscription with an invoice changed since `since`.
+func (s *journalService) recognitionContracts(ctx context.Context, since, asOf time.Time) ([]string, error) {
+	active, err := s.contractRepo.List(ctx, &contractRepo.Filter{
+		QueryFilter:      types.NewNoLimitQueryFilter(),
+		ContractStatuses: []types.ContractStatus{types.ContractStatusActive},
+	})
+	if err != nil {
+		return nil, err
+	}
+	ended, err := s.contractRepo.List(ctx, &contractRepo.Filter{
+		QueryFilter:      types.NewNoLimitQueryFilter(),
+		ContractStatuses: []types.ContractStatus{types.ContractStatusEnded},
+		EndedAtGTE:       lo.ToPtr(asOf.AddDate(0, -2, 0)),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	invoiceFilter := types.NewNoLimitInvoiceFilter()
+	invoiceFilter.UpdatedAtGTE = &since
+	invoices, err := s.invoiceRepo.List(ctx, invoiceFilter)
+	if err != nil {
+		return nil, err
+	}
+	subscriptionIDs := lo.Uniq(lo.FilterMap(invoices, func(inv *invoice.Invoice, _ int) (string, bool) {
+		return lo.FromPtr(inv.SubscriptionID), lo.FromPtr(inv.SubscriptionID) != ""
+	}))
+
+	var billed []*domainContract.Contract
+	if len(subscriptionIDs) > 0 {
+		if billed, err = s.contractRepo.List(ctx, &contractRepo.Filter{
+			QueryFilter:     types.NewNoLimitQueryFilter(),
+			SubscriptionIDs: subscriptionIDs,
+		}); err != nil {
+			return nil, err
+		}
+	}
+
+	ids := lo.Uniq(lo.Map(append(append(active, ended...), billed...), func(c *domainContract.Contract, _ int) string { return c.ID() }))
+	sort.Strings(ids)
+	return ids, nil
+}
+
+// e.g. a finalize hook lost to a crash posts on the next run; posted entries are skipped by key.
+func (s *journalService) Reconcile(ctx context.Context, since time.Time) error {
+	return errors.Join(
+		postChanged(func(page *types.QueryFilter) ([]*invoice.Invoice, error) {
+			f := types.NewNoLimitInvoiceFilter()
+			f.QueryFilter, f.UpdatedAtGTE = page, &since
+			return s.invoiceRepo.List(ctx, f)
+		}, func(inv *invoice.Invoice) error { return sourceError("invoice", inv.ID, s.PostInvoice(ctx, inv)) }),
+
+		postChanged(func(page *types.QueryFilter) ([]*creditnote.CreditNote, error) {
+			f := types.NewNoLimitCreditNoteFilter()
+			f.QueryFilter, f.UpdatedAtGTE = page, &since
+			return s.creditNoteRepo.List(ctx, f)
+		}, func(cn *creditnote.CreditNote) error {
+			return sourceError("credit note", cn.ID, s.PostCreditNote(ctx, cn))
+		}),
+
+		postChanged(func(page *types.QueryFilter) ([]*payment.Payment, error) {
+			f := types.NewNoLimitPaymentFilter()
+			f.QueryFilter, f.UpdatedAtGTE = page, &since
+			return s.paymentRepo.List(ctx, f)
+		}, func(p *payment.Payment) error { return sourceError("payment", p.ID, s.PostPayment(ctx, p)) }),
+
+		postChanged(func(page *types.QueryFilter) ([]*refund.Refund, error) {
+			f := types.NewNoLimitRefundFilter()
+			f.QueryFilter, f.UpdatedAtGTE = page, &since
+			return s.refundRepo.List(ctx, f)
+		}, func(r *refund.Refund) error { return sourceError("refund", r.ID, s.PostRefund(ctx, r)) }),
+	)
+}
+
+// postChanged posts every listed source, 500 per page; a post failure is collected, a list failure stops.
+func postChanged[T any](list func(page *types.QueryFilter) ([]T, error), post func(T) error) error {
+	const pageSize = 500
+	var errs []error
+	for offset := 0; ; offset += pageSize {
+		page := types.NewDefaultQueryFilter()
+		page.Limit, page.Offset = lo.ToPtr(pageSize), lo.ToPtr(offset)
+		sources, err := list(page)
+		if err != nil {
+			return errors.Join(append(errs, err)...)
+		}
+		for _, src := range sources {
+			errs = append(errs, post(src))
+		}
+		if len(sources) < pageSize {
+			return errors.Join(errs...)
+		}
+	}
+}
+
+func sourceError(kind, id string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("%s %s: %w", kind, id, err)
+}
+
 func (s *journalService) GetJournalEntry(ctx context.Context, id string) (*dto.JournalEntryResponse, error) {
 	e, err := s.journalRepo.Get(ctx, id)
 	if err != nil {
@@ -417,6 +820,60 @@ func (s *journalService) post(ctx context.Context, e *domainJournal.Entry) (stri
 	}
 
 	return entry.ID(), nil
+}
+
+// pobPosition is a POB's journal sums over entries dated on or before a month's last day.
+type pobPosition struct {
+	billed  decimal.Decimal // deferred credits − debits on billing entries
+	revenue decimal.Decimal // revenue credits − debits on revenue_earned entries
+	offset  decimal.Decimal // deferred debits − credits on recognition entries (offsets and prepaid single entries)
+}
+
+// positionAt sums the POB's lines on entries dated on or before monthEnd.
+// e.g. a Jan 1 invoice crediting deferred 1,200 and a Jan 31 offset debiting it 100 → billed 1,200, offset 100.
+func positionAt(entries []*domainJournal.Entry, pobID string, monthEnd time.Time) pobPosition {
+	var pos pobPosition
+
+	for _, e := range entries {
+		if e.BusinessDate().After(monthEnd) {
+			continue
+		}
+
+		for _, l := range e.Lines() {
+			if l.POBID() != pobID {
+				continue
+			}
+
+			credit := l.Net()
+			switch {
+			case e.EventType() == types.JournalEventRevenueEarned || e.EventType() == types.JournalEventRevenueOffset:
+				// A prepaid month's single entry debits deferred directly, so it counts as offset too.
+				switch l.Account() {
+				case types.LedgerAccountRevenue:
+					pos.revenue = pos.revenue.Add(credit)
+				case types.LedgerAccountDeferredRevenue:
+					pos.offset = pos.offset.Sub(credit)
+				}
+			case l.Account() == types.LedgerAccountDeferredRevenue:
+				pos.billed = pos.billed.Add(credit)
+			}
+		}
+	}
+
+	return pos
+}
+
+// computeMonth is the month's recognition δ and offset given the position and the rounded earned-to-date at its end.
+// e.g. Example 1 January: earned 100, position{billed: 1,200} → δ 100, offset 100; a rerun gives 0, 0.
+func computeMonth(pos pobPosition, earned decimal.Decimal) (delta, offset decimal.Decimal) {
+	// Recognition posts only what the journal is missing.
+	delta = earned.Sub(pos.revenue)
+
+	// What is both billed and earned sits in deferred and unbilled at once; earlier offsets removed part of it.
+	billedAndEarned := decimal.Min(pos.billed, earned)
+	offset = billedAndEarned.Sub(pos.offset)
+
+	return delta, offset
 }
 
 // reversed negates every posting.

@@ -486,6 +486,8 @@ definitions:
         type: array
       end_time:
         type: string
+      ended_at_gte:
+        type: string
       expand:
         type: string
       filters:
@@ -7517,6 +7519,103 @@ definitions:
       usage_at_list_rate:
         type: number
     type: object
+  RevenueBreakdown:
+    properties:
+      actual:
+        type: string
+      pending:
+        type: string
+      scheduled:
+        type: string
+      total:
+        description: actual + pending + scheduled
+        type: string
+    type: object
+  RollforwardRequest:
+    properties:
+      accounts:
+        description: defaults to [deferred_revenue]
+        items:
+          $ref: '#/definitions/types.LedgerAccountKey'
+        type: array
+      contract_ids:
+        items:
+          type: string
+        type: array
+      currency:
+        type: string
+      customer_ids:
+        items:
+          type: string
+        type: array
+      group_by:
+        items:
+          $ref: '#/definitions/types.RevenueReportGroupBy'
+        type: array
+      limit:
+        description: item rows per page; totals are never paged
+        maximum: 1000
+        minimum: 0
+        type: integer
+      offset:
+        minimum: 0
+        type: integer
+      period_end:
+        description: YYYY-MM, an ended month; defaults to period_start
+        type: string
+      period_start:
+        description: YYYY-MM
+        type: string
+      pob_ids:
+        items:
+          type: string
+        type: array
+      posted_by:
+        description: 'only entries posted at or before it: the books as they were
+          then'
+        type: string
+    required:
+    - currency
+    - period_start
+    type: object
+  RollforwardResponse:
+    properties:
+      items:
+        description: per period, account and group; empty without group_by
+        items:
+          $ref: '#/definitions/RollforwardRow'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+      totals:
+        description: per period and account, all groups
+        items:
+          $ref: '#/definitions/RollforwardRow'
+        type: array
+    type: object
+  RollforwardRow:
+    properties:
+      account:
+        $ref: '#/definitions/types.LedgerAccountKey'
+      closing:
+        type: string
+      contract_id:
+        type: string
+      customer_id:
+        type: string
+      movements:
+        additionalProperties:
+          type: string
+        description: a missing category is 0
+        type: object
+      opening:
+        type: string
+      period:
+        description: YYYY-MM
+        type: string
+      pob_id:
+        type: string
+    type: object
   SavedCardDetails:
     properties:
       brand:
@@ -10802,6 +10901,93 @@ definitions:
       wallet_id:
         type: string
     type: object
+  WaterfallCell:
+    properties:
+      deferred:
+        description: 'details: closing deferred_revenue, ended months only'
+        type: string
+      period:
+        description: YYYY-MM
+        type: string
+      revenue:
+        $ref: '#/definitions/RevenueBreakdown'
+      unbilled:
+        description: 'details: closing unbilled_receivable, ended months only'
+        type: string
+    type: object
+  WaterfallRequest:
+    properties:
+      as_of:
+        description: 'report date: pending and scheduled split here; defaults to now'
+        type: string
+      contract_ids:
+        items:
+          type: string
+        type: array
+      currency:
+        type: string
+      customer_ids:
+        items:
+          type: string
+        type: array
+      details:
+        description: month-end deferred and unbilled balances
+        type: boolean
+      group_by:
+        allOf:
+        - $ref: '#/definitions/types.RevenueReportGroupBy'
+        description: defaults to customer_id
+      limit:
+        description: rows per page; totals are never paged
+        maximum: 1000
+        minimum: 0
+        type: integer
+      offset:
+        minimum: 0
+        type: integer
+      period_end:
+        description: YYYY-MM, at most 36 months from period_start
+        type: string
+      period_start:
+        description: YYYY-MM
+        type: string
+      pob_ids:
+        items:
+          type: string
+        type: array
+    required:
+    - currency
+    - period_end
+    - period_start
+    type: object
+  WaterfallResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/WaterfallRow'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+      totals:
+        description: per period over all rows, never paged
+        items:
+          $ref: '#/definitions/WaterfallCell'
+        type: array
+    type: object
+  WaterfallRow:
+    properties:
+      cells:
+        description: one per requested period, in order
+        items:
+          $ref: '#/definitions/WaterfallCell'
+        type: array
+      contract_id:
+        type: string
+      customer_id:
+        type: string
+      pob_id:
+        type: string
+    type: object
   WorkflowExecutionDTO:
     properties:
       close_time:
@@ -12808,6 +12994,10 @@ definitions:
         description: |-
           subscription_id filters invoices generated for a specific subscription
           Only returns invoices that were created as part of the specified subscription's billing
+        type: string
+      updated_at_gte:
+        description: updated_at_gte filters invoices updated at or after the given
+          instant
         type: string
       voided_at_gte:
         description: voided_at_gte filters invoices voided at or after the given instant
@@ -15768,6 +15958,16 @@ definitions:
     - RevRecEntityTypePayment
     - RevRecEntityTypeRefund
     - RevRecEntityTypePOB
+  types.RevenueReportGroupBy:
+    enum:
+    - customer_id
+    - contract_id
+    - pob_id
+    type: string
+    x-enum-varnames:
+    - RevenueReportGroupByCustomer
+    - RevenueReportGroupByContract
+    - RevenueReportGroupByPOB
   types.TenantInternalStatus:
     enum:
     - trialing
@@ -21584,6 +21784,11 @@ paths:
         - StatusPublished
         - StatusDeleted
         - StatusArchived
+      - description: UpdatedAtGTE bounds updated_at, which every lifecycle change
+          bumps.
+        in: query
+        name: updated_at_gte
+        type: string
       produces:
       - application/json
       responses:
@@ -23364,6 +23569,80 @@ paths:
       tags:
       - Refunds
       x-scope: write
+  /revenue_reports/rollforward:
+    post:
+      consumes:
+      - application/json
+      description: 'Use when explaining how deferred revenue, unbilled receivable
+        or another ledger account moved in ended months: opening balance, movements
+        by category (invoiced, earned, adjustments, payments, refunds) and closing
+        balance, optionally per customer, contract or performance obligation.'
+      operationId: getRevenueRollforward
+      parameters:
+      - description: Rollforward request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/RollforwardRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/RollforwardResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get revenue rollforward
+      tags:
+      - Revenue Reports
+      x-scope: read
+  /revenue_reports/waterfall:
+    post:
+      consumes:
+      - application/json
+      description: 'Use when showing revenue per customer, contract or performance
+        obligation and month: actual (posted), pending (earned, not yet posted) and
+        scheduled (invoiced, not yet earned), with optional month-end deferred and
+        unbilled balances. Covers at most 36 months.'
+      operationId: getRevenueWaterfall
+      parameters:
+      - description: Waterfall request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/WaterfallRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/WaterfallResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get revenue waterfall
+      tags:
+      - Revenue Reports
+      x-scope: read
   /secrets/api/keys:
     get:
       consumes:

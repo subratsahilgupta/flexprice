@@ -7357,6 +7357,12 @@ const docTemplate = `{
                         ],
                         "name": "status",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "UpdatedAtGTE bounds updated_at, which every lifecycle change bumps.",
+                        "name": "updated_at_gte",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -10030,6 +10036,112 @@ const docTemplate = `{
                     }
                 },
                 "x-scope": "write"
+            }
+        },
+        "/revenue_reports/rollforward": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use when explaining how deferred revenue, unbilled receivable or another ledger account moved in ended months: opening balance, movements by category (invoiced, earned, adjustments, payments, refunds) and closing balance, optionally per customer, contract or performance obligation.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Revenue Reports"
+                ],
+                "summary": "Get revenue rollforward",
+                "operationId": "getRevenueRollforward",
+                "parameters": [
+                    {
+                        "description": "Rollforward request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/RollforwardRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/RollforwardResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "read"
+            }
+        },
+        "/revenue_reports/waterfall": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use when showing revenue per customer, contract or performance obligation and month: actual (posted), pending (earned, not yet posted) and scheduled (invoiced, not yet earned), with optional month-end deferred and unbilled balances. Covers at most 36 months.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Revenue Reports"
+                ],
+                "summary": "Get revenue waterfall",
+                "operationId": "getRevenueWaterfall",
+                "parameters": [
+                    {
+                        "description": "Waterfall request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/WaterfallRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/WaterfallResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "read"
             }
         },
         "/secrets/api/keys": {
@@ -16933,6 +17045,9 @@ const docTemplate = `{
                     }
                 },
                 "end_time": {
+                    "type": "string"
+                },
+                "ended_at_gte": {
                     "type": "string"
                 },
                 "expand": {
@@ -26680,6 +26795,145 @@ const docTemplate = `{
                 }
             }
         },
+        "RevenueBreakdown": {
+            "type": "object",
+            "properties": {
+                "actual": {
+                    "type": "string"
+                },
+                "pending": {
+                    "type": "string"
+                },
+                "scheduled": {
+                    "type": "string"
+                },
+                "total": {
+                    "description": "actual + pending + scheduled",
+                    "type": "string"
+                }
+            }
+        },
+        "RollforwardRequest": {
+            "type": "object",
+            "required": [
+                "currency",
+                "period_start"
+            ],
+            "properties": {
+                "accounts": {
+                    "description": "defaults to [deferred_revenue]",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.LedgerAccountKey"
+                    }
+                },
+                "contract_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "customer_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "group_by": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.RevenueReportGroupBy"
+                    }
+                },
+                "limit": {
+                    "description": "item rows per page; totals are never paged",
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 0
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "period_end": {
+                    "description": "YYYY-MM, an ended month; defaults to period_start",
+                    "type": "string"
+                },
+                "period_start": {
+                    "description": "YYYY-MM",
+                    "type": "string"
+                },
+                "pob_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "posted_by": {
+                    "description": "only entries posted at or before it: the books as they were then",
+                    "type": "string"
+                }
+            }
+        },
+        "RollforwardResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "description": "per period, account and group; empty without group_by",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/RollforwardRow"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                },
+                "totals": {
+                    "description": "per period and account, all groups",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/RollforwardRow"
+                    }
+                }
+            }
+        },
+        "RollforwardRow": {
+            "type": "object",
+            "properties": {
+                "account": {
+                    "$ref": "#/definitions/types.LedgerAccountKey"
+                },
+                "closing": {
+                    "type": "string"
+                },
+                "contract_id": {
+                    "type": "string"
+                },
+                "customer_id": {
+                    "type": "string"
+                },
+                "movements": {
+                    "description": "a missing category is 0",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "opening": {
+                    "type": "string"
+                },
+                "period": {
+                    "description": "YYYY-MM",
+                    "type": "string"
+                },
+                "pob_id": {
+                    "type": "string"
+                }
+            }
+        },
         "SavedCardDetails": {
             "type": "object",
             "properties": {
@@ -31258,6 +31512,133 @@ const docTemplate = `{
                 }
             }
         },
+        "WaterfallCell": {
+            "type": "object",
+            "properties": {
+                "deferred": {
+                    "description": "details: closing deferred_revenue, ended months only",
+                    "type": "string"
+                },
+                "period": {
+                    "description": "YYYY-MM",
+                    "type": "string"
+                },
+                "revenue": {
+                    "$ref": "#/definitions/RevenueBreakdown"
+                },
+                "unbilled": {
+                    "description": "details: closing unbilled_receivable, ended months only",
+                    "type": "string"
+                }
+            }
+        },
+        "WaterfallRequest": {
+            "type": "object",
+            "required": [
+                "currency",
+                "period_end",
+                "period_start"
+            ],
+            "properties": {
+                "as_of": {
+                    "description": "report date: pending and scheduled split here; defaults to now",
+                    "type": "string"
+                },
+                "contract_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "customer_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "details": {
+                    "description": "month-end deferred and unbilled balances",
+                    "type": "boolean"
+                },
+                "group_by": {
+                    "description": "defaults to customer_id",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.RevenueReportGroupBy"
+                        }
+                    ]
+                },
+                "limit": {
+                    "description": "rows per page; totals are never paged",
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 0
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "period_end": {
+                    "description": "YYYY-MM, at most 36 months from period_start",
+                    "type": "string"
+                },
+                "period_start": {
+                    "description": "YYYY-MM",
+                    "type": "string"
+                },
+                "pob_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "WaterfallResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/WaterfallRow"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                },
+                "totals": {
+                    "description": "per period over all rows, never paged",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/WaterfallCell"
+                    }
+                }
+            }
+        },
+        "WaterfallRow": {
+            "type": "object",
+            "properties": {
+                "cells": {
+                    "description": "one per requested period, in order",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/WaterfallCell"
+                    }
+                },
+                "contract_id": {
+                    "type": "string"
+                },
+                "customer_id": {
+                    "type": "string"
+                },
+                "pob_id": {
+                    "type": "string"
+                }
+            }
+        },
         "WorkflowExecutionDTO": {
             "type": "object",
             "properties": {
@@ -33963,6 +34344,10 @@ const docTemplate = `{
                 },
                 "subscription_id": {
                     "description": "subscription_id filters invoices generated for a specific subscription\nOnly returns invoices that were created as part of the specified subscription's billing",
+                    "type": "string"
+                },
+                "updated_at_gte": {
+                    "description": "updated_at_gte filters invoices updated at or after the given instant",
                     "type": "string"
                 },
                 "voided_at_gte": {
@@ -37864,6 +38249,19 @@ const docTemplate = `{
                 "RevRecEntityTypePayment",
                 "RevRecEntityTypeRefund",
                 "RevRecEntityTypePOB"
+            ]
+        },
+        "types.RevenueReportGroupBy": {
+            "type": "string",
+            "enum": [
+                "customer_id",
+                "contract_id",
+                "pob_id"
+            ],
+            "x-enum-varnames": [
+                "RevenueReportGroupByCustomer",
+                "RevenueReportGroupByContract",
+                "RevenueReportGroupByPOB"
             ]
         },
         "types.TenantInternalStatus": {

@@ -100,6 +100,16 @@ func (k LedgerAccountKey) NormalSide() JournalDirection {
 	}
 }
 
+// CarriesPOB is true for accounts whose lines carry the POB they belong to.
+func (k LedgerAccountKey) CarriesPOB() bool {
+	switch k {
+	case LedgerAccountDeferredRevenue, LedgerAccountUnbilledReceivable, LedgerAccountRevenue, LedgerAccountContraRevenue:
+		return true
+	default:
+		return false
+	}
+}
+
 // NormalBalance turns a credit − debit net into the account's normal direction; debit-normal accounts flip.
 // e.g. unbilled −100 → +100; deferred +100 → +100.
 func (k LedgerAccountKey) NormalBalance(net decimal.Decimal) decimal.Decimal {
@@ -128,4 +138,24 @@ const (
 	JournalEventRefundSucceeded     JournalEventType = "refund_succeeded"
 	JournalEventRevenueEarned       JournalEventType = "revenue_earned"
 	JournalEventRevenueOffset       JournalEventType = "revenue_offset"
+)
+
+// RevenueReportGroupBy is a key a revenue report can group journal lines by.
+type RevenueReportGroupBy string
+
+const (
+	RevenueReportGroupByCustomer RevenueReportGroupBy = "customer_id"
+	RevenueReportGroupByContract RevenueReportGroupBy = "contract_id"
+	RevenueReportGroupByPOB      RevenueReportGroupBy = "pob_id"
+)
+
+// MovementCategory groups a rollforward's movements by what changed the balance.
+type MovementCategory string
+
+const (
+	MovementCategoryInvoiced    MovementCategory = "invoiced"
+	MovementCategoryEarned      MovementCategory = "earned"
+	MovementCategoryAdjustments MovementCategory = "adjustments"
+	MovementCategoryPayments    MovementCategory = "payments"
+	MovementCategoryRefunds     MovementCategory = "refunds"
 )
