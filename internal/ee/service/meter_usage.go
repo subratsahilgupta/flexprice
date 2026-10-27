@@ -2712,13 +2712,15 @@ func (s *meterUsageService) commitmentLineBreakdowns(
 ) (map[string]*types.CommitmentInfo, error) {
 	// A window ending inside the open period would prorate capacity to the query end and report
 	// covered usage as overage; the invoice floors the whole period, so the loader runs to its end.
-	projectedEnd := projectedCommitmentEnd(usage.Subscription, end)
+	projectedEnd := projectedCommitmentEnd(usage.Subscription, params.StartTime, end)
 	loader, err := newBillingService(s.ServiceParams).newCommitmentLoader(
 		ctx, usage.Subscription, params.StartTime, projectedEnd, projectedEnd, charges, usage.MeterMap, types.UsageSourceAnalytics,
 	)
 	if err != nil || len(loader.commitments) == 0 {
 		return nil, err
 	}
+
+	loader.usageEnd = end
 
 	scopeLines := lo.UniqBy(
 		lo.FlatMap(loader.commitments, func(sc *stackedCommitment, _ int) []*subscription.SubscriptionLineItem {
