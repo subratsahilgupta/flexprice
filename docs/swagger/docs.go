@@ -8135,7 +8135,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Returns the caller tenant's billing status, subscription, recent invoices and usage.",
+                "description": "Returns billing status, recent invoices, usage and a plan with charges. Charges use expanded subscription line-item prices, including overrides; without a current subscription they use the configured self-serve plan. Pricing terms are not an invoice total.",
                 "produces": [
                     "application/json"
                 ],
@@ -19272,6 +19272,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "usage_limit": {
+                    "description": "Deprecated: use grant_quota; a metered usage_limit is converted to a grant on create.",
                     "type": "integer"
                 },
                 "usage_reset_period": {
@@ -25617,6 +25618,94 @@ const docTemplate = `{
                 }
             }
         },
+        "SelfBillingChargeResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "description": "Amount is a unit rate; tiered charges use tiers instead.",
+                    "type": "string"
+                },
+                "billing_cadence": {
+                    "$ref": "#/definitions/types.BillingCadence"
+                },
+                "billing_model": {
+                    "$ref": "#/definitions/types.BillingModel"
+                },
+                "billing_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                },
+                "billing_period_count": {
+                    "type": "integer"
+                },
+                "bucket_size": {
+                    "$ref": "#/definitions/types.WindowSize"
+                },
+                "commitment": {
+                    "$ref": "#/definitions/SelfBillingCommitment"
+                },
+                "conversion_rate": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
+                "line_item_id": {
+                    "type": "string"
+                },
+                "meter_display_name": {
+                    "type": "string"
+                },
+                "meter_id": {
+                    "type": "string"
+                },
+                "min_quantity": {
+                    "type": "string"
+                },
+                "price_id": {
+                    "type": "string"
+                },
+                "price_unit": {
+                    "type": "string"
+                },
+                "price_unit_amount": {
+                    "type": "string"
+                },
+                "price_unit_tiers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/price.PriceTier"
+                    }
+                },
+                "price_unit_type": {
+                    "$ref": "#/definitions/types.PriceUnitType"
+                },
+                "quantity": {
+                    "description": "Quantity is the configured quantity; metered usage is returned in summary.usage.",
+                    "type": "string"
+                },
+                "tier_mode": {
+                    "$ref": "#/definitions/types.BillingTier"
+                },
+                "tiers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/price.PriceTier"
+                    }
+                },
+                "transform_quantity": {
+                    "$ref": "#/definitions/price.TransformQuantity"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.PriceType"
+                }
+            }
+        },
         "SelfBillingCheckoutRequest": {
             "type": "object",
             "required": [
@@ -25677,6 +25766,38 @@ const docTemplate = `{
                 }
             }
         },
+        "SelfBillingCommitment": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "string"
+                },
+                "duration": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                },
+                "overage_factor": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "string"
+                },
+                "time_buckets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.TimeOfDayBucket"
+                    }
+                },
+                "true_up_enabled": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.CommitmentType"
+                },
+                "windowed": {
+                    "type": "boolean"
+                }
+            }
+        },
         "SelfBillingInvoice": {
             "type": "object",
             "properties": {
@@ -25702,6 +25823,29 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.InvoiceStatus"
                 },
                 "total": {
+                    "type": "string"
+                }
+            }
+        },
+        "SelfBillingPlanResponse": {
+            "type": "object",
+            "properties": {
+                "charges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/SelfBillingChargeResponse"
+                    }
+                },
+                "commitment": {
+                    "$ref": "#/definitions/SelfBillingCommitment"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
                     "type": "string"
                 }
             }
@@ -25736,6 +25880,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/SelfBillingInvoice"
                     }
+                },
+                "plan": {
+                    "$ref": "#/definitions/SelfBillingPlanResponse"
                 },
                 "status": {
                     "$ref": "#/definitions/types.TenantInternalStatus"
@@ -28513,6 +28660,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "usage_limit": {
+                    "description": "Deprecated: use grant_quota.",
                     "type": "integer"
                 },
                 "usage_reset_period": {

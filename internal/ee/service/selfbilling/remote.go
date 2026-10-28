@@ -32,7 +32,8 @@ const (
 	metaExternalID = "self_billing_external_id"
 	metaTaxID      = "tax_id"
 
-	summaryInvoiceLimit = 12
+	summaryInvoiceLimit  = 12
+	subscriptionPageSize = 100
 
 	usageEventSource = "self_billing"
 )
@@ -105,31 +106,51 @@ func (c *remoteClient) StartTrial(ctx context.Context, extID string) (bool, erro
 }
 
 func (c *remoteClient) LatestSubscription(ctx context.Context, extID string) (*remoteSubscription, error) {
-	resp, err := c.sdk.Customers.GetSubscriptionsForCustomer(ctx, extID, nil)
-	if isNotFound(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, cloudErr(err)
-	}
-
 	var live, cancelled *sdktypes.SubscriptionResponse
 	newer := func(s, than *sdktypes.SubscriptionResponse) bool {
 		return than == nil || lo.FromPtr(s.CreatedAt).After(lo.FromPtr(than.CreatedAt))
 	}
 
-	// Every plan counts, not just self-serve: a tenant moved to an Enterprise plan is driven by that subscription.
-	for i := range resp.ListSubscriptionsResponse.Items {
-		s := &resp.ListSubscriptionsResponse.Items[i]
-		if lo.FromPtr(s.SubscriptionStatus) == sdktypes.SubscriptionStatusCancelled {
-			if newer(s, cancelled) {
-				cancelled = s
-			}
-			continue
+	// The customer subscriptions endpoint only returns active/trialing; search includes unpaid and paused subscriptions.
+	for offset := int64(0); ; offset += subscriptionPageSize {
+		resp, err := c.sdk.Subscriptions.QuerySubscription(ctx, sdktypes.SubscriptionFilter{
+			ExternalCustomerID: lo.ToPtr(extID),
+			SubscriptionStatus: []sdktypes.SubscriptionStatus{
+				sdktypes.SubscriptionStatusActive, sdktypes.SubscriptionStatusTrialing,
+				sdktypes.SubscriptionStatusIncomplete, sdktypes.SubscriptionStatusPaused,
+				sdktypes.SubscriptionStatusDraft, sdktypes.SubscriptionStatusCancelled,
+			},
+			Limit:  lo.ToPtr(int64(subscriptionPageSize)),
+			Offset: lo.ToPtr(offset),
+			Sort: []sdktypes.SortCondition{
+				{Field: lo.ToPtr("created_at"), Direction: lo.ToPtr(sdktypes.SortDirectionDesc)},
+				{Field: lo.ToPtr("id"), Direction: lo.ToPtr(sdktypes.SortDirectionDesc)},
+			},
+		})
+		if isNotFound(err) {
+			return nil, nil
 		}
-
-		if newer(s, live) {
-			live = s
+		if err != nil {
+			return nil, cloudErr(err)
+		}
+		if resp.ListSubscriptionsResponse == nil {
+			return nil, unreadablePricing()
+		}
+		items := resp.ListSubscriptionsResponse.Items
+		for i := range items {
+			s := &items[i]
+			if lo.FromPtr(s.SubscriptionStatus) == sdktypes.SubscriptionStatusCancelled {
+				if newer(s, cancelled) {
+					cancelled = s
+				}
+				continue
+			}
+			if newer(s, live) {
+				live = s
+			}
+		}
+		if len(items) < subscriptionPageSize {
+			break
 		}
 	}
 
@@ -235,6 +256,21 @@ func (c *remoteClient) Summary(ctx context.Context, extID string) (*remoteSummar
 		return nil, err
 	}
 
+	plan, err := c.summaryPlan(ctx, sub)
+	if err != nil {
+		return nil, err
+	}
+	out := &remoteSummary{subscription: sub, plan: plan, invoices: []remoteInvoice{}}
+	if sub == nil {
+		_, err := c.sdk.Customers.GetCustomerByExternalID(ctx, extID)
+		if isNotFound(err) {
+			return out, nil
+		}
+		if err != nil {
+			return nil, cloudErr(err)
+		}
+	}
+
 	invoices, err := c.sdk.Invoices.QueryInvoice(ctx, sdktypes.InvoiceFilter{
 		ExternalCustomerID: lo.ToPtr(extID),
 		Limit:              lo.ToPtr(int64(summaryInvoiceLimit)),
@@ -253,10 +289,7 @@ func (c *remoteClient) Summary(ctx context.Context, extID string) (*remoteSummar
 		return nil, err
 	}
 
-	out := &remoteSummary{
-		subscription: sub,
-		usage:        usageSummary,
-	}
+	out.usage = usageSummary
 	for _, inv := range invoices.ListInvoicesResponse.Items {
 		mapped, err := toRemoteInvoice(inv)
 		if err != nil {
