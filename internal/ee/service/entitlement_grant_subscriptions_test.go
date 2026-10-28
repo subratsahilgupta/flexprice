@@ -7,6 +7,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
+	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/settings"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
@@ -122,6 +123,24 @@ func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_RefusesIncompatibleS
 		{"tiered price", "tiered", func(fx subGrantFixture) {
 			s.addUsageLine(fx, "sli-tiered-"+fx.sub.ID, func(p *price.Price, _ *subscription.SubscriptionLineItem) {
 				p.BillingModel = types.BILLING_MODEL_TIERED
+			})
+		}},
+		{"tiered line scheduled next period", "tiered", func(fx subGrantFixture) {
+			s.addUsageLine(fx, "sli-next-tiered-"+fx.sub.ID, func(p *price.Price, li *subscription.SubscriptionLineItem) {
+				p.BillingModel = types.BILLING_MODEL_TIERED
+				li.StartDate = fx.sub.CurrentPeriodEnd.Add(time.Hour)
+			})
+		}},
+		{"meter that never resets", "never resets", func(fx subGrantFixture) {
+			m := &meter.Meter{
+				ID: "meter-never-" + fx.sub.ID, Name: "never", EventName: "never-" + fx.sub.ID,
+				Aggregation: meter.Aggregation{Type: types.AggregationSum},
+				ResetUsage:  types.ResetUsageNever,
+				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+			}
+			s.Require().NoError(s.meterStore.CreateMeter(s.GetContext(), m))
+			s.addUsageLine(fx, "sli-never-"+fx.sub.ID, func(p *price.Price, li *subscription.SubscriptionLineItem) {
+				p.MeterID, li.MeterID = m.ID, m.ID
 			})
 		}},
 		{"feature usage allowance", "feature usage allowances", func(fx subGrantFixture) {

@@ -2616,6 +2616,8 @@ definitions:
       entity_type:
         $ref: '#/definitions/types.EntitlementEntityType'
       feature_id:
+        description: Required, except on a subscription grant (entity_type SUBSCRIPTION
+          with grant config), which has no feature.
         type: string
       feature_type:
         $ref: '#/definitions/types.FeatureType'

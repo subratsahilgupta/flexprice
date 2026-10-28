@@ -19221,6 +19221,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.EntitlementEntityType"
                 },
                 "feature_id": {
+                    "description": "Required, except on a subscription grant (entity_type SUBSCRIPTION with grant config), which has no feature.",
                     "type": "string"
                 },
                 "feature_type": {

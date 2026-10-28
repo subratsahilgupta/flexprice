@@ -612,6 +612,25 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_SplitsOverageByShar
 	s.True(decimal.NewFromInt(1).Equal(lines[0].Quantity), "quantity keeps the real usage")
 }
 
+// A negative usage line is a correction: grants never raise it, on either path.
+func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_KeepsNegativeLines() {
+	fx := s.newSubGrantFixture("bill-neg", dailySubscriptionGrant(30, types.EntitlementGrantAllocationBehaviorFirstUsage))
+	start, end := fx.sub.CurrentPeriodStart, fx.sub.CurrentPeriodEnd
+	s.seedSubGrantWindow("eg-neg", fx, start, end, 30, 70, nil)
+
+	lines := invoiceLines(fx, "100", "-30")
+	reduction := s.applySubGrants(fx, lines, subGrantBlockers{})
+	s.True(decimal.NewFromInt(30).Equal(reduction), "additive: got %s", reduction)
+	s.True(decimal.NewFromInt(70).Equal(lines[0].Amount), "additive calls: got %s", lines[0].Amount)
+	s.True(decimal.NewFromInt(-30).Equal(lines[1].Amount), "additive correction: got %s", lines[1].Amount)
+
+	// A second window over the same span makes the windows overlap: the parallel path.
+	s.seedSubGrantWindow("eg-neg-par", fx, start, end, 30, 70, nil)
+	lines = invoiceLines(fx, "100", "-30")
+	s.applySubGrants(fx, lines, subGrantBlockers{})
+	s.True(decimal.NewFromInt(-30).Equal(lines[1].Amount), "parallel correction: got %s", lines[1].Amount)
+}
+
 func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_DisjointWindowsAddUp() {
 	fx := s.newSubGrantFixture("bill-days", dailySubscriptionGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage))
 	day := fx.sub.CurrentPeriodStart
@@ -834,6 +853,26 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RefreshesStaleUsage
 	s.True(decimal.NewFromInt(30).Equal(reduction), "got %s", reduction)
 	s.True(lines[0].Amount.IsZero(), "calls: got %s", lines[0].Amount)
 	s.True(lines[1].Amount.IsZero(), "storage: got %s", lines[1].Amount)
+}
+
+// A historical recalculation must not overwrite usage alert evaluation measured later.
+func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RefreshSkipsWindowMeasuredLater() {
+	fx := s.newSubGrantFixture("bill-hist", dailySubscriptionGrant(50, types.EntitlementGrantAllocationBehaviorFirstUsage))
+	start := fx.sub.CurrentPeriodStart
+	g := s.seedSubGrantWindow("eg-hist", fx, start, fx.sub.CurrentPeriodEnd, 50, 40, nil)
+	measured := start.Add(3 * time.Hour)
+	g.LastComputedAt = &measured
+	s.Require().NoError(s.GetStores().EntitlementGrantRepo.UpdateSnapshot(s.GetContext(), g))
+	s.seedMeterUsage(fx.extID, fx.callsMeter, start.Add(time.Hour), 100) // $10 by the historical as-of
+
+	items, err := s.GetStores().SubscriptionLineItemRepo.ListBySubscription(s.GetContext(), fx.sub)
+	s.Require().NoError(err)
+	fx.sub.LineItems = items
+	s.Require().NoError(refreshSubscriptionGrantUsage(s.GetContext(), s.buildServiceParams(), fx.sub, start, fx.sub.CurrentPeriodEnd, start.Add(2*time.Hour)))
+
+	stored, err := s.GetStores().EntitlementGrantRepo.Get(s.GetContext(), g.ID)
+	s.Require().NoError(err)
+	s.True(decimal.NewFromInt(40).Equal(stored.Usage), "stored usage: got %s", stored.Usage)
 }
 
 // Billing refreshes an ended window's usage but leaves it unfinalized, so alert evaluation still sees it.

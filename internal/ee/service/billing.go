@@ -1663,8 +1663,14 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 		return nil, err
 	}
 
-	if err := refreshSubscriptionGrantUsage(ctx, s.ServiceParams, sub, periodStart, periodEnd, asOf); err != nil {
-		return nil, err
+	// Previews stay read-only and bill from the stored grant usage.
+	isPreview := lo.Contains([]types.InvoiceReferencePoint{
+		types.ReferencePointPreview, types.ReferencePointInternalPreview, types.ReferencePointRevenueFacts,
+	}, referencePoint)
+	if !isPreview {
+		if err := refreshSubscriptionGrantUsage(ctx, s.ServiceParams, sub, periodStart, periodEnd, asOf); err != nil {
+			return nil, err
+		}
 	}
 
 	// nothing to invoice default response 0$ invoice

@@ -21,6 +21,7 @@ var (
 	errSubGrantCommitment       = grantGuardError("subscription has a minimum spend")
 	errSubGrantCadence          = grantGuardError("usage line is billed at a different cadence than the subscription")
 	errSubGrantWithFeatureGrant = grantGuardError("subscription also has feature usage allowances")
+	errSubGrantNeverReset       = grantGuardError("usage line's meter never resets usage")
 )
 
 // subscriptionGrantState is what decides whether a subscription can carry a subscription grant.
@@ -31,9 +32,7 @@ type subscriptionGrantState struct {
 	meters              map[string]*meter.Meter
 	hasFeatureAllowance bool
 	commitmentLineIDs   map[string]bool
-	pendingItemIDs      map[string]bool // being added now: judged whenever they start
 	periodStart         time.Time
-	periodEnd           time.Time
 }
 
 // subscriptionGrantBlocker returns why the subscription cannot carry a subscription grant, or nil.
@@ -49,7 +48,8 @@ func subscriptionGrantBlocker(st subscriptionGrantState) error {
 		if item == nil || item.PriceType != types.PRICE_TYPE_USAGE {
 			continue
 		}
-		if !st.pendingItemIDs[item.ID] && !lineOverlapsPeriod(item, st.periodStart, st.periodEnd) {
+		// Lines scheduled for a later period are judged now, since the grant will cover them when they start.
+		if !item.EndDate.IsZero() && !item.EndDate.After(st.periodStart) {
 			continue
 		}
 		if st.commitmentLineIDs[item.ID] {
@@ -58,18 +58,14 @@ func subscriptionGrantBlocker(st subscriptionGrantState) error {
 		if item.BillingPeriod != st.sub.BillingPeriod || max(item.BillingPeriodCount, 1) != max(st.sub.BillingPeriodCount, 1) {
 			return errSubGrantCadence
 		}
+		if m := st.meters[item.MeterID]; m != nil && m.ResetUsage == types.ResetUsageNever {
+			return errSubGrantNeverReset
+		}
 		if reason := GrantPricingGuard(types.EntitlementGrantMeasureAmount, item, st.priceByItemID[item.ID], st.meters[item.MeterID]); reason != nil {
 			return reason
 		}
 	}
 	return nil
-}
-
-// lineOverlapsPeriod reports whether the line is live at some point in [periodStart, periodEnd).
-func lineOverlapsPeriod(item *subscription.SubscriptionLineItem, periodStart, periodEnd time.Time) bool {
-	startsInTime := item.StartDate.IsZero() || item.StartDate.Before(periodEnd)
-	endsInTime := item.EndDate.IsZero() || item.EndDate.After(periodStart)
-	return startsInTime && endsInTime
 }
 
 // isFeatureAllowance reports whether an entitlement makes some feature usage free: a feature grant,
@@ -207,11 +203,7 @@ func (g *subscriptionGrantGuard) stateWithChange(ctx context.Context, sub *subsc
 			func(li *subscription.SubscriptionLineItem, _ string) *priceDomain.Price { return priceByID[li.PriceID] }),
 		meters:              lo.KeyBy(meters, func(m *meter.Meter) string { return m.ID }),
 		hasFeatureAllowance: hasFeatureAllowance,
-		pendingItemIDs: lo.SliceToMap(change.items, func(li *subscription.SubscriptionLineItem) (string, bool) {
-			return li.ID, true
-		}),
-		periodStart: sub.CurrentPeriodStart,
-		periodEnd:   sub.CurrentPeriodEnd,
+		periodStart:         sub.CurrentPeriodStart,
 	}, nil
 }
 
@@ -370,6 +362,8 @@ func (g *subscriptionGrantGuard) grantedSubscriptionsUsing(ctx context.Context, 
 		types.SubscriptionStatusActive,
 		types.SubscriptionStatusTrialing,
 		types.SubscriptionStatusDraft,
+		types.SubscriptionStatusIncomplete,
+		types.SubscriptionStatusPaused,
 	}
 	if entityType == types.ENTITLEMENT_ENTITY_TYPE_PLAN {
 		subFilter.PlanID = entityID
@@ -599,8 +593,12 @@ func refreshSubscriptionGrantUsage(ctx context.Context, params ServiceParams, su
 		return err
 	}
 	for _, g := range grants {
-		finalized := g.LastComputedAt != nil && !g.LastComputedAt.Before(g.ValidTo)
-		if !at.After(g.ValidFrom) || finalized {
+		if !at.After(g.ValidFrom) {
+			continue
+		}
+		// Stored usage already reaches as far as this refresh would measure: a finalized window, or a
+		// historical recalculation older than the last evaluation.
+		if g.LastComputedAt != nil && !g.LastComputedAt.Before(types.EarliestOf(at, g.ValidTo)) {
 			continue
 		}
 		usage, err := NewEntitlementGrantService(params).SubscriptionGrantUsage(ctx, sub, g, at)

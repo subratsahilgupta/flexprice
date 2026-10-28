@@ -130,7 +130,7 @@ func (s *meterUsageService) GetMeterWindowCost(ctx context.Context, sub *subscri
 	total := decimal.Zero
 	for _, c := range charges {
 		if c != nil && c.MeterID == meterID {
-			total = total.Add(decimal.NewFromFloat(c.Amount))
+			total = total.Add(c.AmountDecimal())
 		}
 	}
 	return total, nil

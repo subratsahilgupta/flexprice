@@ -405,7 +405,6 @@ func (s *billingService) loadSubscriptionGrants(
 		hasFeatureAllowance: hasFeatureAllowance,
 		commitmentLineIDs:   commitmentLineIDs,
 		periodStart:         periodStart,
-		periodEnd:           periodEnd,
 	})
 	if reason != nil {
 		s.Logger.Error(ctx, "subscription grant overage: subscription rejected, grants not applied",
@@ -436,6 +435,10 @@ func (s *billingService) applySubscriptionGrants(
 
 	reduction := decimal.Zero
 	for i := range lines {
+		// A grant covers spend only; a negative line is a correction and stays as it is.
+		if !lines[i].Amount.IsPositive() {
+			continue
+		}
 		allowance := lines[i].Amount.Sub(billed[i])
 		if allowance.IsZero() {
 			continue

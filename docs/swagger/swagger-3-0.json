@@ -21774,7 +21774,8 @@
             "$ref": "#/components/schemas/types.EntitlementEntityType"
           },
           "feature_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Required, except on a subscription grant (entity_type SUBSCRIPTION with grant config), which has no feature."
           },
           "feature_type": {
             "$ref": "#/components/schemas/types.FeatureType"

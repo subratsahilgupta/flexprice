@@ -16,7 +16,8 @@ import (
 
 // CreateEntitlementRequest represents the request to create a new entitlement
 type CreateEntitlementRequest struct {
-	PlanID      string            `json:"plan_id,omitempty"`
+	PlanID string `json:"plan_id,omitempty"`
+	// Required, except on a subscription grant (entity_type SUBSCRIPTION with grant config), which has no feature.
 	FeatureID   string            `json:"feature_id"`
 	FeatureType types.FeatureType `json:"feature_type"`
 	IsEnabled   bool              `json:"is_enabled"`

@@ -190,7 +190,6 @@ The UI is part of Phase 1. It is built after the backend is done, in a separate 
 - **Exact crossing time.** Find the real crossing from event times instead of the evaluation time. This removes the free spend between the crossing and the evaluation.
 - **Never-resetting SUM meters.** Define what a dollar grant means for a running balance (FLE-1510 Phase 2).
 - **Alerts turned off later.** Refuse turning entitlement alerts off while subscription grants exist.
-- **Cancelled subscriptions.** Refresh grants before a cancelled subscription's final invoice. Today the refresh only covers active and trialing subscriptions, so the final invoice uses the last saved numbers.
 - **Late events for closed windows.** Recount or adjust when an event arrives for a window that is already closed.
 - **More pricing.** Support tiered prices, bucketed meters, commitments, and true-up.
 - **Query load.** Hourly parallel grants check up to about 720 overage intervals per meter at invoice time. Optimize if customers use them.
