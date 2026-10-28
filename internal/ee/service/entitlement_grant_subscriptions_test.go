@@ -38,7 +38,7 @@ func (s *EntitlementGrantSuite) enableEntitlementAlerts() {
 	}))
 }
 
-func subscriptionGrantRequest(subID string, quota int64, mode types.EntitlementAggregationMode) dto.CreateEntitlementRequest {
+func subscriptionEntitlementGrantRequest(subID string, quota int64, mode types.EntitlementAggregationMode) dto.CreateEntitlementRequest {
 	return dto.CreateEntitlementRequest{
 		EntityType:        types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION,
 		EntityID:          subID,
@@ -85,11 +85,11 @@ func (s *EntitlementGrantSuite) addUsageLine(fx subGrantFixture, id string, edit
 	return li
 }
 
-func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_CreatesFeaturelessGrant() {
+func (s *EntitlementGrantSuite) TestCreateSubscriptionEntitlementGrant_CreatesFeaturelessGrant() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("create-ok")
 
-	resp, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 50, ""))
+	resp, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 50, ""))
 	s.Require().NoError(err)
 	s.Equal(types.EntitlementGrantScopeSubscription, resp.GrantScope)
 	s.Empty(resp.FeatureID)
@@ -97,15 +97,15 @@ func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_CreatesFeaturelessGr
 	s.True(decimal.NewFromInt(50).Equal(lo.FromPtr(resp.GrantQuota)))
 }
 
-func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_RefusedWhenAlertsOff() {
+func (s *EntitlementGrantSuite) TestCreateSubscriptionEntitlementGrant_RefusedWhenAlertsOff() {
 	fx := s.newSubGrantSubscription("create-alerts-off")
 
-	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 50, ""))
+	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 50, ""))
 	s.Require().Error(err)
 	s.Contains(err.Error(), "entitlement alerts")
 }
 
-func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_RefusesIncompatibleSubscriptions() {
+func (s *EntitlementGrantSuite) TestCreateSubscriptionEntitlementGrant_RefusesIncompatibleSubscriptions() {
 	tests := []struct {
 		name   string
 		reason string
@@ -164,7 +164,7 @@ func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_RefusesIncompatibleS
 			fx := s.newSubGrantSubscription("create-refuse-" + string(rune('a'+i)))
 			tt.setup(fx)
 
-			_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 50, ""))
+			_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 50, ""))
 			s.Require().Error(err)
 			s.True(ierr.IsValidation(err), "got %v", err)
 			s.Contains(err.Error(), tt.reason)
@@ -172,31 +172,31 @@ func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_RefusesIncompatibleS
 	}
 }
 
-func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_RefusesMixedModes() {
+func (s *EntitlementGrantSuite) TestCreateSubscriptionEntitlementGrant_RefusesMixedModes() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("create-mixed")
-	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 50, types.EntitlementAggregationModeAdditive))
+	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 50, types.EntitlementAggregationModeAdditive))
 	s.Require().NoError(err)
 
-	_, err = s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 20, types.EntitlementAggregationModeParallel))
+	_, err = s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 20, types.EntitlementAggregationModeParallel))
 	s.Require().Error(err)
 	s.Contains(err.Error(), "cannot be mixed")
 
-	_, err = s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 25, types.EntitlementAggregationModeAdditive))
+	_, err = s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 25, types.EntitlementAggregationModeAdditive))
 	s.Require().NoError(err, "additive grants pool")
 }
 
-func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_RefusesQuantityAndUnlimited() {
+func (s *EntitlementGrantSuite) TestCreateSubscriptionEntitlementGrant_RefusesQuantityAndUnlimited() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("create-shape")
 
-	quantity := subscriptionGrantRequest(fx.sub.ID, 50, "")
+	quantity := subscriptionEntitlementGrantRequest(fx.sub.ID, 50, "")
 	quantity.GrantMeasure = types.EntitlementGrantMeasureQuantity
 	_, err := s.entService.CreateEntitlement(s.GetContext(), quantity)
 	s.Require().Error(err)
 	s.Contains(err.Error(), "measured in amount")
 
-	unlimited := subscriptionGrantRequest(fx.sub.ID, 50, "")
+	unlimited := subscriptionEntitlementGrantRequest(fx.sub.ID, 50, "")
 	unlimited.GrantQuota = nil
 	unlimited.GrantUnlimited = true
 	_, err = s.entService.CreateEntitlement(s.GetContext(), unlimited)
@@ -204,7 +204,7 @@ func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_RefusesQuantityAndUn
 	s.Contains(err.Error(), "requires grant_quota")
 }
 
-// subGrantWindowsOf lists the subscription grant windows on a subscription, oldest first.
+// subGrantWindowsOf lists the subscription entitlement grant windows on a subscription, oldest first.
 func (s *EntitlementGrantSuite) subGrantWindowsOf(subID string) []*entitlementgrant.EntitlementGrant {
 	rows, err := s.GetStores().EntitlementGrantRepo.List(s.GetContext(), types.NewNoLimitEntitlementGrantFilter().
 		WithSubscriptionIDs(subID).
@@ -214,11 +214,11 @@ func (s *EntitlementGrantSuite) subGrantWindowsOf(subID string) []*entitlementgr
 	return rows
 }
 
-func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_QuotaEditCarriesUsage() {
+func (s *EntitlementGrantSuite) TestUpdateSubscriptionEntitlementGrant_QuotaEditCarriesUsage() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("edit-quota")
 	s.backdate(fx)
-	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 30, ""))
+	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 30, ""))
 	s.Require().NoError(err)
 	window := s.seedEvaluatedSubGrantWindow("eg-edit-quota", fx, fx.sub.CurrentPeriodStart, fx.sub.CurrentPeriodEnd, 30, 20)
 	s.seedMeterUsage(fx.extID, fx.storeMeter, window.ValidFrom.Add(time.Hour), 20) // $20
@@ -238,10 +238,10 @@ func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_QuotaEditCarriesUsag
 	s.True(decimal.NewFromInt(30).Equal(successor.Quota), "$10 left + $20 more, not a fresh $50: got %s", successor.Quota)
 }
 
-func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_OnlyQuotaCanChange() {
+func (s *EntitlementGrantSuite) TestUpdateSubscriptionEntitlementGrant_OnlyQuotaCanChange() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("edit-other")
-	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 30, ""))
+	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 30, ""))
 	s.Require().NoError(err)
 
 	_, err = s.entService.UpdateEntitlement(s.GetContext(), created.ID, dto.UpdateEntitlementRequest{
@@ -251,14 +251,14 @@ func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_OnlyQuotaCanChange()
 	s.Contains(err.Error(), "only grant_quota")
 }
 
-func (s *EntitlementGrantSuite) TestDeleteSubscriptionGrant_AdditiveSurvivorKeepsTheRest() {
+func (s *EntitlementGrantSuite) TestDeleteSubscriptionEntitlementGrant_AdditiveSurvivorKeepsTheRest() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("delete-pool")
 	s.backdate(fx)
 	s.seedMeterUsage(fx.extID, fx.storeMeter, fx.sub.CurrentPeriodStart.Add(time.Hour), 10) // $10
-	kept, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 50, ""))
+	kept, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 50, ""))
 	s.Require().NoError(err)
-	removed, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 25, ""))
+	removed, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 25, ""))
 	s.Require().NoError(err)
 	s.seedEvaluatedSubGrantWindow("eg-delete-pool", fx, fx.sub.CurrentPeriodStart, fx.sub.CurrentPeriodEnd, 75, 10)
 
@@ -271,10 +271,10 @@ func (s *EntitlementGrantSuite) TestDeleteSubscriptionGrant_AdditiveSurvivorKeep
 	s.Equal(kept.ID, successor.EntitlementConfigID, "the surviving grant holds the slot")
 }
 
-func (s *EntitlementGrantSuite) TestDeleteSubscriptionGrant_LastGrantClosesTheWindow() {
+func (s *EntitlementGrantSuite) TestDeleteSubscriptionEntitlementGrant_LastGrantClosesTheWindow() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("delete-last")
-	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 30, ""))
+	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 30, ""))
 	s.Require().NoError(err)
 	window := s.seedEvaluatedSubGrantWindow("eg-delete-last", fx, fx.sub.CurrentPeriodStart, fx.sub.CurrentPeriodEnd, 30, 10)
 
@@ -304,10 +304,10 @@ func meteredOverrideRequest(subID, featureID string) dto.CreateEntitlementReques
 	}
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrant_RefusesFeatureEntitlementGrantOnGrantedSubscription() {
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrant_RefusesFeatureEntitlementGrantOnGrantedSubscription() {
 	s.enableEntitlementAlerts()
 	granted := s.newSubGrantSubscription("reverse-granted")
-	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(granted.sub.ID, 50, ""))
+	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(granted.sub.ID, 50, ""))
 	s.Require().NoError(err)
 	f := s.simpleFeature("feat-reverse-granted", granted.callsMeter)
 
@@ -318,10 +318,10 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_RefusesFeatureEntitlementG
 	plain := s.newSubGrantSubscription("reverse-plain")
 	other := s.simpleFeature("feat-reverse-plain", plain.callsMeter)
 	_, err = s.entService.CreateEntitlement(s.GetContext(), meteredOverrideRequest(plain.sub.ID, other.ID))
-	s.Require().NoError(err, "subscriptions without a subscription grant are unaffected")
+	s.Require().NoError(err, "subscriptions without a subscription entitlement grant are unaffected")
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrantGuard_ChecksLinesOnlyWhenGranted() {
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantGuard_ChecksLinesOnlyWhenGranted() {
 	s.enableEntitlementAlerts()
 	tiered := func(fx subGrantFixture) []*subscription.SubscriptionLineItem {
 		li := s.addUsageLine(fx, "sli-new-tiered-"+fx.sub.ID, func(p *price.Price, _ *subscription.SubscriptionLineItem) {
@@ -332,24 +332,24 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantGuard_ChecksLinesOnlyWhenGr
 	guard := &entitlementGrantService{ServiceParams: s.buildServiceParams()}
 
 	granted := s.newSubGrantSubscription("guard-granted")
-	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(granted.sub.ID, 50, ""))
+	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(granted.sub.ID, 50, ""))
 	s.Require().NoError(err)
-	err = guard.validateChangeIfGranted(s.GetContext(), granted.sub, subscriptionGrantChange{items: tiered(granted)})
+	err = guard.validateChangeIfGranted(s.GetContext(), granted.sub, subscriptionEntitlementGrantChange{items: tiered(granted)})
 	s.Require().Error(err)
 	s.Contains(err.Error(), "tiered")
 
 	plain := s.newSubGrantSubscription("guard-plain")
-	s.NoError(guard.validateChangeIfGranted(s.GetContext(), plain.sub, subscriptionGrantChange{items: tiered(plain)}))
+	s.NoError(guard.validateChangeIfGranted(s.GetContext(), plain.sub, subscriptionEntitlementGrantChange{items: tiered(plain)}))
 }
 
-func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_ParallelEditReopensOnlyItsWindow() {
+func (s *EntitlementGrantSuite) TestUpdateSubscriptionEntitlementGrant_ParallelEditReopensOnlyItsWindow() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("edit-parallel")
 	s.backdate(fx)
 	s.seedMeterUsage(fx.extID, fx.storeMeter, fx.sub.CurrentPeriodStart.Add(time.Hour), 20) // $20
-	edited, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 30, types.EntitlementAggregationModeParallel))
+	edited, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 30, types.EntitlementAggregationModeParallel))
 	s.Require().NoError(err)
-	other, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 100, types.EntitlementAggregationModeParallel))
+	other, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 100, types.EntitlementAggregationModeParallel))
 	s.Require().NoError(err)
 
 	window := func(id, ecID string, quota int64) *entitlementgrant.EntitlementGrant {
@@ -392,11 +392,11 @@ func (s *EntitlementGrantSuite) backdate(fx subGrantFixture) {
 	}
 }
 
-func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_QuotaEditMeasuresUsageFirst() {
+func (s *EntitlementGrantSuite) TestUpdateSubscriptionEntitlementGrant_QuotaEditMeasuresUsageFirst() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("edit-stale")
 	s.backdate(fx)
-	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 30, ""))
+	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 30, ""))
 	s.Require().NoError(err)
 	// Last evaluated at $10 used, but $25 has been spent since the window opened.
 	window := s.seedEvaluatedSubGrantWindow("eg-edit-stale", fx, fx.sub.CurrentPeriodStart, fx.sub.CurrentPeriodEnd, 30, 10)
@@ -412,18 +412,18 @@ func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_QuotaEditMeasuresUsa
 	s.True(decimal.NewFromInt(25).Equal(windows[1].Quota), "$5 really left + $20 more, not $40: got %s", windows[1].Quota)
 }
 
-func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_StartsNowUnlessDated() {
+func (s *EntitlementGrantSuite) TestCreateSubscriptionEntitlementGrant_StartsNowUnlessDated() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("create-start")
 	before := time.Now().UTC()
-	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 30, ""))
+	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 30, ""))
 	s.Require().NoError(err)
 	s.Require().NotNil(created.StartDate)
 	s.False(created.StartDate.Before(before), "an undated grant starts when it is created")
 	s.Nil(created.EndDate)
 
 	dated := s.newSubGrantSubscription("create-start-dated")
-	req := subscriptionGrantRequest(dated.sub.ID, 30, "")
+	req := subscriptionEntitlementGrantRequest(dated.sub.ID, 30, "")
 	req.StartDate = lo.ToPtr(dated.sub.CurrentPeriodStart)
 	req.EndDate = lo.ToPtr(dated.sub.CurrentPeriodStart.Add(10 * 24 * time.Hour))
 	got, err := s.entService.CreateEntitlement(s.GetContext(), req)
@@ -432,10 +432,10 @@ func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_StartsNowUnlessDated
 	s.True(got.EndDate.Equal(*req.EndDate))
 }
 
-func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_PlanIDWithoutEntityIDIsRefused() {
+func (s *EntitlementGrantSuite) TestCreateSubscriptionEntitlementGrant_PlanIDWithoutEntityIDIsRefused() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("create-plan-id")
-	req := subscriptionGrantRequest("", 30, "")
+	req := subscriptionEntitlementGrantRequest("", 30, "")
 	req.PlanID = fx.sub.PlanID
 	s.NotPanics(func() {
 		_, err := s.entService.CreateEntitlement(s.GetContext(), req)
@@ -444,10 +444,10 @@ func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_PlanIDWithoutEntityI
 	})
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrantGuard_ChecksLinesStartingNextPeriod() {
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantGuard_ChecksLinesStartingNextPeriod() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("guard-future")
-	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 50, ""))
+	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 50, ""))
 	s.Require().NoError(err)
 
 	future := &subscription.SubscriptionLineItem{
@@ -456,29 +456,29 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantGuard_ChecksLinesStartingNe
 		BillingPeriod: fx.sub.BillingPeriod, StartDate: fx.sub.CurrentPeriodEnd.Add(time.Hour),
 	}
 	tiered := &price.Price{ID: "price-future-tiered", Type: types.PRICE_TYPE_USAGE, BillingModel: types.BILLING_MODEL_TIERED, MeterID: fx.callsMeter}
-	err = (&entitlementGrantService{ServiceParams: s.buildServiceParams()}).validateChangeIfGranted(s.GetContext(), fx.sub, subscriptionGrantChange{
+	err = (&entitlementGrantService{ServiceParams: s.buildServiceParams()}).validateChangeIfGranted(s.GetContext(), fx.sub, subscriptionEntitlementGrantChange{
 		items: []*subscription.SubscriptionLineItem{future}, prices: []*price.Price{tiered},
 	})
 	s.Require().Error(err)
 	s.Contains(err.Error(), "tiered")
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrant_RefusesCommitmentAddedLater() {
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrant_RefusesCommitmentAddedLater() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("commit-later")
-	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 50, ""))
+	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 50, ""))
 	s.Require().NoError(err)
 
 	_, err = NewCommitmentService(s.buildServiceParams()).Create(s.GetContext(), dto.CreateCommitmentRequest{SubscriptionID: fx.sub.ID})
 	s.Require().Error(err)
-	s.Contains(err.Error(), "subscription has a subscription grant")
+	s.Contains(err.Error(), "subscription has a subscription entitlement grant")
 }
 
-func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_RepeatedEditAddsNothing() {
+func (s *EntitlementGrantSuite) TestUpdateSubscriptionEntitlementGrant_RepeatedEditAddsNothing() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("edit-repeat")
 	s.backdate(fx)
-	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 30, ""))
+	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 30, ""))
 	s.Require().NoError(err)
 	s.seedEvaluatedSubGrantWindow("eg-edit-repeat", fx, fx.sub.CurrentPeriodStart, fx.sub.CurrentPeriodEnd, 30, 0)
 
@@ -493,10 +493,10 @@ func (s *EntitlementGrantSuite) TestUpdateSubscriptionGrant_RepeatedEditAddsNoth
 	s.True(decimal.NewFromInt(50).Equal(windows[1].Quota), "got %s", windows[1].Quota)
 }
 
-func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_RefusesWindowAsLongAsThePeriod() {
+func (s *EntitlementGrantSuite) TestCreateSubscriptionEntitlementGrant_RefusesWindowAsLongAsThePeriod() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("create-long-window")
-	req := subscriptionGrantRequest(fx.sub.ID, 30, "")
+	req := subscriptionEntitlementGrantRequest(fx.sub.ID, 30, "")
 	req.GrantDurationUnit = types.EntitlementGrantDurationUnitDay
 	req.GrantDurationValue = lo.ToPtr(int(fx.sub.CurrentPeriodEnd.Sub(fx.sub.CurrentPeriodStart).Hours()/24) + 1)
 	_, err := s.entService.CreateEntitlement(s.GetContext(), req)

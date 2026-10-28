@@ -24,8 +24,8 @@ import (
 // EntitlementService defines the interface for entitlement operations
 type EntitlementService interface {
 	CreateEntitlement(ctx context.Context, req dto.CreateEntitlementRequest) (*dto.EntitlementResponse, error)
-	// CreateSubscriptionGrant creates a subscription grant on sub, which the caller has already loaded.
-	CreateSubscriptionGrant(ctx context.Context, req dto.CreateEntitlementRequest, sub *subscription.Subscription) (*dto.EntitlementResponse, error)
+	// CreateSubscriptionEntitlementGrant creates a subscription entitlement grant on sub, which the caller has already loaded.
+	CreateSubscriptionEntitlementGrant(ctx context.Context, req dto.CreateEntitlementRequest, sub *subscription.Subscription) (*dto.EntitlementResponse, error)
 	CreateBulkEntitlement(ctx context.Context, req dto.CreateBulkEntitlementRequest) (*dto.CreateBulkEntitlementResponse, error)
 	GetEntitlement(ctx context.Context, id string) (*dto.EntitlementResponse, error)
 	ListEntitlements(ctx context.Context, filter *types.EntitlementFilter) (*dto.ListEntitlementsResponse, error)
@@ -119,13 +119,13 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 			Mark(ierr.ErrValidation)
 	}
 
-	if req.IsSubscriptionGrant() {
+	if req.IsSubscriptionEntitlementGrant() {
 		sub, ok := entity.(*subscription.Subscription)
 		if !ok {
-			return nil, ierr.NewError("a subscription grant needs entity_id set to the subscription").
+			return nil, ierr.NewError("a subscription entitlement grant needs entity_id set to the subscription").
 				Mark(ierr.ErrValidation)
 		}
-		return s.CreateSubscriptionGrant(ctx, req, sub)
+		return s.CreateSubscriptionEntitlementGrant(ctx, req, sub)
 	}
 
 	// Validate feature exists
@@ -198,7 +198,7 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 		if err := s.assertSingleContributor(txCtx, e); err != nil {
 			return err
 		}
-		if err := s.validateFeatureEntitlementGrantAgainstSubscriptionGrants(txCtx, e, entity); err != nil {
+		if err := s.validateFeatureEntitlementGrantAgainstSubscriptionEntitlementGrants(txCtx, e, entity); err != nil {
 			return err
 		}
 
@@ -264,9 +264,9 @@ func (s *entitlementService) CreateBulkEntitlement(ctx context.Context, req dto.
 		featureIDs := make(map[string]bool)
 
 		for i, entReq := range req.Items {
-			if entReq.IsSubscriptionGrant() {
-				return ierr.NewError("subscription grants cannot be created in bulk").
-					WithHint("Create each subscription grant with POST /entitlements.").
+			if entReq.IsSubscriptionEntitlementGrant() {
+				return ierr.NewError("subscription entitlement grants cannot be created in bulk").
+					WithHint("Create each subscription entitlement grant with POST /entitlements.").
 					WithReportableDetails(map[string]interface{}{"index": i}).
 					Mark(ierr.ErrValidation)
 			}
@@ -411,7 +411,7 @@ func (s *entitlementService) CreateBulkEntitlement(ctx context.Context, req dto.
 		}
 
 		for _, e := range entitlements {
-			if err := s.validateFeatureEntitlementGrantAgainstSubscriptionGrants(txCtx, e, subscriptionsByID[e.EntityID]); err != nil {
+			if err := s.validateFeatureEntitlementGrantAgainstSubscriptionEntitlementGrants(txCtx, e, subscriptionsByID[e.EntityID]); err != nil {
 				return err
 			}
 		}
@@ -719,7 +719,7 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 		return nil, err
 	}
 	if existing.IsSubscriptionScoped() {
-		return s.updateSubscriptionGrant(ctx, existing, req)
+		return s.updateSubscriptionEntitlementGrant(ctx, existing, req)
 	}
 
 	priorQuota := existing.GrantQuota
@@ -837,7 +837,7 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 			return err
 		}
 		if !isFeatureEntitlementGrant(&stored) {
-			if err := s.validateFeatureEntitlementGrantAgainstSubscriptionGrants(txCtx, existing, nil); err != nil {
+			if err := s.validateFeatureEntitlementGrantAgainstSubscriptionEntitlementGrants(txCtx, existing, nil); err != nil {
 				return err
 			}
 		}
@@ -877,7 +877,7 @@ func (s *entitlementService) DeleteEntitlement(ctx context.Context, id string) e
 			return err
 		}
 		if existing.IsSubscriptionScoped() {
-			return s.settleDeletedSubscriptionGrant(txCtx, existing)
+			return s.settleDeletedSubscriptionEntitlementGrant(txCtx, existing)
 		}
 		return s.settleGrantWindowsForDeletedEC(txCtx, existing)
 	}); err != nil {
@@ -1149,14 +1149,14 @@ func (s *entitlementService) entitlementAlertsEnabled(ctx context.Context) (bool
 	return cfg.IsAlertEnabled(), nil
 }
 
-// validateFeatureEntitlementGrantAgainstSubscriptionGrants refuses a feature entitlement grant that would reach a
-// subscription with a subscription grant, directly or through its plan or addon.
-func (s *entitlementService) validateFeatureEntitlementGrantAgainstSubscriptionGrants(ctx context.Context, e *entitlement.Entitlement, owner any) error {
+// validateFeatureEntitlementGrantAgainstSubscriptionEntitlementGrants refuses a feature entitlement grant that would reach a
+// subscription with a subscription entitlement grant, directly or through its plan or addon.
+func (s *entitlementService) validateFeatureEntitlementGrantAgainstSubscriptionEntitlementGrants(ctx context.Context, e *entitlement.Entitlement, owner any) error {
 	if !isFeatureEntitlementGrant(e) {
 		return nil
 	}
 	grants := &entitlementGrantService{ServiceParams: s.ServiceParams}
-	change := subscriptionGrantChange{entitlements: []*entitlement.Entitlement{e}}
+	change := subscriptionEntitlementGrantChange{entitlements: []*entitlement.Entitlement{e}}
 	switch e.EntityType {
 	case types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION:
 		sub, ok := owner.(*subscription.Subscription)
@@ -1168,7 +1168,7 @@ func (s *entitlementService) validateFeatureEntitlementGrantAgainstSubscriptionG
 		}
 		return grants.validateChangeIfGranted(ctx, sub, change)
 	case types.ENTITLEMENT_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_ADDON:
-		return grants.validateCatalogChange(ctx, e.EntityType, e.EntityID, func(*subscription.Subscription) subscriptionGrantChange { return change })
+		return grants.validateCatalogChange(ctx, e.EntityType, e.EntityID, func(*subscription.Subscription) subscriptionEntitlementGrantChange { return change })
 	}
 	return nil
 }

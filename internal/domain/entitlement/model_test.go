@@ -316,8 +316,8 @@ func TestEntitlement_LiveWindow(t *testing.T) {
 	}
 }
 
-// subscriptionGrant returns a valid subscription grant: $30 per subscription period.
-func subscriptionGrant() *Entitlement {
+// subscriptionEntitlementGrant returns a valid subscription entitlement grant: $30 per subscription period.
+func subscriptionEntitlementGrant() *Entitlement {
 	q := decimal.NewFromInt(30)
 	return &Entitlement{
 		EntityType:        types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION,
@@ -362,7 +362,7 @@ func TestEntitlement_Validate_SubscriptionScope(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			e := subscriptionGrant()
+			e := subscriptionEntitlementGrant()
 			tc.mutate(e)
 			err := e.Validate()
 			if tc.wantErr == "" {

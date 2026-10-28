@@ -46,7 +46,7 @@ func (Entitlement) Fields() []ent.Field {
 				"postgres": "varchar(50)",
 			}).
 			Optional(),
-		// NULL for a subscription grant, which covers every feature on the subscription.
+		// NULL for a subscription entitlement grant, which covers every feature on the subscription.
 		field.String("feature_id").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",

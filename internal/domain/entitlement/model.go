@@ -43,7 +43,7 @@ type Entitlement struct {
 	types.BaseModel
 }
 
-// IsSubscriptionScoped reports whether the entitlement is a subscription grant: a dollar
+// IsSubscriptionScoped reports whether the entitlement is a subscription entitlement grant: a dollar
 // entitlement grant over every usage line on the subscription, with no feature.
 func (e *Entitlement) IsSubscriptionScoped() bool {
 	return e != nil && e.EffectiveGrantScope() == types.EntitlementGrantScopeSubscription
@@ -256,29 +256,29 @@ func (e *Entitlement) Validate() error {
 	return nil
 }
 
-// validateSubscriptionScope checks a subscription grant: owned by a subscription, no
+// validateSubscriptionScope checks a subscription entitlement grant: owned by a subscription, no
 // feature, measured in money, with a quota.
 func (e *Entitlement) validateSubscriptionScope() error {
 	if e.EntityType != types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION {
-		return ierr.NewError("a subscription grant must belong to a subscription").
+		return ierr.NewError("a subscription entitlement grant must belong to a subscription").
 			WithHint("Set entity_type to SUBSCRIPTION and entity_id to the subscription ID").
 			WithReportableDetails(map[string]interface{}{"entity_type": e.EntityType}).
 			Mark(ierr.ErrValidation)
 	}
 	if e.FeatureID != "" || e.FeatureType != "" {
-		return ierr.NewError("a subscription grant has no feature").
+		return ierr.NewError("a subscription entitlement grant has no feature").
 			WithHint("Leave feature_id and feature_type empty; the grant covers every usage line on the subscription").
 			WithReportableDetails(map[string]interface{}{"feature_id": e.FeatureID}).
 			Mark(ierr.ErrValidation)
 	}
 	if !e.HasGrantConfig() || e.GrantMeasure != types.EntitlementGrantMeasureAmount {
-		return ierr.NewError("a subscription grant must be measured in amount").
+		return ierr.NewError("a subscription entitlement grant must be measured in amount").
 			WithReportableDetails(map[string]interface{}{"grant_measure": e.GrantMeasure}).
 			Mark(ierr.ErrValidation)
 	}
 	if e.GrantQuota == nil {
-		return ierr.NewError("a subscription grant requires grant_quota").
-			WithHint("Unlimited subscription grants are not supported").
+		return ierr.NewError("a subscription entitlement grant requires grant_quota").
+			WithHint("Unlimited subscription entitlement grants are not supported").
 			Mark(ierr.ErrValidation)
 	}
 	return e.validateGrantConfig()

@@ -424,11 +424,11 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 		}
 	}
 	grantSvc := NewEntitlementService(s.ServiceParams)
-	for _, grantReq := range req.SubscriptionGrants {
+	for _, grantReq := range req.SubscriptionEntitlementGrants {
 		if grantReq.StartDate == nil {
 			grantReq.StartDate = lo.ToPtr(sub.StartDate)
 		}
-		if _, err = grantSvc.CreateSubscriptionGrant(ctx, grantReq.ToCreateEntitlementRequest(sub.ID), sub); err != nil {
+		if _, err = grantSvc.CreateSubscriptionEntitlementGrant(ctx, grantReq.ToCreateEntitlementRequest(sub.ID), sub); err != nil {
 			return nil, err
 		}
 	}
@@ -5124,7 +5124,7 @@ func (s *subscriptionService) createAddonAttachParams(
 		return nil, err
 	}
 
-	if err := s.validateAddonAttachSubscriptionGrant(ctx, sub, req.AddonID, lineItems); err != nil {
+	if err := s.validateAddonAttachSubscriptionEntitlementGrant(ctx, sub, req.AddonID, lineItems); err != nil {
 		return nil, err
 	}
 
@@ -7063,18 +7063,18 @@ func (s *subscriptionService) aggregateSubscriptionEntitlements(ctx context.Cont
 		}
 	}
 
-	subscriptionGrants, err := (&entitlementGrantService{ServiceParams: s.ServiceParams}).subscriptionGrantsView(ctx, sub)
+	subscriptionEntitlementGrants, err := (&entitlementGrantService{ServiceParams: s.ServiceParams}).subscriptionEntitlementGrantsView(ctx, sub)
 	if err != nil {
-		s.Logger.Error(ctx, "failed to load subscription grants, returning entitlements without them",
+		s.Logger.Error(ctx, "failed to load subscription entitlement grants, returning entitlements without them",
 			"error", err, "subscription_id", sub.ID)
 	}
 
 	// Build final response
 	response := &dto.SubscriptionEntitlementsResponse{
-		SubscriptionID:     sub.ID,
-		PlanID:             sub.PlanID,
-		Features:           aggregatedFeatures,
-		SubscriptionGrants: subscriptionGrants,
+		SubscriptionID:                sub.ID,
+		PlanID:                        sub.PlanID,
+		Features:                      aggregatedFeatures,
+		SubscriptionEntitlementGrants: subscriptionEntitlementGrants,
 	}
 
 	return response
@@ -8732,10 +8732,10 @@ func (s *subscriptionService) processPendingPlanChangeV2(
 	return s.ExecuteScheduledPlanChangeV2(ctx, schedule, config, sub)
 }
 
-// validateAddonAttachSubscriptionGrant refuses an addon whose lines or feature entitlement grants would break the subscription grant.
-func (s *subscriptionService) validateAddonAttachSubscriptionGrant(ctx context.Context, sub *subscription.Subscription, addonID string, items []*subscription.SubscriptionLineItem) error {
+// validateAddonAttachSubscriptionEntitlementGrant refuses an addon whose lines or feature entitlement grants would break the subscription entitlement grant.
+func (s *subscriptionService) validateAddonAttachSubscriptionEntitlementGrant(ctx context.Context, sub *subscription.Subscription, addonID string, items []*subscription.SubscriptionLineItem) error {
 	grants := &entitlementGrantService{ServiceParams: s.ServiceParams}
-	granted, err := grants.hasSubscriptionGrant(ctx, sub.ID)
+	granted, err := grants.hasSubscriptionEntitlementGrant(ctx, sub.ID)
 	if err != nil {
 		return err
 	}
@@ -8746,7 +8746,7 @@ func (s *subscriptionService) validateAddonAttachSubscriptionGrant(ctx context.C
 	if err != nil {
 		return err
 	}
-	return grants.validateChange(ctx, sub, subscriptionGrantChange{
+	return grants.validateChange(ctx, sub, subscriptionEntitlementGrantChange{
 		items: items,
 		entitlements: lo.Map(addonEntitlements.Items, func(r *dto.EntitlementResponse, _ int) *entitlement.Entitlement {
 			return r.Entitlement

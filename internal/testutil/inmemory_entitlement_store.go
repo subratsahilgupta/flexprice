@@ -115,7 +115,7 @@ func entitlementSortFn(i, j *entitlement.Entitlement) bool {
 // (tenant, env, entity_type, entity_id, feature_id) WHERE status='published'
 // AND aggregation_mode <> 'parallel': one published entitlement per
 // (entity, feature), except parallel-mode grant ECs which may stack. A NULL feature_id
-// never matches in Postgres, so subscription grants (no feature) are never duplicates.
+// never matches in Postgres, so subscription entitlement grants (no feature) are never duplicates.
 func (s *InMemoryEntitlementStore) checkUniquePerEntityFeature(ctx context.Context, e *entitlement.Entitlement) error {
 	if e.AggregationMode == types.EntitlementAggregationModeParallel || e.Status != types.StatusPublished || e.FeatureID == "" {
 		return nil

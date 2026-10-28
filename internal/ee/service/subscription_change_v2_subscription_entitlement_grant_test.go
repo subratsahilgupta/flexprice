@@ -11,8 +11,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// addSubscriptionGrant gives the fixture subscription a $50 subscription grant.
-func (s *SubscriptionChangeV2Suite) addSubscriptionGrant() {
+// addSubscriptionEntitlementGrant gives the fixture subscription a $50 subscription entitlement grant.
+func (s *SubscriptionChangeV2Suite) addSubscriptionEntitlementGrant() {
 	ctx := s.GetContext()
 	_, err := s.GetStores().EntitlementRepo.Create(ctx, &entitlement.Entitlement{
 		ID:                types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ENTITLEMENT),
@@ -28,7 +28,7 @@ func (s *SubscriptionChangeV2Suite) addSubscriptionGrant() {
 	s.Require().NoError(err)
 }
 
-func (s *SubscriptionChangeV2Suite) TestPlanChange_SubscriptionGrantGuard() {
+func (s *SubscriptionChangeV2Suite) TestPlanChange_SubscriptionEntitlementGrantGuard() {
 	cases := []struct {
 		name    string
 		setup   func() // shapes the target plan or the request
@@ -53,7 +53,7 @@ func (s *SubscriptionChangeV2Suite) TestPlanChange_SubscriptionGrantGuard() {
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			s.SetupTest()
-			s.addSubscriptionGrant()
+			s.addSubscriptionEntitlementGrant()
 			if tc.setup != nil {
 				tc.setup()
 			}

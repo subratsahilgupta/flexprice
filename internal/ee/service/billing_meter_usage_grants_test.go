@@ -544,7 +544,7 @@ func (s *EntitlementGrantSuite) subGrantBilling() *billingService {
 	return &billingService{ServiceParams: s.buildServiceParams()}
 }
 
-// seedSubGrantWindow stores a subscription grant window with its evaluated usage.
+// seedSubGrantWindow stores a subscription entitlement grant window with its evaluated usage.
 func (s *EntitlementGrantSuite) seedSubGrantWindow(id string, fx subGrantFixture, from, to time.Time, quota, usage int64, crossedAt *time.Time) *entitlementgrant.EntitlementGrant {
 	g := &entitlementgrant.EntitlementGrant{
 		ID:                  id,
@@ -568,7 +568,7 @@ func (s *EntitlementGrantSuite) seedSubGrantWindow(id string, fx subGrantFixture
 	return g
 }
 
-// subGrantBlockers are the billing inputs that can stop subscription grants from applying.
+// subGrantBlockers are the billing inputs that can stop subscription entitlement grants from applying.
 type subGrantBlockers struct {
 	featureGrants     map[string][]*entitlementgrant.EntitlementGrant
 	commitmentLineIDs map[string]bool
@@ -589,15 +589,15 @@ func (s *EntitlementGrantSuite) applySubGrants(fx subGrantFixture, lines []dto.C
 	items, err := s.GetStores().SubscriptionLineItemRepo.ListBySubscription(s.GetContext(), fx.sub)
 	s.Require().NoError(err)
 	fx.sub.LineItems = items
-	grants, err := b.loadSubscriptionGrants(s.GetContext(), fx.sub, len(blockers.featureGrants) > 0, nil, blockers.commitmentLineIDs, nil, start, end)
+	grants, err := b.loadSubscriptionEntitlementGrants(s.GetContext(), fx.sub, len(blockers.featureGrants) > 0, nil, blockers.commitmentLineIDs, nil, start, end)
 	s.Require().NoError(err)
-	reduction, err := b.applySubscriptionGrants(s.GetContext(), fx.sub, grants, lines, start, end)
+	reduction, err := b.applySubscriptionEntitlementGrants(s.GetContext(), fx.sub, grants, lines, start, end)
 	s.Require().NoError(err)
 	return reduction
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_SplitsOverageByShare() {
-	fx := s.newSubGrantFixture("bill-share", dailySubscriptionGrant(30, types.EntitlementGrantAllocationBehaviorFirstUsage))
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantBilling_SplitsOverageByShare() {
+	fx := s.newSubGrantFixture("bill-share", dailySubscriptionEntitlementGrant(30, types.EntitlementGrantAllocationBehaviorFirstUsage))
 	start := fx.sub.CurrentPeriodStart
 	s.seedSubGrantWindow("eg-share", fx, start, fx.sub.CurrentPeriodEnd, 30, 120, nil)
 
@@ -607,14 +607,14 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_SplitsOverageByShar
 	s.True(decimal.NewFromInt(30).Equal(reduction), "got %s", reduction)
 	s.True(decimal.RequireFromString("52.5").Equal(lines[0].Amount), "calls: got %s", lines[0].Amount)
 	s.True(decimal.RequireFromString("37.5").Equal(lines[1].Amount), "storage: got %s", lines[1].Amount)
-	s.Equal("17.5", lines[0].Metadata[metadataKeySubscriptionGrantAllowance])
-	s.Equal("12.5", lines[1].Metadata[metadataKeySubscriptionGrantAllowance])
+	s.Equal("17.5", lines[0].Metadata[metadataKeySubscriptionEntitlementGrantAllowance])
+	s.Equal("12.5", lines[1].Metadata[metadataKeySubscriptionEntitlementGrantAllowance])
 	s.True(decimal.NewFromInt(1).Equal(lines[0].Quantity), "quantity keeps the real usage")
 }
 
 // A negative usage line is a correction: grants never raise it, on either path.
-func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_KeepsNegativeLines() {
-	fx := s.newSubGrantFixture("bill-neg", dailySubscriptionGrant(30, types.EntitlementGrantAllocationBehaviorFirstUsage))
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantBilling_KeepsNegativeLines() {
+	fx := s.newSubGrantFixture("bill-neg", dailySubscriptionEntitlementGrant(30, types.EntitlementGrantAllocationBehaviorFirstUsage))
 	start, end := fx.sub.CurrentPeriodStart, fx.sub.CurrentPeriodEnd
 	s.seedSubGrantWindow("eg-neg", fx, start, end, 30, 70, nil)
 
@@ -631,8 +631,8 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_KeepsNegativeLines(
 	s.True(decimal.NewFromInt(-30).Equal(lines[1].Amount), "parallel correction: got %s", lines[1].Amount)
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_DisjointWindowsAddUp() {
-	fx := s.newSubGrantFixture("bill-days", dailySubscriptionGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage))
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantBilling_DisjointWindowsAddUp() {
+	fx := s.newSubGrantFixture("bill-days", dailySubscriptionEntitlementGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage))
 	day := fx.sub.CurrentPeriodStart
 	// Day 1: X $30 against $10 (over by $20). Day 2: Y $10, fully free.
 	s.seedSubGrantWindow("eg-day1", fx, day, day.Add(24*time.Hour), 10, 30, nil)
@@ -646,8 +646,8 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_DisjointWindowsAddU
 	s.True(decimal.NewFromInt(5).Equal(lines[1].Amount), "storage: got %s", lines[1].Amount)
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_ParallelBillsOwnSpendAfterCrossing() {
-	fx := s.newSubGrantFixture("bill-par", dailySubscriptionGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage))
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantBilling_ParallelBillsOwnSpendAfterCrossing() {
+	fx := s.newSubGrantFixture("bill-par", dailySubscriptionEntitlementGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage))
 	start := fx.sub.CurrentPeriodStart
 	crossed := start.Add(2 * time.Hour)
 	// Before the crossing: calls $10. After: calls $3, storage $4.
@@ -667,7 +667,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_ParallelBillsOwnSpe
 	s.True(decimal.NewFromInt(10).Equal(reduction), "got %s", reduction)
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RejectedSubscriptionsBillInFull() {
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantBilling_RejectedSubscriptionsBillInFull() {
 	tests := []struct {
 		name  string
 		setup func(fx subGrantFixture) subGrantBlockers
@@ -692,7 +692,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RejectedSubscriptio
 	}
 	for i, tt := range tests {
 		s.Run(tt.name, func() {
-			fx := s.newSubGrantFixture("bill-reject-"+string(rune('a'+i)), dailySubscriptionGrant(30, types.EntitlementGrantAllocationBehaviorFirstUsage))
+			fx := s.newSubGrantFixture("bill-reject-"+string(rune('a'+i)), dailySubscriptionEntitlementGrant(30, types.EntitlementGrantAllocationBehaviorFirstUsage))
 			s.seedSubGrantWindow("eg-reject-"+string(rune('a'+i)), fx, fx.sub.CurrentPeriodStart, fx.sub.CurrentPeriodEnd, 30, 120, nil)
 			blockers := tt.setup(fx)
 
@@ -706,8 +706,8 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RejectedSubscriptio
 	}
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_InvoiceLinesThroughMeterCharges() {
-	fx := s.newSubGrantFixture("bill-e2e", dailySubscriptionGrant(30, types.EntitlementGrantAllocationBehaviorFirstUsage))
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantBilling_InvoiceLinesThroughMeterCharges() {
+	fx := s.newSubGrantFixture("bill-e2e", dailySubscriptionEntitlementGrant(30, types.EntitlementGrantAllocationBehaviorFirstUsage))
 	start := fx.sub.CurrentPeriodStart
 	s.seedMeterUsage(fx.extID, fx.callsMeter, start.Add(time.Hour), 700)  // $70
 	s.seedMeterUsage(fx.extID, fx.storeMeter, start.Add(2*time.Hour), 50) // $50
@@ -742,7 +742,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_InvoiceLinesThrough
 
 // A $50 monthly grant with a $15 auto invoice threshold: two threshold invoices and the month-end
 // invoice bill $16, $16 and $18, which is the $100 spent less the $50 grant.
-func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_MonthlyGrantAcrossThresholdInvoices() {
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantBilling_MonthlyGrantAcrossThresholdInvoices() {
 	fx := s.newSubGrantFixture("bill-threshold", &entitlement.Entitlement{
 		GrantDurationUnit: types.EntitlementGrantDurationUnitSubscriptionPeriod,
 		GrantQuota:        lo.ToPtr(decimal.NewFromInt(50)),
@@ -798,7 +798,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_MonthlyGrantAcrossT
 
 // Spend outside the grant's window stays billed: before a grant that starts mid-period, and after one
 // that ends early. $90 spent, the window saw $40 of it against a $30 quota: $60 is billed.
-func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_SpendOutsideTheWindowStaysBilled() {
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantBilling_SpendOutsideTheWindowStaysBilled() {
 	tests := []struct {
 		name     string
 		from, to func(fx subGrantFixture) time.Time
@@ -812,7 +812,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_SpendOutsideTheWind
 	}
 	for i, tt := range tests {
 		s.Run(tt.name, func() {
-			fx := s.newSubGrantFixture("bill-outside-"+string(rune('a'+i)), dailySubscriptionGrant(30, types.EntitlementGrantAllocationBehaviorFirstUsage))
+			fx := s.newSubGrantFixture("bill-outside-"+string(rune('a'+i)), dailySubscriptionEntitlementGrant(30, types.EntitlementGrantAllocationBehaviorFirstUsage))
 			s.seedSubGrantWindow("eg-outside-"+string(rune('a'+i)), fx, tt.from(fx), tt.to(fx), 30, 40, nil)
 
 			lines := invoiceLines(fx, "60", "30")
@@ -825,8 +825,8 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_SpendOutsideTheWind
 	}
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RefreshesStaleUsageBeforeBilling() {
-	fx := s.newSubGrantFixture("bill-stale", dailySubscriptionGrant(50, types.EntitlementGrantAllocationBehaviorFirstUsage))
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantBilling_RefreshesStaleUsageBeforeBilling() {
+	fx := s.newSubGrantFixture("bill-stale", dailySubscriptionEntitlementGrant(50, types.EntitlementGrantAllocationBehaviorFirstUsage))
 	start := fx.sub.CurrentPeriodStart
 	// The window ends with the period, and its stored usage predates $30 of spend.
 	g := s.seedSubGrantWindow("eg-stale", fx, start, fx.sub.CurrentPeriodEnd, 50, 0, nil)
@@ -838,7 +838,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RefreshesStaleUsage
 	// The invoice's own line list must survive the refresh.
 	fx.sub.LineItems = items[:1]
 	at := start.Add(2 * time.Hour)
-	s.Require().NoError(refreshSubscriptionGrantUsage(s.GetContext(), s.buildServiceParams(), fx.sub, start, fx.sub.CurrentPeriodEnd, at))
+	s.Require().NoError(refreshSubscriptionEntitlementGrantUsage(s.GetContext(), s.buildServiceParams(), fx.sub, start, fx.sub.CurrentPeriodEnd, at))
 	s.Len(fx.sub.LineItems, 1, "refresh replaced the caller's line items")
 	fx.sub.LineItems = items
 
@@ -856,8 +856,8 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RefreshesStaleUsage
 }
 
 // A historical recalculation must not overwrite usage alert evaluation measured later.
-func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RefreshSkipsWindowMeasuredLater() {
-	fx := s.newSubGrantFixture("bill-hist", dailySubscriptionGrant(50, types.EntitlementGrantAllocationBehaviorFirstUsage))
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantBilling_RefreshSkipsWindowMeasuredLater() {
+	fx := s.newSubGrantFixture("bill-hist", dailySubscriptionEntitlementGrant(50, types.EntitlementGrantAllocationBehaviorFirstUsage))
 	start := fx.sub.CurrentPeriodStart
 	g := s.seedSubGrantWindow("eg-hist", fx, start, fx.sub.CurrentPeriodEnd, 50, 40, nil)
 	measured := start.Add(3 * time.Hour)
@@ -868,7 +868,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RefreshSkipsWindowM
 	items, err := s.GetStores().SubscriptionLineItemRepo.ListBySubscription(s.GetContext(), fx.sub)
 	s.Require().NoError(err)
 	fx.sub.LineItems = items
-	s.Require().NoError(refreshSubscriptionGrantUsage(s.GetContext(), s.buildServiceParams(), fx.sub, start, fx.sub.CurrentPeriodEnd, start.Add(2*time.Hour)))
+	s.Require().NoError(refreshSubscriptionEntitlementGrantUsage(s.GetContext(), s.buildServiceParams(), fx.sub, start, fx.sub.CurrentPeriodEnd, start.Add(2*time.Hour)))
 
 	stored, err := s.GetStores().EntitlementGrantRepo.Get(s.GetContext(), g.ID)
 	s.Require().NoError(err)
@@ -876,8 +876,8 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RefreshSkipsWindowM
 }
 
 // Billing refreshes an ended window's usage but leaves it unfinalized, so alert evaluation still sees it.
-func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RefreshLeavesEndedWindowToAlerts() {
-	fx := s.newSubGrantFixture("bill-ended", dailySubscriptionGrant(20, types.EntitlementGrantAllocationBehaviorFirstUsage))
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantBilling_RefreshLeavesEndedWindowToAlerts() {
+	fx := s.newSubGrantFixture("bill-ended", dailySubscriptionEntitlementGrant(20, types.EntitlementGrantAllocationBehaviorFirstUsage))
 	start := fx.sub.CurrentPeriodStart
 	end := start.Add(24 * time.Hour)
 	g := s.seedSubGrantWindow("eg-ended", fx, start, end, 20, 0, nil)
@@ -886,7 +886,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantBilling_RefreshLeavesEndedW
 	items, err := s.GetStores().SubscriptionLineItemRepo.ListBySubscription(s.GetContext(), fx.sub)
 	s.Require().NoError(err)
 	fx.sub.LineItems = items
-	s.Require().NoError(refreshSubscriptionGrantUsage(s.GetContext(), s.buildServiceParams(), fx.sub, start, fx.sub.CurrentPeriodEnd, end.Add(time.Hour)))
+	s.Require().NoError(refreshSubscriptionEntitlementGrantUsage(s.GetContext(), s.buildServiceParams(), fx.sub, start, fx.sub.CurrentPeriodEnd, end.Add(time.Hour)))
 
 	stored, err := s.GetStores().EntitlementGrantRepo.Get(s.GetContext(), g.ID)
 	s.Require().NoError(err)

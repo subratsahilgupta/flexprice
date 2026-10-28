@@ -1668,7 +1668,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 		types.ReferencePointPreview, types.ReferencePointInternalPreview, types.ReferencePointRevenueFacts,
 	}, referencePoint)
 	if !isPreview {
-		if err := refreshSubscriptionGrantUsage(ctx, s.ServiceParams, sub, periodStart, periodEnd, asOf); err != nil {
+		if err := refreshSubscriptionEntitlementGrantUsage(ctx, s.ServiceParams, sub, periodStart, periodEnd, asOf); err != nil {
 			return nil, err
 		}
 	}

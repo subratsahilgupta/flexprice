@@ -14,7 +14,7 @@ import (
 )
 
 // subGrantFixture is a subscription with two flat-priced usage lines (calls $0.10,
-// storage $1) and a subscription grant over both.
+// storage $1) and a subscription entitlement grant over both.
 type subGrantFixture struct {
 	sub                    *subscription.Subscription
 	callsLine, storeLine   string
@@ -82,7 +82,7 @@ func (s *EntitlementGrantSuite) newSubGrantSubscription(tag string) subGrantFixt
 	}
 }
 
-func dailySubscriptionGrant(quota int64, behavior types.EntitlementGrantAllocationBehavior) *entitlement.Entitlement {
+func dailySubscriptionEntitlementGrant(quota int64, behavior types.EntitlementGrantAllocationBehavior) *entitlement.Entitlement {
 	return &entitlement.Entitlement{
 		GrantDurationUnit:       types.EntitlementGrantDurationUnitDay,
 		GrantDurationValue:      lo.ToPtr(1),
@@ -91,8 +91,8 @@ func dailySubscriptionGrant(quota int64, behavior types.EntitlementGrantAllocati
 	}
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrant_OpensAtFirstEventOnAnyMeter() {
-	fx := s.newSubGrantFixture("first", dailySubscriptionGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage))
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrant_OpensAtFirstEventOnAnyMeter() {
+	fx := s.newSubGrantFixture("first", dailySubscriptionEntitlementGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage))
 	// The first event lands on the storage meter, not the calls meter.
 	first := fx.sub.CurrentPeriodStart.Add(40 * time.Minute)
 	s.seedMeterUsage(fx.extID, fx.storeMeter, first, 1)
@@ -111,8 +111,8 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_OpensAtFirstEventOnAnyMete
 	s.True(g.ValidTo.Equal(first.Add(24 * time.Hour)))
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrant_UnitStartAlignsToDay() {
-	fx := s.newSubGrantFixture("unit", dailySubscriptionGrant(10, types.EntitlementGrantAllocationBehaviorUnitStart))
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrant_UnitStartAlignsToDay() {
+	fx := s.newSubGrantFixture("unit", dailySubscriptionEntitlementGrant(10, types.EntitlementGrantAllocationBehaviorUnitStart))
 	s.seedMeterUsage(fx.extID, fx.callsMeter, fx.sub.CurrentPeriodStart.Add(26*time.Hour), 10)
 
 	at := fx.sub.CurrentPeriodStart.Add(27 * time.Hour)
@@ -128,16 +128,16 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_UnitStartAlignsToDay() {
 		"unit_start window starts on the day boundary, got %s", grants[0].ValidFrom)
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrant_NoUsage_NoWindow() {
-	fx := s.newSubGrantFixture("idle", dailySubscriptionGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage))
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrant_NoUsage_NoWindow() {
+	fx := s.newSubGrantFixture("idle", dailySubscriptionEntitlementGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage))
 	grants, _, err := s.grantService.EnsureGrantsForSubscriptions(s.GetContext(),
 		s.customerOf(fx.sub), []*subscription.Subscription{fx.sub}, fx.sub.CurrentPeriodStart.Add(time.Hour))
 	s.Require().NoError(err)
 	s.Empty(grants)
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrant_EvaluateTotalsEveryLine() {
-	fx := s.newSubGrantFixture("eval", dailySubscriptionGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage))
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrant_EvaluateTotalsEveryLine() {
+	fx := s.newSubGrantFixture("eval", dailySubscriptionEntitlementGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage))
 	first := fx.sub.CurrentPeriodStart.Add(30 * time.Minute)
 	s.seedMeterUsage(fx.extID, fx.callsMeter, first, 100)                // $10
 	s.seedMeterUsage(fx.extID, fx.storeMeter, first.Add(time.Minute), 5) // $5
@@ -158,7 +158,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_EvaluateTotalsEveryLine() 
 	s.Require().NotNil(stored.QuotaCrossedAt)
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrant_ParallelGrantsOpenOneWindowEach() {
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrant_ParallelGrantsOpenOneWindowEach() {
 	fx := s.newSubGrantFixture("par", &entitlement.Entitlement{
 		GrantDurationUnit:       types.EntitlementGrantDurationUnitDay,
 		GrantDurationValue:      lo.ToPtr(1),
@@ -197,9 +197,9 @@ func (s *EntitlementGrantSuite) customerOf(sub *subscription.Subscription) *cust
 	return c
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrant_AdditiveGrantsPoolIntoOneWindow() {
-	fx := s.newSubGrantFixture("add", dailySubscriptionGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage))
-	topUp := dailySubscriptionGrant(5, types.EntitlementGrantAllocationBehaviorFirstUsage)
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrant_AdditiveGrantsPoolIntoOneWindow() {
+	fx := s.newSubGrantFixture("add", dailySubscriptionEntitlementGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage))
+	topUp := dailySubscriptionEntitlementGrant(5, types.EntitlementGrantAllocationBehaviorFirstUsage)
 	topUp.ID = "ent-subgrant-add-topup"
 	topUp.EntityType = types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION
 	topUp.EntityID = fx.sub.ID
@@ -219,8 +219,8 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_AdditiveGrantsPoolIntoOneW
 }
 
 // A grant past its end_date opens no new window, and the last one stops at the end_date.
-func (s *EntitlementGrantSuite) TestSubscriptionGrant_EndDateStopsNewWindows() {
-	ec := dailySubscriptionGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage)
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrant_EndDateStopsNewWindows() {
+	ec := dailySubscriptionEntitlementGrant(10, types.EntitlementGrantAllocationBehaviorFirstUsage)
 	fx := s.newSubGrantFixture("ended", ec)
 	end := fx.sub.CurrentPeriodStart.Add(2 * time.Hour)
 	ec.EndDate = &end

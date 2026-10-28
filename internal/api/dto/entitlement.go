@@ -17,7 +17,7 @@ import (
 // CreateEntitlementRequest represents the request to create a new entitlement
 type CreateEntitlementRequest struct {
 	PlanID string `json:"plan_id,omitempty"`
-	// Required, except on a subscription grant (entity_type SUBSCRIPTION with grant config), which has no feature.
+	// Required, except on a subscription entitlement grant (entity_type SUBSCRIPTION with grant config), which has no feature.
 	FeatureID   string            `json:"feature_id"`
 	FeatureType types.FeatureType `json:"feature_type"`
 	IsEnabled   bool              `json:"is_enabled"`
@@ -43,8 +43,8 @@ type CreateEntitlementRequest struct {
 	GrantUnlimited          bool                                     `json:"grant_unlimited,omitempty"`
 }
 
-// IsSubscriptionGrant reports a subscription grant: a grant config on a subscription with no feature.
-func (r *CreateEntitlementRequest) IsSubscriptionGrant() bool {
+// IsSubscriptionEntitlementGrant reports a subscription entitlement grant: a grant config on a subscription with no feature.
+func (r *CreateEntitlementRequest) IsSubscriptionEntitlementGrant() bool {
 	return r.EntityType == types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION && r.EntityID != "" && r.FeatureID == "" && r.hasGrantConfig()
 }
 
@@ -69,7 +69,7 @@ func (r *CreateEntitlementRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if r.IsSubscriptionGrant() {
+	if r.IsSubscriptionEntitlementGrant() {
 		return nil
 	}
 
@@ -130,7 +130,7 @@ func (r *CreateEntitlementRequest) ToEntitlement(ctx context.Context) *entitleme
 		r.IsEnabled = true
 	}
 	var grantScope types.EntitlementGrantScopeEntityType
-	if r.IsSubscriptionGrant() {
+	if r.IsSubscriptionEntitlementGrant() {
 		r.IsEnabled = true
 		grantScope = types.EntitlementGrantScopeSubscription
 	}

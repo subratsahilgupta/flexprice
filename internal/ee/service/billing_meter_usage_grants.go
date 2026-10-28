@@ -30,8 +30,8 @@ type adjustMeterUsageGrantsResult struct {
 // for this subscription, bucketed by meter id.
 //
 // Feature scope only: this map is consumed per line item, and a grant spanning
-// several meters would count its overage once per meter. Subscription grants are
-// applied across lines by applySubscriptionGrants; GROUP grants are not billed.
+// several meters would count its overage once per meter. Subscription entitlement grants are
+// applied across lines by applySubscriptionEntitlementGrants; GROUP grants are not billed.
 func (s *billingService) loadEntitlementGrantsByMeterID(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -364,12 +364,12 @@ type grantGuardError string
 
 func (e grantGuardError) Error() string { return string(e) }
 
-// metadataKeySubscriptionGrantAllowance records how much of an invoice line a subscription grant covered.
-const metadataKeySubscriptionGrantAllowance = "subscription_grant_allowance"
+// metadataKeySubscriptionEntitlementGrantAllowance records how much of an invoice line a subscription entitlement grant covered.
+const metadataKeySubscriptionEntitlementGrantAllowance = "subscription_entitlement_grant_allowance"
 
-// loadSubscriptionGrants returns the subscription grant windows overlapping the period. It returns
+// loadSubscriptionEntitlementGrants returns the subscription entitlement grant windows overlapping the period. It returns
 // none, and logs why, when the subscription has a setup the grants cannot be billed on.
-func (s *billingService) loadSubscriptionGrants(
+func (s *billingService) loadSubscriptionEntitlementGrants(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	hasFeatureEntitlementGrant bool,
@@ -400,7 +400,7 @@ func (s *billingService) loadSubscriptionGrants(
 			priceByItemID[id] = charges[0].Price
 		}
 	}
-	reason := subscriptionGrantBlocker(subscriptionGrantState{
+	reason := subscriptionEntitlementGrantBlocker(subscriptionEntitlementGrantState{
 		sub:                        sub,
 		items:                      sub.LineItems,
 		priceByItemID:              priceByItemID,
@@ -410,7 +410,7 @@ func (s *billingService) loadSubscriptionGrants(
 		periodStart:                periodStart,
 	})
 	if reason != nil {
-		s.Logger.Error(ctx, "subscription grant overage: subscription rejected, grants not applied",
+		s.Logger.Error(ctx, "subscription entitlement grant overage: subscription rejected, grants not applied",
 			"subscription_id", sub.ID,
 			"error", reason,
 		)
@@ -419,9 +419,9 @@ func (s *billingService) loadSubscriptionGrants(
 	return grants, nil
 }
 
-// applySubscriptionGrants lowers each usage line to what it is billed after the subscription grants
+// applySubscriptionEntitlementGrants lowers each usage line to what it is billed after the subscription entitlement grants
 // and returns the total taken off.
-func (s *billingService) applySubscriptionGrants(
+func (s *billingService) applySubscriptionEntitlementGrants(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	grants []*entitlementgrant.EntitlementGrant,
@@ -431,7 +431,7 @@ func (s *billingService) applySubscriptionGrants(
 	if len(grants) == 0 || len(lines) == 0 {
 		return decimal.Zero, nil
 	}
-	billed, err := s.billedAfterSubscriptionGrants(ctx, sub, grants, lines, periodStart, periodEnd)
+	billed, err := s.billedAfterSubscriptionEntitlementGrants(ctx, sub, grants, lines, periodStart, periodEnd)
 	if err != nil {
 		return decimal.Zero, err
 	}
@@ -454,9 +454,9 @@ func (s *billingService) applySubscriptionGrants(
 	return reduction, nil
 }
 
-// billedAfterSubscriptionGrants returns what each line is billed after the grants, in line order. Spend
+// billedAfterSubscriptionEntitlementGrants returns what each line is billed after the grants, in line order. Spend
 // outside every window, or covered by the grant on an earlier invoice, stays billed.
-func (s *billingService) billedAfterSubscriptionGrants(
+func (s *billingService) billedAfterSubscriptionEntitlementGrants(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	grants []*entitlementgrant.EntitlementGrant,
@@ -530,7 +530,7 @@ func (s *billingService) lowerLineAmount(ctx context.Context, line *dto.CreateIn
 	if line.Metadata == nil {
 		line.Metadata = types.Metadata{}
 	}
-	line.Metadata[metadataKeySubscriptionGrantAllowance] = granted.String()
+	line.Metadata[metadataKeySubscriptionEntitlementGrantAllowance] = granted.String()
 	if line.PriceUnit == nil {
 		return nil
 	}

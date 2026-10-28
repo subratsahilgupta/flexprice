@@ -92,7 +92,7 @@ type EntitlementFilter struct {
 	HasGrantConfig *bool `form:"has_grant_config" json:"has_grant_config,omitempty"`
 
 	// GrantScopes selects entitlements by grant scope. Empty means feature only, so
-	// subscription grants, which have no feature, never reach feature-based reads.
+	// subscription entitlement grants, which have no feature, never reach feature-based reads.
 	GrantScopes []EntitlementGrantScopeEntityType `form:"grant_scopes" json:"grant_scopes,omitempty"`
 }
 

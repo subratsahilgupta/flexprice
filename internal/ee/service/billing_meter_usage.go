@@ -199,7 +199,7 @@ func (s *billingService) CalculateMeterUsageCharges(
 	hasFeatureEntitlementGrant := len(grantsByMeterID) > 0 || lo.ContainsBy(lo.Values(entitlementsByMeterID), func(e *dto.AggregatedEntitlement) bool {
 		return e.IsEnabled && e.UsageLimit != nil
 	})
-	subGrants, err := s.loadSubscriptionGrants(ctx, sub, hasFeatureEntitlementGrant, chargesByLineItemID, handledByCommitments, meterMap, periodStart, periodEnd)
+	subGrants, err := s.loadSubscriptionEntitlementGrants(ctx, sub, hasFeatureEntitlementGrant, chargesByLineItemID, handledByCommitments, meterMap, periodStart, periodEnd)
 	if err != nil {
 		return nil, decimal.Zero, err
 	}
@@ -433,9 +433,9 @@ func (s *billingService) CalculateMeterUsageCharges(
 		}
 	}
 
-	// --- Post-loop: subscription grants, commitments, cumulative commitment or non-cumulative true-up ---
+	// --- Post-loop: subscription entitlement grants, commitments, cumulative commitment or non-cumulative true-up ---
 
-	reduction, err := s.applySubscriptionGrants(ctx, sub, subGrants, usageCharges, periodStart, periodEnd)
+	reduction, err := s.applySubscriptionEntitlementGrants(ctx, sub, subGrants, usageCharges, periodStart, periodEnd)
 	if err != nil {
 		return nil, decimal.Zero, err
 	}

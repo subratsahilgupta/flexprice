@@ -1,15 +1,15 @@
-# Subscription grants
+# Subscription entitlement grants
 
 Status: Backend implemented in #3230 (windows and evaluation) and #3236 (billing, create, guards, API). Decisions agreed 2026-10-25, updated 2026-10-27 after review.
 Issue: [FLE-1449](https://linear.app/flexprice/issue/FLE-1449/subscription-scoped-entitlement-grants)
 
 ## 1. What we are building
 
-A **subscription grant** is a dollar allowance shared by every usage line on one subscription.
+A **subscription entitlement grant** is a dollar allowance shared by every usage line on one subscription.
 
 Example: "$30 of free usage per month across all features." If the customer spends $50 on usage, $30 is free and $20 is charged.
 
-Today every grant belongs to one feature. A subscription grant has no feature: it is an entitlement with `entity_type = SUBSCRIPTION`, `grant_scope = subscription` and no `feature_id`. Its windows are stored with `scope_entity_type = subscription`.
+Today every grant belongs to one feature. A subscription entitlement grant has no feature: it is an entitlement with `entity_type = SUBSCRIPTION`, `grant_scope = subscription` and no `feature_id`. Its windows are stored with `scope_entity_type = subscription`.
 
 ## 2. Data model
 
@@ -18,7 +18,7 @@ Only the highlighted fields are new or changed; everything else already exists.
 ```mermaid
 erDiagram
     SUBSCRIPTION ||--o{ SUBSCRIPTION_LINE_ITEM : "has usage lines"
-    SUBSCRIPTION ||--o{ ENTITLEMENT : "owns subscription grants"
+    SUBSCRIPTION ||--o{ ENTITLEMENT : "owns subscription entitlement grants"
     ENTITLEMENT ||--o{ ENTITLEMENT_GRANT : "is measured in windows"
     SUBSCRIPTION_LINE_ITEM ||--o{ INVOICE_LINE_ITEM : "is billed as"
 
@@ -26,7 +26,7 @@ erDiagram
         string entity_type "SUBSCRIPTION"
         string entity_id "the subscription"
         string grant_scope "NEW: feature (default) or subscription"
-        string feature_id "CHANGED: now nullable; empty for a subscription grant"
+        string feature_id "CHANGED: now nullable; empty for a subscription entitlement grant"
         string grant_measure "amount (dollars)"
         decimal grant_quota "the allowance, for example 30"
         string grant_duration_unit "subscription_period, hour, day or week"
@@ -48,11 +48,11 @@ erDiagram
     INVOICE_LINE_ITEM {
         decimal amount "billed after the grant"
         decimal quantity "real usage, unchanged"
-        string metadata "subscription_grant_allowance = how much the grant took off"
+        string metadata "subscription_entitlement_grant_allowance = how much the grant took off"
     }
 ```
 
-How to read it: a subscription grant is one `ENTITLEMENT` row on the subscription. The evaluator opens `ENTITLEMENT_GRANT` windows for it and keeps each window's `usage` up to date. At invoice time each usage `INVOICE_LINE_ITEM` is lowered by its share of what the grant covered.
+How to read it: a subscription entitlement grant is one `ENTITLEMENT` row on the subscription. The evaluator opens `ENTITLEMENT_GRANT` windows for it and keeps each window's `usage` up to date. At invoice time each usage `INVOICE_LINE_ITEM` is lowered by its share of what the grant covered.
 
 ## 3. How it works
 
@@ -85,11 +85,11 @@ Worked example: a $30 monthly grant. Feature X spends $70 and feature Y spends $
 
 - Dollars only (`measure = amount`), in the subscription's currency.
 - Created only on a subscription, never on a plan or addon.
-- A subscription can have several subscription grants:
+- A subscription can have several subscription entitlement grants:
   - **Additive**: quotas add up into one allowance ($100 + $50 = $150). They must have the same window length.
   - **Parallel**: each grant is its own limit on the same spend, for example $10/day and $200/month.
   - Additive and parallel cannot be mixed on one subscription.
-- A quota is required. Unlimited subscription grants are refused.
+- A quota is required. Unlimited subscription entitlement grants are refused.
 - **Dates**: a grant starts when it is created unless `start_date` is sent; `end_date` is optional and no window runs past it. A grant created with `POST /subscriptions` starts with the subscription.
 
 **Windows**
@@ -100,8 +100,8 @@ Worked example: a $30 monthly grant. Feature X spends $70 and feature Y spends $
 
 **One grant per charge**
 
-- A subscription has **either** feature usage allowances **or** subscription grants, never both.
-- A feature usage allowance is any metered feature entitlement that makes usage free: a feature grant (limited or unlimited) or a legacy `usage_limit`. On/off features ("SSO enabled") and fixed values ("5 seats") are allowed alongside subscription grants.
+- A subscription has **either** feature usage allowances **or** subscription entitlement grants, never both.
+- A feature usage allowance is any metered feature entitlement that makes usage free: a feature grant (limited or unlimited) or a legacy `usage_limit`. On/off features ("SSO enabled") and fixed values ("5 seats") are allowed alongside subscription entitlement grants.
 
 **Billing**
 
@@ -117,7 +117,7 @@ Worked example: a $30 monthly grant. Feature X spends $70 and feature Y spends $
 - **Quota edit**: only `grant_quota` can change; delete and recreate the grant to change anything else. Usage is measured up to the edit, the current window closes, and a new one opens with what was left plus the change. Example: $30 → $50 with $20 used leaves $30. Concurrent edits are serialised, so the change is never applied twice.
 - **Delete**: a parallel grant's window ends. An additive pool continues for the other grants, less the deleted quota. The last grant's window ends. Allowance already granted is never taken back.
 - **Plan change**: the grant ends with the old subscription and is not copied to the new one. A plan change creates a new subscription, and subscription-level entitlements are not carried over today. Re-create the grant on the new subscription if wanted.
-- **Addon attach or detach**: the subscription grant stays. Only the usage lines feeding it change.
+- **Addon attach or detach**: the subscription entitlement grant stays. Only the usage lines feeding it change.
 - **Line added, removed, or repriced**: applies from its effective date. Usage before the change keeps the old line and price. Closed windows are never recalculated. A backdated change does alter the open window.
 
 **Usage going down** (from FLE-1510)
@@ -128,7 +128,7 @@ Worked example: a $30 monthly grant. Feature X spends $70 and feature Y spends $
 
 **Entitlement alerts**
 
-- Creating a **subscription grant** is refused when entitlement alerts are off, in either the deployment config (`usage_alerts.entitlement_alerts_enabled`) or the environment setting (`entitlement_alert_config`): "Contact Flexprice support to enable this feature."
+- Creating a **subscription entitlement grant** is refused when entitlement alerts are off, in either the deployment config (`usage_alerts.entitlement_alerts_enabled`) or the environment setting (`entitlement_alert_config`): "Contact Flexprice support to enable this feature."
 - Feature grants are not affected. Alerts are off by default and every new metered entitlement becomes a grant, so refusing them would block ordinary plan setup; their usage is still refreshed before every invoice.
 - If the refresh at invoice time fails, the invoice still goes out with the last saved numbers, as today.
 
@@ -136,20 +136,20 @@ Worked example: a $30 monthly grant. Feature X spends $70 and feature Y spends $
 
 | Request | Why |
 |---|---|
-| Subscription grant on a plan or addon | Only subscriptions can own one |
-| Subscription grant measured in quantity | Calls and GB cannot be added together |
-| Subscription grant without a quota (unlimited) | Not supported in this release |
+| Subscription entitlement grant on a plan or addon | Only subscriptions can own one |
+| Subscription entitlement grant measured in quantity | Calls and GB cannot be added together |
+| Subscription entitlement grant without a quota (unlimited) | Not supported in this release |
 | Hour, day, or week window as long as the billing period or longer | Use `subscription_period` |
-| Mixing additive and parallel subscription grants, or additive grants with different windows | One mode and one window per subscription |
-| Subscription grant on a subscription with a feature usage allowance | One grant per charge |
-| Anything that adds a feature usage allowance to a subscription with a subscription grant: direct or bulk create, update, addon attach, plan or addon entitlement | One grant per charge |
-| Subscription grant on a subscription with a minimum spend or an active commitment | The minimum is computed before grants, so it would be wrong |
-| A commitment on a subscription with a subscription grant; `POST /subscriptions` with both | Same, the other way round |
-| Subscription grant while any usage line is incompatible | Coverage would silently not apply |
-| Anything that adds an incompatible usage line to a subscription with a subscription grant: line add or update (including lines dated in a later period), addon attach, a plan or addon usage price that reaches it | Same |
-| Subscription grant in bulk create | Create each one with `POST /entitlements` |
-| Changing anything but `grant_quota` on a subscription grant | Delete and recreate instead |
-| Subscription grant when entitlement alerts are off | Usage would not be evaluated |
+| Mixing additive and parallel subscription entitlement grants, or additive grants with different windows | One mode and one window per subscription |
+| Subscription entitlement grant on a subscription with a feature usage allowance | One grant per charge |
+| Anything that adds a feature usage allowance to a subscription with a subscription entitlement grant: direct or bulk create, update, addon attach, plan or addon entitlement | One grant per charge |
+| Subscription entitlement grant on a subscription with a minimum spend or an active commitment | The minimum is computed before grants, so it would be wrong |
+| A commitment on a subscription with a subscription entitlement grant; `POST /subscriptions` with both | Same, the other way round |
+| Subscription entitlement grant while any usage line is incompatible | Coverage would silently not apply |
+| Anything that adds an incompatible usage line to a subscription with a subscription entitlement grant: line add or update (including lines dated in a later period), addon attach, a plan or addon usage price that reaches it | Same |
+| Subscription entitlement grant in bulk create | Create each one with `POST /entitlements` |
+| Changing anything but `grant_quota` on a subscription entitlement grant | Delete and recreate instead |
+| Subscription entitlement grant when entitlement alerts are off | Usage would not be evaluated |
 
 Incompatible usage lines: a meter that is not SUM, COUNT, or SUM with multiplier; a bucketed meter; a SUM meter that never resets (`reset_usage = NEVER`); a tiered price; a line commitment; true-up; a usage line billed at a different cadence than the subscription (for example a monthly price on a quarterly subscription).
 
@@ -158,17 +158,17 @@ A plan price on another billing period or currency never reaches the subscriptio
 ## 6. API
 
 - **Create** on an existing subscription: `POST /entitlements` with `entity_type = SUBSCRIPTION`, `entity_id = <subscription id>`, the grant fields, and no `feature_id`. Optional `start_date` and `end_date`.
-- **Create with a subscription**: `subscription_grants` on `POST /subscriptions`, separate from `override_entitlements` (those override plan features). Each item takes `grant_quota`, `grant_duration_unit`, optional `grant_duration_value`, `grant_allocation_behavior`, `aggregation_mode`, `start_date` and `end_date`. The subscription and its grants are saved together; if any grant is refused, the whole request fails and nothing is created.
+- **Create with a subscription**: `subscription_entitlement_grants` on `POST /subscriptions`, separate from `override_entitlements` (those override plan features). Each item takes `grant_quota`, `grant_duration_unit`, optional `grant_duration_value`, `grant_allocation_behavior`, `aggregation_mode`, `start_date` and `end_date`. The subscription and its grants are saved together; if any grant is refused, the whole request fails and nothing is created.
 - **Edit and delete**: `PUT` (only `grant_quota`) and `DELETE /entitlements/:id`. `PUT /subscriptions/:id` does not change grants.
-- **Read**: `GET /subscriptions/:id/entitlements` returns a `subscription_grants` section, separate from `features`: the grants and their windows (quota, usage, remaining, window, status, last calculated). `GET /entitlements?grant_scopes=subscription` lists them. Subscription grants never appear as an empty feature in feature-based responses.
-- **Webhooks**: `entitlement.created`, `updated` and `deleted` are sent for subscription grants, after the surrounding transaction commits. Grant-exhausted alerts identify the grant by grant, entitlement and subscription ID.
+- **Read**: `GET /subscriptions/:id/entitlements` returns a `subscription_entitlement_grants` section, separate from `features`: the grants and their windows (quota, usage, remaining, window, status, last calculated). `GET /entitlements?grant_scopes=subscription` lists them. Subscription entitlement grants never appear as an empty feature in feature-based responses.
+- **Webhooks**: `entitlement.created`, `updated` and `deleted` are sent for subscription entitlement grants, after the surrounding transaction commits. Grant-exhausted alerts identify the grant by grant, entitlement and subscription ID.
 
 ## 7. Not in this release
 
-- Feature grant and subscription grant on the same subscription (stacking)
-- Unlimited subscription grants
-- Subscription grants on plans or addons (templates), or on a chosen group of features
-- Quantity-based subscription grants, rollover
+- Feature grant and subscription entitlement grant on the same subscription (stacking)
+- Unlimited subscription entitlement grants
+- Subscription entitlement grants on plans or addons (templates), or on a chosen group of features
+- Quantity-based subscription entitlement grants, rollover
 - Tiered, bucketed, never-resetting SUM, commitment, or true-up lines
 - Usage lines billed at a different cadence than the subscription
 - Subscriptions with a minimum spend or a commitment
@@ -183,24 +183,24 @@ The UI is part of Phase 1. It is built after the backend is done, in a separate 
 
 ## 9. Phase 2 and tech debt
 
-- **Stacking.** Allow a feature grant and a subscription grant on the same feature: the feature grant first, then the subscription grant covers the feature's spend after its crossing. Known issues to solve first:
-  - Calculate the subscription grant's share from events each time and overwrite it. Do not add up changes, which double-count on retries.
+- **Stacking.** Allow a feature grant and a subscription entitlement grant on the same feature: the feature grant first, then the subscription entitlement grant covers the feature's spend after its crossing. Known issues to solve first:
+  - Calculate the subscription entitlement grant's share from events each time and overwrite it. Do not add up changes, which double-count on retries.
   - The crossing time is when it was noticed, not when it happened.
   - Feature windows reset, so only count spend between the feature crossing and the end of that feature window.
 - **Exact crossing time.** Find the real crossing from event times instead of the evaluation time. This removes the free spend between the crossing and the evaluation.
 - **Never-resetting SUM meters.** Define what a dollar grant means for a running balance (FLE-1510 Phase 2).
-- **Alerts turned off later.** Refuse turning entitlement alerts off while subscription grants exist.
+- **Alerts turned off later.** Refuse turning entitlement alerts off while subscription entitlement grants exist.
 - **Late events for closed windows.** Recount or adjust when an event arrives for a window that is already closed.
 - **More pricing.** Support tiered prices, bucketed meters, commitments, and true-up.
 - **Query load.** Hourly parallel grants check up to about 720 overage intervals per meter at invoice time. Optimize if customers use them.
-- **Minimum spend with subscription grants.** Count the minimum after the grant ($100 minimum, $120 usage, $30 grant: bill $90, top up to $100). Build on commitments v2 (FLE-1513): it prices commitments from per-line costs we pass in, so post-grant costs can be fed to it. Also decide how grants interact with the overage factor.
-- **Wider product scope.** Unlimited subscription grants, plan or addon templates, feature groups, carrying grants over a plan change.
+- **Minimum spend with subscription entitlement grants.** Count the minimum after the grant ($100 minimum, $120 usage, $30 grant: bill $90, top up to $100). Build on commitments v2 (FLE-1513): it prices commitments from per-line costs we pass in, so post-grant costs can be fed to it. Also decide how grants interact with the overage factor.
+- **Wider product scope.** Unlimited subscription entitlement grants, plan or addon templates, feature groups, carrying grants over a plan change.
 
 ## 10. Acceptance criteria
 
 | Scenario | Result |
 |---|---|
-| Subscription grant in dollars, additive or parallel | Accepted; returned without a feature |
+| Subscription entitlement grant in dollars, additive or parallel | Accepted; returned without a feature |
 | Any request in section 5 | Refused with a clear error |
 | Subscription created with a grant that is refused | Whole request fails; no subscription is created |
 | $30 grant, $50 spend on one line | $20 charged once |
@@ -216,4 +216,4 @@ The UI is part of Phase 1. It is built after the backend is done, in a separate 
 | Duplicate events or retried evaluation | Usage and charges unchanged |
 | Preview, invoice, and usage reads at the same time | Same numbers |
 | Several subscriptions, tenants, or environments | No shared usage between them |
-| Subscription without a subscription grant | Billing unchanged |
+| Subscription without a subscription entitlement grant | Billing unchanged |

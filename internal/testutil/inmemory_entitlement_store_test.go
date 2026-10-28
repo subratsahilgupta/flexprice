@@ -8,7 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-func TestInMemoryEntitlementStore_ListSkipsSubscriptionGrantsByDefault(t *testing.T) {
+func TestInMemoryEntitlementStore_ListSkipsSubscriptionEntitlementGrantsByDefault(t *testing.T) {
 	ctx := context.Background()
 	store := NewInMemoryEntitlementStore()
 	feature := &entitlement.Entitlement{ID: "ent_feature", EntityType: types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION, EntityID: "subs_1", FeatureID: "feat_1"}
@@ -37,6 +37,6 @@ func TestInMemoryEntitlementStore_ListSkipsSubscriptionGrantsByDefault(t *testin
 	filter := types.NewNoLimitEntitlementFilter()
 	filter.GrantScopes = []types.EntitlementGrantScopeEntityType{types.EntitlementGrantScopeSubscription}
 	if got := ids(filter); len(got) != 1 || got[0] != "ent_sub" {
-		t.Fatalf("subscription-scope list = %v; want only the subscription grant", got)
+		t.Fatalf("subscription-scope list = %v; want only the subscription entitlement grant", got)
 	}
 }

@@ -165,18 +165,18 @@ func (s *subscriptionService) resolvePlanChange(
 		return nil, err
 	}
 
-	if err := s.validatePlanChangeSubscriptionGrant(ctx, r, toPlan); err != nil {
+	if err := s.validatePlanChangeSubscriptionEntitlementGrant(ctx, r, toPlan); err != nil {
 		return nil, err
 	}
 
 	return r, nil
 }
 
-// validatePlanChangeSubscriptionGrant refuses a plan change that would break the subscription grant: a
+// validatePlanChangeSubscriptionEntitlementGrant refuses a plan change that would break the subscription entitlement grant: a
 // target plan line or feature entitlement grant it cannot cover, or a period reset that would cut its window.
-func (s *subscriptionService) validatePlanChangeSubscriptionGrant(ctx context.Context, r *planChangeRequest, toPlan *dto.PlanResponse) error {
+func (s *subscriptionService) validatePlanChangeSubscriptionEntitlementGrant(ctx context.Context, r *planChangeRequest, toPlan *dto.PlanResponse) error {
 	grants := &entitlementGrantService{ServiceParams: s.ServiceParams}
-	granted, err := grants.hasSubscriptionGrant(ctx, r.currentSub.ID)
+	granted, err := grants.hasSubscriptionEntitlementGrant(ctx, r.currentSub.ID)
 	if err != nil {
 		return err
 	}
@@ -184,13 +184,13 @@ func (s *subscriptionService) validatePlanChangeSubscriptionGrant(ctx context.Co
 		return nil
 	}
 	if r.anchorAtEffect {
-		return ierr.NewError("the billing period cannot be reset on a subscription with a subscription grant").
+		return ierr.NewError("the billing period cannot be reset on a subscription with a subscription entitlement grant").
 			WithHint("Use billing_period_behaviour='unchanged'. A reset would cut the grant's current window short.").
 			WithReportableDetails(map[string]any{"subscription_id": r.currentSub.ID}).
 			Mark(ierr.ErrValidation)
 	}
 
-	var change subscriptionGrantChange
+	var change subscriptionEntitlementGrantChange
 	for _, e := range r.closingLineItems {
 		ended := *e.LineItem
 		ended.EndDate = r.effectiveAt

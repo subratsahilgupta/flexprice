@@ -2863,7 +2863,7 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 
 	if req.HideZeroChargesLineItems {
 		invReq.LineItems = lo.Filter(invReq.LineItems, func(item dto.CreateInvoiceLineItemRequest, _ int) bool {
-			return !item.Amount.IsZero() || item.Metadata[metadataKeySubscriptionGrantAllowance] != ""
+			return !item.Amount.IsZero() || item.Metadata[metadataKeySubscriptionEntitlementGrantAllowance] != ""
 		})
 	}
 
@@ -2938,7 +2938,7 @@ func (s *invoiceService) GetInternalPreviewInvoice(ctx context.Context, req dto.
 
 	if req.HideZeroChargesLineItems {
 		invReq.LineItems = lo.Filter(invReq.LineItems, func(item dto.CreateInvoiceLineItemRequest, _ int) bool {
-			return !item.Amount.IsZero() || item.Metadata[metadataKeySubscriptionGrantAllowance] != ""
+			return !item.Amount.IsZero() || item.Metadata[metadataKeySubscriptionEntitlementGrantAllowance] != ""
 		})
 	}
 

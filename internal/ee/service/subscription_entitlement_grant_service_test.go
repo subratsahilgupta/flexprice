@@ -9,10 +9,10 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrant_GetSkipsFeatureLookup() {
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrant_GetSkipsFeatureLookup() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("api-get")
-	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 50, ""))
+	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 50, ""))
 	s.Require().NoError(err)
 
 	got, err := s.entService.GetEntitlement(s.GetContext(), created.ID)
@@ -21,14 +21,14 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_GetSkipsFeatureLookup() {
 	s.Equal(types.EntitlementGrantScopeSubscription, got.GrantScope)
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrant_ReadSectionShowsLedger() {
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrant_ReadSectionShowsLedger() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("api-read")
-	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 50, ""))
+	created, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 50, ""))
 	s.Require().NoError(err)
 	window := s.seedEvaluatedSubGrantWindow("eg-api-read", fx, fx.sub.CurrentPeriodStart, fx.sub.CurrentPeriodEnd, 50, 20)
 
-	view, err := (&entitlementGrantService{ServiceParams: s.buildServiceParams()}).subscriptionGrantsView(s.GetContext(), fx.sub)
+	view, err := (&entitlementGrantService{ServiceParams: s.buildServiceParams()}).subscriptionEntitlementGrantsView(s.GetContext(), fx.sub)
 	s.Require().NoError(err)
 	s.Require().NotNil(view)
 	s.Require().Len(view.Entitlements, 1)
@@ -41,15 +41,15 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_ReadSectionShowsLedger() {
 	s.True(allowance.IsActive)
 
 	plain := s.newSubGrantSubscription("api-read-plain")
-	none, err := (&entitlementGrantService{ServiceParams: s.buildServiceParams()}).subscriptionGrantsView(s.GetContext(), plain.sub)
+	none, err := (&entitlementGrantService{ServiceParams: s.buildServiceParams()}).subscriptionEntitlementGrantsView(s.GetContext(), plain.sub)
 	s.Require().NoError(err)
-	s.Nil(none, "no section without a subscription grant")
+	s.Nil(none, "no section without a subscription entitlement grant")
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrant_RefusesPlanChangesThatBreakIt() {
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrant_RefusesPlanChangesThatBreakIt() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("api-plan")
-	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 50, ""))
+	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 50, ""))
 	s.Require().NoError(err)
 	ctx := s.GetContext()
 
@@ -86,10 +86,10 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_RefusesPlanChangesThatBrea
 }
 
 // Bulk price create runs the same guard as a single create.
-func (s *EntitlementGrantSuite) TestSubscriptionGrantGuard_BulkPriceCreate() {
+func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantGuard_BulkPriceCreate() {
 	s.enableEntitlementAlerts()
 	fx := s.newSubGrantSubscription("api-bulk-price")
-	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(fx.sub.ID, 50, ""))
+	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(fx.sub.ID, 50, ""))
 	s.Require().NoError(err)
 
 	_, err = NewPriceService(s.buildServiceParams()).CreateBulkPrice(s.GetContext(), dto.CreateBulkPriceRequest{
@@ -115,7 +115,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantGuard_BulkPriceCreate() {
 }
 
 // The test DB has no real transactions, so this checks the refusal; Postgres rolls the subscription back.
-func (s *SubscriptionServiceSuite) TestCreateSubscription_RefusesIncompatibleSubscriptionGrant() {
+func (s *SubscriptionServiceSuite) TestCreateSubscription_RefusesIncompatibleSubscriptionEntitlementGrant() {
 	ctx := s.GetContext()
 	cfg := s.GetConfig()
 	prev := cfg.UsageAlerts
@@ -130,7 +130,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_RefusesIncompatibleSub
 		BaseModel:     types.GetDefaultBaseModel(ctx),
 	}))
 
-	// The test plan carries a tiered usage price, which a subscription grant cannot cover.
+	// The test plan carries a tiered usage price, which a subscription entitlement grant cannot cover.
 	_, err := s.service.CreateSubscription(ctx, dto.CreateSubscriptionRequest{
 		CustomerID:         s.testData.customer.ID,
 		PlanID:             s.testData.plan.ID,
@@ -140,7 +140,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_RefusesIncompatibleSub
 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 		BillingPeriodCount: 1,
 		BillingCycle:       types.BillingCycleAnniversary,
-		SubscriptionGrants: []dto.CreateSubscriptionGrantRequest{{
+		SubscriptionEntitlementGrants: []dto.CreateSubscriptionEntitlementGrantRequest{{
 			GrantQuota:        lo.ToPtr(decimal.NewFromInt(50)),
 			GrantDurationUnit: types.EntitlementGrantDurationUnitSubscriptionPeriod,
 		}},
@@ -159,7 +159,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_RefusesGrantsWithCommi
 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 		BillingPeriodCount: 1,
 		BillingCycle:       types.BillingCycleAnniversary,
-		SubscriptionGrants: []dto.CreateSubscriptionGrantRequest{{
+		SubscriptionEntitlementGrants: []dto.CreateSubscriptionEntitlementGrantRequest{{
 			GrantQuota:        lo.ToPtr(decimal.NewFromInt(50)),
 			GrantDurationUnit: types.EntitlementGrantDurationUnitSubscriptionPeriod,
 		}},

@@ -33,8 +33,8 @@ type EntitlementGrantService interface {
 	// built during the pass so the evaluator can reuse them.
 	EnsureGrantsForSubscriptions(ctx context.Context, cust *customer.Customer, subs []*subscription.Subscription, at time.Time) ([]*entitlementgrant.EntitlementGrant, *grantEvalMeta, error)
 	GrantStateByFeature(ctx context.Context, sub *subscription.Subscription, at time.Time) (map[string]*dto.GrantState, error)
-	// SubscriptionGrantState is the ledger of the subscription's own grants, or nil when it has none.
-	SubscriptionGrantState(ctx context.Context, sub *subscription.Subscription, at time.Time) (*dto.GrantState, error)
+	// SubscriptionEntitlementGrantState is the ledger of the subscription's own grants, or nil when it has none.
+	SubscriptionEntitlementGrantState(ctx context.Context, sub *subscription.Subscription, at time.Time) (*dto.GrantState, error)
 
 	// LiveGrantsByFeature is the subscription's open windows at `at`, keyed by feature.
 	LiveGrantsByFeature(ctx context.Context, sub *subscription.Subscription, at time.Time) (map[string][]*entitlementgrant.EntitlementGrant, error)
@@ -505,7 +505,7 @@ func (s *entitlementGrantService) EnsureGrantsForSubscriptions(
 		return nil, nil, err
 	}
 
-	subGrantECsBySub, err := s.subscriptionGrantConfigsBySub(ctx, subs)
+	subGrantECsBySub, err := s.subscriptionEntitlementGrantConfigsBySub(ctx, subs)
 	if err != nil {
 		return nil, nil, err
 	}

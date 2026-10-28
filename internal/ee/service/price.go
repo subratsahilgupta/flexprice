@@ -114,7 +114,7 @@ func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceReque
 		}
 	}
 
-	if err := s.validateNewPriceSubscriptionGrant(ctx, p); err != nil {
+	if err := s.validateNewPriceSubscriptionEntitlementGrant(ctx, p); err != nil {
 		return nil, err
 	}
 
@@ -404,7 +404,7 @@ func (s *priceService) CreateBulkPrice(ctx context.Context, req dto.CreateBulkPr
 		}
 
 		for _, p := range prices {
-			if err := s.validateNewPriceSubscriptionGrant(txCtx, p); err != nil {
+			if err := s.validateNewPriceSubscriptionEntitlementGrant(txCtx, p); err != nil {
 				return err
 			}
 		}
@@ -1858,9 +1858,9 @@ func (s *priceService) validateBucketedPriceAgainstEntitlements(ctx context.Cont
 	return nil
 }
 
-// validateNewPriceSubscriptionGrant refuses a plan or addon usage price that would break a subscription
+// validateNewPriceSubscriptionEntitlementGrant refuses a plan or addon usage price that would break a subscription
 // grant on a subscription using that plan or addon.
-func (s *priceService) validateNewPriceSubscriptionGrant(ctx context.Context, p *price.Price) error {
+func (s *priceService) validateNewPriceSubscriptionEntitlementGrant(ctx context.Context, p *price.Price) error {
 	if p.Type != types.PRICE_TYPE_USAGE || (p.EntityType != types.PRICE_ENTITY_TYPE_PLAN && p.EntityType != types.PRICE_ENTITY_TYPE_ADDON) {
 		return nil
 	}
@@ -1870,17 +1870,17 @@ func (s *priceService) validateNewPriceSubscriptionGrant(ctx context.Context, p 
 
 // changeForNewPrice is how a new plan or addon price lands on a subscription: one line, or nothing when the
 // price's cadence or currency keeps it off that subscription.
-func changeForNewPrice(p *price.Price) func(sub *subscription.Subscription) subscriptionGrantChange {
-	return func(sub *subscription.Subscription) subscriptionGrantChange {
+func changeForNewPrice(p *price.Price) func(sub *subscription.Subscription) subscriptionEntitlementGrantChange {
+	return func(sub *subscription.Subscription) subscriptionEntitlementGrantChange {
 		candidates := []*dto.PriceResponse{{Price: p}}
 		lands := filterValidPricesForSubscription(candidates, sub, nil)
 		if p.EntityType == types.PRICE_ENTITY_TYPE_ADDON {
 			lands = filterAddonPricesForSubscription(candidates, sub)
 		}
 		if len(lands) == 0 {
-			return subscriptionGrantChange{}
+			return subscriptionEntitlementGrantChange{}
 		}
-		return subscriptionGrantChange{
+		return subscriptionEntitlementGrantChange{
 			items:  []*subscription.SubscriptionLineItem{pendingLineForNewPrice(sub, p)},
 			prices: []*price.Price{p},
 		}

@@ -19221,7 +19221,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.EntitlementEntityType"
                 },
                 "feature_id": {
-                    "description": "Required, except on a subscription grant (entity_type SUBSCRIPTION with grant config), which has no feature.",
+                    "description": "Required, except on a subscription entitlement grant (entity_type SUBSCRIPTION with grant config), which has no feature.",
                     "type": "string"
                 },
                 "feature_type": {
@@ -20065,7 +20065,7 @@ const docTemplate = `{
                 }
             }
         },
-        "CreateSubscriptionGrantRequest": {
+        "CreateSubscriptionEntitlementGrantRequest": {
             "type": "object",
             "required": [
                 "grant_duration_unit",
@@ -20375,11 +20375,11 @@ const docTemplate = `{
                         "$ref": "#/definitions/SubscriptionCouponInput"
                     }
                 },
-                "subscription_grants": {
-                    "description": "SubscriptionGrants are dollar entitlement grants shared by every usage line, created with the subscription.",
+                "subscription_entitlement_grants": {
+                    "description": "SubscriptionEntitlementGrants are dollar entitlement grants shared by every usage line, created with the subscription.",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/CreateSubscriptionGrantRequest"
+                        "$ref": "#/definitions/CreateSubscriptionEntitlementGrantRequest"
                     }
                 },
                 "subscription_status": {
@@ -22811,11 +22811,11 @@ const docTemplate = `{
                         "$ref": "#/definitions/SubscriptionCouponInput"
                     }
                 },
-                "subscription_grants": {
-                    "description": "SubscriptionGrants are dollar entitlement grants shared by every usage line, created with the subscription.",
+                "subscription_entitlement_grants": {
+                    "description": "SubscriptionEntitlementGrants are dollar entitlement grants shared by every usage line, created with the subscription.",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/CreateSubscriptionGrantRequest"
+                        "$ref": "#/definitions/CreateSubscriptionEntitlementGrantRequest"
                     }
                 },
                 "tax_rate_overrides": {
@@ -26454,6 +26454,20 @@ const docTemplate = `{
                 }
             }
         },
+        "SubscriptionEntitlementGrantsResponse": {
+            "type": "object",
+            "properties": {
+                "entitlements": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/EntitlementResponse"
+                    }
+                },
+                "grant_state": {
+                    "$ref": "#/definitions/GrantState"
+                }
+            }
+        },
         "SubscriptionEntitlementsResponse": {
             "type": "object",
             "properties": {
@@ -26466,25 +26480,11 @@ const docTemplate = `{
                 "plan_id": {
                     "type": "string"
                 },
-                "subscription_grants": {
-                    "$ref": "#/definitions/SubscriptionGrantsResponse"
+                "subscription_entitlement_grants": {
+                    "$ref": "#/definitions/SubscriptionEntitlementGrantsResponse"
                 },
                 "subscription_id": {
                     "type": "string"
-                }
-            }
-        },
-        "SubscriptionGrantsResponse": {
-            "type": "object",
-            "properties": {
-                "entitlements": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/EntitlementResponse"
-                    }
-                },
-                "grant_state": {
-                    "$ref": "#/definitions/GrantState"
                 }
             }
         },
@@ -31707,7 +31707,7 @@ const docTemplate = `{
                     }
                 },
                 "grant_scopes": {
-                    "description": "GrantScopes selects entitlements by grant scope. Empty means feature only, so\nsubscription grants, which have no feature, never reach feature-based reads.",
+                    "description": "GrantScopes selects entitlements by grant scope. Empty means feature only, so\nsubscription entitlement grants, which have no feature, never reach feature-based reads.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/types.EntitlementGrantScopeEntityType"

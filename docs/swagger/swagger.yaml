@@ -2616,8 +2616,8 @@ definitions:
       entity_type:
         $ref: '#/definitions/types.EntitlementEntityType'
       feature_id:
-        description: Required, except on a subscription grant (entity_type SUBSCRIPTION
-          with grant config), which has no feature.
+        description: Required, except on a subscription entitlement grant (entity_type
+          SUBSCRIPTION with grant config), which has no feature.
         type: string
       feature_type:
         $ref: '#/definitions/types.FeatureType'
@@ -3262,7 +3262,7 @@ definitions:
     - interval
     - job_config
     type: object
-  CreateSubscriptionGrantRequest:
+  CreateSubscriptionEntitlementGrantRequest:
     properties:
       aggregation_mode:
         $ref: '#/definitions/types.EntitlementAggregationMode'
@@ -3494,11 +3494,11 @@ definitions:
         items:
           $ref: '#/definitions/SubscriptionCouponInput'
         type: array
-      subscription_grants:
-        description: SubscriptionGrants are dollar entitlement grants shared by every
-          usage line, created with the subscription.
+      subscription_entitlement_grants:
+        description: SubscriptionEntitlementGrants are dollar entitlement grants shared
+          by every usage line, created with the subscription.
         items:
-          $ref: '#/definitions/CreateSubscriptionGrantRequest'
+          $ref: '#/definitions/CreateSubscriptionEntitlementGrantRequest'
         type: array
       subscription_status:
         allOf:
@@ -5293,11 +5293,11 @@ definitions:
         items:
           $ref: '#/definitions/SubscriptionCouponInput'
         type: array
-      subscription_grants:
-        description: SubscriptionGrants are dollar entitlement grants shared by every
-          usage line, created with the subscription.
+      subscription_entitlement_grants:
+        description: SubscriptionEntitlementGrants are dollar entitlement grants shared
+          by every usage line, created with the subscription.
         items:
-          $ref: '#/definitions/CreateSubscriptionGrantRequest'
+          $ref: '#/definitions/CreateSubscriptionEntitlementGrantRequest'
         type: array
       tax_rate_overrides:
         items:
@@ -7891,6 +7891,15 @@ definitions:
     required:
     - coupon_code
     type: object
+  SubscriptionEntitlementGrantsResponse:
+    properties:
+      entitlements:
+        items:
+          $ref: '#/definitions/EntitlementResponse'
+        type: array
+      grant_state:
+        $ref: '#/definitions/GrantState'
+    type: object
   SubscriptionEntitlementsResponse:
     properties:
       features:
@@ -7899,19 +7908,10 @@ definitions:
         type: array
       plan_id:
         type: string
-      subscription_grants:
-        $ref: '#/definitions/SubscriptionGrantsResponse'
+      subscription_entitlement_grants:
+        $ref: '#/definitions/SubscriptionEntitlementGrantsResponse'
       subscription_id:
         type: string
-    type: object
-  SubscriptionGrantsResponse:
-    properties:
-      entitlements:
-        items:
-          $ref: '#/definitions/EntitlementResponse'
-        type: array
-      grant_state:
-        $ref: '#/definitions/GrantState'
     type: object
   SubscriptionInheritanceConfig:
     properties:
@@ -11710,7 +11710,7 @@ definitions:
       grant_scopes:
         description: |-
           GrantScopes selects entitlements by grant scope. Empty means feature only, so
-          subscription grants, which have no feature, never reach feature-based reads.
+          subscription entitlement grants, which have no feature, never reach feature-based reads.
         items:
           $ref: '#/definitions/types.EntitlementGrantScopeEntityType'
         type: array
