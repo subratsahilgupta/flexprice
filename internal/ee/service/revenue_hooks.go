@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
+	"github.com/samber/lo"
 )
 
 // notifyInvoiceFinalized emits the finalized webhook and kicks the revenue-facts
@@ -38,6 +39,12 @@ func postInvoiceJournal(ctx context.Context, params ServiceParams, invoiceID str
 		inv, err := params.InvoiceRepo.Get(ctx, invoiceID)
 		if err != nil {
 			return err
+		}
+		// The subscription sync runs concurrently and may not have created the lines' POBs yet.
+		if subscriptionID := lo.FromPtr(inv.SubscriptionID); subscriptionID != "" {
+			if err := syncSubscriptionRevRec(ctx, params, subscriptionID); err != nil {
+				return err
+			}
 		}
 		return params.JournalService.PostInvoice(ctx, inv)
 	})
@@ -122,19 +129,24 @@ func asyncRevenueFactsUpdate(ctx context.Context, params ServiceParams, op, invo
 // Every subscription lifecycle site calls this one helper.
 func NotifySubscriptionChanged(ctx context.Context, params ServiceParams, subscriptionID string) {
 	asyncRevRecUpdate(ctx, params, "subscription sync", subscriptionID, func(ctx context.Context) error {
-		sub, _, err := params.SubRepo.GetWithLineItems(ctx, subscriptionID)
-		if err != nil {
-			return err
-		}
-
-		c, err := params.ContractService.SyncForSubscription(ctx, sub)
-		if err != nil {
-			return err
-		}
-
-		_, err = params.POBService.SyncForSubscription(ctx, sub, c)
-		return err
+		return syncSubscriptionRevRec(ctx, params, subscriptionID)
 	})
+}
+
+// syncSubscriptionRevRec creates or updates the subscription's contract and POBs; safe to run concurrently.
+func syncSubscriptionRevRec(ctx context.Context, params ServiceParams, subscriptionID string) error {
+	sub, _, err := params.SubRepo.GetWithLineItems(ctx, subscriptionID)
+	if err != nil {
+		return err
+	}
+
+	c, err := params.ContractService.SyncForSubscription(ctx, sub)
+	if err != nil {
+		return err
+	}
+
+	_, err = params.POBService.SyncForSubscription(ctx, sub, c)
+	return err
 }
 
 // notifySubscriptionArchived archives the revenue recognition records of an abandoned draft subscription.
