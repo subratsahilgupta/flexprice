@@ -381,7 +381,11 @@ func (s *performanceObligationService) resolveForLineItem(ctx context.Context, l
 
 // predecessorPOB returns the POB of the line item this one replaced, if it is in the same contract and earns the same way.
 func (s *performanceObligationService) predecessorPOB(ctx context.Context, li *subscription.SubscriptionLineItem, c *domainContract.Contract) (*domainPOB.PerformanceObligation, error) {
-	predecessorID := li.Metadata[types.SubscriptionLineItemMetadataKeyPredecessorID]
+	// Line items versioned before the lineage columns existed hold the pointer in metadata.
+	predecessorID := lo.FromPtr(li.PredecessorLineItemID)
+	if predecessorID == "" {
+		predecessorID = li.Metadata[types.SubscriptionLineItemMetadataKeyPredecessorID]
+	}
 	if predecessorID == "" {
 		return nil, nil
 	}

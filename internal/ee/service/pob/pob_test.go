@@ -127,7 +127,7 @@ func (s *POBServiceSuite) addLineItem(priceType types.PriceType, start time.Time
 		BaseModel:      types.GetDefaultBaseModel(s.ctx),
 	}
 	if predecessorID != "" {
-		li.Metadata[types.SubscriptionLineItemMetadataKeyPredecessorID] = predecessorID
+		li.PredecessorLineItemID = lo.ToPtr(predecessorID)
 	}
 	s.sub.LineItems = append(s.sub.LineItems, li)
 	return li
@@ -176,6 +176,18 @@ func (s *POBServiceSuite) TestSuccessorJoinsPredecessorWithSameMethod() {
 	associations, err := s.pobRepo.ListAssociations(s.ctx, s.pobOf(predecessor.ID).ID())
 	s.Require().NoError(err)
 	s.Len(associations, 2)
+}
+
+func (s *POBServiceSuite) TestSuccessorJoinsPredecessorFromLegacyMetadata() {
+	predecessor := s.addLineItem(types.PRICE_TYPE_FIXED, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), "")
+	successor := s.addLineItem(types.PRICE_TYPE_FIXED, time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), "")
+	successor.Metadata[types.SubscriptionLineItemMetadataKeyPredecessorID] = predecessor.ID
+
+	_, err := s.pobService.SyncForSubscription(s.ctx, s.sub, s.contract)
+	s.Require().NoError(err)
+
+	s.Equal(1, s.countPOBs())
+	s.Equal(s.pobOf(predecessor.ID).ID(), s.pobOf(successor.ID).ID())
 }
 
 func (s *POBServiceSuite) TestSuccessorWithDifferentMethodGetsNewPOB() {
