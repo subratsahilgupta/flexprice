@@ -295,7 +295,7 @@ func (s *entitlementGrantService) validateCatalogChange(
 	entityID string,
 	change func(sub *subscription.Subscription) subscriptionEntitlementGrantChange,
 ) error {
-	subs, err := s.subscriptionsWithScopedEntitlementOn(ctx, entityType, entityID)
+	subs, err := s.subscriptionsWithSubscriptionScopedEntitlementOn(ctx, entityType, entityID)
 	if err != nil {
 		return err
 	}
@@ -307,9 +307,9 @@ func (s *entitlementGrantService) validateCatalogChange(
 	return nil
 }
 
-// subscriptionsWithScopedEntitlementOn returns the live subscriptions on the plan or addon that have a published,
+// subscriptionsWithSubscriptionScopedEntitlementOn returns the live subscriptions on the plan or addon that have a published,
 // subscription-scoped entitlement which has not ended.
-func (s *entitlementGrantService) subscriptionsWithScopedEntitlementOn(ctx context.Context, entityType types.EntitlementEntityType, entityID string) ([]*subscription.Subscription, error) {
+func (s *entitlementGrantService) subscriptionsWithSubscriptionScopedEntitlementOn(ctx context.Context, entityType types.EntitlementEntityType, entityID string) ([]*subscription.Subscription, error) {
 	if s.EntitlementRepo == nil {
 		return nil, nil
 	}

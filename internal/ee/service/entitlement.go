@@ -198,7 +198,7 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 		if err := s.assertSingleContributor(txCtx, e); err != nil {
 			return err
 		}
-		if err := s.validateFeatureGrantAgainstScopedEntitlements(txCtx, e); err != nil {
+		if err := s.validateFeatureGrantAgainstSubscriptionScopedEntitlements(txCtx, e); err != nil {
 			return err
 		}
 
@@ -409,7 +409,7 @@ func (s *entitlementService) CreateBulkEntitlement(ctx context.Context, req dto.
 		}
 
 		for _, e := range entitlements {
-			if err := s.validateFeatureGrantAgainstScopedEntitlements(txCtx, e); err != nil {
+			if err := s.validateFeatureGrantAgainstSubscriptionScopedEntitlements(txCtx, e); err != nil {
 				return err
 			}
 		}
@@ -834,7 +834,7 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 		if err := s.assertSingleContributor(txCtx, existing); err != nil {
 			return err
 		}
-		if err := s.validateFeatureGrantAgainstScopedEntitlements(txCtx, existing); err != nil {
+		if err := s.validateFeatureGrantAgainstSubscriptionScopedEntitlements(txCtx, existing); err != nil {
 			return err
 		}
 
@@ -1145,9 +1145,9 @@ func (s *entitlementService) entitlementAlertsEnabled(ctx context.Context) (bool
 	return cfg.IsAlertEnabled(), nil
 }
 
-// validateFeatureGrantAgainstScopedEntitlements refuses a feature entitlement grant that would reach a subscription
+// validateFeatureGrantAgainstSubscriptionScopedEntitlements refuses a feature entitlement grant that would reach a subscription
 // with a subscription-scoped entitlement, directly or through its plan or addon: one grant per charge.
-func (s *entitlementService) validateFeatureGrantAgainstScopedEntitlements(ctx context.Context, e *entitlement.Entitlement) error {
+func (s *entitlementService) validateFeatureGrantAgainstSubscriptionScopedEntitlements(ctx context.Context, e *entitlement.Entitlement) error {
 	if !isFeatureEntitlementGrant(e) {
 		return nil
 	}
@@ -1163,7 +1163,7 @@ func (s *entitlementService) validateFeatureGrantAgainstScopedEntitlements(ctx c
 			subIDs = []string{e.EntityID}
 		}
 	case types.ENTITLEMENT_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_ADDON:
-		subs, err := grants.subscriptionsWithScopedEntitlementOn(ctx, e.EntityType, e.EntityID)
+		subs, err := grants.subscriptionsWithSubscriptionScopedEntitlementOn(ctx, e.EntityType, e.EntityID)
 		if err != nil {
 			return err
 		}
