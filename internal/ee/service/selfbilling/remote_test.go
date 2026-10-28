@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -52,6 +54,7 @@ type fakeCloud struct {
 	metadata   map[string]map[string]string // customer id -> metadata
 	subs       map[string][]map[string]any  // external_id -> subscriptions
 	plans      map[string]map[string]any
+	prices     map[string]map[string]any
 	subDetails map[string]map[string]any
 	requests   []string
 	searches   []map[string]any
@@ -78,6 +81,7 @@ func newFakeCloud(existing map[string]string) *fakeCloud {
 		subs:       map[string][]map[string]any{},
 		plans:      map[string]map[string]any{"plan_1": {"id": "plan_1", "name": "Self Serve", "prices": []any{}}},
 		subDetails: map[string]map[string]any{},
+		prices:     map[string]map[string]any{},
 		failPaths:  map[string]cannedResponse{},
 		checkouts:  map[string]cannedResponse{},
 	}
@@ -116,10 +120,38 @@ func (f *fakeCloud) handler(t *testing.T) http.Handler {
 				_, _ = w.Write([]byte(notFoundBody))
 				return
 			}
-			all := f.subs[ext]
-			offset, limit := int(body["offset"].(float64)), int(body["limit"].(float64))
-			start, end := min(offset, len(all)), min(offset+limit, len(all))
-			_ = json.NewEncoder(w).Encode(map[string]any{"items": all[start:end]})
+			statuses := make(map[string]bool)
+			for _, status := range body["subscription_status"].([]any) {
+				statuses[status.(string)] = true
+			}
+
+			var matching []map[string]any
+			for _, sub := range f.subs[ext] {
+				if statuses[fmt.Sprint(sub["subscription_status"])] {
+					matching = append(matching, sub)
+				}
+			}
+
+			createdAt := func(row map[string]any) time.Time {
+				if value, ok := row["created_at"].(time.Time); ok {
+					return value
+				}
+
+				value, _ := time.Parse(time.RFC3339Nano, fmt.Sprint(row["created_at"]))
+				return value
+			}
+
+			sort.SliceStable(matching, func(i, j int) bool {
+				left, right := createdAt(matching[i]), createdAt(matching[j])
+				if left.Equal(right) {
+					return fmt.Sprint(matching[i]["id"]) > fmt.Sprint(matching[j]["id"])
+				}
+
+				return left.After(right)
+			})
+
+			limit := int(body["limit"].(float64))
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": matching[:min(limit, len(matching))]})
 
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/plans/"):
 			plan, ok := f.plans[strings.TrimPrefix(r.URL.Path, "/plans/")]
@@ -130,6 +162,16 @@ func (f *fakeCloud) handler(t *testing.T) http.Handler {
 			}
 			_ = json.NewEncoder(w).Encode(plan)
 
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/prices/"):
+			p, ok := f.prices[strings.TrimPrefix(r.URL.Path, "/prices/")]
+			if !ok {
+				t.Errorf("unexpected price lookup %s", r.URL.Path)
+				w.WriteHeader(http.StatusNotImplemented)
+				return
+			}
+
+			_ = json.NewEncoder(w).Encode(p)
+
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/subscriptions/") && strings.HasSuffix(r.URL.Path, "/v2"):
 			assert.Equal(t, "plan,subscription_line_items.prices", r.URL.Query().Get("expand"))
 			sub, ok := f.subDetails[strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/subscriptions/"), "/v2")]
@@ -138,6 +180,14 @@ func (f *fakeCloud) handler(t *testing.T) http.Handler {
 				w.WriteHeader(http.StatusNotImplemented)
 				return
 			}
+			for _, rows := range f.subs {
+				for _, row := range rows {
+					if row["id"] == sub["id"] {
+						row["subscription_status"] = sub["subscription_status"]
+					}
+				}
+			}
+
 			_ = json.NewEncoder(w).Encode(sub)
 
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, pathCustomerByExternalID) && strings.HasSuffix(r.URL.Path, pathSubscriptionsSuffix):
@@ -193,6 +243,13 @@ func (f *fakeCloud) handler(t *testing.T) http.Handler {
 			_, _ = w.Write([]byte(f.modify.body))
 
 		case r.Method == http.MethodPost && r.URL.Path == pathInvoiceSearch:
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if _, ok := f.byExtID[fmt.Sprint(body["external_customer_id"])]; !ok {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(notFoundBody))
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"items": f.invoices})
 
 		case r.Method == http.MethodGet && r.URL.Path == pathCustomerUsage:
@@ -392,9 +449,19 @@ func TestLatestSubscription(t *testing.T) {
 
 			got, err := c.LatestSubscription(context.Background(), "in:t1")
 			require.NoError(t, err)
-			require.Len(t, f.searches, 1)
+			wantSearches := 1
+			if tt.wantID == "" || tt.wantStatus == cancelled {
+				wantSearches = 2
+			}
+
+			require.Len(t, f.searches, wantSearches)
 			assert.Equal(t, "in:t1", f.searches[0]["external_customer_id"])
-			assert.Len(t, f.searches[0]["subscription_status"], len(types.AllSubscriptionStatuses()))
+			assert.ElementsMatch(t, []any{"active", "trialing", "incomplete", "paused", "draft"}, f.searches[0]["subscription_status"])
+			assert.EqualValues(t, 1, f.searches[0]["limit"])
+			if wantSearches == 2 {
+				assert.Equal(t, []any{"cancelled"}, f.searches[1]["subscription_status"])
+				assert.EqualValues(t, 1, f.searches[1]["limit"])
+			}
 			assert.NotContains(t, f.searches[0], "plan_id")
 
 			if tt.wantID == "" {

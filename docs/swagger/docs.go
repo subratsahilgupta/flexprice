@@ -25625,9 +25625,6 @@ const docTemplate = `{
                     "description": "Amount is a unit rate; tiered charges use tiers instead.",
                     "type": "string"
                 },
-                "billing_cadence": {
-                    "$ref": "#/definitions/types.BillingCadence"
-                },
                 "billing_model": {
                     "$ref": "#/definitions/types.BillingModel"
                 },
@@ -25639,12 +25636,6 @@ const docTemplate = `{
                 },
                 "bucket_size": {
                     "$ref": "#/definitions/types.WindowSize"
-                },
-                "commitment": {
-                    "$ref": "#/definitions/SelfBillingCommitment"
-                },
-                "conversion_rate": {
-                    "type": "string"
                 },
                 "currency": {
                     "type": "string"
@@ -25662,9 +25653,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "meter_id": {
-                    "type": "string"
-                },
-                "min_quantity": {
                     "type": "string"
                 },
                 "price_id": {
@@ -25766,38 +25754,6 @@ const docTemplate = `{
                 }
             }
         },
-        "SelfBillingCommitment": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "type": "string"
-                },
-                "duration": {
-                    "$ref": "#/definitions/types.BillingPeriod"
-                },
-                "overage_factor": {
-                    "type": "string"
-                },
-                "quantity": {
-                    "type": "string"
-                },
-                "time_buckets": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/types.TimeOfDayBucket"
-                    }
-                },
-                "true_up_enabled": {
-                    "type": "boolean"
-                },
-                "type": {
-                    "$ref": "#/definitions/types.CommitmentType"
-                },
-                "windowed": {
-                    "type": "boolean"
-                }
-            }
-        },
         "SelfBillingInvoice": {
             "type": "object",
             "properties": {
@@ -25835,9 +25791,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/SelfBillingChargeResponse"
                     }
-                },
-                "commitment": {
-                    "$ref": "#/definitions/SelfBillingCommitment"
                 },
                 "description": {
                     "type": "string"

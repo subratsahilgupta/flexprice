@@ -7316,8 +7316,6 @@ definitions:
       amount:
         description: Amount is a unit rate; tiered charges use tiers instead.
         type: string
-      billing_cadence:
-        $ref: '#/definitions/types.BillingCadence'
       billing_model:
         $ref: '#/definitions/types.BillingModel'
       billing_period:
@@ -7326,10 +7324,6 @@ definitions:
         type: integer
       bucket_size:
         $ref: '#/definitions/types.WindowSize'
-      commitment:
-        $ref: '#/definitions/SelfBillingCommitment'
-      conversion_rate:
-        type: string
       currency:
         type: string
       display_name:
@@ -7341,8 +7335,6 @@ definitions:
       meter_display_name:
         type: string
       meter_id:
-        type: string
-      min_quantity:
         type: string
       price_id:
         type: string
@@ -7412,27 +7404,6 @@ definitions:
       url:
         type: string
     type: object
-  SelfBillingCommitment:
-    properties:
-      amount:
-        type: string
-      duration:
-        $ref: '#/definitions/types.BillingPeriod'
-      overage_factor:
-        type: string
-      quantity:
-        type: string
-      time_buckets:
-        items:
-          $ref: '#/definitions/types.TimeOfDayBucket'
-        type: array
-      true_up_enabled:
-        type: boolean
-      type:
-        $ref: '#/definitions/types.CommitmentType'
-      windowed:
-        type: boolean
-    type: object
   SelfBillingInvoice:
     properties:
       currency:
@@ -7458,8 +7429,6 @@ definitions:
         items:
           $ref: '#/definitions/SelfBillingChargeResponse'
         type: array
-      commitment:
-        $ref: '#/definitions/SelfBillingCommitment'
       description:
         type: string
       id:

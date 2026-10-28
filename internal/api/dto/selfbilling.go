@@ -67,11 +67,10 @@ type SelfBillingSummaryResponse struct {
 
 // SelfBillingPlanResponse describes subscribed terms, or the configured offer when there is no current subscription.
 type SelfBillingPlanResponse struct {
-	ID          string                      `json:"id"`
-	Name        string                      `json:"name"`
-	Description string                      `json:"description"`
-	Charges     []SelfBillingChargeResponse `json:"charges"`
-	Commitment  *SelfBillingCommitment      `json:"commitment,omitempty"`
+	ID          string                       `json:"id"`
+	Name        string                       `json:"name"`
+	Description string                       `json:"description"`
+	Charges     []*SelfBillingChargeResponse `json:"charges"`
 }
 
 // SelfBillingChargeResponse is a price and its effective subscription quantity, or its offered default quantity.
@@ -80,41 +79,27 @@ type SelfBillingChargeResponse struct {
 	LineItemID  string          `json:"line_item_id,omitempty"`
 	DisplayName string          `json:"display_name"`
 	Type        types.PriceType `json:"type"`
+
 	// Quantity is the configured quantity; metered usage is returned in summary.usage.
 	Quantity decimal.Decimal `json:"quantity" swaggertype:"string"`
-	// Amount is a unit rate; tiered charges use tiers instead.
-	Amount             decimal.Decimal         `json:"amount" swaggertype:"string"`
-	Currency           string                  `json:"currency"`
-	BillingModel       types.BillingModel      `json:"billing_model"`
-	BillingCadence     types.BillingCadence    `json:"billing_cadence"`
-	BillingPeriod      types.BillingPeriod     `json:"billing_period"`
-	BillingPeriodCount int                     `json:"billing_period_count"`
-	InvoiceCadence     types.InvoiceCadence    `json:"invoice_cadence"`
-	TierMode           types.BillingTier       `json:"tier_mode,omitempty"`
-	Tiers              price.JSONBTiers        `json:"tiers,omitempty"`
-	TransformQuantity  price.TransformQuantity `json:"transform_quantity"`
-	MinQuantity        *decimal.Decimal        `json:"min_quantity,omitempty" swaggertype:"string"`
-	MeterID            string                  `json:"meter_id,omitempty"`
-	MeterDisplayName   string                  `json:"meter_display_name,omitempty"`
-	BucketSize         types.WindowSize        `json:"bucket_size,omitempty"`
-	PriceUnitType      types.PriceUnitType     `json:"price_unit_type"`
-	PriceUnit          *string                 `json:"price_unit,omitempty"`
-	PriceUnitAmount    *decimal.Decimal        `json:"price_unit_amount,omitempty" swaggertype:"string"`
-	PriceUnitTiers     price.JSONBTiers        `json:"price_unit_tiers,omitempty"`
-	ConversionRate     *decimal.Decimal        `json:"conversion_rate,omitempty" swaggertype:"string"`
-	Commitment         *SelfBillingCommitment  `json:"commitment,omitempty"`
-}
 
-// SelfBillingCommitment describes a subscription's or charge's minimum spend or usage terms.
-type SelfBillingCommitment struct {
-	Amount        *decimal.Decimal       `json:"amount,omitempty" swaggertype:"string"`
-	Quantity      *decimal.Decimal       `json:"quantity,omitempty" swaggertype:"string"`
-	Type          types.CommitmentType   `json:"type,omitempty"`
-	OverageFactor *decimal.Decimal       `json:"overage_factor,omitempty" swaggertype:"string"`
-	TrueUpEnabled bool                   `json:"true_up_enabled"`
-	Windowed      bool                   `json:"windowed"`
-	Duration      *types.BillingPeriod   `json:"duration,omitempty"`
-	TimeBuckets   types.TimeOfDayBuckets `json:"time_buckets,omitempty"`
+	// Amount is a unit rate; tiered charges use tiers instead.
+	Amount             decimal.Decimal          `json:"amount" swaggertype:"string"`
+	Currency           string                   `json:"currency"`
+	BillingModel       types.BillingModel       `json:"billing_model"`
+	BillingPeriod      types.BillingPeriod      `json:"billing_period"`
+	BillingPeriodCount int                      `json:"billing_period_count"`
+	InvoiceCadence     types.InvoiceCadence     `json:"invoice_cadence"`
+	TierMode           types.BillingTier        `json:"tier_mode,omitempty"`
+	Tiers              price.JSONBTiers         `json:"tiers,omitempty"`
+	TransformQuantity  *price.TransformQuantity `json:"transform_quantity,omitempty"`
+	MeterID            string                   `json:"meter_id,omitempty"`
+	MeterDisplayName   string                   `json:"meter_display_name,omitempty"`
+	BucketSize         types.WindowSize         `json:"bucket_size,omitempty"`
+	PriceUnitType      types.PriceUnitType      `json:"price_unit_type"`
+	PriceUnit          *string                  `json:"price_unit,omitempty"`
+	PriceUnitAmount    *decimal.Decimal         `json:"price_unit_amount,omitempty" swaggertype:"string"`
+	PriceUnitTiers     price.JSONBTiers         `json:"price_unit_tiers,omitempty"`
 }
 
 // SelfBillingPortalResponse is a short-lived customer portal link.

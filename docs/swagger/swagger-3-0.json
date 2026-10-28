@@ -27882,9 +27882,6 @@
             "type": "string",
             "description": "Amount is a unit rate; tiered charges use tiers instead."
           },
-          "billing_cadence": {
-            "$ref": "#/components/schemas/types.BillingCadence"
-          },
           "billing_model": {
             "$ref": "#/components/schemas/types.BillingModel"
           },
@@ -27896,12 +27893,6 @@
           },
           "bucket_size": {
             "$ref": "#/components/schemas/types.WindowSize"
-          },
-          "commitment": {
-            "$ref": "#/components/schemas/SelfBillingCommitment"
-          },
-          "conversion_rate": {
-            "type": "string"
           },
           "currency": {
             "type": "string"
@@ -27919,9 +27910,6 @@
             "type": "string"
           },
           "meter_id": {
-            "type": "string"
-          },
-          "min_quantity": {
             "type": "string"
           },
           "price_id": {
@@ -28023,38 +28011,6 @@
           }
         }
       },
-      "SelfBillingCommitment": {
-        "type": "object",
-        "properties": {
-          "amount": {
-            "type": "string"
-          },
-          "duration": {
-            "$ref": "#/components/schemas/types.BillingPeriod"
-          },
-          "overage_factor": {
-            "type": "string"
-          },
-          "quantity": {
-            "type": "string"
-          },
-          "time_buckets": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/types.TimeOfDayBucket"
-            }
-          },
-          "true_up_enabled": {
-            "type": "boolean"
-          },
-          "type": {
-            "$ref": "#/components/schemas/types.CommitmentType"
-          },
-          "windowed": {
-            "type": "boolean"
-          }
-        }
-      },
       "SelfBillingInvoice": {
         "type": "object",
         "properties": {
@@ -28093,9 +28049,6 @@
             "items": {
               "$ref": "#/components/schemas/SelfBillingChargeResponse"
             }
-          },
-          "commitment": {
-            "$ref": "#/components/schemas/SelfBillingCommitment"
           },
           "description": {
             "type": "string"

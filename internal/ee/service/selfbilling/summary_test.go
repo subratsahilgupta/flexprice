@@ -18,10 +18,18 @@ func TestSummary_MapsSubscriptionAndInvoices(t *testing.T) {
 
 	end := time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)
 	fc.summaries["us:t1"] = &remoteSummary{
-		subscription: &remoteSubscription{id: "sub1", status: types.SubscriptionStatusTrialing, trialEnd: &end},
+		subscription: &remoteSubscription{
+			id:       "sub1",
+			status:   types.SubscriptionStatusTrialing,
+			trialEnd: &end,
+		},
 		plan: &dto.SelfBillingPlanResponse{
-			ID: "plan_1", Name: "Self Serve",
-			Charges: []dto.SelfBillingChargeResponse{{PriceID: "price_override", Amount: decimal.RequireFromString("79.99")}},
+			ID:   "plan_1",
+			Name: "Self Serve",
+			Charges: []*dto.SelfBillingChargeResponse{{
+				PriceID: "price_override",
+				Amount:  decimal.RequireFromString("79.99"),
+			}},
 		},
 		invoices: []remoteInvoice{{
 			id:            "inv_1",
@@ -69,7 +77,10 @@ func TestSummary_ReconcilesTenantStatus(t *testing.T) {
 			s, d := newTestService(fc)
 			seedTenant(t, d, "t1", tt.current)
 			fc.summaries["us:t1"] = &remoteSummary{
-				subscription: &remoteSubscription{id: "sub1", status: tt.subStatus},
+				subscription: &remoteSubscription{
+					id:     "sub1",
+					status: tt.subStatus,
+				},
 			}
 
 			got, err := s.Summary(tenantCtx("t1"), "t1")
