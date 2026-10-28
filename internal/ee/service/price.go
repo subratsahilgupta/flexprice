@@ -1881,13 +1881,13 @@ func changeForNewPrice(p *price.Price) func(sub *subscription.Subscription) subs
 			return subscriptionGrantChange{}
 		}
 		return subscriptionGrantChange{
-			items:  []*subscription.SubscriptionLineItem{pendingLineFromPrice(sub, p)},
+			items:  []*subscription.SubscriptionLineItem{pendingLineForNewPrice(sub, p)},
 			prices: []*price.Price{p},
 		}
 	}
 }
 
-func pendingLineFromPrice(sub *subscription.Subscription, p *price.Price) *subscription.SubscriptionLineItem {
+func pendingLineForNewPrice(sub *subscription.Subscription, p *price.Price) *subscription.SubscriptionLineItem {
 	return &subscription.SubscriptionLineItem{
 		ID:                 "pending_" + p.ID,
 		SubscriptionID:     sub.ID,
