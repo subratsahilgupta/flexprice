@@ -82,9 +82,7 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 			return err
 		}
 
-		if err := newSubscriptionGrantGuard(s.ServiceParams).validateChangeIfGranted(txCtx, sub, subscriptionGrantChange{
-			items: []*subscription.SubscriptionLineItem{lineItem},
-		}); err != nil {
+		if err := (&entitlementGrantService{ServiceParams: s.ServiceParams}).validateLineItemsSubscriptionGrant(txCtx, sub, []*subscription.SubscriptionLineItem{lineItem}); err != nil {
 			return err
 		}
 		if err := rejectLegacyCommitmentInScope(txCtx, s.ServiceParams, sub, lineItem); err != nil {
@@ -892,9 +890,7 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 				return err
 			}
 
-			if err := newSubscriptionGrantGuard(s.ServiceParams).validateChangeIfGranted(ctx, sub, subscriptionGrantChange{
-				items: []*subscription.SubscriptionLineItem{newLineItem},
-			}); err != nil {
+			if err := (&entitlementGrantService{ServiceParams: s.ServiceParams}).validateLineItemsSubscriptionGrant(ctx, sub, []*subscription.SubscriptionLineItem{newLineItem}); err != nil {
 				return err
 			}
 
@@ -970,9 +966,7 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 				return err
 			}
 
-			if err := newSubscriptionGrantGuard(s.ServiceParams).validateChangeIfGranted(txCtx, sub, subscriptionGrantChange{
-				items: []*subscription.SubscriptionLineItem{existingLineItem},
-			}); err != nil {
+			if err := (&entitlementGrantService{ServiceParams: s.ServiceParams}).validateLineItemsSubscriptionGrant(txCtx, sub, []*subscription.SubscriptionLineItem{existingLineItem}); err != nil {
 				return err
 			}
 			return s.SubscriptionLineItemRepo.Update(txCtx, existingLineItem)

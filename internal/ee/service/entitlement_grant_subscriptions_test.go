@@ -329,7 +329,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantGuard_ChecksLinesOnlyWhenGr
 		})
 		return []*subscription.SubscriptionLineItem{li}
 	}
-	guard := newSubscriptionGrantGuard(s.buildServiceParams())
+	guard := &entitlementGrantService{ServiceParams: s.buildServiceParams()}
 
 	granted := s.newSubGrantSubscription("guard-granted")
 	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(granted.sub.ID, 50, ""))
@@ -456,7 +456,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrantGuard_ChecksLinesStartingNe
 		BillingPeriod: fx.sub.BillingPeriod, StartDate: fx.sub.CurrentPeriodEnd.Add(time.Hour),
 	}
 	tiered := &price.Price{ID: "price-future-tiered", Type: types.PRICE_TYPE_USAGE, BillingModel: types.BILLING_MODEL_TIERED, MeterID: fx.callsMeter}
-	err = newSubscriptionGrantGuard(s.buildServiceParams()).validateChangeIfGranted(s.GetContext(), fx.sub, subscriptionGrantChange{
+	err = (&entitlementGrantService{ServiceParams: s.buildServiceParams()}).validateChangeIfGranted(s.GetContext(), fx.sub, subscriptionGrantChange{
 		items: []*subscription.SubscriptionLineItem{future}, prices: []*price.Price{tiered},
 	})
 	s.Require().Error(err)

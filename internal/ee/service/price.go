@@ -113,7 +113,7 @@ func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceReque
 		}
 	}
 
-	if err := s.validateAgainstSubscriptionGrants(ctx, p); err != nil {
+	if err := (&entitlementGrantService{ServiceParams: s.ServiceParams}).validateNewPriceSubscriptionGrant(ctx, p); err != nil {
 		return nil, err
 	}
 
@@ -403,7 +403,7 @@ func (s *priceService) CreateBulkPrice(ctx context.Context, req dto.CreateBulkPr
 		}
 
 		for _, p := range prices {
-			if err := s.validateAgainstSubscriptionGrants(txCtx, p); err != nil {
+			if err := (&entitlementGrantService{ServiceParams: s.ServiceParams}).validateNewPriceSubscriptionGrant(txCtx, p); err != nil {
 				return err
 			}
 		}

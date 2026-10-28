@@ -28,7 +28,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_ReadSectionShowsLedger() {
 	s.Require().NoError(err)
 	window := s.seedEvaluatedSubGrantWindow("eg-api-read", fx, fx.sub.CurrentPeriodStart, fx.sub.CurrentPeriodEnd, 50, 20)
 
-	view, err := NewSubscriptionService(s.buildServiceParams()).(*subscriptionService).subscriptionGrantsView(s.GetContext(), fx.sub)
+	view, err := (&entitlementGrantService{ServiceParams: s.buildServiceParams()}).subscriptionGrantsView(s.GetContext(), fx.sub)
 	s.Require().NoError(err)
 	s.Require().NotNil(view)
 	s.Require().Len(view.Entitlements, 1)
@@ -41,7 +41,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_ReadSectionShowsLedger() {
 	s.True(allowance.IsActive)
 
 	plain := s.newSubGrantSubscription("api-read-plain")
-	none, err := NewSubscriptionService(s.buildServiceParams()).(*subscriptionService).subscriptionGrantsView(s.GetContext(), plain.sub)
+	none, err := (&entitlementGrantService{ServiceParams: s.buildServiceParams()}).subscriptionGrantsView(s.GetContext(), plain.sub)
 	s.Require().NoError(err)
 	s.Nil(none, "no section without a subscription grant")
 }
@@ -71,7 +71,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_RefusesPlanChangesThatBrea
 			EntityType: types.PRICE_ENTITY_TYPE_PLAN, EntityID: fx.sub.PlanID,
 		}
 	}
-	guard := newSubscriptionGrantGuard(s.buildServiceParams())
+	guard := &entitlementGrantService{ServiceParams: s.buildServiceParams()}
 
 	// A tiered usage price on the plan lands on the subscription.
 	tiered := planPrice("price-api-plan-tiered", types.BILLING_MODEL_TIERED, fx.sub.BillingPeriod)

@@ -5124,7 +5124,7 @@ func (s *subscriptionService) createAddonAttachParams(
 		return nil, err
 	}
 
-	if err := newSubscriptionGrantGuard(s.ServiceParams).validateAddonAttach(ctx, sub, req.AddonID, lineItems); err != nil {
+	if err := (&entitlementGrantService{ServiceParams: s.ServiceParams}).validateAddonAttachSubscriptionGrant(ctx, sub, req.AddonID, lineItems); err != nil {
 		return nil, err
 	}
 
@@ -7063,7 +7063,7 @@ func (s *subscriptionService) aggregateSubscriptionEntitlements(ctx context.Cont
 		}
 	}
 
-	subscriptionGrants, err := s.subscriptionGrantsView(ctx, sub)
+	subscriptionGrants, err := (&entitlementGrantService{ServiceParams: s.ServiceParams}).subscriptionGrantsView(ctx, sub)
 	if err != nil {
 		s.Logger.Error(ctx, "failed to load subscription grants, returning entitlements without them",
 			"error", err, "subscription_id", sub.ID)
