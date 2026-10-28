@@ -20,28 +20,29 @@ import (
 var (
 	errSubGrantCommitment       = grantGuardError("subscription has a minimum spend")
 	errSubGrantCadence          = grantGuardError("usage line is billed at a different cadence than the subscription")
-	errSubGrantWithFeatureGrant = grantGuardError("subscription also has feature usage allowances")
+	errSubGrantWithFeatureGrant = grantGuardError("subscription also has feature entitlement grants")
 	errSubGrantNeverReset       = grantGuardError("usage line's meter never resets usage")
 )
 
 // subscriptionGrantState is what decides whether a subscription can carry a subscription grant.
 type subscriptionGrantState struct {
-	sub                 *subscription.Subscription
-	items               []*subscription.SubscriptionLineItem
-	priceByItemID       map[string]*priceDomain.Price
-	meters              map[string]*meter.Meter
-	hasFeatureAllowance bool
-	commitmentLineIDs   map[string]bool
-	periodStart         time.Time
+	sub                        *subscription.Subscription
+	items                      []*subscription.SubscriptionLineItem
+	priceByItemID              map[string]*priceDomain.Price
+	meters                     map[string]*meter.Meter
+	hasFeatureEntitlementGrant bool
+	hasActiveCommitment        bool
+	commitmentLineIDs          map[string]bool
+	periodStart                time.Time
 }
 
 // subscriptionGrantBlocker returns why the subscription cannot carry a subscription grant, or nil.
 // The grant covers every usage line once, so one incompatible line blocks it everywhere.
 func subscriptionGrantBlocker(st subscriptionGrantState) error {
-	if st.sub.HasCommitment() || lo.FromPtr(st.sub.CommitmentAmount).IsPositive() {
+	if st.hasActiveCommitment || st.sub.HasCommitment() || lo.FromPtr(st.sub.CommitmentAmount).IsPositive() {
 		return errSubGrantCommitment
 	}
-	if st.hasFeatureAllowance {
+	if st.hasFeatureEntitlementGrant {
 		return errSubGrantWithFeatureGrant
 	}
 	for _, item := range st.items {
@@ -68,9 +69,9 @@ func subscriptionGrantBlocker(st subscriptionGrantState) error {
 	return nil
 }
 
-// isFeatureAllowance reports whether an entitlement makes some feature usage free: a feature grant,
+// isFeatureEntitlementGrant reports whether an entitlement makes some feature usage free: a feature grant,
 // limited or unlimited, or a legacy usage limit.
-func isFeatureAllowance(e *entitlement.Entitlement) bool {
+func isFeatureEntitlementGrant(e *entitlement.Entitlement) bool {
 	if e == nil || !e.IsEnabled || e.IsSubscriptionScoped() || e.FeatureType != types.FeatureTypeMetered {
 		return false
 	}
@@ -100,16 +101,14 @@ func (s *entitlementGrantService) hasSubscriptionGrant(ctx context.Context, subI
 	return len(ecs) > 0, nil
 }
 
-// validateLineItemsSubscriptionGrant refuses line items that would break the subscription's grant, if it has one.
-func (s *entitlementGrantService) validateLineItemsSubscriptionGrant(ctx context.Context, sub *subscription.Subscription, items []*subscription.SubscriptionLineItem) error {
-	return s.validateChangeIfGranted(ctx, sub, subscriptionGrantChange{items: items})
-}
-
 // validateChangeIfGranted refuses the change when the subscription has a subscription grant it would break.
 func (s *entitlementGrantService) validateChangeIfGranted(ctx context.Context, sub *subscription.Subscription, change subscriptionGrantChange) error {
 	granted, err := s.hasSubscriptionGrant(ctx, sub.ID)
-	if err != nil || !granted {
+	if err != nil {
 		return err
+	}
+	if !granted {
+		return nil
 	}
 	return s.validateChange(ctx, sub, change)
 }
@@ -122,14 +121,7 @@ func (s *entitlementGrantService) validateChange(ctx context.Context, sub *subsc
 	}
 	reason := subscriptionGrantBlocker(st)
 	if reason == nil {
-		committed, err := s.hasActiveCommitment(ctx, sub)
-		if err != nil {
-			return err
-		}
-		if !committed {
-			return nil
-		}
-		reason = errSubGrantCommitment
+		return nil
 	}
 	return ierr.NewErrorf("subscription grant not supported: %s", reason).
 		WithHint("A subscription grant needs every usage line on the subscription to be compatible with it.").
@@ -171,18 +163,23 @@ func (s *entitlementGrantService) subscriptionGrantStateAfter(ctx context.Contex
 	if err != nil {
 		return subscriptionGrantState{}, err
 	}
-	hasFeatureAllowance := lo.ContainsBy(current, func(r *dto.EntitlementResponse) bool {
-		return r != nil && isFeatureAllowance(r.Entitlement)
-	}) || lo.ContainsBy(change.entitlements, isFeatureAllowance)
+	hasFeatureEntitlementGrant := lo.ContainsBy(current, func(r *dto.EntitlementResponse) bool {
+		return r != nil && isFeatureEntitlementGrant(r.Entitlement)
+	}) || lo.ContainsBy(change.entitlements, isFeatureEntitlementGrant)
+	committed, err := s.hasActiveCommitment(ctx, sub)
+	if err != nil {
+		return subscriptionGrantState{}, err
+	}
 
 	return subscriptionGrantState{
 		sub:   sub,
 		items: items,
 		priceByItemID: lo.MapValues(lo.KeyBy(usageItems, func(li *subscription.SubscriptionLineItem) string { return li.ID }),
 			func(li *subscription.SubscriptionLineItem, _ string) *priceDomain.Price { return priceByID[li.PriceID] }),
-		meters:              lo.KeyBy(meters, func(m *meter.Meter) string { return m.ID }),
-		hasFeatureAllowance: hasFeatureAllowance,
-		periodStart:         sub.CurrentPeriodStart,
+		meters:                     lo.KeyBy(meters, func(m *meter.Meter) string { return m.ID }),
+		hasFeatureEntitlementGrant: hasFeatureEntitlementGrant,
+		hasActiveCommitment:        committed,
+		periodStart:                sub.CurrentPeriodStart,
 	}, nil
 }
 
@@ -191,14 +188,17 @@ func (s *entitlementGrantService) subscriptionGrantStateAfter(ctx context.Contex
 func (s *entitlementGrantService) hasActiveCommitment(ctx context.Context, sub *subscription.Subscription) (bool, error) {
 	svc := &commitmentService{ServiceParams: s.ServiceParams}
 	enabled, err := svc.IsEnabled(ctx)
-	if err != nil || !enabled {
+	if err != nil {
 		return false, err
+	}
+	if !enabled {
+		return false, nil
 	}
 	active, err := svc.ActiveForPeriod(ctx, sub.ID, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
 	return len(active) > 0, err
 }
 
-// CreateSubscriptionGrant creates a dollar allowance shared by every usage line on one subscription. It
+// CreateSubscriptionGrant creates a dollar entitlement grant shared by every usage line on one subscription. It
 // starts now unless the request dates it; inside a caller's transaction the webhook waits for its commit.
 func (s *entitlementService) CreateSubscriptionGrant(ctx context.Context, req dto.CreateEntitlementRequest, sub *subscription.Subscription) (*dto.EntitlementResponse, error) {
 	e := req.ToEntitlement(ctx)
@@ -211,10 +211,10 @@ func (s *entitlementService) CreateSubscriptionGrant(ctx context.Context, req dt
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
-	// Windows as long as the cycle never open; that allowance is what subscription_period is for.
+	// Windows as long as the cycle never open; that grant is what subscription_period is for.
 	if dur, err := e.GrantDuration(); err == nil && dur > 0 && dur >= sub.CurrentPeriodEnd.Sub(sub.CurrentPeriodStart) {
 		return nil, ierr.NewError("grant window is as long as the billing period").
-			WithHint("Use grant_duration_unit=subscription_period for an allowance per billing period.").
+			WithHint("Use grant_duration_unit=subscription_period for a grant per billing period.").
 			Mark(ierr.ErrValidation)
 	}
 
@@ -254,7 +254,7 @@ func (s *entitlementService) CreateSubscriptionGrant(ctx context.Context, req dt
 // validateSubscriptionGrantSiblings keeps one mode per subscription, and one window length when the
 // grants pool additively.
 func (s *entitlementService) validateSubscriptionGrantSiblings(ctx context.Context, e *entitlement.Entitlement) error {
-	siblings, err := s.subscriptionGrantConfigsFor(ctx, e.EntityID)
+	siblings, err := s.EntitlementRepo.List(ctx, subscriptionGrantConfigFilter(e.EntityID))
 	if err != nil {
 		return err
 	}
@@ -284,11 +284,6 @@ func sameGrantWindow(a, b *entitlement.Entitlement) bool {
 		a.GrantAllocationBehavior == b.GrantAllocationBehavior
 }
 
-// subscriptionGrantConfigsFor returns the published subscription grants on one subscription.
-func (s *entitlementService) subscriptionGrantConfigsFor(ctx context.Context, subID string) ([]*entitlement.Entitlement, error) {
-	return s.EntitlementRepo.List(ctx, subscriptionGrantConfigFilter(subID))
-}
-
 // validateCatalogChange refuses a plan or addon change that would break the subscription grant on any
 // subscription using that plan or addon. change builds the write as it lands on one subscription.
 func (s *entitlementGrantService) validateCatalogChange(
@@ -315,8 +310,11 @@ func (s *entitlementGrantService) grantedSubscriptionsUsing(ctx context.Context,
 		return nil, nil
 	}
 	ecs, err := s.EntitlementRepo.List(ctx, subscriptionGrantConfigFilter())
-	if err != nil || len(ecs) == 0 {
+	if err != nil {
 		return nil, err
+	}
+	if len(ecs) == 0 {
+		return nil, nil
 	}
 	subIDs := lo.Uniq(lo.Map(ecs, func(ec *entitlement.Entitlement, _ int) string { return ec.EntityID }))
 
@@ -351,7 +349,7 @@ func (s *entitlementGrantService) grantedSubscriptionsUsing(ctx context.Context,
 }
 
 // updateSubscriptionGrant changes a subscription grant's quota. The live window closes and a successor
-// carries what was left plus the change, so an edit never hands out a fresh allowance.
+// carries what was left plus the change, so an edit never hands out a fresh grant.
 func (s *entitlementService) updateSubscriptionGrant(ctx context.Context, existing *entitlement.Entitlement, req dto.UpdateEntitlementRequest) (*dto.EntitlementResponse, error) {
 	if !req.OnlySetsGrantQuota() {
 		return nil, ierr.NewError("only grant_quota can change on a subscription grant").
@@ -401,11 +399,14 @@ func (s *entitlementService) updateSubscriptionGrant(ctx context.Context, existi
 func (s *entitlementService) settleDeletedSubscriptionGrant(ctx context.Context, deleted *entitlement.Entitlement) error {
 	grants := &entitlementGrantService{ServiceParams: s.ServiceParams}
 	live, err := grants.liveSubscriptionGrantWindows(ctx, deleted)
-	if err != nil || len(live) == 0 {
+	if err != nil {
 		return err
 	}
+	if len(live) == 0 {
+		return nil
+	}
 	if defaultedMode(deleted.AggregationMode) == types.EntitlementAggregationModeAdditive {
-		survivors, err := s.subscriptionGrantConfigsFor(ctx, deleted.EntityID)
+		survivors, err := s.EntitlementRepo.List(ctx, subscriptionGrantConfigFilter(deleted.EntityID))
 		if err != nil {
 			return err
 		}
@@ -516,7 +517,7 @@ func (s *entitlementGrantService) measureSubscriptionGrantWindows(ctx context.Co
 		if !end.After(g.ValidFrom) {
 			continue
 		}
-		usage, err := s.SubscriptionGrantUsage(ctx, sub, g, at)
+		usage, _, err := NewMeterUsageService(s.ServiceParams).GetSubscriptionWindowSpend(ctx, sub, g.ValidFrom, end)
 		if err != nil {
 			return err
 		}
@@ -551,7 +552,7 @@ func refreshSubscriptionGrantUsage(ctx context.Context, params ServiceParams, su
 		if g.LastComputedAt != nil && !g.LastComputedAt.Before(types.EarliestOf(at, g.ValidTo)) {
 			continue
 		}
-		usage, err := NewEntitlementGrantService(params).SubscriptionGrantUsage(ctx, sub, g, at)
+		usage, _, err := NewMeterUsageService(params).GetSubscriptionWindowSpend(ctx, sub, g.ValidFrom, types.EarliestOf(at, g.ValidTo))
 		if err != nil {
 			return err
 		}
@@ -563,11 +564,6 @@ func refreshSubscriptionGrantUsage(ctx context.Context, params ServiceParams, su
 		}
 	}
 	return nil
-}
-
-func (s *entitlementGrantService) SubscriptionGrantUsage(ctx context.Context, sub *subscription.Subscription, g *entitlementgrant.EntitlementGrant, at time.Time) (decimal.Decimal, error) {
-	total, _, err := NewMeterUsageService(s.ServiceParams).GetSubscriptionWindowSpend(ctx, sub, g.ValidFrom, types.EarliestOf(at, g.ValidTo))
-	return total, err
 }
 
 // subscriptionGrantConfigFilter matches the published subscription grants on subIDs, or on every
@@ -616,8 +612,11 @@ func (s *entitlementGrantService) SubscriptionGrantState(
 ) (*dto.GrantState, error) {
 	states, err := s.grantStateBy(ctx, sub, types.EntitlementGrantScopeSubscription, at,
 		func(g *entitlementgrant.EntitlementGrant) string { return g.ScopeEntityID })
-	if err != nil || sub == nil {
+	if err != nil {
 		return nil, err
+	}
+	if sub == nil {
+		return nil, nil
 	}
 	return states[sub.ID], nil
 }
@@ -625,8 +624,11 @@ func (s *entitlementGrantService) SubscriptionGrantState(
 // subscriptionGrantsView returns the subscription's grants and their ledger, or nil when it has none.
 func (s *entitlementGrantService) subscriptionGrantsView(ctx context.Context, sub *subscription.Subscription) (*dto.SubscriptionGrantsResponse, error) {
 	ecs, err := s.EntitlementRepo.List(ctx, subscriptionGrantConfigFilter(sub.ID))
-	if err != nil || len(ecs) == 0 {
+	if err != nil {
 		return nil, err
+	}
+	if len(ecs) == 0 {
+		return nil, nil
 	}
 
 	state, err := s.SubscriptionGrantState(ctx, sub, time.Now().UTC())

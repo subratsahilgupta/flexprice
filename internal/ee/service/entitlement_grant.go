@@ -33,8 +33,6 @@ type EntitlementGrantService interface {
 	// built during the pass so the evaluator can reuse them.
 	EnsureGrantsForSubscriptions(ctx context.Context, cust *customer.Customer, subs []*subscription.Subscription, at time.Time) ([]*entitlementgrant.EntitlementGrant, *grantEvalMeta, error)
 	GrantStateByFeature(ctx context.Context, sub *subscription.Subscription, at time.Time) (map[string]*dto.GrantState, error)
-	// SubscriptionGrantUsage prices every usage line on the subscription over [valid_from, min(at, valid_to)).
-	SubscriptionGrantUsage(ctx context.Context, sub *subscription.Subscription, g *entitlementgrant.EntitlementGrant, at time.Time) (decimal.Decimal, error)
 	// SubscriptionGrantState is the ledger of the subscription's own grants, or nil when it has none.
 	SubscriptionGrantState(ctx context.Context, sub *subscription.Subscription, at time.Time) (*dto.GrantState, error)
 

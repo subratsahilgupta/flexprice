@@ -44,7 +44,7 @@ type Entitlement struct {
 }
 
 // IsSubscriptionScoped reports whether the entitlement is a subscription grant: a dollar
-// allowance over every usage line on the subscription, with no feature.
+// entitlement grant over every usage line on the subscription, with no feature.
 func (e *Entitlement) IsSubscriptionScoped() bool {
 	return e != nil && e.EffectiveGrantScope() == types.EntitlementGrantScopeSubscription
 }

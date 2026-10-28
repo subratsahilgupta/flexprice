@@ -452,7 +452,7 @@ type SubscriptionCreationConfig struct {
 	// OverrideLineItems overrides specific plan prices for this subscription.
 	OverrideLineItems    []OverrideLineItemRequest    `json:"override_line_items,omitempty" validate:"omitempty,dive"`
 	OverrideEntitlements []OverrideEntitlementRequest `json:"override_entitlements,omitempty" validate:"omitempty,dive"`
-	// SubscriptionGrants are dollar allowances shared by every usage line, created with the subscription.
+	// SubscriptionGrants are dollar entitlement grants shared by every usage line, created with the subscription.
 	SubscriptionGrants []CreateSubscriptionGrantRequest `json:"subscription_grants,omitempty" validate:"omitempty,dive"`
 	Addons             []AddAddonToSubscriptionRequest  `json:"addons,omitempty" validate:"omitempty,dive"`
 	// LineItems are extra (non-plan) line items added at creation.
@@ -1692,7 +1692,6 @@ type OverrideLineItemRequest struct {
 	PriceUnitTiers []CreatePriceTier `json:"price_unit_tiers,omitempty"`
 }
 
-// OverrideEntitlementRequest allows overriding entitlement values for a subscription
 // CreateSubscriptionGrantRequest is a subscription grant created together with its subscription.
 type CreateSubscriptionGrantRequest struct {
 	GrantQuota              *decimal.Decimal                         `json:"grant_quota" swaggertype:"string" validate:"required"`
@@ -1721,6 +1720,7 @@ func (r CreateSubscriptionGrantRequest) ToCreateEntitlementRequest(subscriptionI
 	}
 }
 
+// OverrideEntitlementRequest allows overriding entitlement values for a subscription
 type OverrideEntitlementRequest struct {
 	// EntitlementID references the plan/addon entitlement to override
 	EntitlementID string `json:"entitlement_id" validate:"required"`

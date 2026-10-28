@@ -27,7 +27,7 @@ type SubscriptionEntitlementsResponse struct {
 	SubscriptionGrants *SubscriptionGrantsResponse `json:"subscription_grants,omitempty"`
 }
 
-// SubscriptionGrantsResponse is the subscription's dollar allowances over every usage line, and
+// SubscriptionGrantsResponse is the subscription's dollar entitlement grants over every usage line, and
 // what was spent against them this period.
 type SubscriptionGrantsResponse struct {
 	Entitlements []*EntitlementResponse `json:"entitlements"`

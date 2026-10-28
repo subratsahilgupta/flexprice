@@ -8732,12 +8732,15 @@ func (s *subscriptionService) processPendingPlanChangeV2(
 	return s.ExecuteScheduledPlanChangeV2(ctx, schedule, config, sub)
 }
 
-// validateAddonAttachSubscriptionGrant refuses an addon whose lines or feature allowances would break the subscription grant.
+// validateAddonAttachSubscriptionGrant refuses an addon whose lines or feature entitlement grants would break the subscription grant.
 func (s *subscriptionService) validateAddonAttachSubscriptionGrant(ctx context.Context, sub *subscription.Subscription, addonID string, items []*subscription.SubscriptionLineItem) error {
 	grants := &entitlementGrantService{ServiceParams: s.ServiceParams}
 	granted, err := grants.hasSubscriptionGrant(ctx, sub.ID)
-	if err != nil || !granted {
+	if err != nil {
 		return err
+	}
+	if !granted {
+		return nil
 	}
 	addonEntitlements, err := NewEntitlementService(s.ServiceParams).GetAddonEntitlements(ctx, addonID)
 	if err != nil {

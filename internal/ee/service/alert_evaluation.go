@@ -283,7 +283,7 @@ func (s *alertService) evaluateEntitlementGrantsForCustomer(
 		var err error
 		switch g.ScopeEntityType {
 		case types.EntitlementGrantScopeSubscription:
-			rawUsage, err = NewEntitlementGrantService(s.ServiceParams).SubscriptionGrantUsage(ctx, sub, g, at)
+			rawUsage, _, err = NewMeterUsageService(s.ServiceParams).GetSubscriptionWindowSpend(ctx, sub, g.ValidFrom, types.EarliestOf(at, g.ValidTo))
 		case types.EntitlementGrantScopeFeature:
 			f, ok := meta.featureByID[g.ScopeEntityID]
 			if !ok || f.MeterID == "" {

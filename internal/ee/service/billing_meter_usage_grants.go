@@ -372,7 +372,7 @@ const metadataKeySubscriptionGrantAllowance = "subscription_grant_allowance"
 func (s *billingService) loadSubscriptionGrants(
 	ctx context.Context,
 	sub *subscription.Subscription,
-	hasFeatureAllowance bool,
+	hasFeatureEntitlementGrant bool,
 	chargesByLineItemID map[string][]*dto.SubscriptionUsageByMetersResponse,
 	commitmentLineIDs map[string]bool,
 	meters map[string]*meter.Meter,
@@ -387,8 +387,11 @@ func (s *billingService) loadSubscriptionGrants(
 		WithScopeEntityType(types.EntitlementGrantScopeSubscription).
 		WithCycleOverlap(periodStart, periodEnd)
 	grants, err := s.EntitlementGrantRepo.List(ctx, filter)
-	if err != nil || len(grants) == 0 {
+	if err != nil {
 		return nil, err
+	}
+	if len(grants) == 0 {
+		return nil, nil
 	}
 
 	priceByItemID := make(map[string]*priceDomain.Price, len(chargesByLineItemID))
@@ -398,13 +401,13 @@ func (s *billingService) loadSubscriptionGrants(
 		}
 	}
 	reason := subscriptionGrantBlocker(subscriptionGrantState{
-		sub:                 sub,
-		items:               sub.LineItems,
-		priceByItemID:       priceByItemID,
-		meters:              meters,
-		hasFeatureAllowance: hasFeatureAllowance,
-		commitmentLineIDs:   commitmentLineIDs,
-		periodStart:         periodStart,
+		sub:                        sub,
+		items:                      sub.LineItems,
+		priceByItemID:              priceByItemID,
+		meters:                     meters,
+		hasFeatureEntitlementGrant: hasFeatureEntitlementGrant,
+		commitmentLineIDs:          commitmentLineIDs,
+		periodStart:                periodStart,
 	})
 	if reason != nil {
 		s.Logger.Error(ctx, "subscription grant overage: subscription rejected, grants not applied",
@@ -439,14 +442,14 @@ func (s *billingService) applySubscriptionGrants(
 		if !lines[i].Amount.IsPositive() {
 			continue
 		}
-		allowance := lines[i].Amount.Sub(billed[i])
-		if allowance.IsZero() {
+		granted := lines[i].Amount.Sub(billed[i])
+		if granted.IsZero() {
 			continue
 		}
-		if err := s.lowerLineAmount(ctx, &lines[i], billed[i], allowance); err != nil {
+		if err := s.lowerLineAmount(ctx, &lines[i], billed[i], granted); err != nil {
 			return decimal.Zero, err
 		}
-		reduction = reduction.Add(allowance)
+		reduction = reduction.Add(granted)
 	}
 	return reduction, nil
 }
@@ -473,7 +476,7 @@ func (s *billingService) billedAfterSubscriptionGrants(
 			covered = covered.Add(c)
 		}
 		amounts := lo.Map(lines, func(l dto.CreateInvoiceLineItemRequest, _ int) decimal.Decimal { return l.Amount })
-		return billedAfterAllowance(amounts, covered, precision), nil
+		return billedAfterEntitlementGrant(amounts, covered, precision), nil
 	}
 
 	// Parallel windows: each line's own spend inside them is free until a quota is crossed.
@@ -521,13 +524,13 @@ func (s *billingService) grantCoveredInPeriod(
 	return decimal.Max(g.Covered(usageAtEnd).Sub(g.Covered(usageAtStart)), decimal.Zero), nil
 }
 
-// lowerLineAmount sets the line's billed amount and records the allowance taken off it.
-func (s *billingService) lowerLineAmount(ctx context.Context, line *dto.CreateInvoiceLineItemRequest, billed, allowance decimal.Decimal) error {
+// lowerLineAmount sets the line's billed amount and records the grant amount taken off it.
+func (s *billingService) lowerLineAmount(ctx context.Context, line *dto.CreateInvoiceLineItemRequest, billed, granted decimal.Decimal) error {
 	line.Amount = billed
 	if line.Metadata == nil {
 		line.Metadata = types.Metadata{}
 	}
-	line.Metadata[metadataKeySubscriptionGrantAllowance] = allowance.String()
+	line.Metadata[metadataKeySubscriptionGrantAllowance] = granted.String()
 	if line.PriceUnit == nil {
 		return nil
 	}
@@ -591,13 +594,13 @@ func (s *billingService) spendPerLine(ctx context.Context, sub *subscription.Sub
 	return spend, nil
 }
 
-// billedAfterAllowance takes allowance off the lines in proportion to their gross amounts and returns
+// billedAfterEntitlementGrant takes the granted amount off the lines in proportion to their gross amounts and returns
 // what each line is billed, in whole currency units: each share rounds down and the leftover units go to
 // the largest remainders. No line goes below zero or above its gross.
-func billedAfterAllowance(amounts []decimal.Decimal, allowance decimal.Decimal, precision int32) []decimal.Decimal {
+func billedAfterEntitlementGrant(amounts []decimal.Decimal, granted decimal.Decimal, precision int32) []decimal.Decimal {
 	gross := lo.Map(amounts, func(a decimal.Decimal, _ int) decimal.Decimal { return decimal.Max(a.Round(precision), decimal.Zero) })
 	total := decimal.Sum(decimal.Zero, gross...)
-	billable := decimal.Max(total.Sub(allowance), decimal.Zero).Round(precision)
+	billable := decimal.Max(total.Sub(granted), decimal.Zero).Round(precision)
 	billed := make([]decimal.Decimal, len(gross))
 	if !billable.IsPositive() {
 		return billed

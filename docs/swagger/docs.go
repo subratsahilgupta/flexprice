@@ -20376,7 +20376,7 @@ const docTemplate = `{
                     }
                 },
                 "subscription_grants": {
-                    "description": "SubscriptionGrants are dollar allowances shared by every usage line, created with the subscription.",
+                    "description": "SubscriptionGrants are dollar entitlement grants shared by every usage line, created with the subscription.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/CreateSubscriptionGrantRequest"
@@ -22812,7 +22812,7 @@ const docTemplate = `{
                     }
                 },
                 "subscription_grants": {
-                    "description": "SubscriptionGrants are dollar allowances shared by every usage line, created with the subscription.",
+                    "description": "SubscriptionGrants are dollar entitlement grants shared by every usage line, created with the subscription.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/CreateSubscriptionGrantRequest"

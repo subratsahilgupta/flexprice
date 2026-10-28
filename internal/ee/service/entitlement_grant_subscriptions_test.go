@@ -143,7 +143,7 @@ func (s *EntitlementGrantSuite) TestCreateSubscriptionGrant_RefusesIncompatibleS
 				p.MeterID, li.MeterID = m.ID, m.ID
 			})
 		}},
-		{"feature usage allowance", "feature usage allowances", func(fx subGrantFixture) {
+		{"feature entitlement grant", "feature entitlement grants", func(fx subGrantFixture) {
 			f := s.simpleFeature("feat-allow-"+fx.sub.ID, fx.callsMeter)
 			_, err := s.GetStores().EntitlementRepo.Create(s.GetContext(), &entitlement.Entitlement{
 				ID:          "ent-allow-" + fx.sub.ID,
@@ -304,7 +304,7 @@ func meteredOverrideRequest(subID, featureID string) dto.CreateEntitlementReques
 	}
 }
 
-func (s *EntitlementGrantSuite) TestSubscriptionGrant_RefusesFeatureAllowanceOnGrantedSubscription() {
+func (s *EntitlementGrantSuite) TestSubscriptionGrant_RefusesFeatureEntitlementGrantOnGrantedSubscription() {
 	s.enableEntitlementAlerts()
 	granted := s.newSubGrantSubscription("reverse-granted")
 	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionGrantRequest(granted.sub.ID, 50, ""))
@@ -313,7 +313,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_RefusesFeatureAllowanceOnG
 
 	_, err = s.entService.CreateEntitlement(s.GetContext(), meteredOverrideRequest(granted.sub.ID, f.ID))
 	s.Require().Error(err)
-	s.Contains(err.Error(), "feature usage allowances")
+	s.Contains(err.Error(), "feature entitlement grants")
 
 	plain := s.newSubGrantSubscription("reverse-plain")
 	other := s.simpleFeature("feat-reverse-plain", plain.callsMeter)

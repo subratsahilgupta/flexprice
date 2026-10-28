@@ -53,7 +53,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_RefusesPlanChangesThatBrea
 	s.Require().NoError(err)
 	ctx := s.GetContext()
 
-	// A feature allowance on the plan reaches the subscription.
+	// A feature entitlement grant on the plan reaches the subscription.
 	f := s.simpleFeature("feat-api-plan", fx.callsMeter)
 	_, err = s.entService.CreateEntitlement(ctx, dto.CreateEntitlementRequest{
 		PlanID:      fx.sub.PlanID,
@@ -62,7 +62,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionGrant_RefusesPlanChangesThatBrea
 		UsageLimit:  lo.ToPtr(int64(100)),
 	})
 	s.Require().Error(err)
-	s.Contains(err.Error(), "feature usage allowances")
+	s.Contains(err.Error(), "feature entitlement grants")
 
 	planPrice := func(id string, model types.BillingModel, period types.BillingPeriod) *price.Price {
 		return &price.Price{

@@ -510,18 +510,18 @@ func decs(vals ...string) []decimal.Decimal {
 	return lo.Map(vals, func(v string, _ int) decimal.Decimal { return decimal.RequireFromString(v) })
 }
 
-func TestBilledAfterAllowance(t *testing.T) {
+func TestBilledAfterEntitlementGrant(t *testing.T) {
 	tests := []struct {
-		name      string
-		gross     []decimal.Decimal
-		allowance string
-		want      []decimal.Decimal
+		name    string
+		gross   []decimal.Decimal
+		granted string
+		want    []decimal.Decimal
 	}{
 		{"prd example", decs("70", "50"), "30", decs("52.5", "37.5")},
 		{"daily windows example", decs("30", "10"), "20", decs("15", "5")},
-		{"allowance covers everything", decs("70", "50"), "120", decs("0", "0")},
-		{"allowance above gross bills nothing", decs("70", "50"), "200", decs("0", "0")},
-		{"no allowance bills gross", decs("70", "50"), "0", decs("70", "50")},
+		{"grant covers everything", decs("70", "50"), "120", decs("0", "0")},
+		{"grant above gross bills nothing", decs("70", "50"), "200", decs("0", "0")},
+		{"no grant bills gross", decs("70", "50"), "0", decs("70", "50")},
 		{"exact split", decs("10", "10", "20"), "30", decs("2.5", "2.5", "5")},
 		{"thirds add up to the billable", decs("10", "10", "10.01"), "20.01", decs("3.33", "3.33", "3.34")},
 		{"zero and negative lines get nothing", decs("0", "-5", "40"), "30", decs("0", "0", "10")},
@@ -531,7 +531,7 @@ func TestBilledAfterAllowance(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := billedAfterAllowance(tt.gross, decimal.RequireFromString(tt.allowance), 2)
+			got := billedAfterEntitlementGrant(tt.gross, decimal.RequireFromString(tt.granted), 2)
 			require.Len(t, got, len(tt.want))
 			for i := range tt.want {
 				require.True(t, tt.want[i].Equal(got[i]), "line %d: want %s, got %s", i, tt.want[i], got[i])

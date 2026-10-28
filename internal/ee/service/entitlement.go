@@ -198,7 +198,7 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 		if err := s.assertSingleContributor(txCtx, e); err != nil {
 			return err
 		}
-		if err := s.validateFeatureAllowanceAgainstGrants(txCtx, e, entity); err != nil {
+		if err := s.validateFeatureEntitlementGrantAgainstSubscriptionGrants(txCtx, e, entity); err != nil {
 			return err
 		}
 
@@ -411,7 +411,7 @@ func (s *entitlementService) CreateBulkEntitlement(ctx context.Context, req dto.
 		}
 
 		for _, e := range entitlements {
-			if err := s.validateFeatureAllowanceAgainstGrants(txCtx, e, subscriptionsByID[e.EntityID]); err != nil {
+			if err := s.validateFeatureEntitlementGrantAgainstSubscriptionGrants(txCtx, e, subscriptionsByID[e.EntityID]); err != nil {
 				return err
 			}
 		}
@@ -836,8 +836,8 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 		if err := s.assertSingleContributor(txCtx, existing); err != nil {
 			return err
 		}
-		if !isFeatureAllowance(&stored) {
-			if err := s.validateFeatureAllowanceAgainstGrants(txCtx, existing, nil); err != nil {
+		if !isFeatureEntitlementGrant(&stored) {
+			if err := s.validateFeatureEntitlementGrantAgainstSubscriptionGrants(txCtx, existing, nil); err != nil {
 				return err
 			}
 		}
@@ -1149,10 +1149,10 @@ func (s *entitlementService) entitlementAlertsEnabled(ctx context.Context) (bool
 	return cfg.IsAlertEnabled(), nil
 }
 
-// validateFeatureAllowanceAgainstGrants refuses a feature allowance that would reach a
+// validateFeatureEntitlementGrantAgainstSubscriptionGrants refuses a feature entitlement grant that would reach a
 // subscription with a subscription grant, directly or through its plan or addon.
-func (s *entitlementService) validateFeatureAllowanceAgainstGrants(ctx context.Context, e *entitlement.Entitlement, owner any) error {
-	if !isFeatureAllowance(e) {
+func (s *entitlementService) validateFeatureEntitlementGrantAgainstSubscriptionGrants(ctx context.Context, e *entitlement.Entitlement, owner any) error {
+	if !isFeatureEntitlementGrant(e) {
 		return nil
 	}
 	grants := &entitlementGrantService{ServiceParams: s.ServiceParams}
