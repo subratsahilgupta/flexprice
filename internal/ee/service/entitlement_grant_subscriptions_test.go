@@ -340,6 +340,17 @@ func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantGuard_ChecksLine
 
 	plain := s.newSubGrantSubscription("guard-plain")
 	s.NoError(guard.validateChangeIfGranted(s.GetContext(), plain.sub, subscriptionEntitlementGrantChange{items: tiered(plain)}))
+
+	// A grant that has ended no longer blocks changes.
+	ended := s.newSubGrantSubscription("guard-ended")
+	_, err = s.GetStores().EntitlementRepo.Create(s.GetContext(), &entitlement.Entitlement{
+		ID: "ent-ended-" + ended.sub.ID, EntityType: types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION, EntityID: ended.sub.ID,
+		GrantScope: types.EntitlementGrantScopeSubscription, GrantMeasure: types.EntitlementGrantMeasureAmount,
+		GrantDurationUnit: types.EntitlementGrantDurationUnitSubscriptionPeriod, GrantQuota: lo.ToPtr(decimal.NewFromInt(50)),
+		IsEnabled: true, EndDate: lo.ToPtr(time.Now().UTC().Add(-time.Hour)), BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+	})
+	s.Require().NoError(err)
+	s.NoError(guard.validateChangeIfGranted(s.GetContext(), ended.sub, subscriptionEntitlementGrantChange{items: tiered(ended)}))
 }
 
 func (s *EntitlementGrantSuite) TestUpdateSubscriptionEntitlementGrant_ParallelEditReopensOnlyItsWindow() {

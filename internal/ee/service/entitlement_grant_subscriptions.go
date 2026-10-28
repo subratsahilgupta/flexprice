@@ -86,19 +86,21 @@ type subscriptionEntitlementGrantChange struct {
 	entitlements []*entitlement.Entitlement
 }
 
-// hasSubscriptionEntitlementGrant reports whether the subscription has a published subscription entitlement grant.
+// hasSubscriptionEntitlementGrant reports whether the subscription has a published subscription entitlement
+// grant that has not ended; an ended grant covers nothing new, so it blocks nothing.
 func (s *entitlementGrantService) hasSubscriptionEntitlementGrant(ctx context.Context, subID string) (bool, error) {
 	// Partially wired test services have no entitlement store, and so no subscription entitlement grants.
 	if s.EntitlementRepo == nil {
 		return false, nil
 	}
-	filter := subscriptionEntitlementGrantConfigFilter(subID)
-	filter.Limit = lo.ToPtr(1)
-	ecs, err := s.EntitlementRepo.List(ctx, filter)
+	ecs, err := s.EntitlementRepo.List(ctx, subscriptionEntitlementGrantConfigFilter(subID))
 	if err != nil {
 		return false, err
 	}
-	return len(ecs) > 0, nil
+	now := time.Now().UTC()
+	return lo.ContainsBy(ecs, func(e *entitlement.Entitlement) bool {
+		return e.EndDate == nil || e.EndDate.After(now)
+	}), nil
 }
 
 // validateChangeIfGranted refuses the change when the subscription has a subscription entitlement grant it would break.

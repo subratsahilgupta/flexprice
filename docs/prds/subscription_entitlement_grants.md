@@ -116,7 +116,8 @@ Worked example: a $30 monthly grant. Feature X spends $70 and feature Y spends $
 
 - **Quota edit**: only `grant_quota` can change; delete and recreate the grant to change anything else. Usage is measured up to the edit, the current window closes, and a new one opens with what was left plus the change. Example: $30 → $50 with $20 used leaves $30. Concurrent edits are serialised, so the change is never applied twice.
 - **Delete**: a parallel grant's window ends. An additive pool continues for the other grants, less the deleted quota. The last grant's window ends. Allowance already granted is never taken back.
-- **Plan change**: the grant ends with the old subscription and is not copied to the new one. A plan change creates a new subscription, and subscription-level entitlements are not carried over today. Re-create the grant on the new subscription if wanted.
+- **Plan change (v1, `/change/execute`)**: v1 creates a new subscription. The grant ends with the old one and is not copied over; re-create it on the new subscription if wanted.
+- **Plan change (v2, `/change/v2/execute`)**: the plan is swapped on the same subscription, so the grant stays and its current window continues. Spend on old and new plan lines in the window draws from the same quota. The target plan is checked like any other change (section 5). A billing period reset (`billing_period_behaviour = anchor_at_effect`) is refused while the subscription has a subscription entitlement grant; a change at period end is allowed, since the anchor does not move.
 - **Addon attach or detach**: the subscription entitlement grant stays. Only the usage lines feeding it change.
 - **Line added, removed, or repriced**: applies from its effective date. Usage before the change keeps the old line and price. Closed windows are never recalculated. A backdated change does alter the open window.
 
@@ -130,7 +131,7 @@ Worked example: a $30 monthly grant. Feature X spends $70 and feature Y spends $
 
 - Creating a **subscription entitlement grant** is refused when entitlement alerts are off, in either the deployment config (`usage_alerts.entitlement_alerts_enabled`) or the environment setting (`entitlement_alert_config`): "Contact Flexprice support to enable this feature."
 - Feature grants are not affected. Alerts are off by default and every new metered entitlement becomes a grant, so refusing them would block ordinary plan setup; their usage is still refreshed before every invoice.
-- If the refresh at invoice time fails, the invoice still goes out with the last saved numbers, as today.
+- If the refresh at invoice time fails, the invoice is not created, so it never bills from stale grant usage. It is retried on the next billing run.
 
 ## 5. What gets refused
 
@@ -147,6 +148,8 @@ Worked example: a $30 monthly grant. Feature X spends $70 and feature Y spends $
 | A commitment on a subscription with a subscription entitlement grant; `POST /subscriptions` with both | Same, the other way round |
 | Subscription entitlement grant while any usage line is incompatible | Coverage would silently not apply |
 | Anything that adds an incompatible usage line to a subscription with a subscription entitlement grant: line add or update (including lines dated in a later period), addon attach, a plan or addon usage price that reaches it | Same |
+| v2 plan change whose target plan brings an incompatible usage line or a feature usage allowance | Same |
+| v2 plan change with an immediate billing period reset (`anchor_at_effect`) | It would cut the grant's window short; see section 9 |
 | Subscription entitlement grant in bulk create | Create each one with `POST /entitlements` |
 | Changing anything but `grant_quota` on a subscription entitlement grant | Delete and recreate instead |
 | Subscription entitlement grant when entitlement alerts are off | Usage would not be evaluated |
@@ -172,7 +175,8 @@ A plan price on another billing period or currency never reaches the subscriptio
 - Tiered, bucketed, never-resetting SUM, commitment, or true-up lines
 - Usage lines billed at a different cadence than the subscription
 - Subscriptions with a minimum spend or a commitment
-- Carrying a grant over a plan change
+- Carrying a grant over a v1 plan change (it creates a new subscription)
+- Billing period reset on a v2 plan change
 
 The UI is part of Phase 1. It is built after the backend is done, in a separate frontend change.
 
@@ -194,7 +198,14 @@ The UI is part of Phase 1. It is built after the backend is done, in a separate 
 - **More pricing.** Support tiered prices, bucketed meters, commitments, and true-up.
 - **Query load.** Hourly parallel grants check up to about 720 overage intervals per meter at invoice time. Optimize if customers use them.
 - **Minimum spend with subscription entitlement grants.** Count the minimum after the grant ($100 minimum, $120 usage, $30 grant: bill $90, top up to $100). Build on commitments v2 (FLE-1513): it prices commitments from per-line costs we pass in, so post-grant costs can be fed to it. Also decide how grants interact with the overage factor.
-- **Wider product scope.** Unlimited subscription entitlement grants, plan or addon templates, feature groups, carrying grants over a plan change.
+- **Wider product scope.** Unlimited subscription entitlement grants, plan or addon templates, feature groups, carrying grants over a v1 plan change.
+- **Billing period reset on plan change (open decision).** Proposed rule for `anchor_at_effect`:
+  - Only `subscription_period` windows are re-cut. Hour, day and week windows do not follow the anchor and continue.
+  - Measure usage up to the change, then close the current window at the change. Do not prorate it: it already covered real usage, and the outgoing-period invoice bills against it.
+  - Open a new window from the change to the new period end, with the full quota. It follows the grant's dates as at any period start: cut at `end_date` if that is inside the new period, none if the grant ended before the change, and none until `start_date` if that is later.
+  - Additive: one pool window closes and one reopens. Parallel: each grant's window does.
+  - Trade-off: the customer gets more than one period's quota across the reset (Oct 1–15 plus a full Oct 15–Nov 15), as the reset gives a full new period. If that is too generous, prorate the new window, never the old one.
+  - Reuse `reissueSubscriptionEntitlementGrantWindows`, as for a quota edit. Feature grants should follow the same rule; check what they do on a reset today first.
 
 ## 10. Acceptance criteria
 
