@@ -2566,7 +2566,7 @@ func (s *subscriptionService) ListSubscriptions(ctx context.Context, filter *typ
 		// land as an "" key in customerIDMap above) and skip the fetch entirely when none
 		// remain — the customer repo's `if len(CustomerIDs) > 0` guard would otherwise
 		// treat an empty slice as "no filter" and, combined with NewNoLimitCustomerFilter,
-		// stateWithChange every customer in the tenant/env.
+		// load every customer in the tenant/env.
 		validCustomerIDs := lo.Compact(uniqueCustomerIDs)
 		if len(validCustomerIDs) > 0 {
 			customerService := NewCustomerService(s.ServiceParams)
@@ -5124,7 +5124,7 @@ func (s *subscriptionService) createAddonAttachParams(
 		return nil, err
 	}
 
-	if err := (&entitlementGrantService{ServiceParams: s.ServiceParams}).validateAddonAttachSubscriptionGrant(ctx, sub, req.AddonID, lineItems); err != nil {
+	if err := s.validateAddonAttachSubscriptionGrant(ctx, sub, req.AddonID, lineItems); err != nil {
 		return nil, err
 	}
 
@@ -8730,4 +8730,23 @@ func (s *subscriptionService) processPendingPlanChangeV2(
 		"scheduled_at", schedule.ScheduledAt)
 
 	return s.ExecuteScheduledPlanChangeV2(ctx, schedule, config, sub)
+}
+
+// validateAddonAttachSubscriptionGrant refuses an addon whose lines or feature allowances would break the subscription grant.
+func (s *subscriptionService) validateAddonAttachSubscriptionGrant(ctx context.Context, sub *subscription.Subscription, addonID string, items []*subscription.SubscriptionLineItem) error {
+	grants := &entitlementGrantService{ServiceParams: s.ServiceParams}
+	granted, err := grants.hasSubscriptionGrant(ctx, sub.ID)
+	if err != nil || !granted {
+		return err
+	}
+	addonEntitlements, err := NewEntitlementService(s.ServiceParams).GetAddonEntitlements(ctx, addonID)
+	if err != nil {
+		return err
+	}
+	return grants.validateChange(ctx, sub, subscriptionGrantChange{
+		items: items,
+		entitlements: lo.Map(addonEntitlements.Items, func(r *dto.EntitlementResponse, _ int) *entitlement.Entitlement {
+			return r.Entitlement
+		}),
+	})
 }

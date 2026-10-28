@@ -114,27 +114,9 @@ func (s *entitlementGrantService) validateChangeIfGranted(ctx context.Context, s
 	return s.validateChange(ctx, sub, change)
 }
 
-// validateAddonAttachSubscriptionGrant refuses an addon whose lines or feature allowances would break the subscription grant.
-func (s *entitlementGrantService) validateAddonAttachSubscriptionGrant(ctx context.Context, sub *subscription.Subscription, addonID string, items []*subscription.SubscriptionLineItem) error {
-	granted, err := s.hasSubscriptionGrant(ctx, sub.ID)
-	if err != nil || !granted {
-		return err
-	}
-	addonEntitlements, err := NewEntitlementService(s.ServiceParams).GetAddonEntitlements(ctx, addonID)
-	if err != nil {
-		return err
-	}
-	return s.validateChange(ctx, sub, subscriptionGrantChange{
-		items: items,
-		entitlements: lo.Map(addonEntitlements.Items, func(r *dto.EntitlementResponse, _ int) *entitlement.Entitlement {
-			return r.Entitlement
-		}),
-	})
-}
-
 // validateChange refuses when the subscription, with the change applied, cannot carry a subscription grant.
 func (s *entitlementGrantService) validateChange(ctx context.Context, sub *subscription.Subscription, change subscriptionGrantChange) error {
-	st, err := s.stateWithChange(ctx, sub, change)
+	st, err := s.subscriptionGrantStateAfter(ctx, sub, change)
 	if err != nil {
 		return err
 	}
@@ -155,8 +137,8 @@ func (s *entitlementGrantService) validateChange(ctx context.Context, sub *subsc
 		Mark(ierr.ErrValidation)
 }
 
-// stateWithChange is the subscription's billing setup with the change applied, as subscriptionGrantBlocker reads it.
-func (s *entitlementGrantService) stateWithChange(ctx context.Context, sub *subscription.Subscription, change subscriptionGrantChange) (subscriptionGrantState, error) {
+// subscriptionGrantStateAfter is the subscription's billing setup with the change applied, as subscriptionGrantBlocker reads it.
+func (s *entitlementGrantService) subscriptionGrantStateAfter(ctx context.Context, sub *subscription.Subscription, change subscriptionGrantChange) (subscriptionGrantState, error) {
 	stored, err := s.SubscriptionLineItemRepo.ListBySubscription(ctx, sub)
 	if err != nil {
 		return subscriptionGrantState{}, err
@@ -366,37 +348,6 @@ func (s *entitlementGrantService) grantedSubscriptionsUsing(ctx context.Context,
 		subFilter.PlanID = entityID
 	}
 	return s.SubRepo.List(ctx, subFilter)
-}
-
-// changeForNewPrice is how a new plan or addon price lands on a subscription: one line, or nothing when the
-// price's cadence or currency keeps it off that subscription.
-func changeForNewPrice(p *priceDomain.Price) func(sub *subscription.Subscription) subscriptionGrantChange {
-	return func(sub *subscription.Subscription) subscriptionGrantChange {
-		candidates := []*dto.PriceResponse{{Price: p}}
-		lands := filterValidPricesForSubscription(candidates, sub, nil)
-		if p.EntityType == types.PRICE_ENTITY_TYPE_ADDON {
-			lands = filterAddonPricesForSubscription(candidates, sub)
-		}
-		if len(lands) == 0 {
-			return subscriptionGrantChange{}
-		}
-		return subscriptionGrantChange{
-			items:  []*subscription.SubscriptionLineItem{pendingLineFromPrice(sub, p)},
-			prices: []*priceDomain.Price{p},
-		}
-	}
-}
-
-func pendingLineFromPrice(sub *subscription.Subscription, p *priceDomain.Price) *subscription.SubscriptionLineItem {
-	return &subscription.SubscriptionLineItem{
-		ID:                 "pending_" + p.ID,
-		SubscriptionID:     sub.ID,
-		PriceID:            p.ID,
-		PriceType:          p.Type,
-		MeterID:            p.MeterID,
-		BillingPeriod:      p.BillingPeriod,
-		BillingPeriodCount: p.BillingPeriodCount,
-	}
 }
 
 // updateSubscriptionGrant changes a subscription grant's quota. The live window closes and a successor
@@ -671,30 +622,6 @@ func (s *entitlementGrantService) SubscriptionGrantState(
 	return states[sub.ID], nil
 }
 
-// validateFeatureAllowanceAgainstGrants refuses a feature allowance that would reach a
-// subscription with a subscription grant, directly or through its plan or addon.
-func (s *entitlementService) validateFeatureAllowanceAgainstGrants(ctx context.Context, e *entitlement.Entitlement, owner any) error {
-	if !isFeatureAllowance(e) {
-		return nil
-	}
-	guard := &entitlementGrantService{ServiceParams: s.ServiceParams}
-	change := subscriptionGrantChange{entitlements: []*entitlement.Entitlement{e}}
-	switch e.EntityType {
-	case types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION:
-		sub, ok := owner.(*subscription.Subscription)
-		if !ok || sub == nil {
-			var err error
-			if sub, err = s.SubRepo.Get(ctx, e.EntityID); err != nil {
-				return err
-			}
-		}
-		return guard.validateChangeIfGranted(ctx, sub, change)
-	case types.ENTITLEMENT_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_ADDON:
-		return guard.validateCatalogChange(ctx, e.EntityType, e.EntityID, func(*subscription.Subscription) subscriptionGrantChange { return change })
-	}
-	return nil
-}
-
 // subscriptionGrantsView returns the subscription's grants and their ledger, or nil when it has none.
 func (s *entitlementGrantService) subscriptionGrantsView(ctx context.Context, sub *subscription.Subscription) (*dto.SubscriptionGrantsResponse, error) {
 	ecs, err := s.EntitlementRepo.List(ctx, subscriptionGrantConfigFilter(sub.ID))
@@ -713,14 +640,4 @@ func (s *entitlementGrantService) subscriptionGrantsView(ctx context.Context, su
 		}),
 		GrantState: state,
 	}, nil
-}
-
-// validateNewPriceSubscriptionGrant refuses a plan or addon usage price that would break a subscription
-// grant on a subscription using that plan or addon.
-func (s *entitlementGrantService) validateNewPriceSubscriptionGrant(ctx context.Context, p *priceDomain.Price) error {
-	if p.Type != types.PRICE_TYPE_USAGE || (p.EntityType != types.PRICE_ENTITY_TYPE_PLAN && p.EntityType != types.PRICE_ENTITY_TYPE_ADDON) {
-		return nil
-	}
-	owner := lo.Ternary(p.EntityType == types.PRICE_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_ADDON)
-	return s.validateCatalogChange(ctx, owner, p.EntityID, changeForNewPrice(p))
 }
