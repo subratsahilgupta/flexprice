@@ -2646,6 +2646,8 @@ definitions:
       static_value:
         type: string
       usage_limit:
+        description: 'Deprecated: use grant_quota; a metered usage_limit is converted
+          to a grant on create.'
         type: integer
       usage_reset_period:
         $ref: '#/definitions/types.EntitlementUsageResetPeriod'
@@ -7309,6 +7311,58 @@ definitions:
         - $ref: '#/definitions/types.UserType'
         description: '"user" or "service_account"'
     type: object
+  SelfBillingChargeResponse:
+    properties:
+      amount:
+        description: Amount is a unit rate; tiered charges use tiers instead.
+        type: string
+      billing_model:
+        $ref: '#/definitions/types.BillingModel'
+      billing_period:
+        $ref: '#/definitions/types.BillingPeriod'
+      billing_period_count:
+        type: integer
+      bucket_size:
+        $ref: '#/definitions/types.WindowSize'
+      currency:
+        type: string
+      display_name:
+        type: string
+      invoice_cadence:
+        $ref: '#/definitions/types.InvoiceCadence'
+      line_item_id:
+        type: string
+      meter_display_name:
+        type: string
+      meter_id:
+        type: string
+      price_id:
+        type: string
+      price_unit:
+        type: string
+      price_unit_amount:
+        type: string
+      price_unit_tiers:
+        items:
+          $ref: '#/definitions/price.PriceTier'
+        type: array
+      price_unit_type:
+        $ref: '#/definitions/types.PriceUnitType'
+      quantity:
+        description: Quantity is the configured quantity; metered usage is returned
+          in summary.usage.
+        type: string
+      tier_mode:
+        $ref: '#/definitions/types.BillingTier'
+      tiers:
+        items:
+          $ref: '#/definitions/price.PriceTier'
+        type: array
+      transform_quantity:
+        $ref: '#/definitions/price.TransformQuantity'
+      type:
+        $ref: '#/definitions/types.PriceType'
+    type: object
   SelfBillingCheckoutRequest:
     properties:
       address_city:
@@ -7369,6 +7423,19 @@ definitions:
       total:
         type: string
     type: object
+  SelfBillingPlanResponse:
+    properties:
+      charges:
+        items:
+          $ref: '#/definitions/SelfBillingChargeResponse'
+        type: array
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+    type: object
   SelfBillingPortalResponse:
     properties:
       expires_at:
@@ -7389,6 +7456,8 @@ definitions:
         items:
           $ref: '#/definitions/SelfBillingInvoice'
         type: array
+      plan:
+        $ref: '#/definitions/SelfBillingPlanResponse'
       status:
         $ref: '#/definitions/types.TenantInternalStatus'
       subscription_status:
@@ -9414,6 +9483,7 @@ definitions:
       static_value:
         type: string
       usage_limit:
+        description: 'Deprecated: use grant_quota.'
         type: integer
       usage_reset_period:
         $ref: '#/definitions/types.EntitlementUsageResetPeriod'
@@ -21368,8 +21438,10 @@ paths:
       x-scope: read
   /portal/billing/summary:
     get:
-      description: Returns the caller tenant's billing status, subscription, recent
-        invoices and usage.
+      description: Returns billing status, recent invoices, usage and a plan with
+        charges. Charges use expanded subscription line-item prices, including overrides;
+        without a current subscription they use the configured self-serve plan. Pricing
+        terms are not an invoice total.
       operationId: getSelfBillingSummary
       produces:
       - application/json
