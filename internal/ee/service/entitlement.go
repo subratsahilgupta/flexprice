@@ -836,10 +836,8 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 		if err := s.assertSingleContributor(txCtx, existing); err != nil {
 			return err
 		}
-		if !isFeatureEntitlementGrant(&stored) {
-			if err := s.validateFeatureEntitlementGrantAgainstSubscriptionEntitlementGrants(txCtx, existing, nil); err != nil {
-				return err
-			}
+		if err := s.validateFeatureEntitlementGrantAgainstSubscriptionEntitlementGrants(txCtx, existing, nil); err != nil {
+			return err
 		}
 
 		updated, err := s.EntitlementRepo.Update(txCtx, existing)

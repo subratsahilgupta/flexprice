@@ -294,7 +294,7 @@ func (s *entitlementGrantService) validateCatalogChange(
 	entityID string,
 	change func(sub *subscription.Subscription) subscriptionEntitlementGrantChange,
 ) error {
-	subs, err := s.grantedSubscriptionsUsing(ctx, entityType, entityID)
+	subs, err := s.subscriptionsWithEntitlementGrantOn(ctx, entityType, entityID)
 	if err != nil {
 		return err
 	}
@@ -306,8 +306,9 @@ func (s *entitlementGrantService) validateCatalogChange(
 	return nil
 }
 
-// grantedSubscriptionsUsing returns the live subscriptions with a subscription entitlement grant that use the plan or addon.
-func (s *entitlementGrantService) grantedSubscriptionsUsing(ctx context.Context, entityType types.EntitlementEntityType, entityID string) ([]*subscription.Subscription, error) {
+// subscriptionsWithEntitlementGrantOn returns the live subscriptions on the plan or addon that have a subscription
+// entitlement grant which has not ended.
+func (s *entitlementGrantService) subscriptionsWithEntitlementGrantOn(ctx context.Context, entityType types.EntitlementEntityType, entityID string) ([]*subscription.Subscription, error) {
 	if s.EntitlementRepo == nil {
 		return nil, nil
 	}
@@ -315,6 +316,8 @@ func (s *entitlementGrantService) grantedSubscriptionsUsing(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now().UTC()
+	ecs = lo.Filter(ecs, func(ec *entitlement.Entitlement, _ int) bool { return ec.EndDate == nil || ec.EndDate.After(now) })
 	if len(ecs) == 0 {
 		return nil, nil
 	}
