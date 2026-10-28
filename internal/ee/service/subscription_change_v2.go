@@ -176,7 +176,7 @@ func (s *subscriptionService) resolvePlanChange(
 // target plan line or feature entitlement grant it cannot cover, or a period reset that would cut its window.
 func (s *subscriptionService) validatePlanChangeSubscriptionEntitlementGrant(ctx context.Context, r *planChangeRequest, toPlan *dto.PlanResponse) error {
 	grants := &entitlementGrantService{ServiceParams: s.ServiceParams}
-	granted, err := grants.hasSubscriptionEntitlementGrant(ctx, r.currentSub.ID)
+	granted, err := grants.hasSubscriptionScopedEntitlement(ctx, r.currentSub.ID)
 	if err != nil {
 		return err
 	}

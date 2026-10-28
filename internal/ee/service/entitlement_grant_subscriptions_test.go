@@ -334,12 +334,12 @@ func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantGuard_ChecksLine
 	granted := s.newSubGrantSubscription("guard-granted")
 	_, err := s.entService.CreateEntitlement(s.GetContext(), subscriptionEntitlementGrantRequest(granted.sub.ID, 50, ""))
 	s.Require().NoError(err)
-	err = guard.validateChangeIfGranted(s.GetContext(), granted.sub, subscriptionEntitlementGrantChange{items: tiered(granted)})
+	err = guard.validateWithSubscriptionScopedEntitlement(s.GetContext(), granted.sub, subscriptionEntitlementGrantChange{items: tiered(granted)})
 	s.Require().Error(err)
 	s.Contains(err.Error(), "tiered")
 
 	plain := s.newSubGrantSubscription("guard-plain")
-	s.NoError(guard.validateChangeIfGranted(s.GetContext(), plain.sub, subscriptionEntitlementGrantChange{items: tiered(plain)}))
+	s.NoError(guard.validateWithSubscriptionScopedEntitlement(s.GetContext(), plain.sub, subscriptionEntitlementGrantChange{items: tiered(plain)}))
 
 	// A grant that has ended no longer blocks changes.
 	ended := s.newSubGrantSubscription("guard-ended")
@@ -350,7 +350,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantGuard_ChecksLine
 		IsEnabled: true, EndDate: lo.ToPtr(time.Now().UTC().Add(-time.Hour)), BaseModel: types.GetDefaultBaseModel(s.GetContext()),
 	})
 	s.Require().NoError(err)
-	s.NoError(guard.validateChangeIfGranted(s.GetContext(), ended.sub, subscriptionEntitlementGrantChange{items: tiered(ended)}))
+	s.NoError(guard.validateWithSubscriptionScopedEntitlement(s.GetContext(), ended.sub, subscriptionEntitlementGrantChange{items: tiered(ended)}))
 }
 
 func (s *EntitlementGrantSuite) TestUpdateSubscriptionEntitlementGrant_ParallelEditReopensOnlyItsWindow() {
@@ -467,7 +467,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionEntitlementGrantGuard_ChecksLine
 		BillingPeriod: fx.sub.BillingPeriod, StartDate: fx.sub.CurrentPeriodEnd.Add(time.Hour),
 	}
 	tiered := &price.Price{ID: "price-future-tiered", Type: types.PRICE_TYPE_USAGE, BillingModel: types.BILLING_MODEL_TIERED, MeterID: fx.callsMeter}
-	err = (&entitlementGrantService{ServiceParams: s.buildServiceParams()}).validateChangeIfGranted(s.GetContext(), fx.sub, subscriptionEntitlementGrantChange{
+	err = (&entitlementGrantService{ServiceParams: s.buildServiceParams()}).validateWithSubscriptionScopedEntitlement(s.GetContext(), fx.sub, subscriptionEntitlementGrantChange{
 		items: []*subscription.SubscriptionLineItem{future}, prices: []*price.Price{tiered},
 	})
 	s.Require().Error(err)

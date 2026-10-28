@@ -135,7 +135,7 @@ func (s *commitmentService) create(
 			return nil
 		}
 
-		granted, err := (&entitlementGrantService{ServiceParams: s.ServiceParams}).hasSubscriptionEntitlementGrant(txCtx, req.SubscriptionID)
+		granted, err := (&entitlementGrantService{ServiceParams: s.ServiceParams}).hasSubscriptionScopedEntitlement(txCtx, req.SubscriptionID)
 		if err != nil {
 			return err
 		}

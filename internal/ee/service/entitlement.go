@@ -198,7 +198,7 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 		if err := s.assertSingleContributor(txCtx, e); err != nil {
 			return err
 		}
-		if err := s.validateFeatureEntitlementGrantAgainstSubscriptionEntitlementGrants(txCtx, e, entity); err != nil {
+		if err := s.validateFeatureGrantAgainstScopedEntitlements(txCtx, e); err != nil {
 			return err
 		}
 
@@ -323,10 +323,8 @@ func (s *entitlementService) CreateBulkEntitlement(ctx context.Context, req dto.
 		}
 
 		// Validate all subscriptions exist
-		subscriptionsByID := make(map[string]*subscription.Subscription, len(subscriptionIDs))
 		for subscriptionID := range subscriptionIDs {
-			sub, err := s.SubRepo.Get(txCtx, subscriptionID)
-			subscriptionsByID[subscriptionID] = sub
+			_, err := s.SubRepo.Get(txCtx, subscriptionID)
 			if err != nil {
 				return ierr.WithError(err).
 					WithHint(fmt.Sprintf("Subscription with ID %s not found", subscriptionID)).
@@ -411,7 +409,7 @@ func (s *entitlementService) CreateBulkEntitlement(ctx context.Context, req dto.
 		}
 
 		for _, e := range entitlements {
-			if err := s.validateFeatureEntitlementGrantAgainstSubscriptionEntitlementGrants(txCtx, e, subscriptionsByID[e.EntityID]); err != nil {
+			if err := s.validateFeatureGrantAgainstScopedEntitlements(txCtx, e); err != nil {
 				return err
 			}
 		}
@@ -836,7 +834,7 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 		if err := s.assertSingleContributor(txCtx, existing); err != nil {
 			return err
 		}
-		if err := s.validateFeatureEntitlementGrantAgainstSubscriptionEntitlementGrants(txCtx, existing, nil); err != nil {
+		if err := s.validateFeatureGrantAgainstScopedEntitlements(txCtx, existing); err != nil {
 			return err
 		}
 
@@ -1147,26 +1145,35 @@ func (s *entitlementService) entitlementAlertsEnabled(ctx context.Context) (bool
 	return cfg.IsAlertEnabled(), nil
 }
 
-// validateFeatureEntitlementGrantAgainstSubscriptionEntitlementGrants refuses a feature entitlement grant that would reach a
-// subscription with a subscription entitlement grant, directly or through its plan or addon.
-func (s *entitlementService) validateFeatureEntitlementGrantAgainstSubscriptionEntitlementGrants(ctx context.Context, e *entitlement.Entitlement, owner any) error {
+// validateFeatureGrantAgainstScopedEntitlements refuses a feature entitlement grant that would reach a subscription
+// with a subscription-scoped entitlement, directly or through its plan or addon: one grant per charge.
+func (s *entitlementService) validateFeatureGrantAgainstScopedEntitlements(ctx context.Context, e *entitlement.Entitlement) error {
 	if !isFeatureEntitlementGrant(e) {
 		return nil
 	}
 	grants := &entitlementGrantService{ServiceParams: s.ServiceParams}
-	change := subscriptionEntitlementGrantChange{entitlements: []*entitlement.Entitlement{e}}
+	var subIDs []string
 	switch e.EntityType {
 	case types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION:
-		sub, ok := owner.(*subscription.Subscription)
-		if !ok || sub == nil {
-			var err error
-			if sub, err = s.SubRepo.Get(ctx, e.EntityID); err != nil {
-				return err
-			}
+		granted, err := grants.hasSubscriptionScopedEntitlement(ctx, e.EntityID)
+		if err != nil {
+			return err
 		}
-		return grants.validateChangeIfGranted(ctx, sub, change)
+		if granted {
+			subIDs = []string{e.EntityID}
+		}
 	case types.ENTITLEMENT_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_ADDON:
-		return grants.validateCatalogChange(ctx, e.EntityType, e.EntityID, func(*subscription.Subscription) subscriptionEntitlementGrantChange { return change })
+		subs, err := grants.subscriptionsWithScopedEntitlementOn(ctx, e.EntityType, e.EntityID)
+		if err != nil {
+			return err
+		}
+		subIDs = lo.Map(subs, func(sub *subscription.Subscription, _ int) string { return sub.ID })
 	}
-	return nil
+	if len(subIDs) == 0 {
+		return nil
+	}
+	return ierr.NewErrorf("subscription entitlement grant not supported: %s", errSubGrantWithFeatureGrant).
+		WithHint("A subscription with a subscription entitlement grant cannot also have feature entitlement grants.").
+		WithReportableDetails(map[string]any{"entitlement_id": e.ID, "subscription_ids": subIDs}).
+		Mark(ierr.ErrValidation)
 }

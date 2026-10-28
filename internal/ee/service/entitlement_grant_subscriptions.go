@@ -86,9 +86,9 @@ type subscriptionEntitlementGrantChange struct {
 	entitlements []*entitlement.Entitlement
 }
 
-// hasSubscriptionEntitlementGrant reports whether the subscription has a published subscription entitlement
-// grant that has not ended; an ended grant covers nothing new, so it blocks nothing.
-func (s *entitlementGrantService) hasSubscriptionEntitlementGrant(ctx context.Context, subID string) (bool, error) {
+// hasSubscriptionScopedEntitlement reports whether the subscription has a published, subscription-scoped
+// entitlement that has not ended. It reads the entitlement, not its windows, so it holds before the first window opens.
+func (s *entitlementGrantService) hasSubscriptionScopedEntitlement(ctx context.Context, subID string) (bool, error) {
 	// Partially wired test services have no entitlement store, and so no subscription entitlement grants.
 	if s.EntitlementRepo == nil {
 		return false, nil
@@ -103,9 +103,10 @@ func (s *entitlementGrantService) hasSubscriptionEntitlementGrant(ctx context.Co
 	}), nil
 }
 
-// validateChangeIfGranted refuses the change when the subscription has a subscription entitlement grant it would break.
-func (s *entitlementGrantService) validateChangeIfGranted(ctx context.Context, sub *subscription.Subscription, change subscriptionEntitlementGrantChange) error {
-	granted, err := s.hasSubscriptionEntitlementGrant(ctx, sub.ID)
+// validateWithSubscriptionScopedEntitlement refuses the change when the subscription has a subscription-scoped
+// entitlement and the change would break it; without one it allows anything.
+func (s *entitlementGrantService) validateWithSubscriptionScopedEntitlement(ctx context.Context, sub *subscription.Subscription, change subscriptionEntitlementGrantChange) error {
+	granted, err := s.hasSubscriptionScopedEntitlement(ctx, sub.ID)
 	if err != nil {
 		return err
 	}
@@ -294,7 +295,7 @@ func (s *entitlementGrantService) validateCatalogChange(
 	entityID string,
 	change func(sub *subscription.Subscription) subscriptionEntitlementGrantChange,
 ) error {
-	subs, err := s.subscriptionsWithEntitlementGrantOn(ctx, entityType, entityID)
+	subs, err := s.subscriptionsWithScopedEntitlementOn(ctx, entityType, entityID)
 	if err != nil {
 		return err
 	}
@@ -306,9 +307,9 @@ func (s *entitlementGrantService) validateCatalogChange(
 	return nil
 }
 
-// subscriptionsWithEntitlementGrantOn returns the live subscriptions on the plan or addon that have a subscription
-// entitlement grant which has not ended.
-func (s *entitlementGrantService) subscriptionsWithEntitlementGrantOn(ctx context.Context, entityType types.EntitlementEntityType, entityID string) ([]*subscription.Subscription, error) {
+// subscriptionsWithScopedEntitlementOn returns the live subscriptions on the plan or addon that have a published,
+// subscription-scoped entitlement which has not ended.
+func (s *entitlementGrantService) subscriptionsWithScopedEntitlementOn(ctx context.Context, entityType types.EntitlementEntityType, entityID string) ([]*subscription.Subscription, error) {
 	if s.EntitlementRepo == nil {
 		return nil, nil
 	}

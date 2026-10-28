@@ -8735,7 +8735,7 @@ func (s *subscriptionService) processPendingPlanChangeV2(
 // validateAddonAttachSubscriptionEntitlementGrant refuses an addon whose lines or feature entitlement grants would break the subscription entitlement grant.
 func (s *subscriptionService) validateAddonAttachSubscriptionEntitlementGrant(ctx context.Context, sub *subscription.Subscription, addonID string, items []*subscription.SubscriptionLineItem) error {
 	grants := &entitlementGrantService{ServiceParams: s.ServiceParams}
-	granted, err := grants.hasSubscriptionEntitlementGrant(ctx, sub.ID)
+	granted, err := grants.hasSubscriptionScopedEntitlement(ctx, sub.ID)
 	if err != nil {
 		return err
 	}
