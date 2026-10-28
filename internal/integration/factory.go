@@ -704,7 +704,6 @@ func (f *Factory) GetZohoBooksIntegration(ctx context.Context) (*ZohoBooksIntegr
 		f.paymentRepo,
 		f.subscriptionRepo,
 		f.settingsRepo,
-		f.connectionRepo,
 		f.logger,
 	)
 

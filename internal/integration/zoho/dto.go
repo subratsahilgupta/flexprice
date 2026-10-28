@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/flexprice/flexprice/internal/types/integrations"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -191,8 +191,10 @@ type PaymentOptions struct {
 }
 
 type PaymentGateway struct {
-	Configured  bool                            `json:"configured"`
-	GatewayName integrations.ZohoPaymentGateway `json:"gateway_name"`
+	Configured  bool                     `json:"configured"`
+	GatewayName types.ZohoPaymentGateway `json:"gateway_name"`
+	// PayPal payment method (standard or adaptive), set only on the PayPal gateway.
+	AdditionalField1 string `json:"additional_field1,omitempty"`
 }
 
 type InvoiceResponse struct {
