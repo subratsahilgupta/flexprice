@@ -42,6 +42,10 @@ func TestPaymentOptions(t *testing.T) {
 	stripeOnly := &PaymentOptions{PaymentGateways: []PaymentGateway{
 		{Configured: true, GatewayName: integrations.ZohoPaymentGatewayStripe},
 	}}
+	stripeAndRazorpay := &PaymentOptions{PaymentGateways: []PaymentGateway{
+		{Configured: true, GatewayName: integrations.ZohoPaymentGatewayStripe},
+		{Configured: true, GatewayName: integrations.ZohoPaymentGatewayRazorpay},
+	}}
 
 	cases := []struct {
 		name          string
@@ -70,16 +74,32 @@ func TestPaymentOptions(t *testing.T) {
 			wantRepoCalls: true,
 		},
 		{
-			name:          "toggle on with stripe and razorpay connected attaches only stripe",
+			name:          "toggle on with stripe and razorpay connected attaches both",
 			settings:      attachEnabled,
 			providers:     []types.SecretProvider{types.SecretProviderRazorpay, types.SecretProviderStripe},
+			want:          stripeAndRazorpay,
+			wantRepoCalls: true,
+		},
+		{
+			name:      "toggle on with only razorpay connected attaches razorpay",
+			settings:  attachEnabled,
+			providers: []types.SecretProvider{types.SecretProviderRazorpay},
+			want: &PaymentOptions{PaymentGateways: []PaymentGateway{
+				{Configured: true, GatewayName: integrations.ZohoPaymentGatewayRazorpay},
+			}},
+			wantRepoCalls: true,
+		},
+		{
+			name:          "toggle on with stripe and paddle connected attaches only stripe",
+			settings:      attachEnabled,
+			providers:     []types.SecretProvider{types.SecretProviderPaddle, types.SecretProviderStripe},
 			want:          stripeOnly,
 			wantRepoCalls: true,
 		},
 		{
-			name:          "toggle on with only razorpay connected attaches nothing",
+			name:          "toggle on with only paddle connected attaches nothing",
 			settings:      attachEnabled,
-			providers:     []types.SecretProvider{types.SecretProviderRazorpay},
+			providers:     []types.SecretProvider{types.SecretProviderPaddle},
 			wantRepoCalls: true,
 		},
 		{

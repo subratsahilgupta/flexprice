@@ -13,6 +13,7 @@ func TestZohoPaymentGatewayProvider(t *testing.T) {
 		want    types.SecretProvider
 	}{
 		{ZohoPaymentGatewayStripe, types.SecretProviderStripe},
+		{ZohoPaymentGatewayRazorpay, types.SecretProviderRazorpay},
 		{ZohoPaymentGateway("paypal"), ""},
 	}
 

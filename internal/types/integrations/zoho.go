@@ -8,12 +8,13 @@ import (
 type ZohoPaymentGateway string
 
 const (
-	ZohoPaymentGatewayStripe ZohoPaymentGateway = "stripe"
+	ZohoPaymentGatewayStripe   ZohoPaymentGateway = "stripe"
+	ZohoPaymentGatewayRazorpay ZohoPaymentGateway = "razorpay"
 )
 
 // ZohoPaymentGateways lists the gateways attached to synced Zoho invoices when connected.
 func ZohoPaymentGateways() []ZohoPaymentGateway {
-	return []ZohoPaymentGateway{ZohoPaymentGatewayStripe}
+	return []ZohoPaymentGateway{ZohoPaymentGatewayStripe, ZohoPaymentGatewayRazorpay}
 }
 
 // GatewayProvider returns the provider of the Flexprice connection that backs the gateway.
@@ -21,6 +22,8 @@ func (g ZohoPaymentGateway) GatewayProvider() types.SecretProvider {
 	switch g {
 	case ZohoPaymentGatewayStripe:
 		return types.SecretProviderStripe
+	case ZohoPaymentGatewayRazorpay:
+		return types.SecretProviderRazorpay
 	default:
 		return ""
 	}
