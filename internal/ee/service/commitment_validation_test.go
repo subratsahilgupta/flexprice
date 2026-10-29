@@ -414,15 +414,23 @@ func (s *CommitmentServiceSuite) TestValidation_OpenEndedOnSubscriptionWithEndDa
 // A subscription starting mid-second accepts a commitment dated at its own start: ApplyDefaults
 // aligns term edges to whole seconds, and the sub-start bound compares at that granularity too.
 func (s *CommitmentServiceSuite) TestValidation_AcceptsStartMatchingAMidSecondSubscriptionStart() {
-	sub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), s.fx.sub.ID)
+	ctx := s.GetContext()
+	sub, err := s.GetStores().SubscriptionRepo.Get(ctx, s.fx.sub.ID)
 	s.Require().NoError(err)
 	sub.StartDate = sub.StartDate.Add(500 * time.Millisecond)
-	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), sub))
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
+
+	// The usage lines inherit the mid-second start, as subscription creation sets them.
+	line, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.fx.lineAPI.ID)
+	s.Require().NoError(err)
+	line.StartDate = sub.StartDate
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, line))
 
 	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
 	req.StartDate = sub.StartDate // truncates to the second's start in ApplyDefaults
-	_, err = s.svc.Create(s.GetContext(), req)
+	created, err := s.svc.Create(ctx, req)
 	s.Require().NoError(err)
+	s.True(created.StartDate.Equal(sub.StartDate.Truncate(time.Second)))
 }
 
 func (s *CommitmentServiceSuite) TestValidation_StartAtOrAfterSubscriptionEnd() {

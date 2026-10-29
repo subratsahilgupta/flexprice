@@ -214,7 +214,10 @@ func (s *commitmentService) validateAgainstSubscription(
 		}
 	}
 
-	lines := resolveScopeLines(req.Scope.EntityType, req.Scope.EntityID, cc, req.StartDate)
+	// The commitment cannot bill before the subscription exists, and its start may sit a fraction of a
+	// second below the mid-second line starts (term edges are whole seconds), so coverage is checked
+	// from whichever is later.
+	lines := resolveScopeLines(req.Scope.EntityType, req.Scope.EntityID, cc, maxTime(req.StartDate, sub.StartDate))
 	if len(lines) == 0 {
 		return ierr.Validationf(
 			"scope %s/%s covers no usage prices on the subscription",
