@@ -671,6 +671,7 @@ func (s *planService) SyncPlanPricesV2(ctx context.Context, planID string) (*dto
 
 	for {
 		pageIteration++
+		pageStart := time.Now()
 		missingPairs, subIDsInPage, listErr := s.PlanPriceSyncRepo.ListPlanLineItemsToCreateV2(ctx, planpricesync.ListPlanLineItemsToCreateV2Params{
 			PlanID:    planID,
 			TargetSeq: targetSeq,
@@ -682,6 +683,8 @@ func (s *planService) SyncPlanPricesV2(ctx context.Context, planID string) (*dto
 		if len(subIDsInPage) == 0 {
 			break
 		}
+		findDuration := time.Since(pageStart)
+		var pageCreationDuration time.Duration
 
 		lineItemsFoundForCreation += len(missingPairs)
 
@@ -769,13 +772,14 @@ func (s *planService) SyncPlanPricesV2(ctx context.Context, planID string) (*dto
 				}
 			}
 			lineItemsCreated += len(lineItems)
-			creationTotalDuration += time.Since(creationStart)
+			pageCreationDuration = time.Since(creationStart)
+			creationTotalDuration += pageCreationDuration
 		}
 
 		// 2. Terminate live plan line items for this page's subs whose price
-		//    has ended. Scoping to the page's subs keeps each UPDATE bounded
-		//    (no plan-wide row locks) and lets the SLI index on
-		//    (tenant, env, subscription_id, status) drive the lookup.
+		//    ended after the sub's bookmark. It reads each sub's bookmark, so it
+		//    must run before stamping. Scoping to the page's subs keeps each
+		//    UPDATE bounded (no plan-wide row locks).
 		//    Running this between create and stamp closes the race where a
 		//    price ends after we cached it but before we stamp the sub — the
 		//    just-created LI gets cleaned up in the same page so the stamp
@@ -792,7 +796,8 @@ func (s *planService) SyncPlanPricesV2(ctx context.Context, planID string) (*dto
 			return nil, terr
 		}
 		lineItemsTerminated += terminated
-		terminationTotalDuration += time.Since(terminationStart)
+		pageTerminationDuration := time.Since(terminationStart)
+		terminationTotalDuration += pageTerminationDuration
 
 		// 3. Stamp this page's subs as caught up. This is the progress
 		//    marker — if we crash before reaching here, the same subs
@@ -806,7 +811,20 @@ func (s *planService) SyncPlanPricesV2(ctx context.Context, planID string) (*dto
 			return nil, serr
 		}
 		subsStamped += stamped
-		stampTotalDuration += time.Since(stampStart)
+		pageStampDuration := time.Since(stampStart)
+		stampTotalDuration += pageStampDuration
+
+		s.Logger.Info(ctx, "plan price sync page done (v2)",
+			"plan_id", planID,
+			"page", pageIteration,
+			"subs", len(subIDsInPage),
+			"line_items_found", len(missingPairs),
+			"line_items_terminated", terminated,
+			"find_ms", findDuration.Milliseconds(),
+			"create_ms", pageCreationDuration.Milliseconds(),
+			"terminate_ms", pageTerminationDuration.Milliseconds(),
+			"stamp_ms", pageStampDuration.Milliseconds(),
+			"page_ms", time.Since(pageStart).Milliseconds())
 	}
 
 	totalSyncDuration := time.Since(syncStartTime)

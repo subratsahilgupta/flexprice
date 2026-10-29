@@ -100,10 +100,9 @@ type Repository interface {
 	) (items []PlanLineItemCreationDelta, staleSubIDs []string, err error)
 
 	// TerminatePlanPricesLineItemsV2 sets end_date on live plan-derived line
-	// items belonging to the given subs whose price has been ended. Scoping
-	// to a sub set bounds the UPDATE per page (no plan-wide locks). The
-	// `li.end_date IS NULL` guard makes this idempotent — re-runs are no-ops.
-	// Returns rows affected.
+	// items of the given subs whose price ended after the sub's
+	// synced_price_sequence. Must run before the subs are stamped.
+	// Idempotent via `li.end_date IS NULL`. Returns rows affected.
 	TerminatePlanPricesLineItemsV2(
 		ctx context.Context,
 		p TerminatePlanPricesLineItemsV2Params,

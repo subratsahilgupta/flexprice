@@ -277,7 +277,16 @@ func (r *InMemoryPlanPriceSyncStore) TerminatePlanPricesLineItemsV2(
 		return 0, nil
 	}
 
-	subSet := lo.SliceToMap(p.SubIDs, func(id string) (string, struct{}) { return id, struct{}{} })
+	bookmarks := make(map[string]int64, len(p.SubIDs))
+	if r.subStore != nil {
+		r.subStore.mu.RLock()
+		for _, id := range p.SubIDs {
+			if sub, ok := r.subStore.items[id]; ok && sub != nil && scopedByCtx(ctx, sub.TenantID, sub.EnvironmentID) {
+				bookmarks[id] = sub.SyncedPriceSequence
+			}
+		}
+		r.subStore.mu.RUnlock()
+	}
 
 	r.lineItemStore.mu.Lock()
 	defer r.lineItemStore.mu.Unlock()
@@ -293,11 +302,12 @@ func (r *InMemoryPlanPriceSyncStore) TerminatePlanPricesLineItemsV2(
 		if !li.EndDate.IsZero() {
 			continue
 		}
-		if _, ok := subSet[li.SubscriptionID]; !ok {
+		bookmark, ok := bookmarks[li.SubscriptionID]
+		if !ok {
 			continue
 		}
 		pp, ok := priceByID[li.PriceID]
-		if !ok || pp.EndDate == nil {
+		if !ok || pp.EndDate == nil || pp.Sequence <= bookmark {
 			continue
 		}
 		if !scopedByCtx(ctx, li.TenantID, li.EnvironmentID) {
