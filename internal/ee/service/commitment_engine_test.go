@@ -835,6 +835,29 @@ func TestCommitmentInvoiceLines(t *testing.T) {
 	}
 }
 
+// A mid-period preview accrues pool capacity only to asOf, while the floor spans the whole period.
+// The true-up line's quantity must follow the span, like its amount, not the as-of allocation.
+func TestCommitmentInvoiceLinesTrueUpQuantitySpansThePeriodOnPreviews(t *testing.T) {
+	line := invoiceLine("a", "16", "0", "16")
+	sc := committed("c1", true, "372", []int{0}, []*usageLine{line}, "100")
+	sc.CommittedPrice.Amount = dec("1.5")
+	sc.Period.Capacity = dec("248")
+	stack := &commitmentStack{
+		Type:        types.COMMITMENT_TYPE_QUANTITY,
+		Measurement: types.CommitmentMeasurementWindow,
+		Windows:     engineWindows(1),
+		Lines:       []*usageLine{line},
+		Commitments: []*stackedCommitment{sc},
+	}
+
+	flatCost := func(p *price.Price, qty decimal.Decimal) decimal.Decimal { return qty.Mul(p.Amount) }
+	got := renderStack(t, stack, flatCost)
+	requireLines(t, []wantLine{
+		{types.CommitmentLineUtilized, "Label c1", "16", "24"},
+		{types.CommitmentLineTrueUp, "Label c1 (unused)", "232", "348"},
+	}, got)
+}
+
 func TestCommitmentInvoiceLinesFields(t *testing.T) {
 	line := invoiceLine("a", "130", "0", "130")
 	stack := &commitmentStack{
