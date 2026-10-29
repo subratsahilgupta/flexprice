@@ -115,7 +115,7 @@ func (s *billingService) newCommitmentLoader(
 			c.ScopeEntityID,
 			l.subContext,
 			maxTime(periodStart, c.StartDate),
-			lo.ToPtr(c.EffectiveEndWithin(periodEnd)),
+			lo.ToPtr(c.Until(periodEnd)),
 		)
 		callScopeLineItems := lo.FilterMap(scopeLineItems, func(li *subscription.SubscriptionLineItem, _ int) (*subscription.SubscriptionLineItem, bool) {
 			item, ok := callLineItemByID[li.ID]
@@ -331,7 +331,7 @@ func (l *commitmentLoader) UsageBreakdown(ctx context.Context) ([]*dto.Commitmen
 					Binding:      sc.C.Binding,
 					Currency:     l.sub.Currency,
 					AppliesFrom:  maxTime(l.periodStart, sc.C.StartDate),
-					AppliesTo:    sc.C.EffectiveEndWithin(l.periodEnd),
+					AppliesTo:    sc.C.Until(l.periodEnd),
 				}
 				byID[sc.C.ID] = b
 				out = append(out, b)
@@ -546,7 +546,7 @@ func (l *commitmentLoader) splitLineIntoBuckets(
 // bucket of its bucketed lines; each commitment's single pool spans the windows it applies to. With no boundary
 // inside the invoice window and no bucketed line, that is one window and one pool per commitment.
 func (l *commitmentLoader) buildPeriodStack(ctx context.Context, stack *commitmentStack) error {
-	boundaryStarts := applicabilityBoundaries(stack.Commitments, l.periodStart, l.periodEnd)
+	boundaryStarts := applyBoundaries(stack.Commitments, l.periodStart, l.periodEnd)
 	lineMeters, err := l.buildStackLines(ctx, stack)
 	if err != nil {
 		return err
@@ -638,14 +638,14 @@ func (l *commitmentLoader) splitLineAcrossBoundaries(
 	return nil
 }
 
-// applicabilityBoundaries returns the starts of the sub-ranges of [start, end) between instants a commitment starts or
+// applyBoundaries returns the starts of the sub-ranges of [start, end) between instants a commitment starts or
 // stops applying. Times in the same second as the period edges do not split it, as billing dates drop sub-seconds.
-func applicabilityBoundaries(commitments []*stackedCommitment, start time.Time, end time.Time) []time.Time {
+func applyBoundaries(commitments []*stackedCommitment, start time.Time, end time.Time) []time.Time {
 	from, to := start.Truncate(time.Second), end.Truncate(time.Second)
 	boundaries := []time.Time{start}
 	for _, sc := range commitments {
 		// An end past the range, or none, lands at end and adds no boundary.
-		for _, t := range []time.Time{sc.C.StartDate, sc.C.EffectiveEndWithin(end)} {
+		for _, t := range []time.Time{sc.C.StartDate, sc.C.Until(end)} {
 			sec := t.Truncate(time.Second)
 			if sec.After(from) && sec.Before(to) {
 				boundaries = append(boundaries, t)

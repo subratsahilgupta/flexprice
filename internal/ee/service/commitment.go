@@ -695,8 +695,8 @@ func (s *commitmentService) billCancellationFee(
 	// The fee covers the rest of the term, or of the billing period holding effective_at for one that never ends;
 	// either stops at the subscription end.
 	periodEnd := c.EffectiveEnd()
-	if c.Unending() {
-		holding, err := billingPeriodHolding(sub, effectiveAt)
+	if c.OpenEnded() {
+		holding, err := periodAt(sub, effectiveAt)
 		if err != nil {
 			return nil, err
 		}
@@ -921,12 +921,12 @@ func (s *commitmentService) commitmentsInScope(
 
 	var inScope []*commitment.Commitment
 	for _, c := range listed {
-		heldUntil, err := scopeHeldUntil(sub, c)
+		blockedUntil, err := blocksUntil(sub, c)
 		if err != nil {
 			return nil, err
 		}
 
-		if atOrPastEnd(at, heldUntil) || atOrPastEnd(c.StartDate, heldUntil) || atOrPastEnd(c.StartDate, until) {
+		if endReached(blockedUntil, at) || endReached(blockedUntil, c.StartDate) || endReached(until, c.StartDate) {
 			continue
 		}
 
@@ -1006,17 +1006,17 @@ func (s *commitmentService) checkAttachPairs(
 ) (string, error) {
 	for i, a := range inScope {
 		for _, b := range inScope[i+1:] {
-			aHeldUntil, err := scopeHeldUntil(sub, a)
+			aBlockedUntil, err := blocksUntil(sub, a)
 			if err != nil {
 				return "", err
 			}
 
-			bHeldUntil, err := scopeHeldUntil(sub, b)
+			bBlockedUntil, err := blocksUntil(sub, b)
 			if err != nil {
 				return "", err
 			}
 
-			if atOrPastEnd(a.StartDate, bHeldUntil) || atOrPastEnd(b.StartDate, aHeldUntil) {
+			if endReached(bBlockedUntil, a.StartDate) || endReached(aBlockedUntil, b.StartDate) {
 				continue
 			}
 

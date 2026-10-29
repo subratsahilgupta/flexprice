@@ -64,7 +64,7 @@ func TestCommitment_EffectiveEndIsACopy(t *testing.T) {
 	require.Equal(t, end, *c.EndDate)
 }
 
-func TestCommitment_EffectiveEndWithin(t *testing.T) {
+func TestCommitment_Until(t *testing.T) {
 	start := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(1, 0, 0)
 	termAt := start.AddDate(0, 6, 0)
@@ -84,18 +84,18 @@ func TestCommitment_EffectiveEndWithin(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, tt.c.EffectiveEndWithin(tt.horizon))
+			require.Equal(t, tt.want, tt.c.Until(tt.horizon))
 		})
 	}
 }
 
-func TestCommitment_Unending(t *testing.T) {
+func TestCommitment_OpenEnded(t *testing.T) {
 	start := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(1, 0, 0)
 
-	require.True(t, (&Commitment{StartDate: start}).Unending())
-	require.False(t, (&Commitment{StartDate: start, TerminatedAt: &end}).Unending())
-	require.False(t, (&Commitment{StartDate: start, EndDate: &end}).Unending())
+	require.True(t, (&Commitment{StartDate: start}).OpenEnded())
+	require.False(t, (&Commitment{StartDate: start, TerminatedAt: &end}).OpenEnded())
+	require.False(t, (&Commitment{StartDate: start, EndDate: &end}).OpenEnded())
 }
 
 func TestCommitment_EndedBy(t *testing.T) {

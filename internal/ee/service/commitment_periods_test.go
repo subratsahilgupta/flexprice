@@ -544,7 +544,7 @@ func fullPeriods(t *testing.T, sub *subscription.Subscription, until time.Time) 
 }
 
 // The period holding any instant has the edges generating every period from the subscription start gives.
-func TestBillingPeriodHolding_MatchesFullGeneration(t *testing.T) {
+func TestPeriodAt_MatchesFullGeneration(t *testing.T) {
 	for name, sub := range periodGenerationFixtures(t) {
 		t.Run(name, func(t *testing.T) {
 			full := fullPeriods(t, sub, sub.StartDate.AddDate(4, 0, 0))
@@ -560,7 +560,7 @@ func TestBillingPeriodHolding_MatchesFullGeneration(t *testing.T) {
 			for _, at := range instants {
 				want, ok := lo.Find(full, func(p types.Period) bool { return !at.Before(p.Start) && at.Before(p.End) })
 				require.True(t, ok, "no reference period holds %s", at)
-				got, err := billingPeriodHolding(sub, at)
+				got, err := periodAt(sub, at)
 				require.NoError(t, err)
 				require.True(t, want.Start.Equal(got.Start) && want.End.Equal(got.End), "at %s: want %v, got %v", at, want, got)
 			}
@@ -568,8 +568,8 @@ func TestBillingPeriodHolding_MatchesFullGeneration(t *testing.T) {
 	}
 }
 
-// periodEndHoldingFromStart is periodEndHolding generating every period from the subscription start.
-func periodEndHoldingFromStart(t *testing.T, sub *subscription.Subscription, at time.Time) time.Time {
+// periodEndAtFromStart is periodEndAt generating every period from the subscription start.
+func periodEndAtFromStart(t *testing.T, sub *subscription.Subscription, at time.Time) time.Time {
 	horizon, err := types.NextBillingDate(&types.NextBillingDateParams{
 		CurrentPeriodStart:  at,
 		BillingAnchor:       sub.BillingAnchor,
@@ -588,7 +588,7 @@ func periodEndHoldingFromStart(t *testing.T, sub *subscription.Subscription, at 
 	return at
 }
 
-func TestPeriodEndHolding_MatchesFullGeneration(t *testing.T) {
+func TestPeriodEndAt_MatchesFullGeneration(t *testing.T) {
 	for name, sub := range periodGenerationFixtures(t) {
 		for _, ends := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s, subscription end %t", name, ends), func(t *testing.T) {
@@ -610,9 +610,9 @@ func TestPeriodEndHolding_MatchesFullGeneration(t *testing.T) {
 				}
 
 				for _, at := range instants {
-					got, err := periodEndHolding(&s, at)
+					got, err := periodEndAt(&s, at)
 					require.NoError(t, err)
-					want := periodEndHoldingFromStart(t, &s, at)
+					want := periodEndAtFromStart(t, &s, at)
 					require.True(t, want.Equal(got), "at %s: want %s, got %s", at, want, got)
 				}
 			})

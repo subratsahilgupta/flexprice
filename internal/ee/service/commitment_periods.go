@@ -36,12 +36,12 @@ func commitmentPeriods(
 	horizon := lo.FromPtr(c.EndDate)
 	if c.EndDate == nil {
 		var err error
-		if horizon, err = periodEndHolding(sub, through); err != nil {
+		if horizon, err = periodEndAt(sub, through); err != nil {
 			return nil, err
 		}
 	}
 
-	first, err := billingPeriodHolding(sub, maxTime(from, c.StartDate))
+	first, err := periodAt(sub, maxTime(from, c.StartDate))
 	if err != nil {
 		return nil, err
 	}
@@ -205,9 +205,9 @@ func termValue(
 	return lo.ToPtr(commitmentValue(periods)), nil
 }
 
-// billingPeriodHolding returns the subscription billing period [Start, End) holding t, uncut by the subscription
+// periodAt returns the subscription billing period [Start, End) holding t, uncut by the subscription
 // end, with the edges generating every period from sub.StartDate gives, without generating the ones before it.
-func billingPeriodHolding(sub *subscription.Subscription, t time.Time) (types.Period, error) {
+func periodAt(sub *subscription.Subscription, t time.Time) (types.Period, error) {
 	firstEnd, err := types.NextBillingDate(&types.NextBillingDateParams{
 		CurrentPeriodStart: sub.StartDate,
 		BillingAnchor:      sub.BillingAnchor,
@@ -228,7 +228,7 @@ func billingPeriodHolding(sub *subscription.Subscription, t time.Time) (types.Pe
 	// Multi-day and multi-week cadences step from the first period's end, not along the anchor grid: walk them.
 	if (sub.BillingPeriod == types.BILLING_PERIOD_DAILY || sub.BillingPeriod == types.BILLING_PERIOD_WEEKLY) &&
 		sub.BillingPeriodCount > 1 {
-		return walkToPeriodHolding(sub, t)
+		return walkToPeriodAt(sub, t)
 	}
 
 	// Every later edge is a billing date on the anchor grid.
@@ -242,10 +242,10 @@ func billingPeriodHolding(sub *subscription.Subscription, t time.Time) (types.Pe
 	return types.FullBillingPeriod(t, grid), nil
 }
 
-// periodEndHolding returns the end of the subscription billing period holding t, or t itself past the
+// periodEndAt returns the end of the subscription billing period holding t, or t itself past the
 // subscription's last period.
-func periodEndHolding(sub *subscription.Subscription, t time.Time) (time.Time, error) {
-	holding, err := billingPeriodHolding(sub, t)
+func periodEndAt(sub *subscription.Subscription, t time.Time) (time.Time, error) {
+	holding, err := periodAt(sub, t)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -293,8 +293,8 @@ func periodEndHolding(sub *subscription.Subscription, t time.Time) (time.Time, e
 	return t, nil
 }
 
-// walkToPeriodHolding generates the subscription's billing periods from its start up to the one holding t.
-func walkToPeriodHolding(sub *subscription.Subscription, t time.Time) (types.Period, error) {
+// walkToPeriodAt generates the subscription's billing periods from its start up to the one holding t.
+func walkToPeriodAt(sub *subscription.Subscription, t time.Time) (types.Period, error) {
 	horizon, err := types.NextBillingDate(&types.NextBillingDateParams{
 		CurrentPeriodStart: t,
 		BillingAnchor:      sub.BillingAnchor,

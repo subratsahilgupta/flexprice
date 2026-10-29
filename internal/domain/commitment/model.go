@@ -50,7 +50,7 @@ func (c *Commitment) IsActiveAt(t time.Time) bool {
 }
 
 // EffectiveEnd is the end of the billed term: terminated_at when it cuts the term short, otherwise end_date.
-// It is nil for an unending commitment: open-ended and not terminated.
+// It is nil for an open-ended commitment: open-ended and not terminated.
 func (c *Commitment) EffectiveEnd() *time.Time {
 	if c.TerminatedAt != nil && (c.EndDate == nil || c.TerminatedAt.Before(*c.EndDate)) {
 		return lo.ToPtr(*c.TerminatedAt)
@@ -63,18 +63,18 @@ func (c *Commitment) EffectiveEnd() *time.Time {
 	return lo.ToPtr(*c.EndDate)
 }
 
-// Unending reports whether the commitment has no effective end: open-ended and not terminated.
-func (c *Commitment) Unending() bool {
+// OpenEnded reports whether the commitment has no effective end: no end_date and not terminated.
+func (c *Commitment) OpenEnded() bool {
 	return c.EffectiveEnd() == nil
 }
 
-// EffectiveEndWithin returns the effective end capped at horizon; an unending commitment runs to horizon.
-func (c *Commitment) EffectiveEndWithin(horizon time.Time) time.Time {
-	if end := c.EffectiveEnd(); end != nil && !end.After(horizon) {
+// Until returns the effective end capped at latest; an open-ended commitment runs to latest.
+func (c *Commitment) Until(latest time.Time) time.Time {
+	if end := c.EffectiveEnd(); end != nil && !end.After(latest) {
 		return *end
 	}
 
-	return horizon
+	return latest
 }
 
 // EndedBy reports whether the commitment has no term left after t: its effective end is at or before t, or it

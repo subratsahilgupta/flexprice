@@ -132,13 +132,13 @@ func scopeLinesInPeriod(
 	from time.Time,
 	to *time.Time,
 ) []*subscription.SubscriptionLineItem {
-	if atOrPastEnd(from, to) {
+	if endReached(to, from) {
 		return nil
 	}
 
 	at := []time.Time{from}
 	for _, li := range cc.Items {
-		if li.StartDate.After(from) && !atOrPastEnd(li.StartDate, to) {
+		if li.StartDate.After(from) && !endReached(to, li.StartDate) {
 			at = append(at, li.StartDate)
 		}
 	}
@@ -334,7 +334,7 @@ func (s *commitmentService) validateOverlaps(
 		return err
 	}
 
-	reqHeldUntil, err := scopeHeldUntil(cc.Sub, term)
+	reqBlockedUntil, err := blocksUntil(cc.Sub, term)
 	if err != nil {
 		return err
 	}
@@ -343,20 +343,20 @@ func (s *commitmentService) validateOverlaps(
 		return li.ID
 	})
 	for _, other := range existing {
-		heldUntil, err := scopeHeldUntil(cc.Sub, other)
+		blockedUntil, err := blocksUntil(cc.Sub, other)
 		if err != nil {
 			return err
 		}
 
-		if atOrPastEnd(other.StartDate, heldUntil) ||
-			atOrPastEnd(other.StartDate, reqHeldUntil) ||
-			atOrPastEnd(req.StartDate, heldUntil) {
+		if endReached(blockedUntil, other.StartDate) ||
+			endReached(reqBlockedUntil, other.StartDate) ||
+			endReached(blockedUntil, req.StartDate) {
 			continue
 		}
 
-		overlapEnd := heldUntil
-		if reqHeldUntil != nil && (heldUntil == nil || reqHeldUntil.Before(*heldUntil)) {
-			overlapEnd = reqHeldUntil
+		overlapEnd := blockedUntil
+		if reqBlockedUntil != nil && (blockedUntil == nil || reqBlockedUntil.Before(*blockedUntil)) {
+			overlapEnd = reqBlockedUntil
 		}
 
 		otherLines := scopeLinesInPeriod(
@@ -415,15 +415,15 @@ func (s *commitmentService) validateOverlaps(
 	return nil
 }
 
-// scopeHeldUntil returns when a commitment stops holding its scope against others: the end of the billing period
-// holding its term end, which still bills it; nil when the term never ends, its effective end when it never started.
-func scopeHeldUntil(sub *subscription.Subscription, c *commitment.Commitment) (*time.Time, error) {
+// blocksUntil returns when the commitment stops blocking conflicting commitments on its scope: the end of the
+// billing period holding its term end (that invoice still bills it); nil = forever, its own end when it never ran.
+func blocksUntil(sub *subscription.Subscription, c *commitment.Commitment) (*time.Time, error) {
 	endedAt := termEnd(sub, c)
 	if endedAt == nil || !endedAt.After(c.StartDate) {
 		return endedAt, nil
 	}
 
-	end, err := periodEndHolding(sub, *endedAt)
+	end, err := periodEndAt(sub, *endedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -434,15 +434,15 @@ func scopeHeldUntil(sub *subscription.Subscription, c *commitment.Commitment) (*
 // termEnd returns the commitment's effective end; an unending one stops with its subscription, so it has an end
 // only when the subscription does.
 func termEnd(sub *subscription.Subscription, c *commitment.Commitment) *time.Time {
-	if c.Unending() {
+	if c.OpenEnded() {
 		return sub.EndDate
 	}
 
 	return c.EffectiveEnd()
 }
 
-// atOrPastEnd reports whether t is at or after end, where a nil end never comes.
-func atOrPastEnd(t time.Time, end *time.Time) bool {
+// endReached reports whether t is at or after end, where a nil end never comes.
+func endReached(end *time.Time, t time.Time) bool {
 	return end != nil && !end.After(t)
 }
 
@@ -583,12 +583,12 @@ func rejectLegacyCommitmentInScope(
 // overlapsLine reports whether the line's billing interval overlaps the commitment's term, extended to the end
 // of the billing period holding its effective end.
 func overlapsLine(sub *subscription.Subscription, c *commitment.Commitment, li *subscription.SubscriptionLineItem) (bool, error) {
-	heldUntil, err := scopeHeldUntil(sub, c)
+	blockedUntil, err := blocksUntil(sub, c)
 	if err != nil {
 		return false, err
 	}
 
-	if atOrPastEnd(li.StartDate, heldUntil) {
+	if endReached(blockedUntil, li.StartDate) {
 		return false, nil
 	}
 
@@ -695,7 +695,7 @@ func checkLineItemCommitmentDetach(
 	for _, c := range active {
 		end := termEnd(sub, c)
 		from := maxTime(endDate, c.StartDate)
-		if !c.Binding || atOrPastEnd(from, end) || atOrPastEnd(li.StartDate, end) || !commitmentCoversLine(c, li, p) {
+		if !c.Binding || endReached(end, from) || endReached(end, li.StartDate) || !commitmentCoversLine(c, li, p) {
 			continue
 		}
 
@@ -724,7 +724,7 @@ func coverageGap(lines []*subscription.SubscriptionLineItem, from time.Time, to 
 
 	covered := from
 	for _, li := range sorted {
-		if atOrPastEnd(covered, to) {
+		if endReached(to, covered) {
 			return time.Time{}, false
 		}
 
@@ -739,7 +739,7 @@ func coverageGap(lines []*subscription.SubscriptionLineItem, from time.Time, to 
 		covered = maxTime(covered, li.EndDate)
 	}
 
-	if !atOrPastEnd(covered, to) {
+	if !endReached(to, covered) {
 		return covered, true
 	}
 
