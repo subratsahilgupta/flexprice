@@ -425,8 +425,10 @@ func invoiceLine(id string, quantity, cost string, usage ...string) *usageLine {
 // committed builds a commitment stacked over the given lines with one pool per capacity.
 func committed(id string, binding bool, periodAmount string, poolOf []int, lines []*usageLine, capacities ...string) *stackedCommitment {
 	pools := make([]capacityPool, len(capacities))
+	capacity := decimal.Zero
 	for i, c := range capacities {
 		pools[i] = capacityPool{Capacity: dec(c)}
+		capacity = capacity.Add(dec(c))
 	}
 
 	return &stackedCommitment{
@@ -438,7 +440,7 @@ func committed(id string, binding bool, periodAmount string, poolOf []int, lines
 			CommittedPriceID:   lo.ToPtr("committed_price_" + id),
 		},
 		CommittedPrice: &price.Price{ID: "committed_price_" + id, BillingModel: types.BILLING_MODEL_FLAT_FEE, Amount: intDec(1)},
-		Period:         commitmentPeriod{Amount: dec(periodAmount)},
+		Period:         commitmentPeriod{Amount: dec(periodAmount), Capacity: capacity},
 		Lines:          lines,
 		Pools:          pools,
 		PoolOf:         poolOf,
