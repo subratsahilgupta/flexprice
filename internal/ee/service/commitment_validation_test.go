@@ -400,6 +400,40 @@ func (s *CommitmentServiceSuite) TestValidation_OpenEndedOnSubscriptionWithEndDa
 	s.Require().NoError(err)
 }
 
+// A term starting at or after a scheduled subscription end has no billable period, whatever its own end.
+func (s *CommitmentServiceSuite) TestValidation_StartAtOrAfterSubscriptionEnd() {
+	sub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), s.fx.sub.ID)
+	s.Require().NoError(err)
+	subEnd := sub.StartDate.AddDate(0, 6, 0)
+	sub.EndDate = lo.ToPtr(subEnd)
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), sub))
+
+	tests := []struct {
+		name    string
+		start   time.Time
+		end     *time.Time
+		wantErr string
+	}{
+		{"open-ended at the subscription end", subEnd, nil, "start_date must be before the subscription end"},
+		{"open-ended after the subscription end", subEnd.AddDate(0, 1, 0), nil, "start_date must be before the subscription end"},
+		{"finite at the subscription end", subEnd, lo.ToPtr(subEnd.AddDate(0, 1, 0)), "start_date must be before the subscription end"},
+		{"open-ended an instant before the subscription end", subEnd.Add(-time.Second), nil, ""},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+			req.StartDate, req.EndDate = tt.start, tt.end
+			_, err := s.svc.Create(s.GetContext(), req)
+			if tt.wantErr == "" {
+				s.Require().NoError(err)
+				return
+			}
+
+			s.requireValidation(err, tt.wantErr)
+		})
+	}
+}
+
 func (s *CommitmentServiceSuite) TestCheckPriceAttach_GuardsOpenEndedCommitmentForever() {
 	req := validReq(s.fx.sub.ID, "")
 	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeGroup, EntityID: s.fx.groupAPIOnly.ID}

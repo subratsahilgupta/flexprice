@@ -188,6 +188,11 @@ func (s *commitmentService) validateAgainstSubscription(
 		return ierr.Validationf("start_date cannot be before the subscription start %s", sub.StartDate.Format(time.RFC3339))
 	}
 
+	// A term starting once the subscription has ended has no period to bill, open-ended or not.
+	if sub.EndDate != nil && !req.StartDate.Before(*sub.EndDate) {
+		return ierr.Validationf("start_date must be before the subscription end %s", sub.EndDate.Format(time.RFC3339))
+	}
+
 	if sub.EndDate != nil && req.EndDate != nil && req.EndDate.After(*sub.EndDate) {
 		return ierr.Validationf("end_date cannot be after the subscription end %s", sub.EndDate.Format(time.RFC3339))
 	}
