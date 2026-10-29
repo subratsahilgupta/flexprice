@@ -99,10 +99,8 @@ type Repository interface {
 		p ListPlanLineItemsToCreateV2Params,
 	) (items []PlanLineItemCreationDelta, staleSubIDs []string, err error)
 
-	// TerminatePlanPricesLineItemsV2 sets end_date on live plan-derived line
-	// items of the given subs whose price ended after the sub's
-	// synced_price_sequence. Must run before the subs are stamped.
-	// Idempotent via `li.end_date IS NULL`. Returns rows affected.
+	// TerminatePlanPricesLineItemsV2 ends live line items for prices newer than each sub's bookmark.
+	// Call before stamping; returns the number of updated rows.
 	TerminatePlanPricesLineItemsV2(
 		ctx context.Context,
 		p TerminatePlanPricesLineItemsV2Params,

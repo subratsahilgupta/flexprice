@@ -114,28 +114,33 @@ func (s *PlanPriceSyncV2Suite) TestSync_TerminatesOnlyPricesEndedSinceBookmark()
 		BaseModel:     types.GetDefaultBaseModel(ctx),
 	}))
 	s.createPrice("price_old", 5, &oldPriceEnd)
+	s.createPrice("price_at_bookmark", 10, &oldPriceEnd)
 	s.createPrice("price_live", 11, nil)
 	s.createPrice("price_new", 12, &newPriceEnd)
 	s.createPrice("price_added", 13, nil)
 	// sub_a already saw price_old end (bookmark 10); sub_b saw neither end (bookmark 3).
-	s.createSub("sub_a", 10, "price_old", "price_live", "price_new")
+	s.createSub("sub_a", 10, "price_old", "price_at_bookmark", "price_live", "price_new")
 	s.createSub("sub_b", 3, "price_old", "price_live", "price_new")
 
 	resp, err := s.svc.SyncPlanPricesV2(ctx, "plan_sync")
 	s.Require().NoError(err)
-	s.Equal(2, resp.Summary.LineItemsCreated)
+	// price_added for both subs, plus price_at_bookmark for sub_b, which never had it.
+	s.Equal(3, resp.Summary.LineItemsCreated)
 	s.Equal(3, resp.Summary.LineItemsTerminated)
 
 	a := s.lineItemEnds("sub_a")
 	s.True(a["price_old"].IsZero(), "price ended before sub_a's bookmark is not re-applied")
+	s.True(a["price_at_bookmark"].IsZero(), "a sequence equal to the bookmark is already applied")
 	s.True(a["price_new"].Equal(newPriceEnd))
 	s.True(a["price_live"].IsZero())
-	s.Contains(a, "price_added")
+	s.Require().Contains(a, "price_added")
+	s.True(a["price_added"].IsZero())
 
 	b := s.lineItemEnds("sub_b")
 	s.True(b["price_old"].Equal(oldPriceEnd))
 	s.True(b["price_new"].Equal(newPriceEnd))
-	s.Contains(b, "price_added")
+	s.Require().Contains(b, "price_added")
+	s.True(b["price_added"].IsZero())
 
 	for _, id := range []string{"sub_a", "sub_b"} {
 		sub, err := s.GetStores().SubscriptionRepo.Get(ctx, id)

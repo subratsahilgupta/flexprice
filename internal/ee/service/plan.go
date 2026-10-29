@@ -776,16 +776,8 @@ func (s *planService) SyncPlanPricesV2(ctx context.Context, planID string) (*dto
 			creationTotalDuration += pageCreationDuration
 		}
 
-		// 2. Terminate live plan line items for this page's subs whose price
-		//    ended after the sub's bookmark. It reads each sub's bookmark, so it
-		//    must run before stamping. Scoping to the page's subs keeps each
-		//    UPDATE bounded (no plan-wide row locks).
-		//    Running this between create and stamp closes the race where a
-		//    price ends after we cached it but before we stamp the sub — the
-		//    just-created LI gets cleaned up in the same page so the stamp
-		//    truly means "caught up". Subs already stamped earlier in this
-		//    run aren't re-checked; any LI leaked for them by a mid-run
-		//    price-end is picked up by the next sync invocation.
+		// 2. End line items whose price ended after each sub's bookmark; reads the
+		//    bookmark, so it must run before stamping.
 		terminationStart := time.Now()
 		terminated, terr := s.PlanPriceSyncRepo.TerminatePlanPricesLineItemsV2(ctx, planpricesync.TerminatePlanPricesLineItemsV2Params{
 			PlanID: planID,
@@ -814,7 +806,7 @@ func (s *planService) SyncPlanPricesV2(ctx context.Context, planID string) (*dto
 		pageStampDuration := time.Since(stampStart)
 		stampTotalDuration += pageStampDuration
 
-		s.Logger.Info(ctx, "plan price sync page done (v2)",
+		s.Logger.Info(ctx, "plan_price_sync.page_completed",
 			"plan_id", planID,
 			"page", pageIteration,
 			"subs", len(subIDsInPage),
