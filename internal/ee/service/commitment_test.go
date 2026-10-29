@@ -445,6 +445,83 @@ func (s *CommitmentServiceSuite) TestGetAndList() {
 	s.True(ierr.IsNotFound(err), "got %v", err)
 }
 
+// An open-ended commitment has no finite value: preview, create, get and list return it with none.
+func (s *CommitmentServiceSuite) TestOpenEnded_HasNoCommitmentValue() {
+	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	req.EndDate = nil
+	preview, err := s.svc.Preview(s.GetContext(), req)
+	s.Require().NoError(err)
+	s.Nil(preview.EndDate)
+	s.Nil(preview.CommitmentValue)
+
+	created, err := s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+	got, err := s.svc.Get(s.GetContext(), created.ID)
+	s.Require().NoError(err)
+	list, err := s.svc.List(s.GetContext(), commitment.NewDefaultFilter())
+	s.Require().NoError(err)
+	s.Require().Len(list.Items, 1)
+	for _, resp := range []*dto.CommitmentResponse{created, got, list.Items[0]} {
+		s.Nil(resp.EndDate)
+		s.Nil(resp.CommitmentValue)
+	}
+}
+
+func (s *CommitmentServiceSuite) TestTerminate_OpenEndedAnyTimeWithoutFee() {
+	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	req.EndDate = nil
+	created, err := s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+
+	at := created.StartDate.AddDate(10, 0, 0)
+	resp, err := s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{EffectiveAt: &at})
+	s.Require().NoError(err)
+	s.Equal(types.CommitmentStatusTerminated, resp.CommitmentStatus)
+	s.True(resp.TerminatedAt.Equal(at), "got %s", resp.TerminatedAt)
+	s.Nil(resp.TerminationInvoiceID)
+	s.Nil(resp.EndDate)
+}
+
+// With no remaining term to cover, an open-ended commitment's cancellation fee is dated at effective_at alone.
+func (s *CommitmentServiceSuite) TestTerminate_OpenEndedFeeIsDatedAtEffectiveAt() {
+	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	req.EndDate = nil
+	created, err := s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+
+	at := created.StartDate.AddDate(0, 3, 0)
+	resp, err := s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{
+		EffectiveAt:     &at,
+		CancellationFee: lo.ToPtr(dec("75")),
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.TerminationInvoiceID)
+
+	inv, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), *resp.TerminationInvoiceID)
+	s.Require().NoError(err)
+	s.True(inv.AmountDue.Equal(dec("75")), "got %s", inv.AmountDue)
+	s.True(lo.FromPtr(inv.PeriodStart).Equal(at), "period start %v", inv.PeriodStart)
+	s.True(lo.FromPtr(inv.PeriodEnd).Equal(at), "period end %v", inv.PeriodEnd)
+	lines := s.invoiceLines(inv.ID)
+	s.Require().Len(lines, 1)
+	s.requireLine(lines[0], types.CommitmentLineCancellationFee, "75", created.ID)
+	s.True(lo.FromPtr(lines[0].PeriodEnd).Equal(at), "line period end %v", lines[0].PeriodEnd)
+}
+
+func (s *CommitmentServiceSuite) TestTerminateForSubscription_TerminatesOpenEnded() {
+	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	req.EndDate = nil
+	created, err := s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+
+	at := created.StartDate.AddDate(3, 0, 0)
+	s.Require().NoError(s.svc.TerminateForSubscription(s.GetContext(), s.fx.sub.ID, at))
+	got, err := s.svc.Get(s.GetContext(), created.ID)
+	s.Require().NoError(err)
+	s.Equal(types.CommitmentStatusTerminated, got.CommitmentStatus)
+	s.True(got.TerminatedAt.Equal(at), "got %s", got.TerminatedAt)
+}
+
 func (s *CommitmentServiceSuite) TestUpdate_OnlyLabelsAndMetadata() {
 	created, err := s.svc.Create(s.GetContext(), validReq(s.fx.sub.ID, s.fx.priceAPI.ID))
 	s.Require().NoError(err)
@@ -559,7 +636,7 @@ func (s *CommitmentServiceSuite) TestTerminate_RejectsInvalidCancellationFee() {
 	}{
 		{name: "zero fee", at: midTerm, fee: decimal.Zero},
 		{name: "negative fee", at: midTerm, fee: decimal.NewFromInt(-5)},
-		{name: "terminate at end_date", at: created.EndDate, fee: decimal.NewFromInt(10)},
+		{name: "terminate at end_date", at: *created.EndDate, fee: decimal.NewFromInt(10)},
 	}
 
 	for _, tt := range tests {
@@ -784,7 +861,7 @@ func (s *CommitmentServiceSuite) requireValidation(err error, contains ...string
 func (s *CommitmentServiceSuite) TestValidation_V1_AcceptsEndDateMidPeriod() {
 	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
 	req.Type, req.CommittedPrice, req.Value = types.COMMITMENT_TYPE_AMOUNT, nil, dec("300")
-	req.EndDate = time.Date(2027, 4, 16, 0, 0, 0, 0, time.UTC)
+	req.EndDate = lo.ToPtr(time.Date(2027, 4, 16, 0, 0, 0, 0, time.UTC))
 	preview, err := s.svc.Preview(s.GetContext(), req)
 	s.Require().NoError(err)
 
@@ -1193,11 +1270,11 @@ func (s *CommitmentServiceSuite) TestValidation_EndDateAfterSubscriptionEnd() {
 	_, err = s.svc.Create(s.GetContext(), req)
 	s.requireValidation(err, "subscription end")
 
-	req.EndDate = sub.EndDate.Add(time.Second)
+	req.EndDate = lo.ToPtr(sub.EndDate.Add(time.Second))
 	_, err = s.svc.Create(s.GetContext(), req)
 	s.requireValidation(err, "subscription end")
 
-	req.EndDate = *sub.EndDate
+	req.EndDate = lo.ToPtr(*sub.EndDate)
 	_, err = s.svc.Create(s.GetContext(), req)
 	s.Require().NoError(err)
 }

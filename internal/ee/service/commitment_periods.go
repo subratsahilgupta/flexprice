@@ -7,6 +7,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -23,16 +24,26 @@ type commitmentPeriod struct {
 }
 
 // commitmentPeriods returns the subscription billing periods clipped to the commitment term, with their value;
-// amountOf turns a period's capacity into money.
+// amountOf turns a period's capacity into money. An open-ended commitment has no last period, so its periods run
+// through the billing period holding `through`; a commitment with an end_date ignores it.
 func commitmentPeriods(
 	c *commitment.Commitment,
 	sub *subscription.Subscription,
 	amountOf func(capacity decimal.Decimal) decimal.Decimal,
 	bucket types.WindowSize,
+	through time.Time,
 ) ([]commitmentPeriod, error) {
+	horizon := lo.FromPtr(c.EndDate)
+	if c.EndDate == nil {
+		var err error
+		if horizon, err = periodEndHolding(sub, through); err != nil {
+			return nil, err
+		}
+	}
+
 	full, err := types.CalculateBillingPeriods(&types.CalculateBillingPeriodsParams{
 		InitialPeriodStart: sub.StartDate,
-		EndDate:            &c.EndDate,
+		EndDate:            &horizon,
 		Anchor:             sub.BillingAnchor,
 		PeriodCount:        sub.BillingPeriodCount,
 		BillingPeriod:      sub.BillingPeriod,
@@ -54,7 +65,7 @@ func commitmentPeriods(
 
 	out := make([]commitmentPeriod, 0, len(full))
 	for _, p := range full {
-		start, end := maxTime(p.Start, c.StartDate), minTime(p.End, c.EndDate)
+		start, end := maxTime(p.Start, c.StartDate), minTime(p.End, horizon)
 		if !start.Before(end) {
 			continue
 		}
@@ -167,6 +178,26 @@ func commitmentValue(periods []commitmentPeriod) decimal.Decimal {
 	}
 
 	return total
+}
+
+// termValue values the commitment's whole term, or returns nil for an open-ended commitment, which has no
+// finite value.
+func termValue(
+	c *commitment.Commitment,
+	sub *subscription.Subscription,
+	amountOf func(capacity decimal.Decimal) decimal.Decimal,
+	bucket types.WindowSize,
+) (*decimal.Decimal, error) {
+	if c.EndDate == nil {
+		return nil, nil
+	}
+
+	periods, err := commitmentPeriods(c, sub, amountOf, bucket, *c.EndDate)
+	if err != nil {
+		return nil, err
+	}
+
+	return lo.ToPtr(commitmentValue(periods)), nil
 }
 
 func maxTime(a, b time.Time) time.Time {

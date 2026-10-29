@@ -158,7 +158,7 @@ func (s *billingService) newCommitmentLoader(
 				Mark(ierr.ErrInvalidOperation)
 		}
 
-		periods, err := commitmentPeriods(c, sub, amountOf, bucket)
+		periods, err := commitmentPeriods(c, sub, amountOf, bucket, periodEnd)
 		if err != nil {
 			return nil, err
 		}

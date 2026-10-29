@@ -5,6 +5,7 @@ import (
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -32,32 +33,36 @@ type Commitment struct {
 	TotalAmount         *decimal.Decimal                  `json:"total_amount,omitempty" swaggertype:"string"`
 	InstalmentInvoicing *string                           `json:"instalment_invoicing,omitempty"`
 	StartDate           time.Time                         `json:"start_date"`
-	EndDate             time.Time                         `json:"end_date"`
-	OnEarlyTermination  *types.CommitmentEarlyTermination `json:"on_early_termination,omitempty"`
-	CommitmentStatus    types.CommitmentStatus            `json:"commitment_status"`
-	TerminatedAt        *time.Time                        `json:"terminated_at,omitempty"`
-	IdempotencyKey      *string                           `json:"idempotency_key,omitempty"`
-	Metadata            types.Metadata                    `json:"metadata,omitempty"`
-	EnvironmentID       string                            `json:"environment_id"`
+	// EndDate is exclusive; nil for an open-ended commitment, which runs until terminated.
+	EndDate            *time.Time                        `json:"end_date,omitempty"`
+	OnEarlyTermination *types.CommitmentEarlyTermination `json:"on_early_termination,omitempty"`
+	CommitmentStatus   types.CommitmentStatus            `json:"commitment_status"`
+	TerminatedAt       *time.Time                        `json:"terminated_at,omitempty"`
+	IdempotencyKey     *string                           `json:"idempotency_key,omitempty"`
+	Metadata           types.Metadata                    `json:"metadata,omitempty"`
+	EnvironmentID      string                            `json:"environment_id"`
 	types.BaseModel
 }
 
 // IsActiveAt reports whether t falls inside the term and the commitment has not ended early.
 func (c *Commitment) IsActiveAt(t time.Time) bool {
-	if c == nil || t.Before(c.StartDate) || !t.Before(c.EndDate) {
-		return false
-	}
-
-	return c.TerminatedAt == nil || t.Before(*c.TerminatedAt)
+	return c != nil && !t.Before(c.StartDate) && t.Before(c.EffectiveEnd())
 }
 
 // EffectiveEnd is the end of the billed term: terminated_at when it cuts the term short, otherwise end_date.
+// An open-ended commitment that has not been terminated never ends: types.EndOfTime.
 func (c *Commitment) EffectiveEnd() time.Time {
-	if c.TerminatedAt != nil && c.TerminatedAt.Before(c.EndDate) {
+	end := lo.FromPtrOr(c.EndDate, types.EndOfTime)
+	if c.TerminatedAt != nil && c.TerminatedAt.Before(end) {
 		return *c.TerminatedAt
 	}
 
-	return c.EndDate
+	return end
+}
+
+// Unending reports whether the commitment has no effective end: open-ended and not terminated.
+func (c *Commitment) Unending() bool {
+	return c.EffectiveEnd().Equal(types.EndOfTime)
 }
 
 // EndedBy reports whether the commitment has no term left after t: t is past its effective end,
