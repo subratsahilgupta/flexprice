@@ -321,7 +321,7 @@ func (s *CommitmentServiceSuite) TestValidation_TerminatedCommitmentOverlap() {
 	}
 }
 
-// An open-ended commitment is in force forever: any later overlapping commitment on its scope must share its type
+// An open-ended commitment holds its scope forever: any later overlapping commitment on its scope must share its type
 // and measurement and take another priority, however far off it starts, until a termination's period has ended.
 func (s *CommitmentServiceSuite) TestValidation_OpenEndedOverlap() {
 	years := time.Date(2032, 1, 1, 0, 0, 0, 0, time.UTC)

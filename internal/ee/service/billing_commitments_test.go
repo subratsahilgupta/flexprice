@@ -704,7 +704,7 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodEndsMidPeriod() 
 	s.True(total.Equal(dec("34")), "total %s", total)
 }
 
-// One pool spans every span a commitment is in force, so usage before a later commitment starts draws it down.
+// One pool spans every span a commitment applies to, so usage before a later commitment starts draws it down.
 func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodPoolsAcrossTheSplit() {
 	ctx := s.GetContext()
 	s.setupTestData()
@@ -1887,8 +1887,8 @@ func (s *BillingServiceSuite) TestCommitmentUsageBreakdown_AmountCommitment() {
 	s.Equal(types.CommitmentMeasurementBillingPeriod, b.Measurement)
 	s.True(b.Binding)
 	s.Equal("usd", b.Currency)
-	s.True(b.AppliesFrom.Equal(periodStart), "in force from %s", b.AppliesFrom)
-	s.True(b.AppliesTo.Equal(sub.CurrentPeriodEnd), "in force to %s", b.AppliesTo)
+	s.True(b.AppliesFrom.Equal(periodStart), "applies from %s", b.AppliesFrom)
+	s.True(b.AppliesTo.Equal(sub.CurrentPeriodEnd), "applies to %s", b.AppliesTo)
 	s.True(b.Committed.Amount.Equal(dec("100")), "period amount %s", b.Committed.Amount)
 	// The now-based fixture prorates capacity by a fraction of a second, so compare it rounded.
 	s.True(types.RoundToCurrencyPrecision(b.Committed.Quantity, "usd").Equal(dec("100")), "capacity %s", b.Committed.Quantity)
@@ -1935,8 +1935,8 @@ func (s *BillingServiceSuite) TestCommitmentUsageBreakdown_OpenEndedAppliesToThe
 		s.Require().Len(usage.Commitments, 1)
 		b := usage.Commitments[0]
 		s.Equal(c.ID, b.CommitmentID)
-		s.True(b.AppliesFrom.Equal(periodStart), "in force from %s", b.AppliesFrom)
-		s.True(b.AppliesTo.Equal(sub.CurrentPeriodEnd), "in force to %s", b.AppliesTo)
+		s.True(b.AppliesFrom.Equal(periodStart), "applies from %s", b.AppliesFrom)
+		s.True(b.AppliesTo.Equal(sub.CurrentPeriodEnd), "applies to %s", b.AppliesTo)
 		s.True(b.Committed.Amount.Equal(dec("100")), "period amount %s", b.Committed.Amount)
 		s.True(b.BilledAmount.Equal(dec("100")), "billed %s", b.BilledAmount)
 	}

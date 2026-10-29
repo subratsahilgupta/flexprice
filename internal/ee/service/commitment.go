@@ -893,8 +893,8 @@ func (s *commitmentService) checkPriceAttach(
 	return s.checkAttachPairs(ctx, sub, inScope)
 }
 
-// commitmentsInScope returns commitments in force after `at` and starting before `until` (nil when open-ended)
-// whose scope includes the new usage price. A commitment stays in force through the billing period holding its effective end.
+// commitmentsInScope returns commitments covering the new usage price that hold their scope after `at`, through the
+// billing period holding their effective end, and start before `until` (nil when open-ended).
 func (s *commitmentService) commitmentsInScope(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -912,12 +912,12 @@ func (s *commitmentService) commitmentsInScope(
 
 	var inScope []*commitment.Commitment
 	for _, c := range listed {
-		spanEnd, err := inForceEnd(sub, c)
+		heldUntil, err := scopeHeldUntil(sub, c)
 		if err != nil {
 			return nil, err
 		}
 
-		if atOrPastEnd(at, spanEnd) || atOrPastEnd(c.StartDate, spanEnd) || atOrPastEnd(c.StartDate, until) {
+		if atOrPastEnd(at, heldUntil) || atOrPastEnd(c.StartDate, heldUntil) || atOrPastEnd(c.StartDate, until) {
 			continue
 		}
 
@@ -997,17 +997,17 @@ func (s *commitmentService) checkAttachPairs(
 ) (string, error) {
 	for i, a := range inScope {
 		for _, b := range inScope[i+1:] {
-			aEnd, err := inForceEnd(sub, a)
+			aHeldUntil, err := scopeHeldUntil(sub, a)
 			if err != nil {
 				return "", err
 			}
 
-			bEnd, err := inForceEnd(sub, b)
+			bHeldUntil, err := scopeHeldUntil(sub, b)
 			if err != nil {
 				return "", err
 			}
 
-			if atOrPastEnd(a.StartDate, bEnd) || atOrPastEnd(b.StartDate, aEnd) {
+			if atOrPastEnd(a.StartDate, bHeldUntil) || atOrPastEnd(b.StartDate, aHeldUntil) {
 				continue
 			}
 

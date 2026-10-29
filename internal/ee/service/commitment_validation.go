@@ -334,7 +334,7 @@ func (s *commitmentService) validateOverlaps(
 		return err
 	}
 
-	reqSpanEnd, err := inForceEnd(cc.Sub, term)
+	reqHeldUntil, err := scopeHeldUntil(cc.Sub, term)
 	if err != nil {
 		return err
 	}
@@ -343,18 +343,20 @@ func (s *commitmentService) validateOverlaps(
 		return li.ID
 	})
 	for _, other := range existing {
-		spanEnd, err := inForceEnd(cc.Sub, other)
+		heldUntil, err := scopeHeldUntil(cc.Sub, other)
 		if err != nil {
 			return err
 		}
 
-		if atOrPastEnd(other.StartDate, spanEnd) || atOrPastEnd(other.StartDate, reqSpanEnd) || atOrPastEnd(req.StartDate, spanEnd) {
+		if atOrPastEnd(other.StartDate, heldUntil) ||
+			atOrPastEnd(other.StartDate, reqHeldUntil) ||
+			atOrPastEnd(req.StartDate, heldUntil) {
 			continue
 		}
 
-		overlapEnd := spanEnd
-		if reqSpanEnd != nil && (spanEnd == nil || reqSpanEnd.Before(*spanEnd)) {
-			overlapEnd = reqSpanEnd
+		overlapEnd := heldUntil
+		if reqHeldUntil != nil && (heldUntil == nil || reqHeldUntil.Before(*heldUntil)) {
+			overlapEnd = reqHeldUntil
 		}
 
 		otherLines := scopeLinesInPeriod(
@@ -413,9 +415,9 @@ func (s *commitmentService) validateOverlaps(
 	return nil
 }
 
-// inForceEnd returns when a commitment stops constraining others: the end of the billing period holding its term
-// end, which still bills it; nil when the term never ends, its effective end when it never started.
-func inForceEnd(sub *subscription.Subscription, c *commitment.Commitment) (*time.Time, error) {
+// scopeHeldUntil returns when a commitment stops holding its scope against others: the end of the billing period
+// holding its term end, which still bills it; nil when the term never ends, its effective end when it never started.
+func scopeHeldUntil(sub *subscription.Subscription, c *commitment.Commitment) (*time.Time, error) {
 	endedAt := termEnd(sub, c)
 	if endedAt == nil || !endedAt.After(c.StartDate) {
 		return endedAt, nil
@@ -523,7 +525,7 @@ func checkLineItemCommitmentAttach(
 }
 
 // rejectLegacyCommitmentInScope rejects legacy line-item commitment fields on a line that a commitment still
-// in force covers, since the two would bill the same usage twice.
+// covers, since the two would bill the same usage twice.
 func rejectLegacyCommitmentInScope(
 	ctx context.Context,
 	params ServiceParams,
@@ -581,12 +583,12 @@ func rejectLegacyCommitmentInScope(
 // overlapsLine reports whether the line's billing interval overlaps the commitment's term, extended to the end
 // of the billing period holding its effective end.
 func overlapsLine(sub *subscription.Subscription, c *commitment.Commitment, li *subscription.SubscriptionLineItem) (bool, error) {
-	spanEnd, err := inForceEnd(sub, c)
+	heldUntil, err := scopeHeldUntil(sub, c)
 	if err != nil {
 		return false, err
 	}
 
-	if atOrPastEnd(li.StartDate, spanEnd) {
+	if atOrPastEnd(li.StartDate, heldUntil) {
 		return false, nil
 	}
 

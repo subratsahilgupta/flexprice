@@ -543,10 +543,10 @@ func (l *commitmentLoader) splitLineIntoBuckets(
 }
 
 // buildPeriodStack gives the stack a window per span between commitment starts and effective ends, plus one per usage
-// bucket of its bucketed lines; each commitment's single pool spans the windows it is in force. With no boundary
+// bucket of its bucketed lines; each commitment's single pool spans the windows it applies to. With no boundary
 // inside the invoice window and no bucketed line, that is one window and one pool per commitment.
 func (l *commitmentLoader) buildPeriodStack(ctx context.Context, stack *commitmentStack) error {
-	boundaryStarts := inForceBoundaries(stack.Commitments, l.periodStart, l.periodEnd)
+	boundaryStarts := applicabilityBoundaries(stack.Commitments, l.periodStart, l.periodEnd)
 	lineMeters, err := l.buildStackLines(ctx, stack)
 	if err != nil {
 		return err
@@ -638,9 +638,9 @@ func (l *commitmentLoader) splitLineAcrossBoundaries(
 	return nil
 }
 
-// inForceBoundaries returns the starts of the sub-ranges of [start, end) between commitment starts and effective ends.
-// Times in the same second as the period edges do not split it, since computed billing dates drop sub-second precision.
-func inForceBoundaries(commitments []*stackedCommitment, start time.Time, end time.Time) []time.Time {
+// applicabilityBoundaries returns the starts of the sub-ranges of [start, end) between instants a commitment starts or
+// stops applying. Times in the same second as the period edges do not split it, as billing dates drop sub-seconds.
+func applicabilityBoundaries(commitments []*stackedCommitment, start time.Time, end time.Time) []time.Time {
 	from, to := start.Truncate(time.Second), end.Truncate(time.Second)
 	boundaries := []time.Time{start}
 	for _, sc := range commitments {
