@@ -507,8 +507,8 @@ func accrues(c *commitment.Commitment, t, from time.Time) bool {
 }
 
 // splitLineIntoBuckets lays a bucketed line's usage out one bucket per window, each priced on its own as normal billing
-// prices it. A bucket joins the window containing its start, so an instant off the grid lands rather than vanishes;
-// one before the first window joins it.
+// prices it. A bucket joins the window containing bucketWindowAt, so an instant off the grid lands rather than
+// vanishes; one before the first window joins it.
 func (l *commitmentLoader) splitLineIntoBuckets(
 	ctx context.Context,
 	stack *commitmentStack,
@@ -521,7 +521,8 @@ func (l *commitmentLoader) splitLineIntoBuckets(
 			break
 		}
 
-		at := max(sort.Search(len(stack.Windows), func(i int) bool { return stack.Windows[i].After(t) })-1, 0)
+		start := bucketWindowAt(line, t)
+		at := max(sort.Search(len(stack.Windows), func(i int) bool { return stack.Windows[i].After(start) })-1, 0)
 		quantities[at] = quantities[at].Add(v)
 	}
 
@@ -540,6 +541,12 @@ func (l *commitmentLoader) splitLineIntoBuckets(
 		// Each bucket keeps its own cost; spreading only reconciles them with the rounded total.
 		line.Usage = spreadCost(costs, line.Cost)
 	}
+}
+
+// bucketWindowAt is where a usage bucket keyed at t draws capacity: its key, or the line's start when the bucket
+// opened before the line did (ClickHouse weeks start on Sunday), so it never draws ahead of an earlier version.
+func bucketWindowAt(line *usageLine, t time.Time) time.Time {
+	return maxTime(t, line.Item.StartDate)
 }
 
 // buildPeriodStack gives the stack a window per span between commitment starts and effective ends, plus one per line
@@ -575,8 +582,8 @@ func (l *commitmentLoader) buildPeriodStack(ctx context.Context, stack *commitme
 		}
 
 		for t := range bucketedUsage[i] {
-			if t.After(l.periodStart) {
-				windowStarts = append(windowStarts, t)
+			if at := bucketWindowAt(line, t); at.After(l.periodStart) {
+				windowStarts = append(windowStarts, at)
 			}
 		}
 	}

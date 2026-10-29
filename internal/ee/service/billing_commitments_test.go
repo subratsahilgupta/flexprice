@@ -1146,6 +1146,62 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodFillsVersionsInT
 	s.True(total.Equal(dec("25.5")), "total %s", total)
 }
 
+// A weekly bucket is keyed on its Sunday, before a version starting midweek: it still draws capacity from the version's
+// start, after the earlier flat version, so the overage lands on the bucketed version and carries its price.
+func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodWeeklyBucketFillsFromItsVersionStart() {
+	ctx := s.GetContext()
+	s.setupTestData()
+	s.enableCommitmentsV2()
+	m := &meter.Meter{
+		ID:          "meter_weekly_versions",
+		Name:        "Tokens",
+		EventName:   "tokens",
+		Aggregation: meter.Aggregation{Type: types.AggregationSum, Field: "tokens"},
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().MeterRepo.CreateMeter(ctx, m))
+	v1, v2 := s.usagePriceFor("price_weekly_v1", m, "0.1"), s.usagePriceFor("price_weekly_v2", m, "0.12")
+	v2.BucketSize = types.WindowSizeWeek
+	s.Require().NoError(s.GetStores().PriceRepo.Update(ctx, v2, false))
+
+	lines := lo.Map([]*price.Price{v1, v2}, func(p *price.Price, _ int) *subscription.SubscriptionLineItem {
+		return &subscription.SubscriptionLineItem{ID: "subs_line_" + p.ID, PriceID: p.ID, MeterID: m.ID, DisplayName: "Tokens"}
+	})
+	sub := s.fixedDateSub("sub_weekly_versions", lines...)
+	aug10, aug12 := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC), time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC)
+	lines[0].StartDate, lines[0].EndDate = aug10, aug12
+	lines[1].StartDate = aug12
+	for _, li := range lines {
+		s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, li))
+	}
+
+	c := s.newTestCommitment("cmt_weekly_versions", sub, types.COMMITMENT_TYPE_QUANTITY, "30", "", sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
+	c.ScopeEntityType, c.ScopeEntityID = types.CommitmentScopeMeter, m.ID
+	c.CommittedPriceID = lo.ToPtr(s.usagePriceFor("price_weekly_committed", nil, "0.05").ID)
+	s.storeCommitment(c)
+
+	// v2's week is keyed Sunday 9 August, before v1 starts on the 10th.
+	usage := &dto.GetUsageBySubscriptionResponse{Currency: "usd", Charges: []*dto.SubscriptionUsageByMetersResponse{
+		{SubscriptionLineItemID: lines[0].ID, Price: v1, Quantity: 30, Amount: 3},
+		bucketCharge(lines[1], v2, map[int]string{9: "30"}),
+	}}
+	l := s.loaderFor(sub, usage, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
+	stacks, _, err := l.Stacks(ctx)
+	s.Require().NoError(err)
+	s.Require().Len(stacks, 1)
+	s.Equal([]time.Time{sub.CurrentPeriodStart, aug10, aug12}, stacks[0].Windows)
+
+	// v1's 30 fill the commitment; v2's 30 are overage at $0.12.
+	invoiceLines, total, err := l.InvoiceLines(ctx)
+	s.Require().NoError(err)
+	overage := loaderLinesOfKind(invoiceLines, types.CommitmentLineOverage)
+	s.Require().Len(overage, 1)
+	s.Equal(v2.ID, lo.FromPtr(overage[0].PriceID))
+	s.True(overage[0].Quantity.Equal(dec("30")), "overage quantity %s", overage[0].Quantity)
+	s.True(overage[0].Amount.Equal(dec("3.6")), "overage %s", overage[0].Amount)
+	s.True(total.Equal(dec("5.1")), "total %s", total)
+}
+
 // A tiered committed price prorates each partial invoice's floor as the step in the period's cumulative floor, so the
 // halves sum to the whole period's floor instead of each walking the tiers from zero.
 func (s *BillingServiceSuite) TestCommitmentLoader_TieredPartialFloorsSumToThePeriodFloor() {
