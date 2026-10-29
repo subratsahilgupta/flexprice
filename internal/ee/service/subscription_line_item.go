@@ -1304,6 +1304,33 @@ func (s *subscriptionService) ListSubscriptionLineItems(ctx context.Context, fil
 	}, nil
 }
 
+func (s *subscriptionService) GetSubscriptionLineItemHistory(ctx context.Context, lineItemID string) (*dto.ListSubscriptionLineItemsResponse, error) {
+	if lineItemID == "" {
+		return nil, ierr.NewError("line_item_id is required").
+			WithHint("Line item ID is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	items, err := s.SubscriptionLineItemRepo.ListLineage(ctx, lineItemID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Deleted versions were cancelled before they started; show one only when it was asked for.
+	responses := make([]*dto.SubscriptionLineItemResponse, 0, len(items))
+	for _, item := range items {
+		if item.Status == types.StatusDeleted && item.ID != lineItemID {
+			continue
+		}
+		responses = append(responses, &dto.SubscriptionLineItemResponse{SubscriptionLineItem: item})
+	}
+
+	return &dto.ListSubscriptionLineItemsResponse{
+		Items:      responses,
+		Pagination: types.NewPaginationResponse(len(responses), len(responses), 0),
+	}, nil
+}
+
 // validateBucketArray runs array-level validation on a bucket slice — every
 // bucket priced, overlap detection, meter-window alignment, and
 // cumulative-commitment guard. Called from create and update flows AFTER

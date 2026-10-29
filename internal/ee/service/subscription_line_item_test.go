@@ -2528,3 +2528,55 @@ func (s *SubscriptionLineItemServiceSuite) TestAddSubscriptionLineItem_BucketsOn
 	s.True(decimal.NewFromInt(1).Equal(*resp.CommitmentOverageFactor),
 		"expected default overage factor 1 for buckets-only create, got %s", resp.CommitmentOverageFactor)
 }
+
+func (s *SubscriptionLineItemServiceSuite) TestGetSubscriptionLineItemHistory() {
+	// Pointers only in metadata, as written before the lineage columns existed.
+	legacyB := types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)
+	legacyA := s.stageLineItem(func(li *subscription.SubscriptionLineItem) {
+		li.Metadata = map[string]string{types.SubscriptionLineItemMetadataKeySuccessorID: legacyB}
+	})
+	s.stageLineItem(func(li *subscription.SubscriptionLineItem) {
+		li.ID = legacyB
+		li.StartDate = legacyA.StartDate.Add(24 * time.Hour)
+		li.Metadata = map[string]string{types.SubscriptionLineItemMetadataKeyPredecessorID: legacyA.ID}
+	})
+	solo := s.stageLineItem(func(*subscription.SubscriptionLineItem) {})
+
+	// Staged above first: stageLineItem clones the suite line item, which versioning gives a successor.
+	now := time.Now().UTC()
+	v1 := s.testData.lineItem
+	v2 := s.scheduleVersion(v1.ID, 75, now.Add(5*24*time.Hour))
+	v3 := s.scheduleVersion(v2.ID, 90, now.Add(10*24*time.Hour))
+	cancelled := s.scheduleVersion(v3.ID, 110, now.Add(15*24*time.Hour))
+	s.Require().NoError(s.revertScheduledVersion(cancelled.ID))
+
+	chain := []string{v1.ID, v2.ID, v3.ID}
+	tests := []struct {
+		name    string
+		id      string
+		wantIDs []string
+		wantErr bool
+	}{
+		{name: "from first version", id: v1.ID, wantIDs: chain},
+		{name: "from middle version", id: v2.ID, wantIDs: chain},
+		{name: "from latest version", id: v3.ID, wantIDs: chain},
+		{name: "cancelled version requested directly", id: cancelled.ID, wantIDs: append(chain, cancelled.ID)},
+		{name: "legacy metadata pointers", id: legacyB, wantIDs: []string{legacyA.ID, legacyB}},
+		{name: "no lineage", id: solo.ID, wantIDs: []string{solo.ID}},
+		{name: "not found", id: "subs_line_missing", wantErr: true},
+		{name: "empty id", id: "", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			resp, err := s.service.GetSubscriptionLineItemHistory(s.GetContext(), tt.id)
+			if tt.wantErr {
+				s.Error(err)
+				s.Nil(resp)
+				return
+			}
+			s.Require().NoError(err)
+			s.Equal(tt.wantIDs, lo.Map(resp.Items, func(r *dto.SubscriptionLineItemResponse, _ int) string { return r.ID }))
+		})
+	}
+}

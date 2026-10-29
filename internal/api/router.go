@@ -458,6 +458,7 @@ func NewRouter(
 
 			// Subscription line item management (POST /lineitems/search registered above)
 			subscription.POST("/:id/lineitems", write(types.EntitySubscription, types.ActionWrite), handlers.Subscription.AddSubscriptionLineItem)
+			subscription.GET("/lineitems/:id/history", observe(types.EntitySubscription), handlers.Subscription.GetSubscriptionLineItemHistory)
 			subscription.PUT("/lineitems/:id", write(types.EntitySubscription, types.ActionWrite), handlers.Subscription.UpdateSubscriptionLineItem)
 			subscription.DELETE("/lineitems/:id", write(types.EntitySubscription, types.ActionWrite), handlers.Subscription.DeleteSubscriptionLineItem)
 
