@@ -384,17 +384,17 @@ func (r lineRenderer) overageLines(
 		return nil
 	}
 
-	// Price in-force remainder at the custom rate; price other remainder at the line's own margin.
+	// Remainder in windows a commitment applies to bills at the custom rate; the rest at the line's own margin.
 	listQty, listAmount, overageQty := decimal.Zero, decimal.Zero, decimal.Zero
 	for w, units := range windows {
 		if !units.IsPositive() {
 			continue
 		}
 
-		inForce := lo.SomeBy(stack.Commitments, func(sc *stackedCommitment) bool {
+		applied := lo.SomeBy(stack.Commitments, func(sc *stackedCommitment) bool {
 			return sc.PoolOf[w] >= 0 && lo.Contains(sc.Lines, line)
 		})
-		if line.OveragePrice != nil && inForce {
+		if line.OveragePrice != nil && applied {
 			overageQty = overageQty.Add(units)
 			continue
 		}

@@ -704,7 +704,7 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodEndsMidPeriod() 
 	s.True(total.Equal(dec("34")), "total %s", total)
 }
 
-// A commitment's custom overage price charges only its in-force usage beyond capacity; usage outside it bills at the
+// A commitment's custom overage price charges only beyond-capacity usage while it applies; usage outside it bills at the
 // line's own $1 price.
 func (s *BillingServiceSuite) TestCommitmentLoader_OveragePriceSkipsUsageOutsideTheCommitment() {
 	mid := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
@@ -712,7 +712,7 @@ func (s *BillingServiceSuite) TestCommitmentLoader_OveragePriceSkipsUsageOutside
 		name       string
 		startAtMid bool
 		within     string // committed units at $0.5
-		inForce    string // in-force units beyond capacity, at the $3 overage price
+		beyondCap  string // beyond-capacity units while the commitment applies, at the $3 overage price
 		total      string
 	}{
 		{
@@ -720,15 +720,15 @@ func (s *BillingServiceSuite) TestCommitmentLoader_OveragePriceSkipsUsageOutside
 			name:       "usage before a mid-period start",
 			startAtMid: true,
 			within:     "17",
-			inForce:    "3",
+			beyondCap:  "3",
 			total:      "37.5",
 		},
 		{
 			// 31 a month is 14 for the 14 days to 15 Aug; 6 of the 20 calls before it are beyond capacity.
-			name:    "usage after a mid-period end",
-			within:  "14",
-			inForce: "6",
-			total:   "45",
+			name:      "usage after a mid-period end",
+			within:    "14",
+			beyondCap: "6",
+			total:     "45",
 		},
 	}
 
@@ -754,8 +754,8 @@ func (s *BillingServiceSuite) TestCommitmentLoader_OveragePriceSkipsUsageOutside
 
 			overage := loaderLinesOfKind(lines, types.CommitmentLineOverage)
 			s.Require().Len(overage, 2)
-			s.True(overage[0].Quantity.Round(6).Equal(dec(tt.inForce)), "in-force overage %s", overage[0].Quantity)
-			s.True(overage[0].Amount.Equal(dec(tt.inForce).Mul(dec("3"))), "in-force overage %s", overage[0].Amount)
+			s.True(overage[0].Quantity.Round(6).Equal(dec(tt.beyondCap)), "beyond-capacity overage %s", overage[0].Quantity)
+			s.True(overage[0].Amount.Equal(dec(tt.beyondCap).Mul(dec("3"))), "beyond-capacity overage %s", overage[0].Amount)
 			s.True(overage[1].Quantity.Equal(dec("20")), "out-of-force usage %s", overage[1].Quantity)
 			s.True(overage[1].Amount.Equal(dec("20")), "out-of-force usage %s", overage[1].Amount)
 			s.True(total.Equal(dec(tt.total)), "total %s", total)

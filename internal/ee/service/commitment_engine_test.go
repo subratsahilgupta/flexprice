@@ -1136,7 +1136,7 @@ func TestCommitmentInvoiceLinesPackageLinePricesOverageAfresh(t *testing.T) {
 	}
 }
 
-// A custom overage price charges only usage left where the commitment is in force; usage before it starts or after it
+// A custom overage price charges only remainder in windows the commitment applies to; usage before it starts or after it
 // ends bills on the line's own price, as it would with no commitment.
 func TestCommitmentInvoiceLinesOveragePriceCoversOnlyInForceUsage(t *testing.T) {
 	// The line's price costs 1 a unit up to 120 and 2 above; the overage price costs its flat amount a unit.
