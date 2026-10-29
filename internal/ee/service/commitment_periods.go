@@ -23,14 +23,15 @@ type commitmentPeriod struct {
 	Clipped       bool            // cut to part of the period by the invoice window or a termination
 }
 
-// commitmentPeriods returns the subscription billing periods clipped to the commitment term, with their value;
-// amountOf turns a period's capacity into money. An open-ended commitment has no last period, so its periods run
-// through the billing period holding `through`; a commitment with an end_date ignores it.
+// commitmentPeriods returns the subscription billing periods clipped to the commitment term from the one holding
+// `from`, valued by amountOf. An open-ended commitment has no last period, so its periods run through the billing
+// period holding `through`; a commitment with an end_date ignores it.
 func commitmentPeriods(
 	c *commitment.Commitment,
 	sub *subscription.Subscription,
 	amountOf func(capacity decimal.Decimal) decimal.Decimal,
 	bucket types.WindowSize,
+	from time.Time,
 	through time.Time,
 ) ([]commitmentPeriod, error) {
 	horizon := lo.FromPtr(c.EndDate)
@@ -41,8 +42,13 @@ func commitmentPeriods(
 		}
 	}
 
+	first, err := billingPeriodHolding(sub, maxTime(from, c.StartDate))
+	if err != nil {
+		return nil, err
+	}
+
 	full, err := types.CalculateBillingPeriods(&types.CalculateBillingPeriodsParams{
-		InitialPeriodStart: sub.StartDate,
+		InitialPeriodStart: first.Start,
 		EndDate:            &horizon,
 		Anchor:             sub.BillingAnchor,
 		PeriodCount:        sub.BillingPeriodCount,
@@ -192,12 +198,138 @@ func termValue(
 		return nil, nil
 	}
 
-	periods, err := commitmentPeriods(c, sub, amountOf, bucket, *c.EndDate)
+	periods, err := commitmentPeriods(c, sub, amountOf, bucket, c.StartDate, *c.EndDate)
 	if err != nil {
 		return nil, err
 	}
 
 	return lo.ToPtr(commitmentValue(periods)), nil
+}
+
+// billingPeriodHolding returns the subscription billing period [Start, End) holding t, uncut by the subscription
+// end, with the edges generating every period from sub.StartDate gives, without generating the ones before it.
+func billingPeriodHolding(sub *subscription.Subscription, t time.Time) (types.Period, error) {
+	firstEnd, err := types.NextBillingDate(&types.NextBillingDateParams{
+		CurrentPeriodStart: sub.StartDate,
+		BillingAnchor:      sub.BillingAnchor,
+		Unit:               sub.BillingPeriodCount,
+		Period:             sub.BillingPeriod,
+		Timezone:           sub.Timezone,
+	})
+	if err != nil {
+		return types.Period{}, ierr.WithError(err).
+			WithHint("Failed to compute billing periods for commitment").
+			Mark(ierr.ErrInternal)
+	}
+
+	if t.Before(firstEnd) {
+		return types.Period{Start: sub.StartDate, End: firstEnd}, nil
+	}
+
+	// Multi-day and multi-week cadences step from the first period's end, not along the anchor grid: walk them.
+	if (sub.BillingPeriod == types.BILLING_PERIOD_DAILY || sub.BillingPeriod == types.BILLING_PERIOD_WEEKLY) &&
+		sub.BillingPeriodCount > 1 {
+		return walkToPeriodHolding(sub, t)
+	}
+
+	// Every later edge is a billing date on the anchor grid.
+	grid, err := types.NewBillingPeriodGrid(sub.BillingAnchor, sub.BillingPeriod, sub.BillingPeriodCount, sub.Timezone)
+	if err != nil {
+		return types.Period{}, ierr.WithError(err).
+			WithHint("Failed to compute billing periods for commitment").
+			Mark(ierr.ErrInternal)
+	}
+
+	return types.FullBillingPeriod(t, grid), nil
+}
+
+// periodEndHolding returns the end of the subscription billing period holding t, or t itself past the
+// subscription's last period.
+func periodEndHolding(sub *subscription.Subscription, t time.Time) (time.Time, error) {
+	holding, err := billingPeriodHolding(sub, t)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	// t on a period edge closes the period before it.
+	if holding.Start.Equal(t) && t.After(sub.StartDate) {
+		return t, nil
+	}
+
+	// Run the periods one billing date past t, so the period holding it is not cut at t.
+	horizon, err := types.NextBillingDate(&types.NextBillingDateParams{
+		CurrentPeriodStart:  t,
+		BillingAnchor:       sub.BillingAnchor,
+		Unit:                sub.BillingPeriodCount,
+		Period:              sub.BillingPeriod,
+		SubscriptionEndDate: sub.EndDate,
+		Timezone:            sub.Timezone,
+	})
+	if err != nil {
+		return time.Time{}, ierr.WithError(err).
+			WithHint("Failed to compute billing periods for commitment").
+			Mark(ierr.ErrInternal)
+	}
+
+	periods, err := types.CalculateBillingPeriods(&types.CalculateBillingPeriodsParams{
+		InitialPeriodStart: holding.Start,
+		EndDate:            &horizon,
+		Anchor:             sub.BillingAnchor,
+		PeriodCount:        sub.BillingPeriodCount,
+		BillingPeriod:      sub.BillingPeriod,
+		Timezone:           sub.Timezone,
+	})
+	if err != nil {
+		return time.Time{}, ierr.WithError(err).
+			WithHint("Failed to compute billing periods for commitment").
+			Mark(ierr.ErrInternal)
+	}
+
+	for _, p := range periods {
+		if !p.End.Before(t) {
+			return p.End, nil
+		}
+	}
+
+	return t, nil
+}
+
+// walkToPeriodHolding generates the subscription's billing periods from its start up to the one holding t.
+func walkToPeriodHolding(sub *subscription.Subscription, t time.Time) (types.Period, error) {
+	horizon, err := types.NextBillingDate(&types.NextBillingDateParams{
+		CurrentPeriodStart: t,
+		BillingAnchor:      sub.BillingAnchor,
+		Unit:               sub.BillingPeriodCount,
+		Period:             sub.BillingPeriod,
+		Timezone:           sub.Timezone,
+	})
+	if err != nil {
+		return types.Period{}, ierr.WithError(err).
+			WithHint("Failed to compute billing periods for commitment").
+			Mark(ierr.ErrInternal)
+	}
+
+	periods, err := types.CalculateBillingPeriods(&types.CalculateBillingPeriodsParams{
+		InitialPeriodStart: sub.StartDate,
+		EndDate:            &horizon,
+		Anchor:             sub.BillingAnchor,
+		PeriodCount:        sub.BillingPeriodCount,
+		BillingPeriod:      sub.BillingPeriod,
+		Timezone:           sub.Timezone,
+	})
+	if err != nil {
+		return types.Period{}, ierr.WithError(err).
+			WithHint("Failed to compute billing periods for commitment").
+			Mark(ierr.ErrInternal)
+	}
+
+	for _, p := range periods {
+		if p.End.After(t) {
+			return p, nil
+		}
+	}
+
+	return periods[len(periods)-1], nil
 }
 
 func maxTime(a, b time.Time) time.Time {

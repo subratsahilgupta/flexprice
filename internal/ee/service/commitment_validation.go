@@ -449,47 +449,6 @@ func earlierEnd(a, b *time.Time) *time.Time {
 	return a
 }
 
-// periodEndHolding returns the end of the subscription billing period holding t, or t itself past the
-// subscription's last period.
-func periodEndHolding(sub *subscription.Subscription, t time.Time) (time.Time, error) {
-	// Run the periods one billing date past t, so the period holding it is not cut at t.
-	horizon, err := types.NextBillingDate(&types.NextBillingDateParams{
-		CurrentPeriodStart:  t,
-		BillingAnchor:       sub.BillingAnchor,
-		Unit:                sub.BillingPeriodCount,
-		Period:              sub.BillingPeriod,
-		SubscriptionEndDate: sub.EndDate,
-		Timezone:            sub.Timezone,
-	})
-	if err != nil {
-		return time.Time{}, ierr.WithError(err).
-			WithHint("Failed to compute billing periods for commitment").
-			Mark(ierr.ErrInternal)
-	}
-
-	periods, err := types.CalculateBillingPeriods(&types.CalculateBillingPeriodsParams{
-		InitialPeriodStart: sub.StartDate,
-		EndDate:            &horizon,
-		Anchor:             sub.BillingAnchor,
-		PeriodCount:        sub.BillingPeriodCount,
-		BillingPeriod:      sub.BillingPeriod,
-		Timezone:           sub.Timezone,
-	})
-	if err != nil {
-		return time.Time{}, ierr.WithError(err).
-			WithHint("Failed to compute billing periods for commitment").
-			Mark(ierr.ErrInternal)
-	}
-
-	for _, p := range periods {
-		if !p.End.Before(t) {
-			return p.End, nil
-		}
-	}
-
-	return t, nil
-}
-
 // sameOverage reports whether both sides have no overage price, or flat ones with the same amount.
 func (s *commitmentService) sameOverage(
 	ctx context.Context,
