@@ -384,9 +384,7 @@ func (r lineRenderer) overageLines(
 		return nil
 	}
 
-	// An overage price charges only what is left where a commitment covering the line is in force, afresh over the
-	// period's total. Everything else bills on the line's own price at the margin above the units it does not cover,
-	// per bucket for bucketed lines, as usage outside every commitment bills without one.
+	// Price in-force remainder at the custom rate; price other remainder at the line's own margin.
 	listQty, listAmount, overageQty := decimal.Zero, decimal.Zero, decimal.Zero
 	for w, units := range windows {
 		if !units.IsPositive() {

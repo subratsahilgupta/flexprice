@@ -549,11 +549,8 @@ func bucketWindowAt(line *usageLine, t time.Time) time.Time {
 	return maxTime(t, line.Item.StartDate)
 }
 
-// buildPeriodStack gives the stack a window per span between commitment starts and effective ends, plus one per line
-// version's start and end and per usage bucket of its bucketed lines, so capacity fills in time order across a line's
-// versions and buckets; within one unbucketed version a single window aggregates its usage. Each commitment's single
-// pool spans the windows it applies to. With no boundary inside the invoice window, no version change and no bucketed
-// line, that is one window and one pool per commitment.
+// buildPeriodStack splits a billing period at commitment boundaries, line versions, and usage buckets.
+// Each commitment shares one capacity pool across the windows it applies to.
 func (l *commitmentLoader) buildPeriodStack(ctx context.Context, stack *commitmentStack) error {
 	boundaryStarts := periodSplits(l.periodStart, l.periodEnd, lo.FlatMap(stack.Commitments, func(sc *stackedCommitment, _ int) []time.Time {
 		// An end past the range, or none, lands at end and adds no boundary.
