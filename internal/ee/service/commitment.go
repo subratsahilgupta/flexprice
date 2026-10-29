@@ -684,8 +684,21 @@ func (s *commitmentService) billCancellationFee(
 		metadata[types.MetadataKeyDescription] = *c.InvoiceDescription
 	}
 
-	// The fee covers the remaining term; an open-ended commitment has none, so its fee is dated at effective_at alone.
-	periodEnd := lo.FromPtrOr(c.EndDate, effectiveAt)
+	// The fee covers the rest of the term; one that never ends covers the rest of the billing period holding
+	// effective_at, which ends early when the subscription does.
+	periodEnd := c.EffectiveEnd()
+	if c.Unending() {
+		holding, err := billingPeriodHolding(sub, effectiveAt)
+		if err != nil {
+			return nil, err
+		}
+
+		periodEnd = &holding.End
+		if !endsBy(sub.EndDate, effectiveAt) {
+			periodEnd = earlierEnd(periodEnd, sub.EndDate)
+		}
+	}
+
 	billingPeriod := string(sub.BillingPeriod)
 	inv, err := NewInvoiceService(s.ServiceParams).CreateInvoice(ctx, dto.CreateInvoiceRequest{
 		CustomerID:     sub.GetInvoicingCustomerID(),
@@ -697,7 +710,7 @@ func (s *commitmentService) billCancellationFee(
 		Total:          amount,
 		Subtotal:       amount,
 		PeriodStart:    lo.ToPtr(effectiveAt),
-		PeriodEnd:      lo.ToPtr(periodEnd),
+		PeriodEnd:      periodEnd,
 		BillingPeriod:  &billingPeriod,
 		IdempotencyKey: lo.ToPtr("commitment_termination_" + c.ID),
 		LineItems: []dto.CreateInvoiceLineItemRequest{
@@ -706,7 +719,7 @@ func (s *commitmentService) billCancellationFee(
 				Quantity:     decimal.NewFromInt(1),
 				Amount:       amount,
 				PeriodStart:  lo.ToPtr(effectiveAt),
-				PeriodEnd:    lo.ToPtr(periodEnd),
+				PeriodEnd:    periodEnd,
 				CommitmentID: lo.ToPtr(c.ID),
 				EntityType:   lo.ToPtr(string(types.InvoiceLineItemEntityTypeCommitment)),
 				EntityID:     lo.ToPtr(c.ID),

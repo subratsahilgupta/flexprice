@@ -482,30 +482,50 @@ func (s *CommitmentServiceSuite) TestTerminate_OpenEndedAnyTimeWithoutFee() {
 	s.Nil(resp.EndDate)
 }
 
-// With no remaining term to cover, an open-ended commitment's cancellation fee is dated at effective_at alone.
-func (s *CommitmentServiceSuite) TestTerminate_OpenEndedFeeIsDatedAtEffectiveAt() {
-	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
-	req.EndDate = nil
-	created, err := s.svc.Create(s.GetContext(), req)
-	s.Require().NoError(err)
+// With no term end to cover, the fee covers the rest of the billing period holding effective_at.
+func (s *CommitmentServiceSuite) TestTerminate_OpenEndedFeeCoversThePeriodHoldingEffectiveAt() {
+	apr, may := time.Date(2027, 4, 1, 0, 0, 0, 0, time.UTC), time.Date(2027, 5, 1, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name          string
+		at            time.Time
+		subEnd        *time.Time
+		wantPeriodEnd time.Time
+	}{
+		{name: "on a period edge", at: apr, wantPeriodEnd: may},
+		{name: "mid-period", at: apr.AddDate(0, 0, 9), wantPeriodEnd: may},
+		{name: "subscription ending inside the period", at: apr.AddDate(0, 0, 9), subEnd: lo.ToPtr(apr.AddDate(0, 0, 20)), wantPeriodEnd: apr.AddDate(0, 0, 20)},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			s.SetupTest()
+			if tt.subEnd != nil {
+				s.endSubscriptionAt(*tt.subEnd)
+			}
 
-	at := created.StartDate.AddDate(0, 3, 0)
-	resp, err := s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{
-		EffectiveAt:     &at,
-		CancellationFee: lo.ToPtr(dec("75")),
-	})
-	s.Require().NoError(err)
-	s.Require().NotNil(resp.TerminationInvoiceID)
+			req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+			req.EndDate = nil
+			created, err := s.svc.Create(s.GetContext(), req)
+			s.Require().NoError(err)
 
-	inv, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), *resp.TerminationInvoiceID)
-	s.Require().NoError(err)
-	s.True(inv.AmountDue.Equal(dec("75")), "got %s", inv.AmountDue)
-	s.True(lo.FromPtr(inv.PeriodStart).Equal(at), "period start %v", inv.PeriodStart)
-	s.True(lo.FromPtr(inv.PeriodEnd).Equal(at), "period end %v", inv.PeriodEnd)
-	lines := s.invoiceLines(inv.ID)
-	s.Require().Len(lines, 1)
-	s.requireLine(lines[0], types.CommitmentLineCancellationFee, "75", created.ID)
-	s.True(lo.FromPtr(lines[0].PeriodEnd).Equal(at), "line period end %v", lines[0].PeriodEnd)
+			resp, err := s.svc.Terminate(s.GetContext(), created.ID, dto.TerminateCommitmentRequest{
+				EffectiveAt:     &tt.at,
+				CancellationFee: lo.ToPtr(dec("75")),
+			})
+			s.Require().NoError(err)
+			s.Require().NotNil(resp.TerminationInvoiceID)
+
+			inv, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), *resp.TerminationInvoiceID)
+			s.Require().NoError(err)
+			s.True(inv.AmountDue.Equal(dec("75")), "got %s", inv.AmountDue)
+			s.True(lo.FromPtr(inv.PeriodStart).Equal(tt.at), "period start %v", inv.PeriodStart)
+			s.True(lo.FromPtr(inv.PeriodEnd).Equal(tt.wantPeriodEnd), "period end %v", inv.PeriodEnd)
+			lines := s.invoiceLines(inv.ID)
+			s.Require().Len(lines, 1)
+			s.requireLine(lines[0], types.CommitmentLineCancellationFee, "75", created.ID)
+			s.True(lo.FromPtr(lines[0].PeriodStart).Equal(tt.at), "line period start %v", lines[0].PeriodStart)
+			s.True(lo.FromPtr(lines[0].PeriodEnd).Equal(tt.wantPeriodEnd), "line period end %v", lines[0].PeriodEnd)
+		})
+	}
 }
 
 func (s *CommitmentServiceSuite) TestTerminateForSubscription_TerminatesOpenEnded() {
