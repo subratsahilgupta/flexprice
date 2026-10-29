@@ -411,6 +411,20 @@ func (s *CommitmentServiceSuite) TestValidation_OpenEndedOnSubscriptionWithEndDa
 }
 
 // A term starting at or after a scheduled subscription end has no billable period, whatever its own end.
+// A subscription starting mid-second accepts a commitment dated at its own start: ApplyDefaults
+// aligns term edges to whole seconds, and the sub-start bound compares at that granularity too.
+func (s *CommitmentServiceSuite) TestValidation_AcceptsStartMatchingAMidSecondSubscriptionStart() {
+	sub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), s.fx.sub.ID)
+	s.Require().NoError(err)
+	sub.StartDate = sub.StartDate.Add(500 * time.Millisecond)
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), sub))
+
+	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	req.StartDate = sub.StartDate // truncates to the second's start in ApplyDefaults
+	_, err = s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+}
+
 func (s *CommitmentServiceSuite) TestValidation_StartAtOrAfterSubscriptionEnd() {
 	sub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), s.fx.sub.ID)
 	s.Require().NoError(err)

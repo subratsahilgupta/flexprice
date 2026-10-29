@@ -184,7 +184,9 @@ func (s *commitmentService) validateAgainstSubscription(
 		return ierr.Validationf("subscription %s must be active or trialing", sub.ID)
 	}
 
-	if req.StartDate.Before(sub.StartDate) {
+	// Term edges are whole seconds (ApplyDefaults), so a subscription starting mid-second accepts a
+	// commitment aligned to that second's start.
+	if req.StartDate.Before(sub.StartDate.Truncate(time.Second)) {
 		return ierr.Validationf("start_date cannot be before the subscription start %s", sub.StartDate.Format(time.RFC3339))
 	}
 
