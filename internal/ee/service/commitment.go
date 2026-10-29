@@ -676,6 +676,14 @@ func (s *commitmentService) billCancellationFee(
 		)
 	}
 
+	// Nor can it fall at or past the subscription end, which bounds the term the fee covers.
+	if sub.EndDate != nil && !effectiveAt.Before(*sub.EndDate) {
+		return nil, ierr.Validationf(
+			"effective_at with a cancellation_fee must be before the subscription end %s",
+			sub.EndDate.Format(time.RFC3339),
+		)
+	}
+
 	metadata := types.Metadata{
 		types.MetadataKeyCommitmentLineKind: string(types.CommitmentLineCancellationFee),
 		types.MetadataKeyCommitmentID:       c.ID,
@@ -684,8 +692,8 @@ func (s *commitmentService) billCancellationFee(
 		metadata[types.MetadataKeyDescription] = *c.InvoiceDescription
 	}
 
-	// The fee covers the rest of the term; one that never ends covers the rest of the billing period holding
-	// effective_at, which ends early when the subscription does.
+	// The fee covers the rest of the term, or of the billing period holding effective_at for one that never ends;
+	// either stops at the subscription end.
 	periodEnd := c.EffectiveEnd()
 	if c.Unending() {
 		holding, err := billingPeriodHolding(sub, effectiveAt)
@@ -694,9 +702,10 @@ func (s *commitmentService) billCancellationFee(
 		}
 
 		periodEnd = &holding.End
-		if sub.EndDate != nil && sub.EndDate.After(effectiveAt) {
-			periodEnd = lo.ToPtr(minTime(holding.End, *sub.EndDate))
-		}
+	}
+
+	if sub.EndDate != nil {
+		periodEnd = lo.ToPtr(minTime(*periodEnd, *sub.EndDate))
 	}
 
 	billingPeriod := string(sub.BillingPeriod)
