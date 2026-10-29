@@ -23,9 +23,8 @@ type commitmentPeriod struct {
 	Clipped       bool            // cut to part of the period by the invoice window or a termination
 }
 
-// commitmentPeriods returns the subscription billing periods clipped to the commitment term from the one holding
-// `from`, valued by amountOf. An open-ended commitment has no last period, so its periods run through the billing
-// period holding `through`; a commitment with an end_date ignores it.
+// commitmentPeriods returns the billing periods clipped to the commitment term from the one holding `from`, valued
+// by amountOf; with no end_date they run through the period holding `through`.
 func commitmentPeriods(
 	c *commitment.Commitment,
 	sub *subscription.Subscription,

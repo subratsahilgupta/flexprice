@@ -408,9 +408,8 @@ func (s *commitmentService) validateOverlaps(
 	return nil
 }
 
-// inForceEnd returns when a commitment stops constraining others: the end of the subscription billing period
-// holding its term end, whose invoice still bills it. One ended at or before its start spans nothing, and one
-// with no term end never stops (nil).
+// inForceEnd returns when a commitment stops constraining others: the end of the billing period holding its term
+// end, which still bills it; nil when the term never ends, its effective end when it never started.
 func inForceEnd(sub *subscription.Subscription, c *commitment.Commitment) (*time.Time, error) {
 	endedAt := termEnd(sub, c)
 	if endedAt == nil || !endedAt.After(c.StartDate) {
