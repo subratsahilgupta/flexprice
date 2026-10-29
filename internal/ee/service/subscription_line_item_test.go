@@ -637,6 +637,23 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Effect
 	s.Equal(existingEndDate.Truncate(time.Second).Unix(), li.EndDate.Truncate(time.Second).Unix(), "end date must remain unchanged")
 }
 
+// A date a fraction of a microsecond past a stored end is still after it: cutting it to microseconds before the
+// end-date check would pull it onto the end and let the delete through.
+func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_EffectiveFromJustAfterExistingEndDate_Blocked() {
+	ctx := s.GetContext()
+
+	existingEndDate := s.testData.lineItem.StartDate.Add(5 * 24 * time.Hour).Truncate(time.Microsecond)
+	s.testData.lineItem.EndDate = existingEndDate
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, s.testData.lineItem))
+
+	justAfter := existingEndDate.Add(500 * time.Nanosecond)
+	_, err := s.service.DeleteSubscriptionLineItem(ctx, s.testData.lineItem.ID, dto.DeleteSubscriptionLineItemRequest{
+		EffectiveFrom: &justAfter,
+	})
+	s.Require().Error(err)
+	s.Contains(err.Error(), "already terminated")
+}
+
 // TestDeleteSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Allowed verifies a no-op re-set to the same end date succeeds.
 func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Allowed() {
 	ctx := s.GetContext()
@@ -805,6 +822,23 @@ func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_Backda
 	oldLi, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
 	s.NoError(err)
 	s.Equal(newEffectiveFrom.Truncate(time.Second).Unix(), oldLi.EndDate.Truncate(time.Second).Unix())
+}
+
+// The update path checks the requested end too, not the one cut to microseconds.
+func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_EffectiveFromJustAfterExistingEndDate_Blocked() {
+	ctx := s.GetContext()
+
+	oldEndDate := s.testData.lineItem.StartDate.Add(5 * 24 * time.Hour).Truncate(time.Microsecond)
+	s.testData.lineItem.EndDate = oldEndDate
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, s.testData.lineItem))
+
+	justAfter := oldEndDate.Add(500 * time.Nanosecond)
+	_, err := s.service.UpdateSubscriptionLineItem(ctx, s.testData.lineItem.ID, dto.UpdateSubscriptionLineItemRequest{
+		Amount:        lo.ToPtr(decimal.NewFromInt(300)),
+		EffectiveFrom: &justAfter,
+	})
+	s.Require().Error(err)
+	s.Contains(err.Error(), "already terminated")
 }
 
 // TestUpdateSubscriptionLineItem_EffectiveFromAfterExistingEndDate_Blocked verifies the out-of-scope "extend forward" case stays blocked.
