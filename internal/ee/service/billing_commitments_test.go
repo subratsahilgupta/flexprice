@@ -704,6 +704,65 @@ func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodEndsMidPeriod() 
 	s.True(total.Equal(dec("34")), "total %s", total)
 }
 
+// A commitment's custom overage price charges only its in-force usage beyond capacity; usage outside it bills at the
+// line's own $1 price.
+func (s *BillingServiceSuite) TestCommitmentLoader_OveragePriceSkipsUsageOutsideTheCommitment() {
+	mid := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name       string
+		startAtMid bool
+		within     string // committed units at $0.5
+		inForce    string // in-force units beyond capacity, at the $3 overage price
+		total      string
+	}{
+		{
+			// 31 a month is 17 for the 17 days from 15 Aug; 3 of the 20 calls after it are beyond capacity.
+			name:       "usage before a mid-period start",
+			startAtMid: true,
+			within:     "17",
+			inForce:    "3",
+			total:      "37.5",
+		},
+		{
+			// 31 a month is 14 for the 14 days to 15 Aug; 6 of the 20 calls before it are beyond capacity.
+			name:    "usage after a mid-period end",
+			within:  "14",
+			inForce: "6",
+			total:   "45",
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			ctx := s.GetContext()
+			s.setupTestData()
+			s.enableCommitmentsV2()
+			sub, p := s.apiFixture("sub_overage_scope")
+			start, end := sub.CurrentPeriodStart, mid
+			if tt.startAtMid {
+				start, end = mid, sub.CurrentPeriodEnd
+			}
+
+			c := s.newTestCommitment("cmt_overage_scope", sub, types.COMMITMENT_TYPE_QUANTITY, "31", p.ID, start, end)
+			c.CommittedPriceID = lo.ToPtr(s.usagePriceFor("price_overage_scope_committed", s.testData.meters.apiCalls, "0.5").ID)
+			c.OveragePriceID = lo.ToPtr(s.usagePriceFor("price_overage_scope_overage", s.testData.meters.apiCalls, "3").ID)
+			s.storeCommitment(c)
+
+			lines, total, err := s.loaderFor(sub, s.meterUsage(sub), sub.CurrentPeriodStart, sub.CurrentPeriodEnd).InvoiceLines(ctx)
+			s.Require().NoError(err)
+			s.True(s.loaderLine(lines, types.CommitmentLineUtilized, c.ID).Quantity.Round(6).Equal(dec(tt.within)))
+
+			overage := loaderLinesOfKind(lines, types.CommitmentLineOverage)
+			s.Require().Len(overage, 2)
+			s.True(overage[0].Quantity.Round(6).Equal(dec(tt.inForce)), "in-force overage %s", overage[0].Quantity)
+			s.True(overage[0].Amount.Equal(dec(tt.inForce).Mul(dec("3"))), "in-force overage %s", overage[0].Amount)
+			s.True(overage[1].Quantity.Equal(dec("20")), "out-of-force usage %s", overage[1].Quantity)
+			s.True(overage[1].Amount.Equal(dec("20")), "out-of-force usage %s", overage[1].Amount)
+			s.True(total.Equal(dec(tt.total)), "total %s", total)
+		})
+	}
+}
+
 // One pool spans every span a commitment applies to, so usage before a later commitment starts draws it down.
 func (s *BillingServiceSuite) TestCommitmentLoader_BillingPeriodPoolsAcrossTheSplit() {
 	ctx := s.GetContext()
