@@ -99,7 +99,7 @@ type Repository interface {
 		p ListPlanLineItemsToCreateV2Params,
 	) (items []PlanLineItemCreationDelta, staleSubIDs []string, err error)
 
-	// TerminatePlanPricesLineItemsV2 ends live line items for prices newer than each sub's bookmark.
+	// TerminatePlanPricesLineItemsV2 ends live line items for prices ended after each sub's synced_price_sequence.
 	// Call before stamping; returns the number of updated rows.
 	TerminatePlanPricesLineItemsV2(
 		ctx context.Context,

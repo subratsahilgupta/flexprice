@@ -234,7 +234,7 @@ func (r *planPriceSyncRepository) TerminatePlanPricesLineItemsV2(
 	})
 	defer FinishSpan(span)
 
-	// Only prices ended after each sub's bookmark: ending a price bumps its sequence,
+	// Only prices ended after each sub's synced_price_sequence: ending a price bumps its sequence,
 	// so older ended prices were already applied when the sub was last stamped.
 	query := fmt.Sprintf(`
 		UPDATE subscription_line_items li

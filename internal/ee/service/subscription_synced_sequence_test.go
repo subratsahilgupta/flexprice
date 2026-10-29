@@ -27,8 +27,8 @@ func (r *sequenceReadHook) CurrentPlanSequence(ctx context.Context, planID strin
 }
 
 // A price added between the plan-sequence read and the price read must either get a
-// line item or stay ahead of the bookmark, so the next sync still creates it.
-func (s *SubscriptionServiceSuite) TestCreateSubscription_BookmarkNeverCoversMissedPrice() {
+// line item or stay above synced_price_sequence, so the next sync still creates it.
+func (s *SubscriptionServiceSuite) TestCreateSubscription_SyncedSequenceNeverCoversMissedPrice() {
 	ctx := s.GetContext()
 	const addedSeq = int64(1000)
 	added := *s.testData.prices.apiCalls
@@ -55,11 +55,11 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_BookmarkNeverCoversMis
 	s.Require().NoError(err)
 	hasLineItem := lo.ContainsBy(items, func(li *subscription.SubscriptionLineItem) bool { return li.PriceID == added.ID })
 	s.True(hasLineItem || sub.SyncedPriceSequence < addedSeq,
-		"bookmark %d covers the added price but the sub has no line item for it", sub.SyncedPriceSequence)
+		"synced sequence %d covers the added price but the sub has no line item for it", sub.SyncedPriceSequence)
 }
 
-// Same guarantee for a plan change: the swapped-in line items and the bookmark must agree.
-func (s *SubscriptionChangeV2Suite) TestExecute_BookmarkNeverCoversMissedPrice() {
+// Same guarantee for a plan change: the swapped-in line items and synced_price_sequence must agree.
+func (s *SubscriptionChangeV2Suite) TestExecute_SyncedSequenceNeverCoversMissedPrice() {
 	ctx := s.GetContext()
 	const addedSeq = int64(1000)
 	var added *price.Price
@@ -77,5 +77,5 @@ func (s *SubscriptionChangeV2Suite) TestExecute_BookmarkNeverCoversMissedPrice()
 	s.Require().NotNil(added)
 	hasLineItem := lo.ContainsBy(s.liveLineItems(), func(li *subscription.SubscriptionLineItem) bool { return li.PriceID == added.ID })
 	s.True(hasLineItem || s.currentSub().SyncedPriceSequence < addedSeq,
-		"bookmark %d covers the added price but the sub has no line item for it", s.currentSub().SyncedPriceSequence)
+		"synced sequence %d covers the added price but the sub has no line item for it", s.currentSub().SyncedPriceSequence)
 }

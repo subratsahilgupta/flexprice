@@ -92,7 +92,7 @@ func TestTerminatePlanPricesLineItemsV2(t *testing.T) {
 	require.NoError(t, rows.Err())
 
 	ended := func(id string) *time.Time { return endDates["subsli_"+id+runID] }
-	require.Nil(t, ended("aold"), "price ended before subA's bookmark is not re-applied")
+	require.Nil(t, ended("aold"), "price ended before subA's synced sequence is not re-applied")
 	require.WithinDuration(t, newEnd, *ended("anew"), 0)
 	require.Nil(t, ended("alive"))
 	require.WithinDuration(t, oldEnd, *ended("bold"), 0)

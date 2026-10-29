@@ -57,8 +57,8 @@ func (s *PlanPriceSyncV2Suite) createPrice(id string, seq int64, end *time.Time)
 	}))
 }
 
-// createSub creates a sub at the given bookmark with a live line item for each price.
-func (s *PlanPriceSyncV2Suite) createSub(id string, bookmark int64, priceIDs ...string) {
+// createSub creates a sub at the given synced sequence with a live line item for each price.
+func (s *PlanPriceSyncV2Suite) createSub(id string, syncedSeq int64, priceIDs ...string) {
 	ctx := s.GetContext()
 	sub := &subscription.Subscription{
 		ID:                  id,
@@ -73,7 +73,7 @@ func (s *PlanPriceSyncV2Suite) createSub(id string, bookmark int64, priceIDs ...
 		CurrentPeriodEnd:    syncStart.AddDate(0, 1, 0),
 		BillingPeriod:       types.BILLING_PERIOD_MONTHLY,
 		BillingPeriodCount:  1,
-		SyncedPriceSequence: bookmark,
+		SyncedPriceSequence: syncedSeq,
 		EnvironmentID:       types.GetEnvironmentID(ctx),
 		BaseModel:           types.GetDefaultBaseModel(ctx),
 	}
@@ -105,7 +105,7 @@ func (s *PlanPriceSyncV2Suite) lineItemEnds(subID string) map[string]time.Time {
 	})
 }
 
-func (s *PlanPriceSyncV2Suite) TestSync_TerminatesOnlyPricesEndedSinceBookmark() {
+func (s *PlanPriceSyncV2Suite) TestSync_TerminatesOnlyPricesEndedSinceSyncedSequence() {
 	ctx := s.GetContext()
 	s.Require().NoError(s.GetStores().PlanRepo.Create(ctx, &plan.Plan{
 		ID:            "plan_sync",
@@ -114,23 +114,23 @@ func (s *PlanPriceSyncV2Suite) TestSync_TerminatesOnlyPricesEndedSinceBookmark()
 		BaseModel:     types.GetDefaultBaseModel(ctx),
 	}))
 	s.createPrice("price_old", 5, &oldPriceEnd)
-	s.createPrice("price_at_bookmark", 10, &oldPriceEnd)
+	s.createPrice("price_at_synced_seq", 10, &oldPriceEnd)
 	s.createPrice("price_live", 11, nil)
 	s.createPrice("price_new", 12, &newPriceEnd)
 	s.createPrice("price_added", 13, nil)
-	// sub_a already saw price_old end (bookmark 10); sub_b saw neither end (bookmark 3).
-	s.createSub("sub_a", 10, "price_old", "price_at_bookmark", "price_live", "price_new")
+	// sub_a already saw price_old end (synced at 10); sub_b saw neither end (synced at 3).
+	s.createSub("sub_a", 10, "price_old", "price_at_synced_seq", "price_live", "price_new")
 	s.createSub("sub_b", 3, "price_old", "price_live", "price_new")
 
 	resp, err := s.svc.SyncPlanPricesV2(ctx, "plan_sync")
 	s.Require().NoError(err)
-	// price_added for both subs, plus price_at_bookmark for sub_b, which never had it.
+	// price_added for both subs, plus price_at_synced_seq for sub_b, which never had it.
 	s.Equal(3, resp.Summary.LineItemsCreated)
 	s.Equal(3, resp.Summary.LineItemsTerminated)
 
 	a := s.lineItemEnds("sub_a")
-	s.True(a["price_old"].IsZero(), "price ended before sub_a's bookmark is not re-applied")
-	s.True(a["price_at_bookmark"].IsZero(), "a sequence equal to the bookmark is already applied")
+	s.True(a["price_old"].IsZero(), "price ended before sub_a's synced sequence is not re-applied")
+	s.True(a["price_at_synced_seq"].IsZero(), "a sequence equal to the synced sequence is already applied")
 	s.True(a["price_new"].Equal(newPriceEnd))
 	s.True(a["price_live"].IsZero())
 	s.Require().Contains(a, "price_added")

@@ -175,7 +175,7 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	s.overRideSubscriptionBasedOnIntegration(ctx, sub, &req)
 
 	// Read the plan sequence before the prices: a change landing in between gets a higher
-	// sequence, so the sub's bookmark never claims a change its line items missed.
+	// sequence, so synced_price_sequence never claims a change its line items missed.
 	currentPlanSeq, err := s.PlanPriceSyncRepo.CurrentPlanSequence(ctx, plan.ID)
 	if err != nil {
 		return nil, ierr.WithError(err).

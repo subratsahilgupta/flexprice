@@ -776,8 +776,8 @@ func (s *planService) SyncPlanPricesV2(ctx context.Context, planID string) (*dto
 			creationTotalDuration += pageCreationDuration
 		}
 
-		// 2. End line items whose price ended after each sub's bookmark; reads the
-		//    bookmark, so it must run before stamping.
+		// 2. End line items whose price ended after each sub's synced_price_sequence;
+		//    reads that value, so it must run before stamping.
 		terminationStart := time.Now()
 		terminated, terr := s.PlanPriceSyncRepo.TerminatePlanPricesLineItemsV2(ctx, planpricesync.TerminatePlanPricesLineItemsV2Params{
 			PlanID: planID,

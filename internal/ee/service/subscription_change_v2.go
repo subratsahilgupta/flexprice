@@ -85,7 +85,7 @@ func (s *subscriptionService) resolvePlanChange(
 		return nil, err
 	}
 
-	// Read before the prices so the bookmark never claims a change the new line items missed.
+	// Read before the prices so synced_price_sequence never claims a change the new line items missed.
 	targetSeq, err := s.PlanPriceSyncRepo.CurrentPlanSequence(ctx, toPlan.Plan.ID)
 	if err != nil {
 		return nil, err

@@ -266,22 +266,22 @@ func (r *InMemoryPlanPriceSyncStore) TerminatePlanPricesLineItemsV2(
 		return 0, nil
 	}
 
-	bookmarks := make(map[string]int64, len(p.SubIDs))
+	syncedSeqs := make(map[string]int64, len(p.SubIDs))
 	if r.subStore != nil {
 		r.subStore.mu.RLock()
 		for _, id := range p.SubIDs {
 			if sub, ok := r.subStore.items[id]; ok && sub != nil && scopedByCtx(ctx, sub.TenantID, sub.EnvironmentID) {
-				bookmarks[id] = sub.SyncedPriceSequence
+				syncedSeqs[id] = sub.SyncedPriceSequence
 			}
 		}
 		r.subStore.mu.RUnlock()
 	}
-	return r.terminateEndedLineItems(ctx, p.PlanID, bookmarks), nil
+	return r.terminateEndedLineItems(ctx, p.PlanID, syncedSeqs), nil
 }
 
-// terminateEndedLineItems ends live plan line items of the subs in bookmarks whose
-// price ended with a sequence above that sub's bookmark.
-func (r *InMemoryPlanPriceSyncStore) terminateEndedLineItems(ctx context.Context, planID string, bookmarks map[string]int64) int {
+// terminateEndedLineItems ends live plan line items of the subs in syncedSeqs whose
+// price ended with a sequence above that sub's synced sequence.
+func (r *InMemoryPlanPriceSyncStore) terminateEndedLineItems(ctx context.Context, planID string, syncedSeqs map[string]int64) int {
 	if r.lineItemStore == nil {
 		return 0
 	}
@@ -309,12 +309,12 @@ func (r *InMemoryPlanPriceSyncStore) terminateEndedLineItems(ctx context.Context
 		if !li.EndDate.IsZero() {
 			continue
 		}
-		bookmark, ok := bookmarks[li.SubscriptionID]
+		syncedSeq, ok := syncedSeqs[li.SubscriptionID]
 		if !ok {
 			continue
 		}
 		pp, ok := priceByID[li.PriceID]
-		if !ok || pp.EndDate == nil || pp.Sequence <= bookmark {
+		if !ok || pp.EndDate == nil || pp.Sequence <= syncedSeq {
 			continue
 		}
 		if !scopedByCtx(ctx, li.TenantID, li.EnvironmentID) {
@@ -343,9 +343,9 @@ func (r *InMemoryPlanPriceSyncStore) TerminateExpiredPlanPricesLineItems(
 	if p.PlanID == "" {
 		return 0, ierr.NewError("plan_id is required").Mark(ierr.ErrValidation)
 	}
-	// V1 has no bookmark: every ended price applies.
-	bookmarks := lo.SliceToMap(r.allSubscriptions(), func(s *subscription.Subscription) (string, int64) { return s.ID, math.MinInt64 })
-	return r.terminateEndedLineItems(ctx, p.PlanID, bookmarks), nil
+	// V1 ignores synced sequences: every ended price applies.
+	syncedSeqs := lo.SliceToMap(r.allSubscriptions(), func(s *subscription.Subscription) (string, int64) { return s.ID, math.MinInt64 })
+	return r.terminateEndedLineItems(ctx, p.PlanID, syncedSeqs), nil
 }
 
 // ListPlanLineItemsToTerminate returns the (line item, price.end_date) pairs
