@@ -340,7 +340,9 @@ func (s *InMemorySubscriptionLineItemStore) ListLineage(ctx context.Context, id 
 		return pointer(li.SuccessorLineItemID, li.Metadata, types.SubscriptionLineItemMetadataKeySuccessorID)
 	})
 
-	items := lo.Values(seen)
+	items := lo.Filter(lo.Values(seen), func(li *subscription.SubscriptionLineItem, _ int) bool {
+		return li.Status != types.StatusDeleted || li.ID == anchor.ID
+	})
 	sort.SliceStable(items, func(i, j int) bool {
 		if !items[i].StartDate.Equal(items[j].StartDate) {
 			return items[i].StartDate.Before(items[j].StartDate)

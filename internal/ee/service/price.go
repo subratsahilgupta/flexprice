@@ -561,24 +561,27 @@ func (s *priceService) GetPriceHistory(ctx context.Context, id string) (*dto.Lis
 		return nil, err
 	}
 
-	priceIDs := append([]string{rootID}, lo.Map(versions, func(v *price.Price, _ int) string { return v.ID })...)
-	response, err := s.GetPrices(ctx, types.NewNoLimitPriceFilter().
-		WithPriceIDs(priceIDs).
-		WithAllowExpiredPrices(true).
-		WithExpand(string(types.ExpandMeters)))
-	if err != nil {
-		return nil, err
+	root := p
+	if rootID != p.ID {
+		if root, err = s.PriceRepo.Get(ctx, rootID); err != nil {
+			return nil, err
+		}
 	}
+	versions = append(versions, root)
 
-	sort.SliceStable(response.Items, func(i, j int) bool {
-		a, b := response.Items[i].Price, response.Items[j].Price
+	sort.SliceStable(versions, func(i, j int) bool {
+		a, b := versions[i], versions[j]
 		if !lo.FromPtr(a.StartDate).Equal(lo.FromPtr(b.StartDate)) {
 			return lo.FromPtr(a.StartDate).Before(lo.FromPtr(b.StartDate))
 		}
 		return a.CreatedAt.Before(b.CreatedAt)
 	})
 
-	return response, nil
+	items := lo.Map(versions, func(v *price.Price, _ int) *dto.PriceResponse { return &dto.PriceResponse{Price: v} })
+	return &dto.ListPricesResponse{
+		Items:      items,
+		Pagination: types.NewPaginationResponse(len(items), len(items), 0),
+	}, nil
 }
 
 func (s *priceService) GetPricesByPlanID(ctx context.Context, req dto.GetPricesByPlanRequest) (*dto.ListPricesResponse, error) {

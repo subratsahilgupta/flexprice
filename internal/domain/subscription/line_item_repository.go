@@ -34,8 +34,8 @@ type LineItemRepository interface {
 	// ListBySubscription retrieves all line items for a subscription
 	ListBySubscription(ctx context.Context, sub *Subscription) ([]*SubscriptionLineItem, error)
 
-	// ListLineage returns every version linked to the line item through its predecessor and
-	// successor pointers, the item itself included, ordered by start date.
+	// ListLineage returns the versions linked to the line item through its predecessor and
+	// successor pointers, ordered by start date. Deleted versions are left out unless it is the requested item.
 	ListLineage(ctx context.Context, id string) ([]*SubscriptionLineItem, error)
 
 	// List retrieves subscription line items based on filter

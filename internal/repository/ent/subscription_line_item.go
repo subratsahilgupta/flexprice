@@ -676,6 +676,10 @@ func (r *subscriptionLineItemRepository) ListLineage(ctx context.Context, id str
 			subscriptionlineitem.IDIn(ids...),
 			subscriptionlineitem.TenantID(types.GetTenantID(ctx)),
 			subscriptionlineitem.EnvironmentID(types.GetEnvironmentID(ctx)),
+			subscriptionlineitem.Or(
+				subscriptionlineitem.StatusNEQ(string(types.StatusDeleted)),
+				subscriptionlineitem.ID(id),
+			),
 		).
 		Order(ent.Asc(subscriptionlineitem.FieldStartDate), ent.Asc(subscriptionlineitem.FieldCreatedAt)).
 		All(ctx)

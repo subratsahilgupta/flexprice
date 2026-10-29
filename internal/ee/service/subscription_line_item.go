@@ -1316,14 +1316,9 @@ func (s *subscriptionService) GetSubscriptionLineItemHistory(ctx context.Context
 		return nil, err
 	}
 
-	// Deleted versions were cancelled before they started; show one only when it was asked for.
-	responses := make([]*dto.SubscriptionLineItemResponse, 0, len(items))
-	for _, item := range items {
-		if item.Status == types.StatusDeleted && item.ID != lineItemID {
-			continue
-		}
-		responses = append(responses, &dto.SubscriptionLineItemResponse{SubscriptionLineItem: item})
-	}
+	responses := lo.Map(items, func(item *subscription.SubscriptionLineItem, _ int) *dto.SubscriptionLineItemResponse {
+		return &dto.SubscriptionLineItemResponse{SubscriptionLineItem: item}
+	})
 
 	return &dto.ListSubscriptionLineItemsResponse{
 		Items:      responses,
