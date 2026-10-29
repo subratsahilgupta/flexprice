@@ -20,17 +20,17 @@ import (
 // commitmentLoader turns the commitments overlapping one invoice calculation and the subscription's usage into
 // allocated commitment stacks. It is empty when commitments are off or nothing overlaps the period.
 type commitmentLoader struct {
-	billing           *billingService
-	sub               *subscription.Subscription
-	periodStart       time.Time
-	periodEnd         time.Time
-	asOf              time.Time
-	charges           map[string][]*dto.SubscriptionUsageByMetersResponse
-	meters            map[string]*meter.Meter
-	source            types.UsageSource
+	billing     *billingService
+	sub         *subscription.Subscription
+	periodStart time.Time
+	periodEnd   time.Time
+	asOf        time.Time
+	charges     map[string][]*dto.SubscriptionUsageByMetersResponse
+	meters      map[string]*meter.Meter
+	source      types.UsageSource
 	// usageEnd caps usage reads when periodEnd is projected past the queried window; zero means periodEnd.
-	usageEnd   time.Time
-	subContext *commitmentContext
+	usageEnd          time.Time
+	subContext        *commitmentContext
 	priceSvc          PriceService
 	commitments       []*stackedCommitment    // in D5 order
 	scopeByCommitment map[string]*loadedScope // keyed by commitment ID
@@ -591,8 +591,9 @@ func (l *commitmentLoader) buildPeriodStack(ctx context.Context, stack *commitme
 		sc.Pools = []capacityPool{{Capacity: sc.Period.Capacity}}
 		sc.PoolOf = make([]int, len(stack.Windows))
 		for w, t := range stack.Windows {
-			// Start is compared at whole seconds, as the period edges are.
-			if sc.C.StartDate.Truncate(time.Second).After(t) || sc.C.EndedBy(t) {
+			// Start is compared at whole seconds, as the period edges are; the subscription's own end
+			// bounds an open-ended commitment (termEnd), so no capacity survives the subscription.
+			if sc.C.StartDate.Truncate(time.Second).After(t) || endReached(termEnd(l.sub, sc.C), t) {
 				sc.PoolOf[w] = -1
 			}
 		}

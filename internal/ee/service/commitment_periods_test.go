@@ -464,6 +464,30 @@ func TestCommitmentPeriods_OpenEndedRunsThroughTheWindow(t *testing.T) {
 	}
 }
 
+// An open-ended commitment's floor stops at its subscription's scheduled end: the last period is
+// prorated to the subscription end, and nothing accrues past it.
+func TestCommitmentPeriods_OpenEndedStopsAtTheSubscriptionEnd(t *testing.T) {
+	jan := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	sub := monthlySub(jan)
+	sub.EndDate = lo.ToPtr(time.Date(2027, 3, 16, 0, 0, 0, 0, time.UTC))
+	c := &commitment.Commitment{
+		Type:        types.COMMITMENT_TYPE_AMOUNT,
+		Value:       decimal.NewFromInt(100),
+		Measurement: types.CommitmentMeasurementBillingPeriod,
+		Timezone:    "UTC",
+		StartDate:   jan,
+	}
+
+	periods, err := commitmentPeriods(c, sub, identityAmount, "", c.StartDate, jan.AddDate(0, 6, 0))
+	require.NoError(t, err)
+	require.Len(t, periods, 3)
+	require.True(t, periods[0].Amount.Equal(decimal.NewFromInt(100)))
+	require.True(t, periods[1].Amount.Equal(decimal.NewFromInt(100)))
+	// March runs only 1 Mar to 16 Mar: 15 of 31 days.
+	require.Equal(t, *sub.EndDate, periods[2].End)
+	require.True(t, periods[2].Amount.Round(8).Equal(decimal.RequireFromString("48.38709677")), "last=%s", periods[2].Amount)
+}
+
 // An open-ended commitment has no finite value; one with an end_date is valued over its whole term.
 func TestTermValue(t *testing.T) {
 	jan := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)

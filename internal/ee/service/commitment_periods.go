@@ -39,6 +39,11 @@ func commitmentPeriods(
 		if horizon, err = periodEndAt(sub, through); err != nil {
 			return nil, err
 		}
+
+		// The subscription's own end bounds an open-ended commitment: no floor accrues past it.
+		if sub.EndDate != nil {
+			horizon = minTime(horizon, *sub.EndDate)
+		}
 	}
 
 	first, err := periodAt(sub, maxTime(from, c.StartDate))
