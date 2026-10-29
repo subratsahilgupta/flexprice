@@ -46,7 +46,7 @@ type Commitment struct {
 
 // IsActiveAt reports whether t falls inside the term and the commitment has not ended early.
 func (c *Commitment) IsActiveAt(t time.Time) bool {
-	return c != nil && !t.Before(c.StartDate) && !c.EndsBy(t)
+	return c != nil && !t.Before(c.StartDate) && !c.EndedBy(t)
 }
 
 // EffectiveEnd is the end of the billed term: terminated_at when it cuts the term short, otherwise end_date.
@@ -68,25 +68,20 @@ func (c *Commitment) Unending() bool {
 	return c.EffectiveEnd() == nil
 }
 
-// EndsBy reports whether the term has an effective end at or before t.
-func (c *Commitment) EndsBy(t time.Time) bool {
-	end := c.EffectiveEnd()
-	return end != nil && !end.After(t)
-}
-
 // EffectiveEndWithin returns the effective end capped at horizon; an unending commitment runs to horizon.
 func (c *Commitment) EffectiveEndWithin(horizon time.Time) time.Time {
-	if c.EndsBy(horizon) {
-		return *c.EffectiveEnd()
+	if end := c.EffectiveEnd(); end != nil && !end.After(horizon) {
+		return *end
 	}
 
 	return horizon
 }
 
-// EndedBy reports whether the commitment has no term left after t: t is past its effective end,
-// or it was terminated before it ever started.
+// EndedBy reports whether the commitment has no term left after t: its effective end is at or before t, or it
+// was terminated before it ever started. An unending commitment never ends.
 func (c *Commitment) EndedBy(t time.Time) bool {
-	return c.EndsBy(t) || c.EndsBy(c.StartDate)
+	end := c.EffectiveEnd()
+	return end != nil && (!end.After(t) || !end.After(c.StartDate))
 }
 
 // Location returns the commitment timezone, falling back to UTC.

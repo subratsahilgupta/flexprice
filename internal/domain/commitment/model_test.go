@@ -64,33 +64,6 @@ func TestCommitment_EffectiveEndIsACopy(t *testing.T) {
 	require.Equal(t, end, *c.EndDate)
 }
 
-func TestCommitment_EndsBy(t *testing.T) {
-	start := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
-	end := start.AddDate(1, 0, 0)
-	termAt := start.AddDate(0, 6, 0)
-	base := &Commitment{StartDate: start, EndDate: lo.ToPtr(end)}
-	openTerminated := &Commitment{StartDate: start, TerminatedAt: &termAt}
-
-	tests := []struct {
-		name string
-		c    *Commitment
-		at   time.Time
-		want bool
-	}{
-		{"before end", base, end.Add(-time.Nanosecond), false},
-		{"at end", base, end, true},
-		{"after end", base, end.Add(time.Hour), true},
-		{"open-ended decades on", &Commitment{StartDate: start}, start.AddDate(50, 0, 0), false},
-		{"open-ended before terminated_at", openTerminated, termAt.Add(-time.Nanosecond), false},
-		{"open-ended at terminated_at", openTerminated, termAt, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, tt.c.EndsBy(tt.at))
-		})
-	}
-}
-
 func TestCommitment_EffectiveEndWithin(t *testing.T) {
 	start := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(1, 0, 0)
@@ -133,6 +106,7 @@ func TestCommitment_EndedBy(t *testing.T) {
 	base := &Commitment{StartDate: start, EndDate: lo.ToPtr(end)}
 	terminated := &Commitment{StartDate: start, EndDate: lo.ToPtr(end), TerminatedAt: &termAt}
 	neverStarted := &Commitment{StartDate: start, EndDate: lo.ToPtr(end), TerminatedAt: &beforeStart}
+	openTerminated := &Commitment{StartDate: start, TerminatedAt: &termAt}
 
 	tests := []struct {
 		name string
@@ -144,10 +118,13 @@ func TestCommitment_EndedBy(t *testing.T) {
 		{"mid term", base, termAt, false},
 		{"one instant before end", base, end.Add(-time.Nanosecond), false},
 		{"at end", base, end, true},
+		{"after end", base, end.Add(time.Hour), true},
 		{"before terminated_at", terminated, termAt.Add(-time.Nanosecond), false},
 		{"at terminated_at", terminated, termAt, true},
 		{"terminated before start", neverStarted, beforeStart.Add(-time.Hour), true},
 		{"open-ended decades on", &Commitment{StartDate: start}, start.AddDate(50, 0, 0), false},
+		{"open-ended before terminated_at", openTerminated, termAt.Add(-time.Nanosecond), false},
+		{"open-ended at terminated_at", openTerminated, termAt, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

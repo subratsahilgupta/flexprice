@@ -132,13 +132,13 @@ func scopeLinesInPeriod(
 	from time.Time,
 	to *time.Time,
 ) []*subscription.SubscriptionLineItem {
-	if endsBy(to, from) {
+	if atOrPastEnd(from, to) {
 		return nil
 	}
 
 	at := []time.Time{from}
 	for _, li := range cc.Items {
-		if li.StartDate.After(from) && !endsBy(to, li.StartDate) {
+		if li.StartDate.After(from) && !atOrPastEnd(li.StartDate, to) {
 			at = append(at, li.StartDate)
 		}
 	}
@@ -348,8 +348,13 @@ func (s *commitmentService) validateOverlaps(
 			return err
 		}
 
-		if endsBy(spanEnd, other.StartDate) || endsBy(reqSpanEnd, other.StartDate) || endsBy(spanEnd, req.StartDate) {
+		if atOrPastEnd(other.StartDate, spanEnd) || atOrPastEnd(other.StartDate, reqSpanEnd) || atOrPastEnd(req.StartDate, spanEnd) {
 			continue
+		}
+
+		overlapEnd := spanEnd
+		if reqSpanEnd != nil && (spanEnd == nil || reqSpanEnd.Before(*spanEnd)) {
+			overlapEnd = reqSpanEnd
 		}
 
 		otherLines := scopeLinesInPeriod(
@@ -357,7 +362,7 @@ func (s *commitmentService) validateOverlaps(
 			other.ScopeEntityID,
 			cc,
 			maxTime(req.StartDate, other.StartDate),
-			earlierEnd(reqSpanEnd, spanEnd),
+			overlapEnd,
 		)
 		otherLineIDs := lo.Map(otherLines, func(li *subscription.SubscriptionLineItem, _ int) string {
 			return li.ID
@@ -366,7 +371,7 @@ func (s *commitmentService) validateOverlaps(
 			continue
 		}
 
-		allocatingTogether := !other.EndsBy(req.StartDate) && !term.EndsBy(other.StartDate)
+		allocatingTogether := !other.EndedBy(req.StartDate) && !term.EndedBy(other.StartDate)
 		if allocatingTogether && other.Priority == req.Priority {
 			return ierr.Validationf("priority %d is already used by overlapping commitment %s", req.Priority, other.ID)
 		}
@@ -434,18 +439,9 @@ func termEnd(sub *subscription.Subscription, c *commitment.Commitment) *time.Tim
 	return c.EffectiveEnd()
 }
 
-// endsBy reports whether a span ending at end, nil for one that never ends, is over by t.
-func endsBy(end *time.Time, t time.Time) bool {
+// atOrPastEnd reports whether t is at or after end, where a nil end never comes.
+func atOrPastEnd(t time.Time, end *time.Time) bool {
 	return end != nil && !end.After(t)
-}
-
-// earlierEnd returns the earlier of two span ends, where nil never ends.
-func earlierEnd(a, b *time.Time) *time.Time {
-	if a == nil || endsBy(b, *a) {
-		return b
-	}
-
-	return a
 }
 
 // sameOverage reports whether both sides have no overage price, or flat ones with the same amount.
@@ -590,7 +586,7 @@ func overlapsLine(sub *subscription.Subscription, c *commitment.Commitment, li *
 		return false, err
 	}
 
-	if endsBy(spanEnd, li.StartDate) {
+	if atOrPastEnd(li.StartDate, spanEnd) {
 		return false, nil
 	}
 
@@ -697,7 +693,7 @@ func checkLineItemCommitmentDetach(
 	for _, c := range active {
 		end := termEnd(sub, c)
 		from := maxTime(endDate, c.StartDate)
-		if !c.Binding || endsBy(end, from) || endsBy(end, li.StartDate) || !commitmentCoversLine(c, li, p) {
+		if !c.Binding || atOrPastEnd(from, end) || atOrPastEnd(li.StartDate, end) || !commitmentCoversLine(c, li, p) {
 			continue
 		}
 
@@ -726,7 +722,7 @@ func coverageGap(lines []*subscription.SubscriptionLineItem, from time.Time, to 
 
 	covered := from
 	for _, li := range sorted {
-		if endsBy(to, covered) {
+		if atOrPastEnd(covered, to) {
 			return time.Time{}, false
 		}
 
@@ -741,7 +737,7 @@ func coverageGap(lines []*subscription.SubscriptionLineItem, from time.Time, to 
 		covered = maxTime(covered, li.EndDate)
 	}
 
-	if !endsBy(to, covered) {
+	if !atOrPastEnd(covered, to) {
 		return covered, true
 	}
 

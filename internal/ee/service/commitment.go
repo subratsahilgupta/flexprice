@@ -533,7 +533,7 @@ func (s *commitmentService) TerminateForSubscription(
 				continue
 			}
 
-			if c.EndsBy(effectiveAt) {
+			if c.EndedBy(effectiveAt) {
 				continue
 			}
 
@@ -623,7 +623,7 @@ func (s *commitmentService) terminate(
 			Mark(ierr.ErrInvalidOperation)
 	}
 
-	if c.EndsBy(effectiveAt) {
+	if c.EndedBy(effectiveAt) {
 		return nil, nil, ierr.Validationf("effective_at must be before the commitment end %s", c.EffectiveEnd().Format(time.RFC3339))
 	}
 
@@ -694,8 +694,8 @@ func (s *commitmentService) billCancellationFee(
 		}
 
 		periodEnd = &holding.End
-		if !endsBy(sub.EndDate, effectiveAt) {
-			periodEnd = earlierEnd(periodEnd, sub.EndDate)
+		if sub.EndDate != nil && sub.EndDate.After(effectiveAt) {
+			periodEnd = lo.ToPtr(minTime(holding.End, *sub.EndDate))
 		}
 	}
 
@@ -917,7 +917,7 @@ func (s *commitmentService) commitmentsInScope(
 			return nil, err
 		}
 
-		if endsBy(spanEnd, at) || endsBy(spanEnd, c.StartDate) || endsBy(until, c.StartDate) {
+		if atOrPastEnd(at, spanEnd) || atOrPastEnd(c.StartDate, spanEnd) || atOrPastEnd(c.StartDate, until) {
 			continue
 		}
 
@@ -1007,11 +1007,11 @@ func (s *commitmentService) checkAttachPairs(
 				return "", err
 			}
 
-			if endsBy(bEnd, a.StartDate) || endsBy(aEnd, b.StartDate) {
+			if atOrPastEnd(a.StartDate, bEnd) || atOrPastEnd(b.StartDate, aEnd) {
 				continue
 			}
 
-			allocatingTogether := !b.EndsBy(a.StartDate) && !a.EndsBy(b.StartDate)
+			allocatingTogether := !b.EndedBy(a.StartDate) && !a.EndedBy(b.StartDate)
 			if allocatingTogether && a.Priority == b.Priority {
 				return a.ID, ierr.Validationf(
 					"commitments %s and %s overlap on the new price with the same priority %d",

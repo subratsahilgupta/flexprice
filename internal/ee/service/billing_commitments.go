@@ -105,7 +105,7 @@ func (s *billingService) newCommitmentLoader(
 	})
 
 	for _, c := range active {
-		if c.EndsBy(periodStart) {
+		if c.EndedBy(periodStart) {
 			continue
 		}
 
@@ -592,7 +592,7 @@ func (l *commitmentLoader) buildPeriodStack(ctx context.Context, stack *commitme
 		sc.PoolOf = make([]int, len(stack.Windows))
 		for w, t := range stack.Windows {
 			// Start is compared at whole seconds, as the period edges are.
-			if sc.C.StartDate.Truncate(time.Second).After(t) || sc.C.EndsBy(t) {
+			if sc.C.StartDate.Truncate(time.Second).After(t) || sc.C.EndedBy(t) {
 				sc.PoolOf[w] = -1
 			}
 		}
