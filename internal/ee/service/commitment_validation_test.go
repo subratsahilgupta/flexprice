@@ -194,6 +194,15 @@ func TestCreateCommitmentRequest_Validate(t *testing.T) {
 		{"D8 open-ended without end_date", func(r *dto.CreateCommitmentRequest) { r.EndDate = nil }, true},
 	}
 
+	t.Run("term edges align to whole seconds", func(t *testing.T) {
+		r := validReq("subs_1", "price_1")
+		r.StartDate = r.StartDate.Add(750 * time.Millisecond)
+		r.EndDate = lo.ToPtr(r.EndDate.Add(250 * time.Millisecond))
+		r.ApplyDefaults("UTC")
+		require.True(t, r.StartDate.Equal(r.StartDate.Truncate(time.Second)))
+		require.True(t, r.EndDate.Equal(r.EndDate.Truncate(time.Second)))
+	})
+
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			r := validReq("subs_1", "price_1")
