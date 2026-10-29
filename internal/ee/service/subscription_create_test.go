@@ -1582,3 +1582,54 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_LineItemGroupingEndToE
 		})
 	}
 }
+
+// A plan price already scheduled to end gives the new line item that end date, so it does not
+// stay live next to the price that replaces it. A subscription ending earlier still wins.
+func (s *SubscriptionServiceSuite) TestCreateSubscription_LineItemInheritsPriceEndDate() {
+	ctx := s.GetContext()
+	planID := "plan_price_end_date"
+	s.seedFixedPricePlan(planID, decimal.NewFromInt(10), 0)
+
+	cutover := time.Now().UTC().AddDate(0, 0, 7).Truncate(time.Second)
+	endingPrice, err := s.GetStores().PriceRepo.Get(ctx, "price_"+planID)
+	s.Require().NoError(err)
+	endingPrice.EndDate = &cutover
+	s.Require().NoError(s.GetStores().PriceRepo.Update(ctx, endingPrice, true))
+
+	s.NoError(s.GetStores().PriceRepo.Create(ctx, &price.Price{
+		ID:                 "price_" + planID + "_next",
+		Amount:             decimal.NewFromInt(20),
+		Currency:           "usd",
+		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+		EntityID:           planID,
+		Type:               types.PRICE_TYPE_FIXED,
+		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
+		StartDate:          &cutover,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}))
+
+	lineItemsFor := func(endDate *time.Time) map[string]*subscription.SubscriptionLineItem {
+		req := s.checkoutCreateRequest(planID)
+		req.Checkout = nil
+		req.EndDate = endDate
+		resp, err := s.service.CreateSubscription(ctx, req)
+		s.Require().NoError(err)
+		items, err := s.GetStores().SubscriptionLineItemRepo.ListBySubscription(ctx, resp.Subscription)
+		s.Require().NoError(err)
+		return lo.KeyBy(items, func(li *subscription.SubscriptionLineItem) string { return li.PriceID })
+	}
+
+	items := lineItemsFor(nil)
+	s.Require().Len(items, 2)
+	s.True(items["price_"+planID].EndDate.Equal(cutover), "the ending price's line item must end at the price's end date")
+	s.True(items["price_"+planID+"_next"].EndDate.IsZero(), "the replacement price's line item stays open")
+	s.True(items["price_"+planID+"_next"].StartDate.Equal(cutover), "the replacement price's line item starts at the cutover")
+
+	subEnd := cutover.AddDate(0, 0, -2)
+	items = lineItemsFor(&subEnd)
+	s.True(items["price_"+planID].EndDate.Equal(subEnd), "a subscription ending before the price keeps its own end date")
+}

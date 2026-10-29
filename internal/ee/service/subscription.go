@@ -281,6 +281,11 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 		} else if sub.EndDate != nil {
 			item.EndDate = *sub.EndDate
 		}
+		// A price already scheduled to end must end the line item too, otherwise it stays live
+		// past the price's end date alongside the price that replaces it
+		if priceResponse.Price.EndDate != nil && (item.EndDate.IsZero() || priceResponse.Price.EndDate.Before(item.EndDate)) {
+			item.EndDate = lo.FromPtr(priceResponse.Price.EndDate)
+		}
 		// Determine start date: max of first phase start, subscription start, and price start
 		startDate := sub.StartDate
 		if len(req.Phases) > 0 && req.Phases[0].StartDate.After(startDate) {
