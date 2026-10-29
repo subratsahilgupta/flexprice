@@ -409,24 +409,30 @@ func (s *commitmentService) validateOverlaps(
 }
 
 // inForceEnd returns when a commitment stops constraining others: the end of the subscription billing period
-// holding its effective end, whose invoice still bills it. One ended at or before its start spans nothing, and an
-// unending one never stops (nil).
+// holding its term end, whose invoice still bills it. One ended at or before its start spans nothing, and one
+// with no term end never stops (nil).
 func inForceEnd(sub *subscription.Subscription, c *commitment.Commitment) (*time.Time, error) {
-	if c.Unending() {
-		return nil, nil
+	endedAt := termEnd(sub, c)
+	if endedAt == nil || !endedAt.After(c.StartDate) {
+		return endedAt, nil
 	}
 
-	endedAt := *c.EffectiveEnd()
-	if !endedAt.After(c.StartDate) {
-		return &endedAt, nil
-	}
-
-	end, err := periodEndHolding(sub, endedAt)
+	end, err := periodEndHolding(sub, *endedAt)
 	if err != nil {
 		return nil, err
 	}
 
 	return &end, nil
+}
+
+// termEnd returns the commitment's effective end; an unending one stops with its subscription, so it has an end
+// only when the subscription does.
+func termEnd(sub *subscription.Subscription, c *commitment.Commitment) *time.Time {
+	if c.Unending() {
+		return sub.EndDate
+	}
+
+	return c.EffectiveEnd()
 }
 
 // endsBy reports whether a span ending at end, nil for one that never ends, is over by t.
@@ -731,8 +737,9 @@ func checkLineItemCommitmentDetach(
 	}
 
 	for _, c := range active {
+		end := termEnd(sub, c)
 		from := maxTime(endDate, c.StartDate)
-		if !c.Binding || c.EndsBy(from) || c.EndsBy(li.StartDate) || !commitmentCoversLine(c, li, p) {
+		if !c.Binding || endsBy(end, from) || endsBy(end, li.StartDate) || !commitmentCoversLine(c, li, p) {
 			continue
 		}
 
@@ -740,7 +747,7 @@ func checkLineItemCommitmentDetach(
 			op := cc.Prices[other.PriceID]
 			return other.ID != li.ID && other.PriceType == types.PRICE_TYPE_USAGE && op != nil && commitmentCoversLine(c, other, op)
 		})
-		if gap, uncovered := coverageGap(remaining, from, c.EffectiveEnd()); uncovered {
+		if gap, uncovered := coverageGap(remaining, from, end); uncovered {
 			return ierr.Validationf(
 				"ending line item %s breaks binding commitment %s's scope coverage at %s, inside its term; keep a covering line through the term or terminate the commitment first",
 				li.ID,

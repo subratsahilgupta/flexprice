@@ -445,6 +445,53 @@ func (s *CommitmentServiceSuite) TestCheckPriceAttach_GuardsOpenEndedCommitmentF
 	s.requireValidation(err, "different meter")
 }
 
+// endSubscriptionAt schedules the fixture subscription's end.
+func (s *CommitmentServiceSuite) endSubscriptionAt(end time.Time) *subscription.Subscription {
+	sub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), s.fx.sub.ID)
+	s.Require().NoError(err)
+	sub.EndDate = lo.ToPtr(end)
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), sub))
+	s.fx.sub.EndDate = lo.ToPtr(end)
+	return sub
+}
+
+// An open-ended commitment on a subscription with an end stops guarding price attaches once it ends.
+func (s *CommitmentServiceSuite) TestCheckPriceAttach_OpenEndedStopsAtSubscriptionEnd() {
+	sub := s.endSubscriptionAt(time.Date(2027, 7, 1, 0, 0, 0, 0, time.UTC))
+	req := validReq(s.fx.sub.ID, "")
+	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeGroup, EntityID: s.fx.groupAPIOnly.ID}
+	req.EndDate = nil
+	_, err := s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+
+	err = s.svc.CheckPriceAttach(s.GetContext(), sub, s.fx.priceOtherMeterInGroup, time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC), nil)
+	s.requireValidation(err, "different meter")
+	s.Require().NoError(
+		s.svc.CheckPriceAttach(s.GetContext(), sub, s.fx.priceOtherMeterInGroup, time.Date(2027, 7, 1, 0, 0, 0, 0, time.UTC), nil),
+	)
+}
+
+// A binding open-ended commitment needs its scope covered only until a finite subscription ends.
+func (s *CommitmentServiceSuite) TestLineItemDetach_OpenEndedStopsAtSubscriptionEnd() {
+	jun := time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC)
+	subEnd := time.Date(2027, 7, 1, 0, 0, 0, 0, time.UTC)
+	s.endSubscriptionAt(subEnd)
+	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
+	req.EndDate = nil
+	created, err := s.svc.Create(s.GetContext(), req)
+	s.Require().NoError(err)
+
+	err = s.detachCheck(s.fx.lineAPI.ID, jun)
+	s.requireValidation(err, created.ID, "terminate the commitment first")
+	s.Require().NoError(s.detachCheck(s.fx.lineAPI.ID, subEnd))
+
+	// A successor ending with the subscription, as its lines do, covers the rest of the term.
+	successor := *s.fx.lineAPI
+	successor.ID, successor.StartDate, successor.EndDate = "subs_line_api_successor", jun, subEnd
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Create(s.GetContext(), &successor))
+	s.Require().NoError(s.detachCheck(s.fx.lineAPI.ID, jun))
+}
+
 // A binding open-ended commitment's scope must stay covered for good, not only to some term end.
 func (s *CommitmentServiceSuite) TestLineItemDetach_RejectsEndingOpenEndedCommitmentScope() {
 	req := validReq(s.fx.sub.ID, s.fx.priceAPI.ID)
