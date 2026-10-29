@@ -13,6 +13,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/priceunit"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	temporalService "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/types"
@@ -111,6 +112,10 @@ func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceReque
 		if err := s.validateGroup(ctx, []*price.Price{p}); err != nil {
 			return nil, err
 		}
+	}
+
+	if err := s.validateNewPriceSubscriptionEntitlementGrant(ctx, p); err != nil {
+		return nil, err
 	}
 
 	if err := s.PriceRepo.Create(ctx, p); err != nil {
@@ -396,6 +401,12 @@ func (s *priceService) CreateBulkPrice(ctx context.Context, req dto.CreateBulkPr
 		// Validate groups if provided
 		if err := s.validateGroup(txCtx, prices); err != nil {
 			return err
+		}
+
+		for _, p := range prices {
+			if err := s.validateNewPriceSubscriptionEntitlementGrant(txCtx, p); err != nil {
+				return err
+			}
 		}
 
 		// Create prices in bulk
@@ -1845,4 +1856,45 @@ func (s *priceService) validateBucketedPriceAgainstEntitlements(ctx context.Cont
 	}
 
 	return nil
+}
+
+// validateNewPriceSubscriptionEntitlementGrant refuses a plan or addon usage price that would break a subscription
+// grant on a subscription using that plan or addon.
+func (s *priceService) validateNewPriceSubscriptionEntitlementGrant(ctx context.Context, p *price.Price) error {
+	if p.Type != types.PRICE_TYPE_USAGE || (p.EntityType != types.PRICE_ENTITY_TYPE_PLAN && p.EntityType != types.PRICE_ENTITY_TYPE_ADDON) {
+		return nil
+	}
+	owner := lo.Ternary(p.EntityType == types.PRICE_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_PLAN, types.ENTITLEMENT_ENTITY_TYPE_ADDON)
+	return (&entitlementGrantService{ServiceParams: s.ServiceParams}).validateCatalogChange(ctx, owner, p.EntityID, changeForNewPrice(p))
+}
+
+// changeForNewPrice is how a new plan or addon price lands on a subscription: one line, or nothing when the
+// price's cadence or currency keeps it off that subscription.
+func changeForNewPrice(p *price.Price) func(sub *subscription.Subscription) subscriptionEntitlementGrantChange {
+	return func(sub *subscription.Subscription) subscriptionEntitlementGrantChange {
+		candidates := []*dto.PriceResponse{{Price: p}}
+		lands := filterValidPricesForSubscription(candidates, sub, nil)
+		if p.EntityType == types.PRICE_ENTITY_TYPE_ADDON {
+			lands = filterAddonPricesForSubscription(candidates, sub)
+		}
+		if len(lands) == 0 {
+			return subscriptionEntitlementGrantChange{}
+		}
+		return subscriptionEntitlementGrantChange{
+			items:  []*subscription.SubscriptionLineItem{pendingLineForNewPrice(sub, p)},
+			prices: []*price.Price{p},
+		}
+	}
+}
+
+func pendingLineForNewPrice(sub *subscription.Subscription, p *price.Price) *subscription.SubscriptionLineItem {
+	return &subscription.SubscriptionLineItem{
+		ID:                 "pending_" + p.ID,
+		SubscriptionID:     sub.ID,
+		PriceID:            p.ID,
+		PriceType:          p.Type,
+		MeterID:            p.MeterID,
+		BillingPeriod:      p.BillingPeriod,
+		BillingPeriodCount: p.BillingPeriodCount,
+	}
 }

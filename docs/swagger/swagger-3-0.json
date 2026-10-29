@@ -21754,10 +21754,6 @@
         "description": "Request object for creating a new customer in the system"
       },
       "CreateEntitlementRequest": {
-        "required": [
-          "feature_id",
-          "feature_type"
-        ],
         "type": "object",
         "properties": {
           "aggregation_mode": {
@@ -21778,7 +21774,8 @@
             "$ref": "#/components/schemas/types.EntitlementEntityType"
           },
           "feature_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Required, except on a subscription entitlement grant (entity_type SUBSCRIPTION with grant config), which has no feature."
           },
           "feature_type": {
             "$ref": "#/components/schemas/types.FeatureType"
@@ -22564,6 +22561,39 @@
           }
         }
       },
+      "CreateSubscriptionEntitlementGrantRequest": {
+        "required": [
+          "grant_duration_unit",
+          "grant_quota"
+        ],
+        "type": "object",
+        "properties": {
+          "aggregation_mode": {
+            "$ref": "#/components/schemas/types.EntitlementAggregationMode"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "grant_allocation_behavior": {
+            "$ref": "#/components/schemas/types.EntitlementGrantAllocationBehavior"
+          },
+          "grant_duration_unit": {
+            "$ref": "#/components/schemas/types.EntitlementGrantDurationUnit"
+          },
+          "grant_duration_value": {
+            "type": "integer"
+          },
+          "grant_quota": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string",
+            "description": "StartDate defaults to the subscription's start; EndDate leaves the grant open.",
+            "format": "date-time"
+          }
+        }
+      },
       "CreateSubscriptionLineItemRequest": {
         "type": "object",
         "properties": {
@@ -22810,6 +22840,13 @@
             "description": "SubscriptionCoupons is the preferred way to attach coupons at creation.\nAccepts coupon_code; optionally targets a line item via price_id.",
             "items": {
               "$ref": "#/components/schemas/SubscriptionCouponInput"
+            }
+          },
+          "subscription_entitlement_grants": {
+            "type": "array",
+            "description": "SubscriptionEntitlementGrants are dollar entitlement grants shared by every usage line, created with the subscription.",
+            "items": {
+              "$ref": "#/components/schemas/CreateSubscriptionEntitlementGrantRequest"
             }
           },
           "subscription_status": {
@@ -23809,6 +23846,9 @@
           },
           "grant_quota": {
             "type": "string"
+          },
+          "grant_scope": {
+            "$ref": "#/components/schemas/types.EntitlementGrantScopeEntityType"
           },
           "id": {
             "type": "string"
@@ -25180,6 +25220,13 @@
             "description": "SubscriptionCoupons is the preferred way to attach coupons at creation.\nAccepts coupon_code; optionally targets a line item via price_id.",
             "items": {
               "$ref": "#/components/schemas/SubscriptionCouponInput"
+            }
+          },
+          "subscription_entitlement_grants": {
+            "type": "array",
+            "description": "SubscriptionEntitlementGrants are dollar entitlement grants shared by every usage line, created with the subscription.",
+            "items": {
+              "$ref": "#/components/schemas/CreateSubscriptionEntitlementGrantRequest"
             }
           },
           "tax_rate_overrides": {
@@ -28661,6 +28708,20 @@
           }
         }
       },
+      "SubscriptionEntitlementGrantsResponse": {
+        "type": "object",
+        "properties": {
+          "entitlements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntitlementResponse"
+            }
+          },
+          "grant_state": {
+            "$ref": "#/components/schemas/GrantState"
+          }
+        }
+      },
       "SubscriptionEntitlementsResponse": {
         "type": "object",
         "properties": {
@@ -28672,6 +28733,9 @@
           },
           "plan_id": {
             "type": "string"
+          },
+          "subscription_entitlement_grants": {
+            "$ref": "#/components/schemas/SubscriptionEntitlementGrantsResponse"
           },
           "subscription_id": {
             "type": "string"
@@ -33786,6 +33850,13 @@
               "$ref": "#/components/schemas/types.FilterCondition"
             }
           },
+          "grant_scopes": {
+            "type": "array",
+            "description": "GrantScopes selects entitlements by grant scope. Empty means feature only, so\nsubscription entitlement grants, which have no feature, never reach feature-based reads.",
+            "items": {
+              "$ref": "#/components/schemas/types.EntitlementGrantScopeEntityType"
+            }
+          },
           "has_grant_config": {
             "type": "boolean",
             "description": "HasGrantConfig filters on grant-config presence (grant_quota set or not)."
@@ -38196,6 +38267,20 @@
           "CommitmentStatusTerminated"
         ],
         "x-speakeasy-name-override": "CommitmentStatus"
+      },
+      "types.EntitlementGrantScopeEntityType": {
+        "type": "string",
+        "enum": [
+          "feature",
+          "subscription",
+          "group"
+        ],
+        "x-enum-varnames": [
+          "EntitlementGrantScopeFeature",
+          "EntitlementGrantScopeSubscription",
+          "EntitlementGrantScopeGroup"
+        ],
+        "x-speakeasy-name-override": "EntitlementGrantScopeEntityType"
       },
       "types.ImprovementDirection": {
         "type": "string",

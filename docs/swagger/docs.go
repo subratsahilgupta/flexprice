@@ -19203,10 +19203,6 @@ const docTemplate = `{
         },
         "CreateEntitlementRequest": {
             "type": "object",
-            "required": [
-                "feature_id",
-                "feature_type"
-            ],
             "properties": {
                 "aggregation_mode": {
                     "$ref": "#/definitions/types.EntitlementAggregationMode"
@@ -19225,6 +19221,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.EntitlementEntityType"
                 },
                 "feature_id": {
+                    "description": "Required, except on a subscription entitlement grant (entity_type SUBSCRIPTION with grant config), which has no feature.",
                     "type": "string"
                 },
                 "feature_type": {
@@ -20068,6 +20065,37 @@ const docTemplate = `{
                 }
             }
         },
+        "CreateSubscriptionEntitlementGrantRequest": {
+            "type": "object",
+            "required": [
+                "grant_duration_unit",
+                "grant_quota"
+            ],
+            "properties": {
+                "aggregation_mode": {
+                    "$ref": "#/definitions/types.EntitlementAggregationMode"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "grant_allocation_behavior": {
+                    "$ref": "#/definitions/types.EntitlementGrantAllocationBehavior"
+                },
+                "grant_duration_unit": {
+                    "$ref": "#/definitions/types.EntitlementGrantDurationUnit"
+                },
+                "grant_duration_value": {
+                    "type": "integer"
+                },
+                "grant_quota": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "description": "StartDate defaults to the subscription's start; EndDate leaves the grant open.",
+                    "type": "string"
+                }
+            }
+        },
         "CreateSubscriptionLineItemRequest": {
             "type": "object",
             "properties": {
@@ -20345,6 +20373,13 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/SubscriptionCouponInput"
+                    }
+                },
+                "subscription_entitlement_grants": {
+                    "description": "SubscriptionEntitlementGrants are dollar entitlement grants shared by every usage line, created with the subscription.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/CreateSubscriptionEntitlementGrantRequest"
                     }
                 },
                 "subscription_status": {
@@ -21410,6 +21445,9 @@ const docTemplate = `{
                 },
                 "grant_quota": {
                     "type": "string"
+                },
+                "grant_scope": {
+                    "$ref": "#/definitions/types.EntitlementGrantScopeEntityType"
                 },
                 "id": {
                     "type": "string"
@@ -22771,6 +22809,13 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/SubscriptionCouponInput"
+                    }
+                },
+                "subscription_entitlement_grants": {
+                    "description": "SubscriptionEntitlementGrants are dollar entitlement grants shared by every usage line, created with the subscription.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/CreateSubscriptionEntitlementGrantRequest"
                     }
                 },
                 "tax_rate_overrides": {
@@ -26508,6 +26553,20 @@ const docTemplate = `{
                 }
             }
         },
+        "SubscriptionEntitlementGrantsResponse": {
+            "type": "object",
+            "properties": {
+                "entitlements": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/EntitlementResponse"
+                    }
+                },
+                "grant_state": {
+                    "$ref": "#/definitions/GrantState"
+                }
+            }
+        },
         "SubscriptionEntitlementsResponse": {
             "type": "object",
             "properties": {
@@ -26519,6 +26578,9 @@ const docTemplate = `{
                 },
                 "plan_id": {
                     "type": "string"
+                },
+                "subscription_entitlement_grants": {
+                    "$ref": "#/definitions/SubscriptionEntitlementGrantsResponse"
                 },
                 "subscription_id": {
                     "type": "string"
@@ -31743,6 +31805,13 @@ const docTemplate = `{
                         "$ref": "#/definitions/types.FilterCondition"
                     }
                 },
+                "grant_scopes": {
+                    "description": "GrantScopes selects entitlements by grant scope. Empty means feature only, so\nsubscription entitlement grants, which have no feature, never reach feature-based reads.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.EntitlementGrantScopeEntityType"
+                    }
+                },
                 "has_grant_config": {
                     "description": "HasGrantConfig filters on grant-config presence (grant_quota set or not).",
                     "type": "boolean"
@@ -36097,6 +36166,19 @@ const docTemplate = `{
                 "CommitmentStatusActive",
                 "CommitmentStatusEnded",
                 "CommitmentStatusTerminated"
+            ]
+        },
+        "types.EntitlementGrantScopeEntityType": {
+            "type": "string",
+            "enum": [
+                "feature",
+                "subscription",
+                "group"
+            ],
+            "x-enum-varnames": [
+                "EntitlementGrantScopeFeature",
+                "EntitlementGrantScopeSubscription",
+                "EntitlementGrantScopeGroup"
             ]
         },
         "types.ImprovementDirection": {
