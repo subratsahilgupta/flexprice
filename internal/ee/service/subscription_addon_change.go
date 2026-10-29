@@ -342,10 +342,8 @@ func resolveAttachChangeAt(
 		resolved.ChangeAt = nil
 	}
 
-	if resolved.StartDate == nil {
-		resolved.StartDate = lo.ToPtr(now)
-	}
-
+	// A caller's start_date is cut to microseconds as `now` is, so the stored start is the one the guard checks.
+	resolved.StartDate = lo.ToPtr(lo.FromPtrOr(resolved.StartDate, now).Truncate(time.Microsecond))
 	return resolved
 }
 
