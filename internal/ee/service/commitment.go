@@ -452,7 +452,7 @@ func (s *commitmentService) Terminate(
 		return nil, err
 	}
 
-	effectiveAt := lo.FromPtrOr(req.EffectiveAt, time.Now().UTC())
+	effectiveAt := lo.FromPtrOr(req.EffectiveAt, time.Now().UTC()).Truncate(time.Microsecond)
 	var out *commitment.Commitment
 	var invoiceID *string
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {

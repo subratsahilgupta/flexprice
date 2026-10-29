@@ -415,6 +415,7 @@ func (s *subscriptionService) DeleteSubscriptionLineItem(ctx context.Context, li
 	if req.EffectiveFrom != nil {
 		endDate = req.EffectiveFrom.UTC()
 	}
+	endDate = endDate.Truncate(time.Microsecond)
 
 	var resp *dto.SubscriptionLineItemResponse
 	detach := func(ctx context.Context) error {
@@ -460,6 +461,7 @@ func (s *subscriptionService) deleteSubscriptionLineItem(ctx context.Context, li
 	} else {
 		effectiveFrom = time.Now().UTC()
 	}
+	effectiveFrom = effectiveFrom.Truncate(time.Microsecond)
 
 	// Validate effective from date is on or after start date
 	if effectiveFrom.Before(lineItem.StartDate) {
@@ -745,11 +747,13 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			Mark(ierr.ErrValidation)
 	}
 
-	// Determine end date for existing line item
+	// Determine end date for existing line item. Postgres keeps microseconds, so the end is cut to them: the
+	// commitment guard compares it with the successor's stored start, which must not round past it.
 	endDate := time.Now().UTC()
 	if req.EffectiveFrom != nil {
 		endDate = req.EffectiveFrom.UTC()
 	}
+	endDate = endDate.Truncate(time.Microsecond)
 
 	// Check if we need to create a new line item (with price overrides)
 	if req.ShouldCreateNewLineItem() {

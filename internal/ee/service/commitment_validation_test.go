@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -1122,4 +1123,53 @@ func (s *CommitmentServiceSuite) TestLineItemUpdate_RejectsPriceOverrideEmptying
 			EffectiveFrom: lo.ToPtr(s.fx.sub.StartDate.AddDate(0, 1, 0)),
 		})
 	s.requireValidation(err, "terminate the commitment first")
+}
+
+// microsecondLineItemRepo stores line item dates the way Postgres does: rounded to the nearest microsecond.
+type microsecondLineItemRepo struct {
+	subscription.LineItemRepository
+}
+
+func (r *microsecondLineItemRepo) Create(ctx context.Context, li *subscription.SubscriptionLineItem) error {
+	stored := *li
+	stored.StartDate, stored.EndDate = stored.StartDate.Round(time.Microsecond), stored.EndDate.Round(time.Microsecond)
+	return r.LineItemRepository.Create(ctx, &stored)
+}
+
+func (r *microsecondLineItemRepo) Update(ctx context.Context, li *subscription.SubscriptionLineItem) error {
+	stored := *li
+	stored.StartDate, stored.EndDate = stored.StartDate.Round(time.Microsecond), stored.EndDate.Round(time.Microsecond)
+	return r.LineItemRepository.Update(ctx, &stored)
+}
+
+// An end instant with nanoseconds that round up stores the successor's start after the end the guard checks, which it
+// would report as a sub-microsecond gap in the binding commitment's coverage.
+func (s *CommitmentServiceSuite) TestLineItemUpdate_PriceEditKeepsCoverageAcrossMicrosecondRounding() {
+	ctx := s.GetContext()
+	req := validReq(s.fx.sub.ID, "")
+	req.Scope = dto.CommitmentScopeInput{EntityType: types.CommitmentScopeMeter, EntityID: s.fx.meterAPI.ID}
+	_, err := s.svc.Create(ctx, req)
+	s.Require().NoError(err)
+
+	// The edited line is the scope's only cover after January.
+	only, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, "subs_line_api_only")
+	s.Require().NoError(err)
+	only.EndDate = s.fx.sub.StartDate.AddDate(0, 1, 0)
+	s.Require().NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, only))
+
+	params := fullServiceParams(&s.BaseServiceTestSuite)
+	params.SubscriptionLineItemRepo = &microsecondLineItemRepo{LineItemRepository: s.GetStores().SubscriptionLineItemRepo}
+	effectiveFrom := time.Date(2027, 2, 1, 0, 0, 0, 123456789, time.UTC)
+	resp, err := NewSubscriptionService(params).UpdateSubscriptionLineItem(ctx, s.fx.lineAPI.ID,
+		dto.UpdateSubscriptionLineItemRequest{
+			Amount:        lo.ToPtr(dec("0.07")),
+			EffectiveFrom: lo.ToPtr(effectiveFrom),
+		})
+	s.Require().NoError(err)
+
+	ended, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.fx.lineAPI.ID)
+	s.Require().NoError(err)
+	successor, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, resp.ID)
+	s.Require().NoError(err)
+	s.True(successor.StartDate.Equal(ended.EndDate), "successor starts %s, predecessor ends %s", successor.StartDate, ended.EndDate)
 }

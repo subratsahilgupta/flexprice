@@ -236,8 +236,9 @@ func (s *addonChangeService) Resolve(ctx context.Context, req AddonChangeRequest
 	config := &addonChangeConfig{sub: sub}
 
 	// One `now` for the whole change: resolving per entry would give each immediate entry a
-	// different timestamp and split one proration pass into several.
-	now := time.Now().UTC()
+	// different timestamp and split one proration pass into several. It is cut to Postgres'
+	// microseconds, so the commitment guard sees the stored dates it compares against.
+	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	for _, remove := range req.Removes {
 		removeReq := resolveRemoveChangeAt(remove, now, sub.CurrentPeriodEnd)
