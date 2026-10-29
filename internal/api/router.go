@@ -288,6 +288,7 @@ func NewRouter(
 			price.POST("/bulk", write(types.EntityPrice, types.ActionWrite), handlers.Price.CreateBulkPrice)
 			price.GET("", observe(types.EntityPrice), handlers.Price.ListPrices)
 			price.GET("/:id", observe(types.EntityPrice), handlers.Price.GetPrice)
+			price.GET("/:id/history", observe(types.EntityPrice), handlers.Price.GetPriceHistory)
 			price.PUT("/:id", write(types.EntityPrice, types.ActionWrite), handlers.Price.UpdatePrice)
 			price.DELETE("/:id", write(types.EntityPrice, types.ActionWrite), handlers.Price.DeletePrice)
 			price.GET("/lookup/:lookup_key", observe(types.EntityPrice), handlers.Price.GetByLookupKey)
