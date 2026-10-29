@@ -105,8 +105,7 @@ func (s *billingService) newCommitmentLoader(
 	})
 
 	for _, c := range active {
-		effectiveEnd := c.EffectiveEnd()
-		if !effectiveEnd.After(periodStart) {
+		if c.EndsBy(periodStart) {
 			continue
 		}
 
@@ -116,7 +115,7 @@ func (s *billingService) newCommitmentLoader(
 			c.ScopeEntityID,
 			l.subContext,
 			maxTime(periodStart, c.StartDate),
-			minTime(periodEnd, effectiveEnd),
+			lo.ToPtr(c.EffectiveEndWithin(periodEnd)),
 		)
 		callScopeLineItems := lo.FilterMap(scopeLineItems, func(li *subscription.SubscriptionLineItem, _ int) (*subscription.SubscriptionLineItem, bool) {
 			item, ok := callLineItemByID[li.ID]
@@ -332,7 +331,7 @@ func (l *commitmentLoader) UsageBreakdown(ctx context.Context) ([]*dto.Commitmen
 					Binding:      sc.C.Binding,
 					Currency:     l.sub.Currency,
 					AppliesFrom:  maxTime(l.periodStart, sc.C.StartDate),
-					AppliesTo:    minTime(l.periodEnd, sc.C.EffectiveEnd()),
+					AppliesTo:    sc.C.EffectiveEndWithin(l.periodEnd),
 				}
 				byID[sc.C.ID] = b
 				out = append(out, b)
@@ -593,7 +592,7 @@ func (l *commitmentLoader) buildPeriodStack(ctx context.Context, stack *commitme
 		sc.PoolOf = make([]int, len(stack.Windows))
 		for w, t := range stack.Windows {
 			// Start is compared at whole seconds, as the period edges are.
-			if sc.C.StartDate.Truncate(time.Second).After(t) || !sc.C.EffectiveEnd().After(t) {
+			if sc.C.StartDate.Truncate(time.Second).After(t) || sc.C.EndsBy(t) {
 				sc.PoolOf[w] = -1
 			}
 		}
@@ -645,7 +644,8 @@ func inForceBoundaries(commitments []*stackedCommitment, start time.Time, end ti
 	from, to := start.Truncate(time.Second), end.Truncate(time.Second)
 	boundaries := []time.Time{start}
 	for _, sc := range commitments {
-		for _, t := range []time.Time{sc.C.StartDate, sc.C.EffectiveEnd()} {
+		// An end past the range, or none, lands at end and adds no boundary.
+		for _, t := range []time.Time{sc.C.StartDate, sc.C.EffectiveEndWithin(end)} {
 			sec := t.Truncate(time.Second)
 			if sec.After(from) && sec.Before(to) {
 				boundaries = append(boundaries, t)

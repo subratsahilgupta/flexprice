@@ -8,10 +8,6 @@ import (
 	"github.com/samber/lo"
 )
 
-// EndOfTime is later than any billing date: the effective end of a term that has none, so comparisons
-// need no special case. It is never persisted, and never a bound for date arithmetic or period generation.
-var EndOfTime = time.Date(9999, time.December, 31, 23, 59, 59, 0, time.UTC)
-
 // LoadTimezone resolves an IANA name (or known abbreviation) to a *time.Location.
 //
 // Timezone values are validated once at the API boundary (customer DTO), so an

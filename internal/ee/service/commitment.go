@@ -533,7 +533,7 @@ func (s *commitmentService) TerminateForSubscription(
 				continue
 			}
 
-			if !effectiveAt.Before(c.EffectiveEnd()) {
+			if c.EndsBy(effectiveAt) {
 				continue
 			}
 
@@ -623,9 +623,8 @@ func (s *commitmentService) terminate(
 			Mark(ierr.ErrInvalidOperation)
 	}
 
-	// An open-ended commitment's end is types.EndOfTime, so any effective_at passes.
-	if end := c.EffectiveEnd(); !effectiveAt.Before(end) {
-		return nil, nil, ierr.Validationf("effective_at must be before the commitment end %s", end.Format(time.RFC3339))
+	if c.EndsBy(effectiveAt) {
+		return nil, nil, ierr.Validationf("effective_at must be before the commitment end %s", c.EffectiveEnd().Format(time.RFC3339))
 	}
 
 	var invoiceID *string
@@ -905,7 +904,7 @@ func (s *commitmentService) commitmentsInScope(
 			return nil, err
 		}
 
-		if !at.Before(spanEnd) || !c.StartDate.Before(spanEnd) || (until != nil && !c.StartDate.Before(*until)) {
+		if endsBy(spanEnd, at) || endsBy(spanEnd, c.StartDate) || endsBy(until, c.StartDate) {
 			continue
 		}
 
@@ -995,11 +994,11 @@ func (s *commitmentService) checkAttachPairs(
 				return "", err
 			}
 
-			if !a.StartDate.Before(bEnd) || !b.StartDate.Before(aEnd) {
+			if endsBy(bEnd, a.StartDate) || endsBy(aEnd, b.StartDate) {
 				continue
 			}
 
-			allocatingTogether := a.StartDate.Before(b.EffectiveEnd()) && b.StartDate.Before(a.EffectiveEnd())
+			allocatingTogether := !b.EndsBy(a.StartDate) && !a.EndsBy(b.StartDate)
 			if allocatingTogether && a.Priority == b.Priority {
 				return a.ID, ierr.Validationf(
 					"commitments %s and %s overlap on the new price with the same priority %d",
