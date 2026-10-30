@@ -1312,6 +1312,28 @@ func (s *subscriptionService) ListSubscriptionLineItems(ctx context.Context, fil
 	}, nil
 }
 
+func (s *subscriptionService) GetSubscriptionLineItemHistory(ctx context.Context, lineItemID string) (*dto.ListSubscriptionLineItemsResponse, error) {
+	if lineItemID == "" {
+		return nil, ierr.NewError("line_item_id is required").
+			WithHint("Line item ID is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	items, err := s.SubscriptionLineItemRepo.ListLineage(ctx, lineItemID)
+	if err != nil {
+		return nil, err
+	}
+
+	responses := lo.Map(items, func(item *subscription.SubscriptionLineItem, _ int) *dto.SubscriptionLineItemResponse {
+		return &dto.SubscriptionLineItemResponse{SubscriptionLineItem: item}
+	})
+
+	return &dto.ListSubscriptionLineItemsResponse{
+		Items:      responses,
+		Pagination: types.NewPaginationResponse(len(responses), len(responses), 0),
+	}, nil
+}
+
 // validateBucketArray runs array-level validation on a bucket slice — every
 // bucket priced, overlap detection, meter-window alignment, and
 // cumulative-commitment guard. Called from create and update flows AFTER
